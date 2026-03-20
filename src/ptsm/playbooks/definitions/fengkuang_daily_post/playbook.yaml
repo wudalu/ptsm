@@ -1,0 +1,13 @@
+playbook_id: fengkuang_daily_post
+version: 1
+domain: 发疯文学
+platforms:
+  - xiaohongshu
+required_skills:
+  - fengkuang_style
+  - positive_reframe
+  - xhs_hashtagging
+optional_skills: []
+reflection:
+  must_include_phrase: 也算
+  required_hashtag: "#发疯文学"

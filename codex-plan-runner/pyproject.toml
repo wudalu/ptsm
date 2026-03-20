@@ -1,0 +1,31 @@
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "codex-plan-runner"
+version = "0.1.0"
+description = "Execute markdown implementation plans with Codex and verification gates"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "PyYAML>=6.0.2,<7.0.0",
+]
+
+[project.scripts]
+codex-plan-runner = "codex_plan_runner.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.5,<9.0.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/codex_plan_runner"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+
+[tool.uv]
+default-groups = ["dev"]

@@ -1,0 +1,91 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from ptsm.agent_runtime.runtime import build_fengkuang_workflow
+from ptsm.application.models import FengkuangRequest
+from ptsm.infrastructure.artifacts.file_store import FileArtifactStore
+from ptsm.infrastructure.memory.store import InMemoryExecutionMemory
+
+
+def test_fengkuang_workflow_revises_once_and_persists_memory() -> None:
+    memory = InMemoryExecutionMemory()
+    workflow = build_fengkuang_workflow(memory=memory)
+
+    result = workflow.invoke(
+        FengkuangRequest(
+            scene="周一早高峰地铁通勤",
+            platform="xiaohongshu",
+            account_id="acct-fk-001",
+        ).model_dump(mode="python"),
+        config={"configurable": {"thread_id": "thread-fk-001"}},
+    )
+
+    assert result["status"] == "completed"
+    assert result["playbook_id"] == "fengkuang_daily_post"
+    assert result["attempt_count"] == 2
+    assert "周一早高峰地铁通勤" in result["final_content"]["body"]
+    assert "也算" in result["final_content"]["body"]
+
+    lessons = memory.search(namespace=("accounts", "acct-fk-001", "lessons"))
+    assert len(lessons) == 1
+    assert lessons[0]["playbook_id"] == "fengkuang_daily_post"
+
+
+def test_fengkuang_workflow_writes_final_artifact(tmp_path: Path) -> None:
+    workflow = build_fengkuang_workflow(
+        artifact_store=FileArtifactStore(base_dir=tmp_path),
+    )
+
+    result = workflow.invoke(
+        FengkuangRequest(
+            scene="周五下班前最后一场会",
+            platform="xiaohongshu",
+            account_id="acct-fk-003",
+        ).model_dump(mode="python"),
+        config={"configurable": {"thread_id": "thread-fk-003"}},
+    )
+
+    artifact_path = Path(result["artifact_path"])
+    assert artifact_path.exists()
+
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+    assert artifact["playbook_id"] == "fengkuang_daily_post"
+    assert artifact["final_content"]["hashtags"][0] == "#发疯文学"
+
+
+class NeverImprovingDraftingAgent:
+    def generate(
+        self,
+        *,
+        scene: str,
+        reflection_feedback: str | None = None,
+        planner_prompt: str | None = None,
+        skill_contents: list[str] | None = None,
+    ) -> dict[str, object]:
+        return {
+            "title": "一直在疯",
+            "image_text": "还在疯",
+            "body": f"{scene}，今天只有崩溃，没有缓冲。",
+            "hashtags": ["#发疯文学"],
+        }
+
+
+def test_fengkuang_workflow_stops_after_max_attempts() -> None:
+    workflow = build_fengkuang_workflow(
+        drafting_agent=NeverImprovingDraftingAgent(),
+        max_attempts=3,
+    )
+
+    result = workflow.invoke(
+        FengkuangRequest(
+            scene="周二工位开会",
+            platform="xiaohongshu",
+            account_id="acct-fk-002",
+        ).model_dump(mode="python"),
+        config={"configurable": {"thread_id": "thread-fk-002"}},
+    )
+
+    assert result["status"] == "failed"
+    assert result["attempt_count"] == 3

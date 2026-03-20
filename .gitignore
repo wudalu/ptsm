@@ -1,0 +1,13 @@
+.DS_Store
+.codex-plan-runner/
+.env
+.ptsm/
+.pytest_cache/
+.venv/
+__pycache__/
+*.pyc
+
+dist/
+outputs/
+
+cookies.json
