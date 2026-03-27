@@ -1,0 +1,153 @@
+spec_version: "0.1"
+contract_type: runtime_input_contract
+contract_name: planning_brief
+summary: Input contract passed from runtime to the planner step.
+
+schema:
+  type: object
+  required:
+    - brief_id
+    - playbook_id
+    - goal
+    - user_intent
+    - success_criteria
+    - capability_inventory
+    - execution_constraints
+  properties:
+    brief_id:
+      type: string
+      description: Unique id for this planning request.
+    playbook_id:
+      type: string
+      description: Active playbook policy selected by the runtime.
+    phase:
+      type: string
+      default: plan
+      description: Current runtime phase when invoking the planner.
+    goal:
+      type: string
+      description: Task goal after session routing and task-level normalization.
+    user_intent:
+      type: object
+      required:
+        - intent_type
+        - intent_summary
+      properties:
+        intent_type:
+          type: string
+          description: Normalized turn or task intent classification.
+        intent_summary:
+          type: string
+          description: Concise statement of what the user wants done.
+        requested_outputs:
+          type: array
+          items:
+            type: string
+        constraints:
+          type: array
+          items:
+            type: string
+    playbook_policy_view:
+      type: object
+      properties:
+        control_loop:
+          type: string
+        allowed_capabilities:
+          type: array
+          items:
+            type: string
+        required_capabilities:
+          type: array
+          items:
+            type: string
+        approval_rules:
+          type: array
+          items:
+            type: string
+        fallback_rules:
+          type: array
+          items:
+            type: string
+    success_criteria:
+      type: array
+      items:
+        type: string
+      description: Conditions that must be satisfied before the run can finish.
+    capability_inventory:
+      type: array
+      description: Skills or capabilities currently visible to this run.
+      items:
+        type: object
+        required:
+          - capability_id
+          - capabilities
+          - risk_level
+        properties:
+          capability_id:
+            type: string
+          capabilities:
+            type: array
+            items:
+              type: string
+          risk_level:
+            type: string
+            enum:
+              - low
+              - medium
+              - high
+          side_effects:
+            type: array
+            items:
+              type: string
+          cost_class:
+            type: string
+          notes:
+            type: string
+    known_state:
+      type: object
+      properties:
+        memory_hits:
+          type: array
+          items:
+            type: string
+        artifacts:
+          type: array
+          items:
+            type: string
+        evidence:
+          type: array
+          items:
+            type: string
+        unresolved_questions:
+          type: array
+          items:
+            type: string
+    execution_constraints:
+      type: object
+      required:
+        - max_steps
+      properties:
+        max_steps:
+          type: integer
+        max_same_skill_repeats:
+          type: integer
+        budget_hint:
+          type: string
+        time_budget_hint:
+          type: string
+        require_verification_after_write:
+          type: boolean
+        require_human_approval_for_high_risk:
+          type: boolean
+
+semantics:
+  planner_expectations:
+    - Plan only with capabilities present in capability_inventory.
+    - Do not invent hidden tools, skills, or permissions.
+    - Prefer the simplest feasible plan that can satisfy success_criteria.
+    - If the task is underspecified, request clarification instead of guessing.
+    - If required capabilities are missing, report the gap explicitly.
+  runtime_expectations:
+    - The runtime should construct this brief after playbook binding and phase filtering.
+    - The runtime may pass only capability summaries, not full skill bodies.
+    - The runtime should validate required fields before invoking the planner.

@@ -1,0 +1,116 @@
+spec_version: "0.1"
+template_type: playbook_policy
+
+playbook_id: replace_me
+summary: Generic single-agent policy template for user-defined skills.
+
+agent:
+  topology: single_agent
+  control_loop: plan_act_verify
+  skill_binding: capability_based
+
+inputs:
+  required_fields:
+    - task_goal
+  optional_fields:
+    - task_context
+    - task_constraints
+    - approval_mode
+
+outputs:
+  final_output:
+    type: object
+    required:
+      - summary
+      - evidence
+    properties:
+      summary:
+        type: string
+      evidence:
+        type: array
+
+state_contract:
+  phases:
+    - understand
+    - plan
+    - act
+    - verify
+    - finish
+  required_state:
+    - goal
+    - current_phase
+    - evidence
+
+skill_requirements:
+  matching_mode: by_capability
+  required_manifest_fields:
+    - skill_id
+    - capabilities
+    - risk
+    - side_effects
+    - contracts
+
+phase_policy:
+  understand:
+    allow_capabilities:
+      - read
+      - search
+      - inspect
+    deny_side_effects:
+      - workspace_write
+      - external_write
+  plan:
+    allow_capabilities:
+      - read
+      - search
+      - inspect
+    require_state:
+      - goal
+  act:
+    allow_capabilities:
+      - read
+      - search
+      - inspect
+      - transform
+      - write
+  verify:
+    allow_capabilities:
+      - read
+      - validate
+      - test
+      - reflect
+  finish:
+    allow_capabilities:
+      - report
+      - external_write
+
+selection_policy:
+  prefer:
+    - lower_risk
+    - schema_match
+    - lower_cost
+  reject_when:
+    - missing_required_manifest_fields
+    - output_schema_incompatible
+
+execution_policy:
+  max_turns: 20
+  max_same_skill_repeats: 3
+  require_plan_before_first_write: true
+  require_verification_after_write: true
+  stop_if_no_progress_for_turns: 4
+
+approval_policy:
+  require_human_approval_when:
+    - risk_level == high
+    - side_effects contains external_write
+
+success_criteria:
+  - final_output_schema_valid
+  - required_verification_complete
+  - no_unapproved_high_risk_action
+
+fallback_policy:
+  on_no_matching_skill: fail_with_gap_report
+  on_verification_failure: return_to_plan
+  on_schema_error: retry_once

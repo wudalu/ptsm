@@ -1,0 +1,118 @@
+spec_version: "0.1"
+template_type: playbook_policy
+
+playbook_id: external_action_approval
+summary: Single-agent policy for tasks that end with external or irreversible actions.
+
+agent:
+  topology: single_agent
+  control_loop: prepare_confirm_execute_verify
+  skill_binding: capability_based
+
+inputs:
+  required_fields:
+    - task_goal
+    - target_system
+  optional_fields:
+    - execution_window
+    - dry_run
+
+outputs:
+  final_output:
+    type: object
+    required:
+      - action_plan
+      - execution_result
+      - audit_log
+    properties:
+      action_plan:
+        type: string
+      execution_result:
+        type: object
+      audit_log:
+        type: array
+
+state_contract:
+  phases:
+    - understand
+    - plan
+    - precheck
+    - approval
+    - execute
+    - verify
+    - finish
+  required_state:
+    - task_goal
+    - target_system
+    - action_plan
+    - approval_status
+    - audit_log
+
+phase_policy:
+  understand:
+    allow_capabilities:
+      - read
+      - inspect
+      - search
+    deny_side_effects:
+      - external_write
+  plan:
+    allow_capabilities:
+      - plan
+      - validate
+  precheck:
+    allow_capabilities:
+      - read
+      - validate
+      - dry_run
+    required_checks:
+      - target_reachable
+      - action_reversible_or_risk_noted
+  approval:
+    allow_capabilities:
+      - report
+  execute:
+    allow_capabilities:
+      - external_write
+    require_state:
+      - approval_status
+  verify:
+    allow_capabilities:
+      - validate
+      - read
+      - report
+  finish:
+    allow_capabilities:
+      - report
+
+selection_policy:
+  prefer:
+    - approval_aware_skills
+    - machine_readable_output
+    - lower_risk
+  reject_when:
+    - skill_cannot_emit_audit_log
+    - external_write_skill_without_approval_flag
+
+execution_policy:
+  max_turns: 14
+  require_dry_run_when_available: true
+  require_human_approval_before_execute: true
+  require_post_action_verification: true
+
+approval_policy:
+  require_human_approval_when:
+    - phase == execute
+    - side_effects contains external_write
+    - risk_level in [medium, high]
+
+success_criteria:
+  - approval_recorded
+  - execution_result_present
+  - post_action_verification_complete
+  - audit_log_present
+
+fallback_policy:
+  on_precheck_failure: abort_with_reason
+  on_approval_denied: stop_without_execute
+  on_post_action_verification_failure: escalate_immediately

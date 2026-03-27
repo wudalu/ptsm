@@ -1,0 +1,106 @@
+spec_version: "0.1"
+template_type: playbook_policy
+
+playbook_id: research_synthesis
+summary: Single-agent policy for research, reading, synthesis, and source-backed answers.
+
+agent:
+  topology: single_agent
+  control_loop: collect_summarize_verify
+  skill_binding: capability_based
+
+inputs:
+  required_fields:
+    - research_question
+  optional_fields:
+    - source_constraints
+    - time_range
+    - citation_style
+
+outputs:
+  final_output:
+    type: object
+    required:
+      - answer
+      - key_findings
+      - sources
+    properties:
+      answer:
+        type: string
+      key_findings:
+        type: array
+      sources:
+        type: array
+
+state_contract:
+  phases:
+    - understand
+    - collect
+    - synthesize
+    - verify
+    - finish
+  required_state:
+    - research_question
+    - working_notes
+    - source_list
+    - evidence
+
+phase_policy:
+  understand:
+    allow_capabilities:
+      - read
+      - search
+      - inspect
+    deny_side_effects:
+      - workspace_write
+      - external_write
+  collect:
+    allow_capabilities:
+      - search
+      - read
+      - extract
+  synthesize:
+    allow_capabilities:
+      - summarize
+      - compare
+      - transform
+  verify:
+    allow_capabilities:
+      - validate
+      - cite
+      - reflect
+    required_checks:
+      - every_major_claim_has_source
+      - conflicting_findings_are_flagged
+  finish:
+    allow_capabilities:
+      - report
+
+selection_policy:
+  prefer:
+    - source_quality
+    - schema_match
+    - lower_hallucination_risk
+  reject_when:
+    - skill_outputs_unstructured_claims_without_evidence
+
+execution_policy:
+  max_turns: 18
+  max_same_skill_repeats: 3
+  require_evidence_before_synthesis: true
+  require_citation_check_before_finish: true
+  stop_if_no_new_sources_for_turns: 3
+
+approval_policy:
+  require_human_approval_when: []
+
+success_criteria:
+  - answer_present
+  - source_count_greater_than_zero
+  - citation_check_passed
+  - no_unsupported_major_claim
+
+fallback_policy:
+  on_insufficient_sources: widen_search_once
+  on_conflicting_evidence: surface_conflict_in_output
+  on_verification_failure: return_to_collect

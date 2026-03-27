@@ -1,0 +1,39 @@
+# Minimal manifest for a user-defined skill. The runtime can use this metadata
+# to decide whether the skill is eligible for a given playbook phase.
+spec_version: "0.1"
+template_type: skill_manifest
+
+skill_id: replace_me
+display_name: Replace Me
+summary: Short description of what this skill is good at.
+
+capabilities:
+  - read
+  - search
+
+risk:
+  level: low
+  requires_human_approval: false
+
+side_effects:
+  - none
+
+contracts:
+  input_schema:
+    type: object
+    required: []
+    properties: {}
+  output_schema:
+    type: object
+    required: []
+    properties: {}
+
+execution_hints:
+  idempotent: true
+  cost_class: low
+  latency_class: low
+
+scope:
+  platforms: []
+  domains: []
+  playbook_tags: []

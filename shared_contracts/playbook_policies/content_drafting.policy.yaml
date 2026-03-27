@@ -1,0 +1,110 @@
+spec_version: "0.1"
+template_type: playbook_policy
+
+playbook_id: content_drafting
+summary: Single-agent policy for drafting, reflection, revision, and optional publishing.
+
+agent:
+  topology: single_agent
+  control_loop: draft_reflect_revise
+  skill_binding: capability_based
+
+inputs:
+  required_fields:
+    - content_goal
+    - target_audience
+  optional_fields:
+    - tone
+    - style_constraints
+    - publish_requested
+
+outputs:
+  final_output:
+    type: object
+    required:
+      - title
+      - body
+      - quality_notes
+    properties:
+      title:
+        type: string
+      body:
+        type: string
+      quality_notes:
+        type: array
+
+state_contract:
+  phases:
+    - understand
+    - outline
+    - draft
+    - reflect
+    - revise
+    - finish
+  required_state:
+    - content_goal
+    - audience
+    - draft
+    - reflection_notes
+
+phase_policy:
+  understand:
+    allow_capabilities:
+      - read
+      - inspect
+      - search
+    deny_side_effects:
+      - external_write
+  outline:
+    allow_capabilities:
+      - plan
+      - summarize
+  draft:
+    allow_capabilities:
+      - write
+      - transform
+      - style_apply
+  reflect:
+    allow_capabilities:
+      - reflect
+      - validate
+    required_checks:
+      - goal_alignment
+      - tone_alignment
+      - banned_pattern_check
+  revise:
+    allow_capabilities:
+      - write
+      - transform
+  finish:
+    allow_capabilities:
+      - report
+      - external_write
+
+selection_policy:
+  prefer:
+    - style_match
+    - schema_match
+    - lower_risk
+  reject_when:
+    - skill_requires_external_write_before_final_review
+
+execution_policy:
+  max_turns: 16
+  max_revision_loops: 2
+  require_reflection_before_finish: true
+  require_publish_request_for_external_write: true
+
+approval_policy:
+  require_human_approval_when:
+    - phase == finish and side_effects contains external_write
+
+success_criteria:
+  - final_output_schema_valid
+  - reflection_checks_passed
+  - no_unapproved_publish
+
+fallback_policy:
+  on_reflection_failure: return_to_revise
+  on_missing_style_skill: continue_with_generic_writer
+  on_publish_blocked: return_draft_only

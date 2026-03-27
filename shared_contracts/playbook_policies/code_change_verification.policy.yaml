@@ -1,0 +1,116 @@
+spec_version: "0.1"
+template_type: playbook_policy
+
+playbook_id: code_change_verification
+summary: Single-agent policy for inspecting code, making changes, and validating the result.
+
+agent:
+  topology: single_agent
+  control_loop: inspect_edit_test
+  skill_binding: capability_based
+
+inputs:
+  required_fields:
+    - task_goal
+    - repo_scope
+  optional_fields:
+    - test_targets
+    - risk_notes
+
+outputs:
+  final_output:
+    type: object
+    required:
+      - change_summary
+      - changed_files
+      - verification_evidence
+    properties:
+      change_summary:
+        type: string
+      changed_files:
+        type: array
+      verification_evidence:
+        type: array
+
+state_contract:
+  phases:
+    - understand
+    - plan
+    - inspect
+    - edit
+    - verify
+    - finish
+  required_state:
+    - task_goal
+    - repo_scope
+    - plan
+    - changed_files
+    - verification_evidence
+
+phase_policy:
+  understand:
+    allow_capabilities:
+      - read
+      - inspect
+      - search
+    deny_side_effects:
+      - workspace_write
+      - external_write
+  plan:
+    allow_capabilities:
+      - plan
+      - inspect
+  inspect:
+    allow_capabilities:
+      - read
+      - inspect
+      - search
+  edit:
+    allow_capabilities:
+      - write
+      - transform
+    require_state:
+      - plan
+  verify:
+    allow_capabilities:
+      - test
+      - validate
+      - reflect
+    required_checks:
+      - tests_or_checks_run
+      - changed_files_recorded
+  finish:
+    allow_capabilities:
+      - report
+
+selection_policy:
+  prefer:
+    - repo_scope_match
+    - schema_match
+    - lower_risk
+  reject_when:
+    - write_skill_without_output_contract
+    - test_skill_without_machine_readable_result
+
+execution_policy:
+  max_turns: 24
+  max_same_skill_repeats: 3
+  require_plan_before_first_write: true
+  require_verification_after_each_write: true
+  stop_if_verification_fails_after_retries: 2
+
+approval_policy:
+  require_human_approval_when:
+    - side_effects contains external_write
+    - risk_level == high
+
+success_criteria:
+  - change_summary_present
+  - changed_files_count_greater_than_zero
+  - verification_passed
+  - no_unapproved_high_risk_action
+
+fallback_policy:
+  on_verification_failure: return_to_edit
+  on_no_matching_test_skill: require_manual_verification_note
+  on_missing_repo_scope: fail_with_clarification_request

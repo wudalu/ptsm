@@ -1,0 +1,133 @@
+spec_version: "0.1"
+contract_type: runtime_output_contract
+contract_name: plan_output
+summary: Output contract returned by the planner to the runtime.
+
+schema:
+  type: object
+  required:
+    - plan_status
+    - steps
+    - capability_gaps
+    - assumptions
+  properties:
+    plan_status:
+      type: string
+      enum:
+        - feasible
+        - feasible_with_gaps
+        - needs_clarification
+        - blocked
+      description: Overall planner judgment for whether execution can continue.
+    plan_summary:
+      type: string
+      description: Short description of the chosen execution path.
+    assumptions:
+      type: array
+      items:
+        type: string
+      description: Assumptions the runtime may surface or validate.
+    clarification_questions:
+      type: array
+      items:
+        type: string
+      description: Questions to ask when plan_status is needs_clarification.
+    capability_gaps:
+      type: array
+      items:
+        type: object
+        required:
+          - capability
+          - reason
+        properties:
+          capability:
+            type: string
+          reason:
+            type: string
+          blocking:
+            type: boolean
+    steps:
+      type: array
+      items:
+        type: object
+        required:
+          - step_id
+          - objective
+          - required_capabilities
+          - completion_check
+        properties:
+          step_id:
+            type: string
+          objective:
+            type: string
+          phase:
+            type: string
+            description: Suggested runtime phase for this step.
+          required_capabilities:
+            type: array
+            items:
+              type: string
+          preferred_capability_ids:
+            type: array
+            items:
+              type: string
+            description: Optional preferred skills from capability_inventory.
+          depends_on:
+            type: array
+            items:
+              type: string
+          produces:
+            type: array
+            items:
+              type: string
+          completion_check:
+            type: string
+          verification_needed:
+            type: boolean
+          fallback_on_failure:
+            type: string
+    verification_plan:
+      type: array
+      items:
+        type: object
+        required:
+          - target_step_id
+          - verification_goal
+        properties:
+          target_step_id:
+            type: string
+          verification_goal:
+            type: string
+          required_capabilities:
+            type: array
+            items:
+              type: string
+    approval_checkpoints:
+      type: array
+      items:
+        type: object
+        required:
+          - checkpoint_id
+          - trigger
+        properties:
+          checkpoint_id:
+            type: string
+          trigger:
+            type: string
+          reason:
+            type: string
+    final_completion_conditions:
+      type: array
+      items:
+        type: string
+
+semantics:
+  planner_expectations:
+    - Every step should be executable with the capabilities visible in the planning brief.
+    - Steps that perform writes or risky actions should either include verification_needed or an approval checkpoint.
+    - When plan_status is blocked, the plan should explain why execution cannot continue.
+    - When plan_status is feasible_with_gaps, steps may proceed only if the gaps are non-blocking or have a defined fallback.
+  runtime_expectations:
+    - The runtime should reject plans whose required_capabilities are not satisfiable by the current capability inventory.
+    - The runtime should reject plans that violate playbook policy, approval policy, or output schema requirements.
+    - The runtime may choose to replan if the output is valid but strategically poor.
