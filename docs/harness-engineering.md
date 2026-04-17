@@ -28,13 +28,18 @@ repository.
 - local run artifacts and run logs
 - playbook and skill registries
 - a stable pytest-based verification loop
+- a docs map with source-of-truth pointers
+- freshness and ownership metadata on active docs
+- mechanical architecture checks for import boundaries
+- durable local runtime memory and checkpoints
+- queryable run summaries and run events
 
 ## What We Should Build Next
 
-- a docs map with source-of-truth pointers
-- freshness and ownership metadata on active docs
-- a queryable observability surface for runs
-- mechanical architecture checks for repo invariants
+- richer event semantics and failure reason normalization
+- stronger evidence artifacts for verify loops
+- drift and garbage-collection checks for stale runtime/doc surfaces
+- traces and metrics if local file observability stops being enough
 
 ## What We Should Not Copy Blindly
 

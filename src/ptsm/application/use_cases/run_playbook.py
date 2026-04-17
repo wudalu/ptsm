@@ -4,7 +4,10 @@ from pathlib import Path
 from typing import Any
 
 from ptsm.accounts.registry import AccountRegistry
-from ptsm.agent_runtime.runtime import build_fengkuang_workflow
+from ptsm.agent_runtime.runtime import (
+    build_fengkuang_workflow,
+    build_file_backed_runtime_state,
+)
 from ptsm.application.models import FengkuangRequest, PlaybookRequest
 from ptsm.application.use_cases.xhs_login import (
     DEFAULT_XHS_LOGIN_QRCODE_PATH,
@@ -16,7 +19,7 @@ from ptsm.application.use_cases.xhs_publish_status import check_xhs_publish_stat
 from ptsm.config.settings import Settings, get_settings
 from ptsm.infrastructure.observability.run_store import RunStore
 from ptsm.infrastructure.artifacts.file_store import FileArtifactStore
-from ptsm.infrastructure.memory.store import InMemoryExecutionMemory
+from ptsm.infrastructure.memory.store import ExecutionMemoryStore
 from ptsm.infrastructure.publishers.contracts import Publisher
 from ptsm.infrastructure.publishers.factory import build_publisher
 from ptsm.infrastructure.publishers.xiaohongshu_mcp_publisher import PublisherPreflightError
@@ -31,7 +34,8 @@ def run_playbook(
     *,
     thread_id: str | None = None,
     settings: Settings | None = None,
-    memory: InMemoryExecutionMemory | None = None,
+    memory: ExecutionMemoryStore | None = None,
+    checkpointer: object | None = None,
     accounts: AccountRegistry | None = None,
     playbooks: PlaybookRegistry | None = None,
     publisher: Publisher | None = None,
@@ -41,7 +45,10 @@ def run_playbook(
     """Execute the selected playbook workflow and prepare a publish receipt."""
 
     settings = settings or get_settings()
-    memory = memory or InMemoryExecutionMemory()
+    if memory is None or checkpointer is None:
+        default_memory, default_checkpointer = build_file_backed_runtime_state()
+        memory = memory or default_memory
+        checkpointer = checkpointer or default_checkpointer
     accounts = accounts or AccountRegistry()
     playbooks = playbooks or PlaybookRegistry(playbook_root=PLAYBOOK_ROOT)
     run_store = run_store or RunStore()
@@ -127,6 +134,7 @@ def run_playbook(
     workflow = _build_workflow_for_playbook(
         playbook_id=playbook.playbook_id,
         memory=memory,
+        checkpointer=checkpointer,
         settings=settings,
     )
     effective_thread_id = thread_id or run.run_id
@@ -260,7 +268,8 @@ def run_fengkuang_playbook(
     *,
     thread_id: str | None = None,
     settings: Settings | None = None,
-    memory: InMemoryExecutionMemory | None = None,
+    memory: ExecutionMemoryStore | None = None,
+    checkpointer: object | None = None,
     accounts: AccountRegistry | None = None,
     publisher: Publisher | None = None,
     run_store: RunStore | None = None,
@@ -270,6 +279,7 @@ def run_fengkuang_playbook(
         thread_id=thread_id,
         settings=settings,
         memory=memory,
+        checkpointer=checkpointer,
         accounts=accounts,
         publisher=publisher,
         run_store=run_store,
@@ -314,11 +324,16 @@ def _build_login_required_result(
 def _build_workflow_for_playbook(
     *,
     playbook_id: str,
-    memory: InMemoryExecutionMemory,
+    memory: ExecutionMemoryStore,
+    checkpointer: object,
     settings: Settings,
 ):
     if playbook_id == "fengkuang_daily_post":
-        return build_fengkuang_workflow(memory=memory, settings=settings)
+        return build_fengkuang_workflow(
+            memory=memory,
+            checkpointer=checkpointer,
+            settings=settings,
+        )
     raise ValueError(f"Unsupported playbook runtime: {playbook_id}")
 
 

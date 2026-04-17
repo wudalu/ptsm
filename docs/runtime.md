@@ -10,6 +10,7 @@ related_paths:
   - src/ptsm/agent_runtime/nodes
   - src/ptsm/application/use_cases/run_playbook.py
   - src/ptsm/application/use_cases/runs.py
+  - src/ptsm/infrastructure/memory/checkpoint.py
   - src/ptsm/infrastructure/memory/store.py
 ---
 
@@ -29,19 +30,21 @@ related_paths:
 
 - 当前兼容入口仍是 `build_fengkuang_workflow()`。
 - 运行结果会落到 artifact，并写入本地 run store。
-- 长期 memory 目前仍是 `InMemoryExecutionMemory`。
-- checkpoint 目前仍是 `InMemorySaver`，不支持跨进程恢复。
+- `run_playbook()` 默认会在 `.ptsm/agent_runtime/` 下创建持久 execution memory 和 checkpoint。
+- 显式注入依赖时，运行时仍兼容 `InMemoryExecutionMemory` 和 `InMemorySaver`。
+- 持久 checkpoint 以 `thread_id` 为键保存；复用同一个 `thread_id` 才能跨进程读取同一条执行线程。
 
 ## Practical Implications
 
-- 单次命令执行内可以复用 graph 状态。
-- 跨 CLI 调用不能依赖 checkpoint 或 memory 自动恢复。
-- 文档和计划里提到的 thread resume / cross-thread lookup 仍属于下一阶段能力。
+- lessons memory 现在可以跨 CLI 调用保留，不再只活在单进程里。
+- graph checkpoint 现在可跨进程保留，用于后续调试、回读和 thread 续跑。
+- 当前仍没有更高阶的 cross-thread lookup、状态压缩或远端 state backend。
 
 ## Operator Entry Points
 
 - 用例入口: [`src/ptsm/application/use_cases/run_playbook.py`](../src/ptsm/application/use_cases/run_playbook.py)
 - 运行时入口: [`src/ptsm/agent_runtime/runtime.py`](../src/ptsm/agent_runtime/runtime.py)
+- checkpoint 适配: [`src/ptsm/infrastructure/memory/checkpoint.py`](../src/ptsm/infrastructure/memory/checkpoint.py)
 - 内存适配: [`src/ptsm/infrastructure/memory/store.py`](../src/ptsm/infrastructure/memory/store.py)
 - 运行查询: [`src/ptsm/application/use_cases/runs.py`](../src/ptsm/application/use_cases/runs.py)
 - 发布后检查: [`src/ptsm/application/use_cases/xhs_publish_status.py`](../src/ptsm/application/use_cases/xhs_publish_status.py)

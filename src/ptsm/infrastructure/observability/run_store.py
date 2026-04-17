@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+from collections import Counter
 from uuid import uuid4
 
 
@@ -145,7 +146,104 @@ class RunStore:
         status: str | None = None,
         limit: int = 20,
     ) -> list[dict[str, object]]:
-        summaries: list[dict[str, object]] = []
+        summaries = list(
+            self._iter_summaries(
+                account_id=account_id,
+                platform=platform,
+                playbook_id=playbook_id,
+                status=status,
+            )
+        )
+        summaries.sort(key=lambda item: str(item.get("started_at", "")), reverse=True)
+        return summaries[:limit]
+
+    def list_events(
+        self,
+        *,
+        account_id: str | None = None,
+        platform: str | None = None,
+        playbook_id: str | None = None,
+        run_status: str | None = None,
+        event: str | None = None,
+        step: str | None = None,
+        event_status: str | None = None,
+        limit: int | None = 50,
+    ) -> list[dict[str, object]]:
+        events: list[dict[str, object]] = []
+        for summary in self._iter_summaries(
+            account_id=account_id,
+            platform=platform,
+            playbook_id=playbook_id,
+            status=run_status,
+        ):
+            for record in self.read_events(str(summary["run_id"])):
+                if event is not None and record.get("event") != event:
+                    continue
+                if step is not None and record.get("step") != step:
+                    continue
+                if event_status is not None and record.get("status") != event_status:
+                    continue
+                events.append(
+                    {
+                        **record,
+                        "account_id": summary.get("account_id"),
+                        "platform": summary.get("platform"),
+                        "playbook_id": summary.get("playbook_id"),
+                        "command": summary.get("command"),
+                        "run_status": summary.get("status"),
+                    }
+                )
+
+        events.sort(key=lambda item: str(item.get("timestamp", "")), reverse=True)
+        if limit is None:
+            return events
+        return events[:limit]
+
+    def aggregate_events(
+        self,
+        *,
+        group_by: str,
+        account_id: str | None = None,
+        platform: str | None = None,
+        playbook_id: str | None = None,
+        run_status: str | None = None,
+        event: str | None = None,
+        step: str | None = None,
+        event_status: str | None = None,
+    ) -> dict[str, int]:
+        counts: Counter[str] = Counter()
+        events = self.list_events(
+            account_id=account_id,
+            platform=platform,
+            playbook_id=playbook_id,
+            run_status=run_status,
+            event=event,
+            step=step,
+            event_status=event_status,
+            limit=None,
+        )
+        for record in events:
+            value = record.get(group_by)
+            counts["unknown" if value in {None, ""} else str(value)] += 1
+        return dict(sorted(counts.items(), key=lambda item: (-item[1], item[0])))
+
+    def _handle(self, run_id: str) -> RunHandle:
+        run_dir = self.base_dir / run_id
+        return RunHandle(
+            run_id=run_id,
+            run_dir=run_dir,
+            events_path=run_dir / "events.jsonl",
+            summary_path=run_dir / "summary.json",
+        )
+
+    def _iter_summaries(
+        self,
+        *,
+        account_id: str | None = None,
+        platform: str | None = None,
+        playbook_id: str | None = None,
+        status: str | None = None,
+    ):
         for summary_path in self.base_dir.glob("*/summary.json"):
             summary = json.loads(summary_path.read_text(encoding="utf-8"))
             if account_id is not None and summary.get("account_id") != account_id:
@@ -156,19 +254,7 @@ class RunStore:
                 continue
             if status is not None and summary.get("status") != status:
                 continue
-            summaries.append(summary)
-
-        summaries.sort(key=lambda item: str(item.get("started_at", "")), reverse=True)
-        return summaries[:limit]
-
-    def _handle(self, run_id: str) -> RunHandle:
-        run_dir = self.base_dir / run_id
-        return RunHandle(
-            run_id=run_id,
-            run_dir=run_dir,
-            events_path=run_dir / "events.jsonl",
-            summary_path=run_dir / "summary.json",
-        )
+            yield summary
 
     def _generate_run_id(self) -> str:
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")

@@ -7,6 +7,7 @@ source_of_truth: true
 related_paths:
   - src/ptsm/infrastructure/observability/run_store.py
   - src/ptsm/application/use_cases/logs.py
+  - src/ptsm/application/use_cases/run_events.py
   - src/ptsm/application/use_cases/runs.py
   - outputs/artifacts
   - .ptsm/runs
@@ -29,10 +30,11 @@ PTSM 当前的观测性核心是本地文件系统里的 run store 和 artifacts
 - `RunStore.finish()` 结束并写回 summary。
 - `run_logs()` 支持按 `run_id` 或 artifact 反查运行记录。
 - `RunStore.list_runs()` 和 `ptsm runs` 支持按账号、平台、playbook、状态筛选最近运行。
+- `RunStore.list_events()`、`RunStore.aggregate_events()` 和 `ptsm run-events` 支持按 run 维度和 event 维度过滤最近事件，并做轻量聚合。
 
 ## Current Limits
 
-- 没有聚合分析层。
+- 只有轻量聚合分析层，还没有时序报表或 dashboard。
 - 没有跨账号指标报表。
 - 没有 traces/metrics dashboard。
 - 现在已经比“纯文件可读”更进一步，但还不是 fully agent-queryable observability surface。
@@ -41,5 +43,6 @@ PTSM 当前的观测性核心是本地文件系统里的 run store 和 artifacts
 
 - 存储实现: [`src/ptsm/infrastructure/observability/run_store.py`](../src/ptsm/infrastructure/observability/run_store.py)
 - 日志读取: [`src/ptsm/application/use_cases/logs.py`](../src/ptsm/application/use_cases/logs.py)
+- 事件查询: [`src/ptsm/application/use_cases/run_events.py`](../src/ptsm/application/use_cases/run_events.py)
 - 运行查询: [`src/ptsm/application/use_cases/runs.py`](../src/ptsm/application/use_cases/runs.py)
 - 运维命令索引: [`operations.md`](operations.md)

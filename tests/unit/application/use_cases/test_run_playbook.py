@@ -7,6 +7,8 @@ import pytest
 
 from ptsm.application.models import FengkuangRequest
 from ptsm.application.use_cases.run_playbook import run_fengkuang_playbook
+from ptsm.infrastructure.memory.checkpoint import FileCheckpointSaver
+from ptsm.infrastructure.memory.store import FileExecutionMemory
 from ptsm.infrastructure.observability.run_store import RunStore
 from ptsm.infrastructure.publishers.xiaohongshu_mcp_publisher import PublisherPreflightError
 
@@ -163,6 +165,50 @@ def test_run_fengkuang_playbook_returns_run_metadata(
     assert Path(result["run"]["run_dir"]).exists()
     assert Path(result["run"]["events_path"]).exists()
     assert Path(result["run"]["summary_path"]).exists()
+
+
+def test_run_fengkuang_playbook_uses_durable_runtime_state_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    artifact_path = tmp_path / "artifact.json"
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "fengkuang_daily_post",
+                "final_content": {"title": "旧标题"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    captured: dict[str, object] = {}
+
+    def fake_build_fengkuang_workflow(**kwargs: object) -> FakeWorkflow:
+        captured.update(kwargs)
+        return FakeWorkflow(artifact_path)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_fengkuang_workflow",
+        fake_build_fengkuang_workflow,
+    )
+
+    result = run_fengkuang_playbook(
+        FengkuangRequest(
+            scene="周二下午会议接会议",
+            platform="xiaohongshu",
+            account_id="acct-fk-local",
+        ),
+        publisher=SuccessfulPublisher(),
+        run_store=RunStore(base_dir=tmp_path / "runs"),
+    )
+
+    assert result["status"] == "completed"
+    assert isinstance(captured["memory"], FileExecutionMemory)
+    assert isinstance(captured["checkpointer"], FileCheckpointSaver)
+    assert captured["memory"].path == tmp_path / ".ptsm" / "agent_runtime" / "execution-memory.json"
+    assert captured["checkpointer"].path == tmp_path / ".ptsm" / "agent_runtime" / "checkpoints.pkl"
 
 
 def test_run_fengkuang_playbook_runs_post_publish_checks_when_requested(
