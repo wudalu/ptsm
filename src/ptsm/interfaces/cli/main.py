@@ -10,6 +10,7 @@ import uuid
 from ptsm.application.models import FengkuangRequest
 from ptsm.application.use_cases.doctor import run_doctor
 from ptsm.application.use_cases.logs import run_logs
+from ptsm.application.use_cases.runs import run_runs
 from ptsm.application.use_cases.run_playbook import run_fengkuang_playbook
 from ptsm.application.use_cases.xhs_browser import open_xhs_browser
 from ptsm.application.use_cases.xhs_login import (
@@ -70,6 +71,13 @@ def build_parser() -> argparse.ArgumentParser:
     logs = subparsers.add_parser("logs")
     logs.add_argument("--run-id")
     logs.add_argument("--artifact", type=Path)
+
+    runs = subparsers.add_parser("runs")
+    runs.add_argument("--account-id")
+    runs.add_argument("--platform")
+    runs.add_argument("--playbook-id")
+    runs.add_argument("--status")
+    runs.add_argument("--limit", type=int, default=20)
 
     xhs_open_browser = subparsers.add_parser("xhs-open-browser")
     xhs_open_browser.add_argument("--target", choices=["login", "creator", "artifact"], required=True)
@@ -231,6 +239,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         result = run_logs(
             run_id=args.run_id,
             artifact_path=args.artifact,
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "runs":
+        result = run_runs(
+            account_id=args.account_id,
+            platform=args.platform,
+            playbook_id=args.playbook_id,
+            status=args.status,
+            limit=args.limit,
         )
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0

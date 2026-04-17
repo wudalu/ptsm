@@ -47,3 +47,40 @@ def test_run_store_writes_events_and_summary(tmp_path: Path) -> None:
     assert summary["run_id"] == run.run_id
     assert saved_summary["status"] == "completed"
     assert saved_summary["artifact_path"] == "outputs/artifacts/demo.json"
+
+
+def test_run_store_lists_recent_runs_with_filters(tmp_path: Path) -> None:
+    store = RunStore(base_dir=tmp_path)
+
+    skipped = store.start(
+        command="run-fengkuang",
+        account_id="acct-other",
+        platform="xiaohongshu",
+        playbook_id="fengkuang_daily_post",
+    )
+    store.finish(skipped.run_id, status="failed")
+
+    older = store.start(
+        command="run-fengkuang",
+        account_id="acct-fk-local",
+        platform="xiaohongshu",
+        playbook_id="fengkuang_daily_post",
+    )
+    store.finish(older.run_id, status="completed")
+
+    newest = store.start(
+        command="run-fengkuang",
+        account_id="acct-fk-local",
+        platform="xiaohongshu",
+        playbook_id="fengkuang_daily_post",
+    )
+    store.finish(newest.run_id, status="completed")
+
+    result = store.list_runs(
+        account_id="acct-fk-local",
+        platform="xiaohongshu",
+        status="completed",
+        limit=2,
+    )
+
+    assert [item["run_id"] for item in result] == [newest.run_id, older.run_id]

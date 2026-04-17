@@ -25,6 +25,7 @@ related_paths:
 - `uv run python -m ptsm.bootstrap doctor`
 - `uv run python -m ptsm.bootstrap logs --run-id <run_id>`
 - `uv run python -m ptsm.bootstrap logs --artifact outputs/artifacts/<artifact>.json`
+- `uv run python -m ptsm.bootstrap runs --account-id <account_id> --status completed`
 - `uv run python -m ptsm.bootstrap run-fengkuang --scene "..." --account-id acct-fk-local`
 - `uv run python -m ptsm.bootstrap xhs-check-publish --artifact outputs/artifacts/<artifact>.json`
 

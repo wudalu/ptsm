@@ -9,6 +9,7 @@ related_paths:
   - src/ptsm/agent_runtime/graph
   - src/ptsm/agent_runtime/nodes
   - src/ptsm/application/use_cases/run_playbook.py
+  - src/ptsm/application/use_cases/runs.py
   - src/ptsm/infrastructure/memory/store.py
 ---
 
@@ -42,4 +43,5 @@ related_paths:
 - 用例入口: [`src/ptsm/application/use_cases/run_playbook.py`](../src/ptsm/application/use_cases/run_playbook.py)
 - 运行时入口: [`src/ptsm/agent_runtime/runtime.py`](../src/ptsm/agent_runtime/runtime.py)
 - 内存适配: [`src/ptsm/infrastructure/memory/store.py`](../src/ptsm/infrastructure/memory/store.py)
+- 运行查询: [`src/ptsm/application/use_cases/runs.py`](../src/ptsm/application/use_cases/runs.py)
 - 发布后检查: [`src/ptsm/application/use_cases/xhs_publish_status.py`](../src/ptsm/application/use_cases/xhs_publish_status.py)

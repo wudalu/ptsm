@@ -6,8 +6,10 @@ last_verified: 2026-04-17
 source_of_truth: true
 related_paths:
   - README.md
+  - docs/harness-engineering.md
   - docs/plans/2026-03-24-ptsm-agent-platform-rebaseline.md
   - docs/plans/2026-04-17-agent-readable-docs-map.md
+  - docs/plans/2026-04-17-harness-engineering-first-stage.md
   - src/ptsm
 ---
 
@@ -18,11 +20,14 @@ related_paths:
 ## Current Source Of Truth
 
 - 项目基线: [`README.md`](../README.md)
+- harness engineering 对照与落地: [`harness-engineering.md`](harness-engineering.md)
 - 当前平台化实施真源: [`docs/plans/2026-03-24-ptsm-agent-platform-rebaseline.md`](plans/2026-03-24-ptsm-agent-platform-rebaseline.md)
 - 本次文档治理实施计划: [`docs/plans/2026-04-17-agent-readable-docs-map.md`](plans/2026-04-17-agent-readable-docs-map.md)
+- harness engineering 第一阶段计划: [`docs/plans/2026-04-17-harness-engineering-first-stage.md`](plans/2026-04-17-harness-engineering-first-stage.md)
 
 ## Core Maps
 
+- Harness engineering 映射: [`harness-engineering.md`](harness-engineering.md)
 - 架构地图: [`architecture.md`](architecture.md)
 - 运行时地图: [`runtime.md`](runtime.md)
 - Playbook 地图: [`playbooks.md`](playbooks.md)

@@ -136,6 +136,31 @@ class RunStore:
             if line.strip()
         ]
 
+    def list_runs(
+        self,
+        *,
+        account_id: str | None = None,
+        platform: str | None = None,
+        playbook_id: str | None = None,
+        status: str | None = None,
+        limit: int = 20,
+    ) -> list[dict[str, object]]:
+        summaries: list[dict[str, object]] = []
+        for summary_path in self.base_dir.glob("*/summary.json"):
+            summary = json.loads(summary_path.read_text(encoding="utf-8"))
+            if account_id is not None and summary.get("account_id") != account_id:
+                continue
+            if platform is not None and summary.get("platform") != platform:
+                continue
+            if playbook_id is not None and summary.get("playbook_id") != playbook_id:
+                continue
+            if status is not None and summary.get("status") != status:
+                continue
+            summaries.append(summary)
+
+        summaries.sort(key=lambda item: str(item.get("started_at", "")), reverse=True)
+        return summaries[:limit]
+
     def _handle(self, run_id: str) -> RunHandle:
         run_dir = self.base_dir / run_id
         return RunHandle(

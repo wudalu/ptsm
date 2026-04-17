@@ -117,6 +117,30 @@ def test_build_parser_supports_logs() -> None:
     assert args.run_id == "run-123"
 
 
+def test_build_parser_supports_runs() -> None:
+    parser = build_parser()
+
+    args = parser.parse_args(
+        [
+            "runs",
+            "--account-id",
+            "acct-fk-local",
+            "--platform",
+            "xiaohongshu",
+            "--status",
+            "completed",
+            "--limit",
+            "5",
+        ]
+    )
+
+    assert args.command == "runs"
+    assert args.account_id == "acct-fk-local"
+    assert args.platform == "xiaohongshu"
+    assert args.status == "completed"
+    assert args.limit == 5
+
+
 def test_build_parser_supports_xhs_open_browser() -> None:
     parser = build_parser()
 
@@ -220,6 +244,37 @@ def test_main_dispatches_run_plan(monkeypatch, tmp_path: Path, capsys) -> None:
     assert captured["resume"] is True
     assert captured["dry_run"] is True
     assert '"status": "dry-run"' in capsys.readouterr().out
+
+
+def test_main_dispatches_runs(monkeypatch, capsys) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run_runs(**kwargs):
+        captured.update(kwargs)
+        return {"count": 1, "runs": [{"run_id": "run-123"}]}
+
+    monkeypatch.setattr("ptsm.interfaces.cli.main.run_runs", fake_run_runs)
+
+    exit_code = main(
+        [
+            "runs",
+            "--account-id",
+            "acct-fk-local",
+            "--platform",
+            "xiaohongshu",
+            "--status",
+            "completed",
+            "--limit",
+            "5",
+        ]
+    )
+
+    assert exit_code == 0
+    assert captured["account_id"] == "acct-fk-local"
+    assert captured["platform"] == "xiaohongshu"
+    assert captured["status"] == "completed"
+    assert captured["limit"] == 5
+    assert '"run_id": "run-123"' in capsys.readouterr().out
 
 
 def test_main_dispatches_xhs_login_qrcode(monkeypatch, tmp_path: Path, capsys) -> None:
