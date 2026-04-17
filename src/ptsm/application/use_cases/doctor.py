@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from ptsm.config.settings import Settings, get_settings
+from ptsm.application.use_cases.harness_gc import inspect_harness_state
 from ptsm.infrastructure.publishers.xiaohongshu_mcp_publisher import XiaohongshuMcpPublisher
 
 
@@ -11,6 +12,8 @@ def run_doctor(
     *,
     settings: Settings | None = None,
     publisher: XiaohongshuMcpPublisher | None = None,
+    project_root: Path | str = ".",
+    now=None,
 ) -> dict[str, object]:
     """Collect local environment and MCP readiness checks."""
     settings = settings or get_settings()
@@ -55,10 +58,16 @@ def run_doctor(
             }
         )
 
+    harness_state = inspect_harness_state(
+        project_root=project_root,
+        now=now,
+    )
+    checks.extend(harness_state["checks"])
+
     overall_status = "ok"
     if any(check["status"] == "error" for check in checks):
         overall_status = "error"
-    elif any(check["status"] == "missing" for check in checks):
+    elif any(check["status"] in {"missing", "warning"} for check in checks):
         overall_status = "warning"
 
     return {

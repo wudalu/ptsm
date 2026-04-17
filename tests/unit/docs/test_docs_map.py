@@ -34,6 +34,7 @@ def test_operations_doc_mentions_plan_runs_command() -> None:
     doc_text = (DOCS_ROOT / "operations.md").read_text(encoding="utf-8")
 
     assert "plan-runs" in doc_text
+    assert "gc" in doc_text
 
 
 def test_docs_index_links_core_maps() -> None:

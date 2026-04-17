@@ -35,10 +35,10 @@ repository.
 - queryable run summaries and run events
 - verification evidence artifacts for `run-plan` verify loops
 - normalized plan-run failure reasons and evidence query CLI
+- drift checks and safe garbage collection for stale harness artifacts
 
 ## What We Should Build Next
 
-- drift and garbage-collection checks for stale runtime/doc surfaces
 - traces and metrics if local file observability stops being enough
 
 ## What We Should Not Copy Blindly

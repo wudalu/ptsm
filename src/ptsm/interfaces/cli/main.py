@@ -9,6 +9,7 @@ import uuid
 
 from ptsm.application.models import FengkuangRequest
 from ptsm.application.use_cases.doctor import run_doctor
+from ptsm.application.use_cases.harness_gc import run_harness_gc
 from ptsm.application.use_cases.logs import run_logs
 from ptsm.application.use_cases.plan_runs import run_plan_runs
 from ptsm.application.use_cases.run_events import run_run_events
@@ -69,6 +70,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     doctor = subparsers.add_parser("doctor")
     doctor.add_argument("--server-url")
+
+    gc = subparsers.add_parser("gc")
+    gc.add_argument("--apply", action="store_true")
+    gc.add_argument("--runs-retention-days", type=int, default=30)
+    gc.add_argument("--plan-runs-retention-days", type=int, default=30)
 
     logs = subparsers.add_parser("logs")
     logs.add_argument("--run-id")
@@ -250,6 +256,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "doctor":
         result = run_doctor(
             settings=build_login_settings(server_url=args.server_url),
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "gc":
+        result = run_harness_gc(
+            apply=args.apply,
+            runs_retention_days=args.runs_retention_days,
+            plan_runs_retention_days=args.plan_runs_retention_days,
         )
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0

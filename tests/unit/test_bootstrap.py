@@ -198,6 +198,26 @@ def test_build_parser_supports_plan_runs() -> None:
     assert args.limit == 5
 
 
+def test_build_parser_supports_gc() -> None:
+    parser = build_parser()
+
+    args = parser.parse_args(
+        [
+            "gc",
+            "--apply",
+            "--runs-retention-days",
+            "14",
+            "--plan-runs-retention-days",
+            "7",
+        ]
+    )
+
+    assert args.command == "gc"
+    assert args.apply is True
+    assert args.runs_retention_days == 14
+    assert args.plan_runs_retention_days == 7
+
+
 def test_build_parser_supports_xhs_open_browser() -> None:
     parser = build_parser()
 
@@ -414,6 +434,36 @@ def test_main_dispatches_plan_runs(monkeypatch, capsys) -> None:
     assert captured["plan_path"] == "demo"
     assert captured["limit"] == 5
     assert ".evidence.json" in capsys.readouterr().out
+
+
+def test_main_dispatches_gc(monkeypatch, capsys) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run_harness_gc(**kwargs):
+        captured.update(kwargs)
+        return {"status": "applied", "removed_count": 1, "candidates": []}
+
+    monkeypatch.setattr(
+        "ptsm.interfaces.cli.main.run_harness_gc",
+        fake_run_harness_gc,
+    )
+
+    exit_code = main(
+        [
+            "gc",
+            "--apply",
+            "--runs-retention-days",
+            "14",
+            "--plan-runs-retention-days",
+            "7",
+        ]
+    )
+
+    assert exit_code == 0
+    assert captured["apply"] is True
+    assert captured["runs_retention_days"] == 14
+    assert captured["plan_runs_retention_days"] == 7
+    assert '"removed_count": 1' in capsys.readouterr().out
 
 
 def test_main_dispatches_xhs_login_qrcode(monkeypatch, tmp_path: Path, capsys) -> None:
