@@ -62,6 +62,21 @@ class SuccessfulPublisher:
         }
 
 
+class CountingPublisher:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def publish(self, **kwargs: object) -> dict[str, object]:
+        self.calls += 1
+        return {
+            "status": "published",
+            "platform": "xiaohongshu",
+            "provider": "xiaohongshu_mcp",
+            "artifact_path": kwargs["artifact_path"],
+            "post_id": "post-123",
+        }
+
+
 class PreflightFailingPublisher:
     def publish(self, **_: object) -> dict[str, object]:
         raise PublisherPreflightError(
@@ -165,6 +180,103 @@ def test_run_fengkuang_playbook_returns_run_metadata(
     assert Path(result["run"]["run_dir"]).exists()
     assert Path(result["run"]["events_path"]).exists()
     assert Path(result["run"]["summary_path"]).exists()
+
+
+def test_run_fengkuang_playbook_reuses_successful_publish_result_for_same_thread(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    artifact_path = tmp_path / "artifact.json"
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "fengkuang_daily_post",
+                "final_content": {"title": "旧标题"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_fengkuang_workflow",
+        lambda **_: FakeWorkflow(artifact_path),
+    )
+    publisher = CountingPublisher()
+
+    first = run_fengkuang_playbook(
+        FengkuangRequest(
+            scene="周二下午会议接会议",
+            platform="xiaohongshu",
+            account_id="acct-fk-local",
+        ),
+        thread_id="thread-ledger-001",
+        publisher=publisher,
+        run_store=RunStore(base_dir=tmp_path / "runs"),
+    )
+    second = run_fengkuang_playbook(
+        FengkuangRequest(
+            scene="周二下午会议接会议",
+            platform="xiaohongshu",
+            account_id="acct-fk-local",
+        ),
+        thread_id="thread-ledger-001",
+        publisher=publisher,
+        run_store=RunStore(base_dir=tmp_path / "runs"),
+    )
+
+    assert publisher.calls == 1
+    assert first["publish_result"] == second["publish_result"]
+    assert (tmp_path / ".ptsm" / "agent_runtime" / "side-effects.json").exists()
+
+
+def test_run_fengkuang_playbook_does_not_reuse_failed_publish_result(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    artifact_path = tmp_path / "artifact.json"
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "fengkuang_daily_post",
+                "final_content": {"title": "旧标题"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_fengkuang_workflow",
+        lambda **_: FakeWorkflow(artifact_path),
+    )
+
+    first = run_fengkuang_playbook(
+        FengkuangRequest(
+            scene="周三工位发呆",
+            platform="xiaohongshu",
+            account_id="acct-fk-local",
+        ),
+        thread_id="thread-ledger-002",
+        publisher=FailingPublisher(),
+        run_store=RunStore(base_dir=tmp_path / "runs"),
+    )
+
+    succeeding = CountingPublisher()
+    second = run_fengkuang_playbook(
+        FengkuangRequest(
+            scene="周三工位发呆",
+            platform="xiaohongshu",
+            account_id="acct-fk-local",
+        ),
+        thread_id="thread-ledger-002",
+        publisher=succeeding,
+        run_store=RunStore(base_dir=tmp_path / "runs"),
+    )
+
+    assert first["publish_result"]["status"] == "error"
+    assert succeeding.calls == 1
+    assert second["publish_result"]["status"] == "published"
 
 
 def test_run_fengkuang_playbook_uses_durable_runtime_state_by_default(

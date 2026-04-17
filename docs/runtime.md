@@ -2,7 +2,7 @@
 title: PTSM Runtime
 status: active
 owner: ptsm
-last_verified: 2026-04-17
+last_verified: 2026-04-18
 source_of_truth: true
 related_paths:
   - src/ptsm/agent_runtime/runtime.py
@@ -31,13 +31,16 @@ related_paths:
 - 当前兼容入口仍是 `build_fengkuang_workflow()`。
 - 运行结果会落到 artifact，并写入本地 run store。
 - `run_playbook()` 默认会在 `.ptsm/agent_runtime/` 下创建持久 execution memory 和 checkpoint。
+- `run_playbook()` 现在也会在 `.ptsm/agent_runtime/side-effects.json` 下记录成功副作用结果，用于同一 `thread_id` 的安全重放。
 - 显式注入依赖时，运行时仍兼容 `InMemoryExecutionMemory` 和 `InMemorySaver`。
 - 持久 checkpoint 以 `thread_id` 为键保存；复用同一个 `thread_id` 才能跨进程读取同一条执行线程。
+- 当前 side-effect ledger 只复用成功 publish 结果，不缓存失败 publish 或只读状态检查。
 
 ## Practical Implications
 
 - lessons memory 现在可以跨 CLI 调用保留，不再只活在单进程里。
 - graph checkpoint 现在可跨进程保留，用于后续调试、回读和 thread 续跑。
+- publish side effects 现在可按 `thread_id` 去重，避免 resume 或重复调用时再次执行成功 publish。
 - 当前仍没有更高阶的 cross-thread lookup、状态压缩或远端 state backend。
 
 ## Operator Entry Points

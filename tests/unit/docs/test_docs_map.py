@@ -28,6 +28,7 @@ def test_task_completion_automation_mentions_verification_evidence() -> None:
 
     assert ".evidence.json" in doc_text
     assert "attempt history" in doc_text
+    assert "side-effects.json" in doc_text
 
 
 def test_operations_doc_mentions_plan_runs_command() -> None:

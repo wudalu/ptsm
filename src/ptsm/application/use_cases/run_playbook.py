@@ -9,6 +9,7 @@ from ptsm.agent_runtime.runtime import (
     build_file_backed_runtime_state,
 )
 from ptsm.application.models import FengkuangRequest, PlaybookRequest
+from ptsm.application.services.side_effect_ledger import SideEffectLedger
 from ptsm.application.use_cases.xhs_login import (
     DEFAULT_XHS_LOGIN_QRCODE_PATH,
     build_xhs_login_instructions,
@@ -27,6 +28,7 @@ from ptsm.playbooks.registry import PlaybookRegistry
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[2]
 PLAYBOOK_ROOT = PACKAGE_ROOT / "playbooks" / "definitions"
+DEFAULT_SIDE_EFFECT_LEDGER_PATH = Path(".ptsm") / "agent_runtime" / "side-effects.json"
 
 
 def run_playbook(
@@ -40,6 +42,7 @@ def run_playbook(
     playbooks: PlaybookRegistry | None = None,
     publisher: Publisher | None = None,
     run_store: RunStore | None = None,
+    side_effect_ledger: SideEffectLedger | None = None,
     command_name: str = "run-playbook",
 ) -> dict[str, Any]:
     """Execute the selected playbook workflow and prepare a publish receipt."""
@@ -52,6 +55,9 @@ def run_playbook(
     accounts = accounts or AccountRegistry()
     playbooks = playbooks or PlaybookRegistry(playbook_root=PLAYBOOK_ROOT)
     run_store = run_store or RunStore()
+    side_effect_ledger = side_effect_ledger or SideEffectLedger(
+        path=Path.cwd() / DEFAULT_SIDE_EFFECT_LEDGER_PATH
+    )
     artifact_store = FileArtifactStore()
     account = accounts.get(request.account_id)
     resolved_platform = request.platform or account.platform
@@ -157,43 +163,66 @@ def run_playbook(
 
     publish_result = None
     if result["status"] == "completed":
-        try:
-            publish_result = publisher.publish(
-                account=account,
-                content=result["final_content"],
-                artifact_path=result["artifact_path"],
-                image_paths=request.publish_image_paths,
-                visibility=request.publish_visibility or settings.xhs_default_visibility,
-            )
-        except PublisherPreflightError as exc:
-            preflight = materialize_xhs_login_qrcode(
-                exc.preflight,
-                output_path=qrcode_output_path,
-            )
-            publish_result = {
-                **_build_login_required_result(
-                    account_id=account.account_id,
-                    account_nickname=account.nickname,
-                    platform=account.platform,
-                    provider=getattr(publisher, "provider_name", publisher.__class__.__name__),
-                    preflight=preflight,
-                    request=request,
-                    command_name=command_name,
-                    resolved_platform=resolved_platform,
-                ),
-                "artifact_path": result["artifact_path"],
-                "error": str(exc),
-            }
-        except Exception as exc:
-            publish_result = {
-                "status": "error",
-                "platform": account.platform,
-                "provider": getattr(publisher, "provider_name", publisher.__class__.__name__),
-                "account_id": account.account_id,
-                "account_nickname": account.nickname,
-                "artifact_path": result["artifact_path"],
-                "error": str(exc),
-            }
+        publish_idempotency_key = _build_publish_idempotency_key(
+            account_id=account.account_id,
+            playbook_id=playbook.playbook_id,
+            publish_mode=publish_mode,
+            artifact_path=str(result["artifact_path"]),
+            image_paths=request.publish_image_paths,
+            visibility=request.publish_visibility or settings.xhs_default_visibility,
+        )
+        cached_publish_result = side_effect_ledger.read(
+            thread_id=effective_thread_id,
+            step="publish",
+            idempotency_key=publish_idempotency_key,
+        )
+        if cached_publish_result is not None:
+            publish_result = cached_publish_result
+        else:
+            try:
+                publish_result = publisher.publish(
+                    account=account,
+                    content=result["final_content"],
+                    artifact_path=result["artifact_path"],
+                    image_paths=request.publish_image_paths,
+                    visibility=request.publish_visibility or settings.xhs_default_visibility,
+                )
+            except PublisherPreflightError as exc:
+                preflight = materialize_xhs_login_qrcode(
+                    exc.preflight,
+                    output_path=qrcode_output_path,
+                )
+                publish_result = {
+                    **_build_login_required_result(
+                        account_id=account.account_id,
+                        account_nickname=account.nickname,
+                        platform=account.platform,
+                        provider=getattr(publisher, "provider_name", publisher.__class__.__name__),
+                        preflight=preflight,
+                        request=request,
+                        command_name=command_name,
+                        resolved_platform=resolved_platform,
+                    ),
+                    "artifact_path": result["artifact_path"],
+                    "error": str(exc),
+                }
+            except Exception as exc:
+                publish_result = {
+                    "status": "error",
+                    "platform": account.platform,
+                    "provider": getattr(publisher, "provider_name", publisher.__class__.__name__),
+                    "account_id": account.account_id,
+                    "account_nickname": account.nickname,
+                    "artifact_path": result["artifact_path"],
+                    "error": str(exc),
+                }
+            if _should_record_publish_result(publish_result):
+                side_effect_ledger.record(
+                    thread_id=effective_thread_id,
+                    step="publish",
+                    idempotency_key=publish_idempotency_key,
+                    result=publish_result,
+                )
         artifact_store.merge(
             result["artifact_path"],
             {
@@ -273,6 +302,7 @@ def run_fengkuang_playbook(
     accounts: AccountRegistry | None = None,
     publisher: Publisher | None = None,
     run_store: RunStore | None = None,
+    side_effect_ledger: SideEffectLedger | None = None,
 ) -> dict[str, Any]:
     return run_playbook(
         request,
@@ -283,6 +313,7 @@ def run_fengkuang_playbook(
         accounts=accounts,
         publisher=publisher,
         run_store=run_store,
+        side_effect_ledger=side_effect_ledger,
         command_name="run-fengkuang",
     )
 
@@ -352,3 +383,30 @@ def _build_rerun_command(
         f"ptsm run-playbook --account-id {request.account_id} "
         f"--scene '{request.scene}' --publish-mode mcp-real"
     )
+
+
+def _build_publish_idempotency_key(
+    *,
+    account_id: str,
+    playbook_id: str,
+    publish_mode: str,
+    artifact_path: str,
+    image_paths: list[str],
+    visibility: str | None,
+) -> str:
+    return "|".join(
+        [
+            account_id,
+            playbook_id,
+            publish_mode,
+            artifact_path,
+            ",".join(image_paths),
+            visibility or "",
+        ]
+    )
+
+
+def _should_record_publish_result(result: dict[str, Any] | None) -> bool:
+    if not isinstance(result, dict):
+        return False
+    return result.get("status") not in {"error", "login_required", None}

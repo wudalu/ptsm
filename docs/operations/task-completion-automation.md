@@ -272,4 +272,19 @@ uv run python -m ptsm.bootstrap run-plan \
 - `state` 负责 resume
 - `evidence` 负责审计和回看
 
+对 playbook runtime 来说，现在还有第三类持久状态：
+
+- side effects: `.ptsm/agent_runtime/side-effects.json`
+
+这份 ledger 负责记录已经成功落地的副作用结果，当前主要用于：
+
+- 同一 `thread_id` 下避免重复 publish
+- 让 resume / rerun 先读 ledger，再决定是否真的再次执行副作用
+
+边界也要明确：
+
+- `state` 不是副作用 ledger
+- `evidence` 不是 resume source of truth
+- `side-effects` 不缓存失败 publish，也不缓存只读状态检查
+
 如果任务第一次 verify 失败、第二次修好，最终 evidence 里会同时保留失败和成功两次记录，不会只剩最后一次覆盖结果。

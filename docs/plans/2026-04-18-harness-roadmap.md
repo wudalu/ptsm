@@ -94,6 +94,8 @@ Expected: PASS.
 
 **Outcome:** Make resume safer for side-effecting workflows.
 
+**Status:** Implemented on branch `harness-roadmap` with a file-backed side-effect ledger for successful publish reuse on the same `thread_id`.
+
 **Files:**
 - Create: `src/ptsm/application/services/side_effect_ledger.py`
 - Modify: `src/ptsm/application/use_cases/run_playbook.py`

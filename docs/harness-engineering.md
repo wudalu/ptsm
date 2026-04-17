@@ -37,6 +37,7 @@ repository.
 - normalized plan-run failure reasons and evidence query CLI
 - drift checks and safe garbage collection for stale harness artifacts
 - local harness eval summaries over runs, events, and plan-run evidence
+- side-effect ledger for safe publish replay on the same `thread_id`
 
 ## What We Should Build Next
 
