@@ -45,6 +45,29 @@ PTSM 当前不是“多领域平台已全部完成”的状态，而是一个已
 - 让 playbook 和 skill 真正 request-scoped，而不是硬编码约定。
 - 把内存态执行状态升级成可恢复的本地系统能力。
 
+## Dependency Direction
+
+当前代码基线下，稳定且已经成立的 dependency direction 规则如下：
+
+- `interfaces`
+  只负责入口和分发，可以依赖 `application`、`config`、`plan_runner`，不应直接依赖 `infrastructure` 或 `agent_runtime`。
+- `application`
+  负责用例编排，可以依赖 `agent_runtime`、`accounts`、`playbooks`、`config`、`infrastructure`。
+- `agent_runtime`
+  负责图执行和节点逻辑，可以依赖 `config`、`infrastructure`、`playbooks`、`skills`，不应依赖 `interfaces` 或 `application.use_cases`。
+- `infrastructure`
+  负责外部适配和持久化，不应依赖 `application`、`interfaces` 或 `agent_runtime`。
+- `playbooks`
+  负责定义和加载，不应依赖 `application`、`interfaces` 或 `agent_runtime`。
+- `skills`
+  负责 skill metadata、selection 和 loading，不应依赖 `application`、`interfaces` 或 `agent_runtime`。
+
+这些规则会通过 mechanical enforcement 落到结构测试里，而不是只停留在文档说明层。
+
+当前结构测试位置：
+
+- `tests/unit/architecture/`
+
 ## Related Maps
 
 - 运行时细节见 [`runtime.md`](runtime.md)
