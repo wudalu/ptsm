@@ -2,7 +2,7 @@
 title: Harness Engineering In PTSM
 status: active
 owner: ptsm
-last_verified: 2026-04-17
+last_verified: 2026-04-18
 source_of_truth: true
 related_paths:
   - README.md
@@ -33,11 +33,11 @@ repository.
 - mechanical architecture checks for import boundaries
 - durable local runtime memory and checkpoints
 - queryable run summaries and run events
+- verification evidence artifacts for `run-plan` verify loops
 
 ## What We Should Build Next
 
 - richer event semantics and failure reason normalization
-- stronger evidence artifacts for verify loops
 - drift and garbage-collection checks for stale runtime/doc surfaces
 - traces and metrics if local file observability stops being enough
 

@@ -13,8 +13,18 @@ def test_run_plan_cli_allows_non_git_directories(monkeypatch, tmp_path: Path) ->
     captured: dict[str, object] = {}
 
     class DummyResult:
+        def __init__(self, state_path: Path | None) -> None:
+            self.state_path = state_path
+
         def to_dict(self) -> dict[str, object]:
-            return {"status": "dry-run"}
+            return {
+                "status": "dry-run",
+                "verification_artifact_path": (
+                    str(self.state_path.with_suffix(".evidence.json"))
+                    if self.state_path is not None
+                    else None
+                ),
+            }
 
     class DummyRunner:
         def __init__(self, *, codex_exec, verify_exec) -> None:
@@ -23,7 +33,7 @@ def test_run_plan_cli_allows_non_git_directories(monkeypatch, tmp_path: Path) ->
 
         def run(self, **kwargs):
             captured.update(kwargs)
-            return DummyResult()
+            return DummyResult(kwargs.get("state_path"))
 
     def fake_run_subprocess_command(command: list[str]) -> CommandResult:
         captured["command"] = command
@@ -63,6 +73,44 @@ def test_run_plan_cli_allows_non_git_directories(monkeypatch, tmp_path: Path) ->
         "workspace-write",
         "implement task",
     ]
+
+
+def test_run_plan_cli_returns_verification_artifact_path(
+    monkeypatch, tmp_path: Path
+) -> None:
+    plan_path = tmp_path / "plan.md"
+    plan_path.write_text("# Demo\n\n### Task 1: Parser\n\n- create parser\n", encoding="utf-8")
+    state_path = tmp_path / "state.json"
+
+    class DummyResult:
+        def to_dict(self) -> dict[str, object]:
+            return {
+                "status": "completed",
+                "verification_artifact_path": str(
+                    state_path.with_suffix(".evidence.json")
+                ),
+            }
+
+    class DummyRunner:
+        def __init__(self, *, codex_exec, verify_exec) -> None:
+            pass
+
+        def run(self, **kwargs):
+            return DummyResult()
+
+    monkeypatch.setattr("ptsm.interfaces.cli.main.PlanRunner", DummyRunner)
+
+    result = run_plan_cli(
+        plan_path=plan_path,
+        verify_commands=["uv run pytest -q"],
+        max_attempts=3,
+        dry_run=False,
+        state_path=state_path,
+    )
+
+    assert result["verification_artifact_path"] == str(
+        state_path.with_suffix(".evidence.json")
+    )
 
 
 def test_build_default_state_path_uses_plan_runs_directory(monkeypatch, tmp_path: Path) -> None:

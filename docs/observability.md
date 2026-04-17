@@ -2,15 +2,17 @@
 title: PTSM Observability
 status: active
 owner: ptsm
-last_verified: 2026-04-17
+last_verified: 2026-04-18
 source_of_truth: true
 related_paths:
   - src/ptsm/infrastructure/observability/run_store.py
   - src/ptsm/application/use_cases/logs.py
   - src/ptsm/application/use_cases/run_events.py
   - src/ptsm/application/use_cases/runs.py
+  - src/ptsm/plan_runner/runner.py
   - outputs/artifacts
   - .ptsm/runs
+  - .ptsm/plan_runs
 ---
 
 # Observability
@@ -21,6 +23,8 @@ PTSM 当前的观测性核心是本地文件系统里的 run store 和 artifacts
 
 - `.ptsm/runs/<run_id>/summary.json`
 - `.ptsm/runs/<run_id>/events.jsonl`
+- `.ptsm/plan_runs/<run_id>.json`
+- `.ptsm/plan_runs/<run_id>.evidence.json`
 - `outputs/artifacts/*.json`
 
 ## Current Capabilities
@@ -31,6 +35,7 @@ PTSM 当前的观测性核心是本地文件系统里的 run store 和 artifacts
 - `run_logs()` 支持按 `run_id` 或 artifact 反查运行记录。
 - `RunStore.list_runs()` 和 `ptsm runs` 支持按账号、平台、playbook、状态筛选最近运行。
 - `RunStore.list_events()`、`RunStore.aggregate_events()` 和 `ptsm run-events` 支持按 run 维度和 event 维度过滤最近事件，并做轻量聚合。
+- `run-plan` 现在会把 verify 命令的 attempt history 和 stdout/stderr 落成 sibling evidence artifact，便于审计和 resume 后回看。
 
 ## Current Limits
 
@@ -42,6 +47,7 @@ PTSM 当前的观测性核心是本地文件系统里的 run store 和 artifacts
 ## Related Entry Points
 
 - 存储实现: [`src/ptsm/infrastructure/observability/run_store.py`](../src/ptsm/infrastructure/observability/run_store.py)
+- plan-runner evidence: [`src/ptsm/plan_runner/runner.py`](../src/ptsm/plan_runner/runner.py)
 - 日志读取: [`src/ptsm/application/use_cases/logs.py`](../src/ptsm/application/use_cases/logs.py)
 - 事件查询: [`src/ptsm/application/use_cases/run_events.py`](../src/ptsm/application/use_cases/run_events.py)
 - 运行查询: [`src/ptsm/application/use_cases/runs.py`](../src/ptsm/application/use_cases/runs.py)

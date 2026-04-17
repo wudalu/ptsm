@@ -252,3 +252,24 @@ uv run python -m ptsm.bootstrap run-plan \
 一句话总结：
 
 任务完成后的自动触发，不要靠“完成后记得跑一下”，而要靠“任务定义里已经写死 verify 命令”。
+
+## Verification Evidence Artifact
+
+从现在开始，`ptsm run-plan` 在有 `state_path` 时，会额外写一个同目录 sibling artifact：
+
+- state: `.ptsm/plan_runs/<run>.json`
+- evidence: `.ptsm/plan_runs/<run>.evidence.json`
+
+这个 evidence 文件会保留：
+
+- 每个 task 的 attempt history
+- 每条 verify 命令的 exit code
+- verify 的 stdout / stderr
+- 命令开始和结束时间，以及持续时长
+
+这意味着：
+
+- `state` 负责 resume
+- `evidence` 负责审计和回看
+
+如果任务第一次 verify 失败、第二次修好，最终 evidence 里会同时保留失败和成功两次记录，不会只剩最后一次覆盖结果。

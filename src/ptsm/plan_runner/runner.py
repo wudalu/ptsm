@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 import subprocess
+import time
 from typing import Callable, Sequence
 
 from ptsm.plan_runner.parser import PlanTask
@@ -14,6 +16,9 @@ class CommandResult:
     exit_code: int
     stdout: str
     stderr: str
+    started_at: str | None = None
+    finished_at: str | None = None
+    duration_ms: int | None = None
 
 
 @dataclass(frozen=True)
@@ -29,6 +34,9 @@ class VerificationRecord:
     exit_code: int
     stdout: str
     stderr: str
+    started_at: str | None = None
+    finished_at: str | None = None
+    duration_ms: int | None = None
 
 
 @dataclass(frozen=True)
@@ -45,6 +53,7 @@ class PlanRunResult:
     plan_path: str
     dry_run: bool
     state_path: str | None
+    verification_artifact_path: str | None
     verify_commands: list[str]
     task_results: list[TaskRunResult]
 
@@ -86,6 +95,11 @@ class PlanRunner:
         normalized_plan_path = str(plan_path)
         normalized_verify_commands = list(verify_commands)
         normalized_state_path = Path(state_path) if state_path is not None else None
+        verification_artifact_path = (
+            _build_verification_artifact_path(normalized_state_path)
+            if normalized_state_path is not None
+            else None
+        )
         if resume and normalized_state_path is None:
             raise ValueError("resume requires state_path")
         persisted_state = (
@@ -99,6 +113,11 @@ class PlanRunner:
                 plan_path=normalized_plan_path,
                 dry_run=True,
                 state_path=str(normalized_state_path) if normalized_state_path is not None else None,
+                verification_artifact_path=(
+                    str(verification_artifact_path)
+                    if verification_artifact_path is not None
+                    else None
+                ),
                 verify_commands=normalized_verify_commands,
                 task_results=_build_task_results(tasks, task_state_map),
             )
@@ -107,8 +126,18 @@ class PlanRunner:
                     normalized_state_path,
                     plan_path=normalized_plan_path,
                     status=result.status,
+                    verification_artifact_path=str(verification_artifact_path),
                     verify_commands=normalized_verify_commands,
                     max_attempts=max_attempts,
+                    tasks=tasks,
+                    task_state_map=task_state_map,
+                )
+                _write_verification_artifact(
+                    verification_artifact_path,
+                    plan_path=normalized_plan_path,
+                    state_path=normalized_state_path,
+                    status=result.status,
+                    verify_commands=normalized_verify_commands,
                     tasks=tasks,
                     task_state_map=task_state_map,
                 )
@@ -119,8 +148,18 @@ class PlanRunner:
                 normalized_state_path,
                 plan_path=normalized_plan_path,
                 status="in_progress",
+                verification_artifact_path=str(verification_artifact_path),
                 verify_commands=normalized_verify_commands,
                 max_attempts=max_attempts,
+                tasks=tasks,
+                task_state_map=task_state_map,
+            )
+            _write_verification_artifact(
+                verification_artifact_path,
+                plan_path=normalized_plan_path,
+                state_path=normalized_state_path,
+                status="in_progress",
+                verify_commands=normalized_verify_commands,
                 tasks=tasks,
                 task_state_map=task_state_map,
             )
@@ -155,6 +194,15 @@ class PlanRunner:
                         "Codex execution failed",
                         codex_result,
                     )
+                    _append_attempt_history(
+                        task_state,
+                        attempt=attempt,
+                        status="failed",
+                        failure_stage="codex",
+                        failure_summary=last_failure,
+                        codex_result=codex_result,
+                        verification_records=[],
+                    )
                     task_state.update(
                         status="failed" if attempt == effective_max_attempts else "pending",
                         attempts=attempt,
@@ -166,8 +214,18 @@ class PlanRunner:
                             normalized_state_path,
                             plan_path=normalized_plan_path,
                             status="failed" if attempt == effective_max_attempts else "in_progress",
+                            verification_artifact_path=str(verification_artifact_path),
                             verify_commands=normalized_verify_commands,
                             max_attempts=max_attempts,
+                            tasks=tasks,
+                            task_state_map=task_state_map,
+                        )
+                        _write_verification_artifact(
+                            verification_artifact_path,
+                            plan_path=normalized_plan_path,
+                            state_path=normalized_state_path,
+                            status="failed" if attempt == effective_max_attempts else "in_progress",
+                            verify_commands=normalized_verify_commands,
                             tasks=tasks,
                             task_state_map=task_state_map,
                         )
@@ -187,6 +245,9 @@ class PlanRunner:
                         exit_code=verification_result.exit_code,
                         stdout=verification_result.stdout,
                         stderr=verification_result.stderr,
+                        started_at=verification_result.started_at,
+                        finished_at=verification_result.finished_at,
+                        duration_ms=verification_result.duration_ms,
                     )
                     verification_records.append(record)
                     if verification_result.exit_code != 0:
@@ -194,6 +255,15 @@ class PlanRunner:
                         break
 
                 if failed_verification is None:
+                    _append_attempt_history(
+                        task_state,
+                        attempt=attempt,
+                        status="passed",
+                        failure_stage=None,
+                        failure_summary="",
+                        codex_result=codex_result,
+                        verification_records=verification_records,
+                    )
                     task_state.update(
                         status="passed",
                         attempts=attempt,
@@ -207,14 +277,33 @@ class PlanRunner:
                             normalized_state_path,
                             plan_path=normalized_plan_path,
                             status="in_progress",
+                            verification_artifact_path=str(verification_artifact_path),
                             verify_commands=normalized_verify_commands,
                             max_attempts=max_attempts,
+                            tasks=tasks,
+                            task_state_map=task_state_map,
+                        )
+                        _write_verification_artifact(
+                            verification_artifact_path,
+                            plan_path=normalized_plan_path,
+                            state_path=normalized_state_path,
+                            status="in_progress",
+                            verify_commands=normalized_verify_commands,
                             tasks=tasks,
                             task_state_map=task_state_map,
                         )
                     break
 
                 last_failure = _format_verification_failure(failed_verification)
+                _append_attempt_history(
+                    task_state,
+                    attempt=attempt,
+                    status="failed",
+                    failure_stage="verification",
+                    failure_summary=last_failure,
+                    codex_result=codex_result,
+                    verification_records=verification_records,
+                )
                 task_state.update(
                     status="failed" if attempt == effective_max_attempts else "pending",
                     attempts=attempt,
@@ -228,8 +317,18 @@ class PlanRunner:
                         normalized_state_path,
                         plan_path=normalized_plan_path,
                         status="failed" if attempt == effective_max_attempts else "in_progress",
+                        verification_artifact_path=str(verification_artifact_path),
                         verify_commands=normalized_verify_commands,
                         max_attempts=max_attempts,
+                        tasks=tasks,
+                        task_state_map=task_state_map,
+                    )
+                    _write_verification_artifact(
+                        verification_artifact_path,
+                        plan_path=normalized_plan_path,
+                        state_path=normalized_state_path,
+                        status="failed" if attempt == effective_max_attempts else "in_progress",
+                        verify_commands=normalized_verify_commands,
                         tasks=tasks,
                         task_state_map=task_state_map,
                     )
@@ -245,6 +344,11 @@ class PlanRunner:
             plan_path=normalized_plan_path,
             dry_run=False,
             state_path=str(normalized_state_path) if normalized_state_path is not None else None,
+            verification_artifact_path=(
+                str(verification_artifact_path)
+                if verification_artifact_path is not None
+                else None
+            ),
             verify_commands=normalized_verify_commands,
             task_results=_build_task_results(tasks, task_state_map),
         )
@@ -253,8 +357,18 @@ class PlanRunner:
                 normalized_state_path,
                 plan_path=normalized_plan_path,
                 status=result.status,
+                verification_artifact_path=str(verification_artifact_path),
                 verify_commands=normalized_verify_commands,
                 max_attempts=max_attempts,
+                tasks=tasks,
+                task_state_map=task_state_map,
+            )
+            _write_verification_artifact(
+                verification_artifact_path,
+                plan_path=normalized_plan_path,
+                state_path=normalized_state_path,
+                status=result.status,
+                verify_commands=normalized_verify_commands,
                 tasks=tasks,
                 task_state_map=task_state_map,
             )
@@ -309,6 +423,8 @@ def _format_verification_failure(record: VerificationRecord) -> str:
 
 
 def run_subprocess_command(command: Sequence[str]) -> CommandResult:
+    started_at = _timestamp()
+    started = time.perf_counter()
     completed = subprocess.run(
         list(command),
         check=False,
@@ -319,10 +435,15 @@ def run_subprocess_command(command: Sequence[str]) -> CommandResult:
         exit_code=completed.returncode,
         stdout=completed.stdout,
         stderr=completed.stderr,
+        started_at=started_at,
+        finished_at=_timestamp(),
+        duration_ms=round((time.perf_counter() - started) * 1000),
     )
 
 
 def run_shell_command(command: str) -> CommandResult:
+    started_at = _timestamp()
+    started = time.perf_counter()
     completed = subprocess.run(
         command,
         check=False,
@@ -335,6 +456,9 @@ def run_shell_command(command: str) -> CommandResult:
         exit_code=completed.returncode,
         stdout=completed.stdout,
         stderr=completed.stderr,
+        started_at=started_at,
+        finished_at=_timestamp(),
+        duration_ms=round((time.perf_counter() - started) * 1000),
     )
 
 
@@ -347,6 +471,7 @@ def _write_state(
     *,
     plan_path: str,
     status: str,
+    verification_artifact_path: str | None,
     verify_commands: list[str],
     max_attempts: int,
     tasks: Sequence[PlanTask],
@@ -356,6 +481,7 @@ def _write_state(
     payload = {
         "plan_path": plan_path,
         "status": status,
+        "verification_artifact_path": verification_artifact_path,
         "verify_commands": verify_commands,
         "max_attempts": max_attempts,
         "tasks": [task_state_map[task.title] for task in tasks],
@@ -374,6 +500,7 @@ def _build_task_state_map(
             "attempts": 0,
             "last_failure": "",
             "verification_records": [],
+            "attempt_history": [],
         }
         for task in tasks
     }
@@ -394,6 +521,7 @@ def _build_task_state_map(
             "attempts": int(item.get("attempts", 0)),
             "last_failure": str(item.get("last_failure", "")),
             "verification_records": list(item.get("verification_records", [])),
+            "attempt_history": list(item.get("attempt_history", [])),
         }
     return state_map
 
@@ -422,3 +550,71 @@ def _build_task_results(
             )
         )
     return results
+
+
+def _append_attempt_history(
+    task_state: dict[str, object],
+    *,
+    attempt: int,
+    status: str,
+    failure_stage: str | None,
+    failure_summary: str,
+    codex_result: CommandResult,
+    verification_records: list[VerificationRecord],
+) -> None:
+    history = list(task_state.get("attempt_history", []))
+    history.append(
+        {
+            "attempt": attempt,
+            "status": status,
+            "failure_stage": failure_stage,
+            "failure_summary": failure_summary,
+            "codex_result": asdict(codex_result),
+            "verification_records": [asdict(record) for record in verification_records],
+        }
+    )
+    task_state["attempt_history"] = history
+
+
+def _build_verification_artifact_path(state_path: Path) -> Path:
+    return state_path.with_suffix(".evidence.json")
+
+
+def _write_verification_artifact(
+    artifact_path: Path,
+    *,
+    plan_path: str,
+    state_path: Path,
+    status: str,
+    verify_commands: list[str],
+    tasks: Sequence[PlanTask],
+    task_state_map: dict[str, dict[str, object]],
+) -> None:
+    artifact_path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "schema_version": "1",
+        "kind": "ptsm.run_plan.verification_evidence",
+        "generated_at": _timestamp(),
+        "plan_path": plan_path,
+        "state_path": str(state_path),
+        "status": status,
+        "verify_commands": verify_commands,
+        "tasks": [
+            {
+                "title": task.title,
+                "status": task_state_map[task.title]["status"],
+                "attempts": task_state_map[task.title]["attempts"],
+                "last_failure": task_state_map[task.title]["last_failure"],
+                "attempt_history": list(task_state_map[task.title]["attempt_history"]),
+            }
+            for task in tasks
+        ],
+    }
+    artifact_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
+def _timestamp() -> str:
+    return datetime.now(timezone.utc).isoformat()

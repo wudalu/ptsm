@@ -160,7 +160,7 @@ def test_plan_runner_persists_state_file(tmp_path: Path) -> None:
         verify_exec=verify_exec,
     )
 
-    runner.run(
+    result = runner.run(
         plan_path="docs/plans/demo.md",
         tasks=[PlanTask(title="Task 1: Parser", body="- create parser")],
         verify_commands=["uv run pytest tests/unit -q"],
@@ -170,10 +170,61 @@ def test_plan_runner_persists_state_file(tmp_path: Path) -> None:
 
     saved = json.loads(state_path.read_text(encoding="utf-8"))
 
+    assert result.verification_artifact_path == str(
+        state_path.with_suffix(".evidence.json")
+    )
     assert saved["status"] == "completed"
+    assert saved["verification_artifact_path"] == str(
+        state_path.with_suffix(".evidence.json")
+    )
     assert saved["tasks"][0]["title"] == "Task 1: Parser"
     assert saved["tasks"][0]["status"] == "passed"
     assert saved["tasks"][0]["attempts"] == 1
+
+
+def test_plan_runner_writes_verification_evidence_with_attempt_history(
+    tmp_path: Path,
+) -> None:
+    state_path = tmp_path / "run-state.json"
+    verify_attempts = 0
+
+    def codex_exec(invocation: CodexInvocation) -> CommandResult:
+        return CommandResult(exit_code=0, stdout="implemented", stderr="")
+
+    def verify_exec(command: str) -> CommandResult:
+        nonlocal verify_attempts
+        verify_attempts += 1
+        if verify_attempts == 1:
+            return CommandResult(exit_code=1, stdout="nope", stderr="first failure")
+        return CommandResult(exit_code=0, stdout="pass", stderr="")
+
+    runner = PlanRunner(
+        codex_exec=codex_exec,
+        verify_exec=verify_exec,
+    )
+
+    result = runner.run(
+        plan_path="docs/plans/demo.md",
+        tasks=[PlanTask(title="Task 1: Parser", body="- create parser")],
+        verify_commands=["uv run pytest tests/unit -q"],
+        max_attempts=2,
+        state_path=state_path,
+    )
+
+    evidence_path = state_path.with_suffix(".evidence.json")
+    evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+
+    assert result.verification_artifact_path == str(evidence_path)
+    assert evidence["status"] == "completed"
+    assert evidence["state_path"] == str(state_path)
+    assert evidence["tasks"][0]["title"] == "Task 1: Parser"
+    assert evidence["tasks"][0]["attempt_history"][0]["attempt"] == 1
+    assert evidence["tasks"][0]["attempt_history"][0]["status"] == "failed"
+    assert evidence["tasks"][0]["attempt_history"][0]["verification_records"][0][
+        "stderr"
+    ] == "first failure"
+    assert evidence["tasks"][0]["attempt_history"][1]["attempt"] == 2
+    assert evidence["tasks"][0]["attempt_history"][1]["status"] == "passed"
 
 
 def test_plan_runner_resumes_and_skips_completed_tasks(tmp_path: Path) -> None:

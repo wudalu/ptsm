@@ -21,6 +21,15 @@ def test_harness_engineering_doc_exists_with_key_sections() -> None:
     assert "observability" in doc_text
 
 
+def test_task_completion_automation_mentions_verification_evidence() -> None:
+    doc_text = (DOCS_ROOT / "operations" / "task-completion-automation.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert ".evidence.json" in doc_text
+    assert "attempt history" in doc_text
+
+
 def test_docs_index_links_core_maps() -> None:
     index_text = (DOCS_ROOT / "index.md").read_text(encoding="utf-8")
 
