@@ -4,6 +4,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+import re
 import subprocess
 import time
 from typing import Callable, Sequence
@@ -199,6 +200,7 @@ class PlanRunner:
                         attempt=attempt,
                         status="failed",
                         failure_stage="codex",
+                        failure_reason="codex_exec_failed",
                         failure_summary=last_failure,
                         codex_result=codex_result,
                         verification_records=[],
@@ -260,6 +262,7 @@ class PlanRunner:
                         attempt=attempt,
                         status="passed",
                         failure_stage=None,
+                        failure_reason=None,
                         failure_summary="",
                         codex_result=codex_result,
                         verification_records=verification_records,
@@ -300,6 +303,9 @@ class PlanRunner:
                     attempt=attempt,
                     status="failed",
                     failure_stage="verification",
+                    failure_reason=_classify_verification_failure_reason(
+                        failed_verification.command
+                    ),
                     failure_summary=last_failure,
                     codex_result=codex_result,
                     verification_records=verification_records,
@@ -499,6 +505,7 @@ def _build_task_state_map(
             "status": "pending",
             "attempts": 0,
             "last_failure": "",
+            "failure_reason": None,
             "verification_records": [],
             "attempt_history": [],
         }
@@ -520,6 +527,7 @@ def _build_task_state_map(
             "status": str(item.get("status", "pending")),
             "attempts": int(item.get("attempts", 0)),
             "last_failure": str(item.get("last_failure", "")),
+            "failure_reason": item.get("failure_reason"),
             "verification_records": list(item.get("verification_records", [])),
             "attempt_history": list(item.get("attempt_history", [])),
         }
@@ -558,6 +566,7 @@ def _append_attempt_history(
     attempt: int,
     status: str,
     failure_stage: str | None,
+    failure_reason: str | None,
     failure_summary: str,
     codex_result: CommandResult,
     verification_records: list[VerificationRecord],
@@ -568,12 +577,14 @@ def _append_attempt_history(
             "attempt": attempt,
             "status": status,
             "failure_stage": failure_stage,
+            "failure_reason": failure_reason,
             "failure_summary": failure_summary,
             "codex_result": asdict(codex_result),
             "verification_records": [asdict(record) for record in verification_records],
         }
     )
     task_state["attempt_history"] = history
+    task_state["failure_reason"] = failure_reason
 
 
 def _build_verification_artifact_path(state_path: Path) -> Path:
@@ -605,6 +616,7 @@ def _write_verification_artifact(
                 "status": task_state_map[task.title]["status"],
                 "attempts": task_state_map[task.title]["attempts"],
                 "last_failure": task_state_map[task.title]["last_failure"],
+                "failure_reason": task_state_map[task.title].get("failure_reason"),
                 "attempt_history": list(task_state_map[task.title]["attempt_history"]),
             }
             for task in tasks
@@ -618,3 +630,16 @@ def _write_verification_artifact(
 
 def _timestamp() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _classify_verification_failure_reason(command: str) -> str:
+    normalized = re.sub(r"\s+", " ", command.strip().lower())
+    if "pytest" in normalized:
+        return "pytest_failed"
+    if re.search(r"(^| )doctor($| )", normalized):
+        return "doctor_failed"
+    if "run-fengkuang" in normalized:
+        return "smoke_failed"
+    if "xhs-check-publish" in normalized:
+        return "publish_status_check_failed"
+    return "verification_command_failed"

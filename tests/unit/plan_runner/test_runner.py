@@ -227,6 +227,111 @@ def test_plan_runner_writes_verification_evidence_with_attempt_history(
     assert evidence["tasks"][0]["attempt_history"][1]["status"] == "passed"
 
 
+def test_plan_runner_normalizes_pytest_failure_reason_in_evidence(
+    tmp_path: Path,
+) -> None:
+    state_path = tmp_path / "run-state.json"
+
+    def codex_exec(invocation: CodexInvocation) -> CommandResult:
+        return CommandResult(exit_code=0, stdout="implemented", stderr="")
+
+    def verify_exec(command: str) -> CommandResult:
+        return CommandResult(exit_code=1, stdout="", stderr="tests failed")
+
+    runner = PlanRunner(
+        codex_exec=codex_exec,
+        verify_exec=verify_exec,
+    )
+
+    try:
+        runner.run(
+            plan_path="docs/plans/demo.md",
+            tasks=[PlanTask(title="Task 1: Parser", body="- create parser")],
+            verify_commands=["uv run pytest tests/unit -q"],
+            max_attempts=1,
+            state_path=state_path,
+        )
+    except PlanExecutionError:
+        pass
+    else:
+        raise AssertionError("Expected PlanExecutionError")
+
+    evidence = json.loads(state_path.with_suffix(".evidence.json").read_text(encoding="utf-8"))
+
+    assert evidence["tasks"][0]["failure_reason"] == "pytest_failed"
+    assert evidence["tasks"][0]["attempt_history"][0]["failure_reason"] == "pytest_failed"
+
+
+def test_plan_runner_normalizes_doctor_failure_reason_in_evidence(
+    tmp_path: Path,
+) -> None:
+    state_path = tmp_path / "run-state.json"
+
+    def codex_exec(invocation: CodexInvocation) -> CommandResult:
+        return CommandResult(exit_code=0, stdout="implemented", stderr="")
+
+    def verify_exec(command: str) -> CommandResult:
+        return CommandResult(exit_code=1, stdout="", stderr="doctor failed")
+
+    runner = PlanRunner(
+        codex_exec=codex_exec,
+        verify_exec=verify_exec,
+    )
+
+    try:
+        runner.run(
+            plan_path="docs/plans/demo.md",
+            tasks=[PlanTask(title="Task 1: Parser", body="- create parser")],
+            verify_commands=["uv run python -m ptsm.bootstrap doctor"],
+            max_attempts=1,
+            state_path=state_path,
+        )
+    except PlanExecutionError:
+        pass
+    else:
+        raise AssertionError("Expected PlanExecutionError")
+
+    evidence = json.loads(state_path.with_suffix(".evidence.json").read_text(encoding="utf-8"))
+
+    assert evidence["tasks"][0]["failure_reason"] == "doctor_failed"
+    assert evidence["tasks"][0]["attempt_history"][0]["failure_reason"] == "doctor_failed"
+
+
+def test_plan_runner_normalizes_codex_failure_reason_in_evidence(
+    tmp_path: Path,
+) -> None:
+    state_path = tmp_path / "run-state.json"
+
+    def codex_exec(invocation: CodexInvocation) -> CommandResult:
+        return CommandResult(exit_code=1, stdout="", stderr="codex failed")
+
+    def verify_exec(command: str) -> CommandResult:
+        return CommandResult(exit_code=0, stdout="pass", stderr="")
+
+    runner = PlanRunner(
+        codex_exec=codex_exec,
+        verify_exec=verify_exec,
+    )
+
+    try:
+        runner.run(
+            plan_path="docs/plans/demo.md",
+            tasks=[PlanTask(title="Task 1: Parser", body="- create parser")],
+            verify_commands=["uv run pytest tests/unit -q"],
+            max_attempts=1,
+            state_path=state_path,
+        )
+    except PlanExecutionError:
+        pass
+    else:
+        raise AssertionError("Expected PlanExecutionError")
+
+    evidence = json.loads(state_path.with_suffix(".evidence.json").read_text(encoding="utf-8"))
+
+    assert evidence["tasks"][0]["failure_reason"] == "codex_exec_failed"
+    assert evidence["tasks"][0]["attempt_history"][0]["failure_reason"] == "codex_exec_failed"
+
+
 def test_plan_runner_resumes_and_skips_completed_tasks(tmp_path: Path) -> None:
     state_path = tmp_path / "run-state.json"
     state_path.write_text(

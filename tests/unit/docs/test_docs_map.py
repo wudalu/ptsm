@@ -30,6 +30,12 @@ def test_task_completion_automation_mentions_verification_evidence() -> None:
     assert "attempt history" in doc_text
 
 
+def test_operations_doc_mentions_plan_runs_command() -> None:
+    doc_text = (DOCS_ROOT / "operations.md").read_text(encoding="utf-8")
+
+    assert "plan-runs" in doc_text
+
+
 def test_docs_index_links_core_maps() -> None:
     index_text = (DOCS_ROOT / "index.md").read_text(encoding="utf-8")
 

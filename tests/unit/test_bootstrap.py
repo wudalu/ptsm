@@ -174,6 +174,30 @@ def test_build_parser_supports_run_events() -> None:
     assert args.limit == 5
 
 
+def test_build_parser_supports_plan_runs() -> None:
+    parser = build_parser()
+
+    args = parser.parse_args(
+        [
+            "plan-runs",
+            "--status",
+            "failed",
+            "--failure-reason",
+            "pytest_failed",
+            "--plan-path",
+            "demo",
+            "--limit",
+            "5",
+        ]
+    )
+
+    assert args.command == "plan-runs"
+    assert args.status == "failed"
+    assert args.failure_reason == "pytest_failed"
+    assert args.plan_path == "demo"
+    assert args.limit == 5
+
+
 def test_build_parser_supports_xhs_open_browser() -> None:
     parser = build_parser()
 
@@ -356,6 +380,40 @@ def test_main_dispatches_run_events(monkeypatch, capsys) -> None:
     assert captured["group_by"] == "status"
     assert captured["limit"] == 5
     assert '"publish_finished"' in capsys.readouterr().out
+
+
+def test_main_dispatches_plan_runs(monkeypatch, capsys) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run_plan_runs(**kwargs):
+        captured.update(kwargs)
+        return {"count": 1, "runs": [{"artifact_path": ".ptsm/plan_runs/demo.evidence.json"}]}
+
+    monkeypatch.setattr(
+        "ptsm.interfaces.cli.main.run_plan_runs",
+        fake_run_plan_runs,
+    )
+
+    exit_code = main(
+        [
+            "plan-runs",
+            "--status",
+            "failed",
+            "--failure-reason",
+            "pytest_failed",
+            "--plan-path",
+            "demo",
+            "--limit",
+            "5",
+        ]
+    )
+
+    assert exit_code == 0
+    assert captured["status"] == "failed"
+    assert captured["failure_reason"] == "pytest_failed"
+    assert captured["plan_path"] == "demo"
+    assert captured["limit"] == 5
+    assert ".evidence.json" in capsys.readouterr().out
 
 
 def test_main_dispatches_xhs_login_qrcode(monkeypatch, tmp_path: Path, capsys) -> None:

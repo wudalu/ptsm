@@ -34,10 +34,10 @@ repository.
 - durable local runtime memory and checkpoints
 - queryable run summaries and run events
 - verification evidence artifacts for `run-plan` verify loops
+- normalized plan-run failure reasons and evidence query CLI
 
 ## What We Should Build Next
 
-- richer event semantics and failure reason normalization
 - drift and garbage-collection checks for stale runtime/doc surfaces
 - traces and metrics if local file observability stops being enough
 

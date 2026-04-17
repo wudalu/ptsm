@@ -10,6 +10,7 @@ import uuid
 from ptsm.application.models import FengkuangRequest
 from ptsm.application.use_cases.doctor import run_doctor
 from ptsm.application.use_cases.logs import run_logs
+from ptsm.application.use_cases.plan_runs import run_plan_runs
 from ptsm.application.use_cases.run_events import run_run_events
 from ptsm.application.use_cases.runs import run_runs
 from ptsm.application.use_cases.run_playbook import run_fengkuang_playbook
@@ -90,6 +91,12 @@ def build_parser() -> argparse.ArgumentParser:
     run_events.add_argument("--event-status")
     run_events.add_argument("--group-by")
     run_events.add_argument("--limit", type=int, default=50)
+
+    plan_runs = subparsers.add_parser("plan-runs")
+    plan_runs.add_argument("--status")
+    plan_runs.add_argument("--failure-reason")
+    plan_runs.add_argument("--plan-path")
+    plan_runs.add_argument("--limit", type=int, default=20)
 
     xhs_open_browser = subparsers.add_parser("xhs-open-browser")
     xhs_open_browser.add_argument("--target", choices=["login", "creator", "artifact"], required=True)
@@ -276,6 +283,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             step=args.step,
             event_status=args.event_status,
             group_by=args.group_by,
+            limit=args.limit,
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "plan-runs":
+        result = run_plan_runs(
+            status=args.status,
+            failure_reason=args.failure_reason,
+            plan_path=args.plan_path,
             limit=args.limit,
         )
         print(json.dumps(result, ensure_ascii=False, indent=2))
