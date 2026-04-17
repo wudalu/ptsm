@@ -39,4 +39,5 @@ uv run pytest -q
 ptsm run-fengkuang --scene "周一早高峰地铁通勤"
 ptsm run-plan --plan docs/plans/2026-03-24-ptsm-agent-platform-rebaseline.md --dry-run
 ptsm runs --account-id acct-fk-local --status completed --limit 5
+ptsm run-events --account-id acct-fk-local --event publish_finished --group-by status
 ```

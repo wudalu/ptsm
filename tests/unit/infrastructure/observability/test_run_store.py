@@ -84,3 +84,89 @@ def test_run_store_lists_recent_runs_with_filters(tmp_path: Path) -> None:
     )
 
     assert [item["run_id"] for item in result] == [newest.run_id, older.run_id]
+
+
+def test_run_store_lists_filtered_events_across_runs(tmp_path: Path) -> None:
+    store = RunStore(base_dir=tmp_path)
+
+    skipped = store.start(
+        command="run-fengkuang",
+        account_id="acct-other",
+        platform="xiaohongshu",
+        playbook_id="fengkuang_daily_post",
+    )
+    store.append_event(
+        skipped.run_id,
+        event="publish_started",
+        step="publish",
+        status="running",
+    )
+    store.finish(skipped.run_id, status="failed")
+
+    matched = store.start(
+        command="run-fengkuang",
+        account_id="acct-fk-local",
+        platform="xiaohongshu",
+        playbook_id="fengkuang_daily_post",
+    )
+    store.append_event(
+        matched.run_id,
+        event="publish_started",
+        step="publish",
+        status="running",
+    )
+    store.finish(matched.run_id, status="completed")
+
+    events = store.list_events(
+        account_id="acct-fk-local",
+        playbook_id="fengkuang_daily_post",
+        event="publish_started",
+        step="publish",
+        limit=10,
+    )
+
+    assert len(events) == 1
+    assert events[0]["run_id"] == matched.run_id
+    assert events[0]["account_id"] == "acct-fk-local"
+    assert events[0]["event"] == "publish_started"
+
+
+def test_run_store_aggregates_events_by_field(tmp_path: Path) -> None:
+    store = RunStore(base_dir=tmp_path)
+
+    completed = store.start(
+        command="run-fengkuang",
+        account_id="acct-fk-local",
+        platform="xiaohongshu",
+        playbook_id="fengkuang_daily_post",
+    )
+    store.append_event(
+        completed.run_id,
+        event="publish_finished",
+        step="publish",
+        status="completed",
+    )
+    store.finish(completed.run_id, status="completed")
+
+    failed = store.start(
+        command="run-fengkuang",
+        account_id="acct-fk-local",
+        platform="xiaohongshu",
+        playbook_id="fengkuang_daily_post",
+    )
+    store.append_event(
+        failed.run_id,
+        event="publish_finished",
+        step="publish",
+        status="failed",
+    )
+    store.finish(failed.run_id, status="failed")
+
+    totals = store.aggregate_events(
+        account_id="acct-fk-local",
+        step="publish",
+        event="publish_finished",
+        group_by="status",
+    )
+
+    assert totals == {"completed": 1, "failed": 1}

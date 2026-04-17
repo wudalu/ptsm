@@ -141,6 +141,39 @@ def test_build_parser_supports_runs() -> None:
     assert args.limit == 5
 
 
+def test_build_parser_supports_run_events() -> None:
+    parser = build_parser()
+
+    args = parser.parse_args(
+        [
+            "run-events",
+            "--account-id",
+            "acct-fk-local",
+            "--run-status",
+            "completed",
+            "--event",
+            "publish_finished",
+            "--step",
+            "publish",
+            "--event-status",
+            "completed",
+            "--group-by",
+            "status",
+            "--limit",
+            "5",
+        ]
+    )
+
+    assert args.command == "run-events"
+    assert args.account_id == "acct-fk-local"
+    assert args.run_status == "completed"
+    assert args.event == "publish_finished"
+    assert args.step == "publish"
+    assert args.event_status == "completed"
+    assert args.group_by == "status"
+    assert args.limit == 5
+
+
 def test_build_parser_supports_xhs_open_browser() -> None:
     parser = build_parser()
 
@@ -275,6 +308,54 @@ def test_main_dispatches_runs(monkeypatch, capsys) -> None:
     assert captured["status"] == "completed"
     assert captured["limit"] == 5
     assert '"run_id": "run-123"' in capsys.readouterr().out
+
+
+def test_main_dispatches_run_events(monkeypatch, capsys) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run_run_events(**kwargs):
+        captured.update(kwargs)
+        return {
+            "count": 1,
+            "events": [{"run_id": "run-123", "event": "publish_finished"}],
+            "group_by": "status",
+            "totals": {"completed": 1},
+        }
+
+    monkeypatch.setattr(
+        "ptsm.interfaces.cli.main.run_run_events",
+        fake_run_run_events,
+    )
+
+    exit_code = main(
+        [
+            "run-events",
+            "--account-id",
+            "acct-fk-local",
+            "--run-status",
+            "completed",
+            "--event",
+            "publish_finished",
+            "--step",
+            "publish",
+            "--event-status",
+            "completed",
+            "--group-by",
+            "status",
+            "--limit",
+            "5",
+        ]
+    )
+
+    assert exit_code == 0
+    assert captured["account_id"] == "acct-fk-local"
+    assert captured["run_status"] == "completed"
+    assert captured["event"] == "publish_finished"
+    assert captured["step"] == "publish"
+    assert captured["event_status"] == "completed"
+    assert captured["group_by"] == "status"
+    assert captured["limit"] == 5
+    assert '"publish_finished"' in capsys.readouterr().out
 
 
 def test_main_dispatches_xhs_login_qrcode(monkeypatch, tmp_path: Path, capsys) -> None:

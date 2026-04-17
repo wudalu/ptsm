@@ -14,7 +14,12 @@ from ptsm.agent_runtime.state import ExecutionState
 from ptsm.config.settings import Settings, get_settings
 from ptsm.infrastructure.artifacts.file_store import FileArtifactStore
 from ptsm.infrastructure.llm.factory import build_drafting_backend
-from ptsm.infrastructure.memory.store import InMemoryExecutionMemory
+from ptsm.infrastructure.memory.checkpoint import FileCheckpointSaver
+from ptsm.infrastructure.memory.store import (
+    ExecutionMemoryStore,
+    FileExecutionMemory,
+    InMemoryExecutionMemory,
+)
 from ptsm.playbooks.loader import PlaybookLoader
 from ptsm.playbooks.registry import PlaybookRegistry
 from ptsm.skills.loader import SkillLoader
@@ -24,14 +29,16 @@ PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 PLAYBOOK_ROOT = PACKAGE_ROOT / "playbooks" / "definitions"
 SKILL_ROOT = PACKAGE_ROOT / "skills" / "builtin"
 DOMAIN_FENGKUANG = "发疯文学"
+DEFAULT_RUNTIME_STATE_DIR = Path(".ptsm") / "agent_runtime"
 
 
 def build_fengkuang_workflow(
-    memory: InMemoryExecutionMemory | None = None,
+    memory: ExecutionMemoryStore | None = None,
     drafting_agent: FengkuangDraftingAgent | None = None,
     max_attempts: int = 2,
     settings: Settings | None = None,
     artifact_store: FileArtifactStore | None = None,
+    checkpointer: object | None = None,
 ):
     """Build a dry-run fengkuang workflow with one revision loop."""
     execution_memory = memory or InMemoryExecutionMemory()
@@ -60,13 +67,23 @@ def build_fengkuang_workflow(
             execution_memory=execution_memory,
             artifact_store=artifact_store,
         ),
-        checkpointer=InMemorySaver(),
+        checkpointer=checkpointer or InMemorySaver(),
+    )
+
+
+def build_file_backed_runtime_state(
+    base_dir: Path | str = DEFAULT_RUNTIME_STATE_DIR,
+) -> tuple[FileExecutionMemory, FileCheckpointSaver]:
+    root = Path(base_dir).resolve()
+    return (
+        FileExecutionMemory(path=root / "execution-memory.json"),
+        FileCheckpointSaver(path=root / "checkpoints.pkl"),
     )
 
 
 def build_finalize_node(
     *,
-    execution_memory: InMemoryExecutionMemory,
+    execution_memory: ExecutionMemoryStore,
     artifact_store: FileArtifactStore,
 ):
     def finalize(state: ExecutionState) -> ExecutionState:

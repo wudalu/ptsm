@@ -9,7 +9,8 @@ from ptsm.agent_runtime import runtime as runtime_module
 from ptsm.agent_runtime.runtime import build_fengkuang_workflow
 from ptsm.application.models import FengkuangRequest
 from ptsm.infrastructure.artifacts.file_store import FileArtifactStore
-from ptsm.infrastructure.memory.store import InMemoryExecutionMemory
+from ptsm.infrastructure.memory.checkpoint import FileCheckpointSaver
+from ptsm.infrastructure.memory.store import FileExecutionMemory, InMemoryExecutionMemory
 
 
 def test_build_fengkuang_workflow_uses_generic_runtime_builder(
@@ -83,6 +84,61 @@ def test_fengkuang_workflow_writes_final_artifact(tmp_path: Path) -> None:
     artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
     assert artifact["playbook_id"] == "fengkuang_daily_post"
     assert artifact["final_content"]["hashtags"][0] == "#发疯文学"
+
+
+def test_fengkuang_workflow_persists_checkpoint_with_file_backed_saver(
+    tmp_path: Path,
+) -> None:
+    checkpoint_path = tmp_path / "checkpoints.pkl"
+    workflow = build_fengkuang_workflow(
+        artifact_store=FileArtifactStore(base_dir=tmp_path / "artifacts"),
+        checkpointer=FileCheckpointSaver(path=checkpoint_path),
+    )
+
+    result = workflow.invoke(
+        FengkuangRequest(
+            scene="周三工位发呆",
+            platform="xiaohongshu",
+            account_id="acct-fk-004",
+        ).model_dump(mode="python"),
+        config={"configurable": {"thread_id": "thread-fk-004"}},
+    )
+
+    reloaded = FileCheckpointSaver(path=checkpoint_path)
+    saved = reloaded.get_tuple(
+        {"configurable": {"thread_id": "thread-fk-004", "checkpoint_ns": ""}}
+    )
+
+    assert result["status"] == "completed"
+    assert checkpoint_path.exists()
+    assert saved is not None
+
+
+def test_fengkuang_workflow_persists_lessons_with_file_backed_memory(
+    tmp_path: Path,
+) -> None:
+    memory_path = tmp_path / "execution-memory.json"
+    workflow = build_fengkuang_workflow(
+        memory=FileExecutionMemory(path=memory_path),
+        artifact_store=FileArtifactStore(base_dir=tmp_path / "artifacts"),
+    )
+
+    result = workflow.invoke(
+        FengkuangRequest(
+            scene="周四下班前最后一场会",
+            platform="xiaohongshu",
+            account_id="acct-fk-005",
+        ).model_dump(mode="python"),
+        config={"configurable": {"thread_id": "thread-fk-005"}},
+    )
+
+    reloaded = FileExecutionMemory(path=memory_path)
+    lessons = reloaded.search(namespace=("accounts", "acct-fk-005", "lessons"))
+
+    assert result["status"] == "completed"
+    assert memory_path.exists()
+    assert len(lessons) == 1
+    assert lessons[0]["playbook_id"] == "fengkuang_daily_post"
 
 
 class NeverImprovingDraftingAgent:
