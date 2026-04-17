@@ -3,10 +3,40 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
+from ptsm.agent_runtime import runtime as runtime_module
 from ptsm.agent_runtime.runtime import build_fengkuang_workflow
 from ptsm.application.models import FengkuangRequest
 from ptsm.infrastructure.artifacts.file_store import FileArtifactStore
 from ptsm.infrastructure.memory.store import InMemoryExecutionMemory
+
+
+def test_build_fengkuang_workflow_uses_generic_runtime_builder(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sentinel = object()
+    captured: dict[str, object] = {}
+
+    def fake_build_execution_graph(**kwargs: object) -> object:
+        captured.update(kwargs)
+        return sentinel
+
+    monkeypatch.setattr(
+        runtime_module,
+        "build_execution_graph",
+        fake_build_execution_graph,
+        raising=False,
+    )
+
+    workflow = runtime_module.build_fengkuang_workflow()
+
+    assert workflow is sentinel
+    assert callable(captured["ingest"])
+    assert callable(captured["planner"])
+    assert callable(captured["executor"])
+    assert callable(captured["reflector"])
+    assert callable(captured["finalize"])
 
 
 def test_fengkuang_workflow_revises_once_and_persists_memory() -> None:

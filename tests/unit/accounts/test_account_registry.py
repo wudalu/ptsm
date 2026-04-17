@@ -21,3 +21,13 @@ def test_account_registry_raises_for_unknown_account() -> None:
 
     with pytest.raises(LookupError, match="missing-acct"):
         registry.get("missing-acct")
+
+
+def test_account_profile_to_dict_exposes_routing_fields() -> None:
+    account = AccountRegistry().get("acct-fk-local")
+
+    payload = account.to_dict()
+
+    assert payload["account_id"] == "acct-fk-local"
+    assert payload["platform"] == "xiaohongshu"
+    assert payload["domain"] == "发疯文学"

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import timedelta
+
 from ptsm.spikes.xhs_mcp_probe import build_publish_content_args, build_server_config
 
 
@@ -10,6 +12,7 @@ def test_build_server_config_uses_http_transport() -> None:
         "xiaohongshu": {
             "transport": "http",
             "url": "http://localhost:18060/mcp",
+            "sse_read_timeout": timedelta(minutes=15),
         }
     }
 

@@ -64,10 +64,11 @@ def test_xiaohongshu_mcp_publisher_publishes_after_login_preflight(tmp_path: Pat
     assert receipt["platform"] == "xiaohongshu"
     assert receipt["provider"] == "xiaohongshu_mcp"
     assert receipt["platform_payload"]["images"] == [str(image_path)]
-    assert receipt["platform_payload"]["visibility"] == "仅自己可见"
+    assert "visibility" not in receipt["platform_payload"]
     assert runner.calls[0] == ("check_login_status", {})
     assert runner.calls[1][0] == "publish_content"
     assert runner.calls[1][1]["tags"] == ["发疯文学", "打工人日常"]
+    assert "visibility" not in runner.calls[1][1]
 
 
 def test_xiaohongshu_mcp_publisher_requires_login(tmp_path: Path) -> None:

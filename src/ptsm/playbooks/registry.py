@@ -5,6 +5,8 @@ from pathlib import Path
 
 import yaml
 
+from ptsm.accounts.registry import AccountProfile
+
 
 @dataclass(frozen=True)
 class PlaybookDefinition:
@@ -33,6 +35,29 @@ class PlaybookRegistry:
                 return playbook
         raise LookupError(f"No playbook for domain={domain!r}, platform={platform!r}")
 
+    def get(self, playbook_id: str) -> PlaybookDefinition:
+        for playbook in self._playbooks:
+            if playbook.playbook_id == playbook_id:
+                return playbook
+        raise LookupError(f"Unknown playbook: {playbook_id}")
+
+    def select_for_account(
+        self,
+        *,
+        account: AccountProfile,
+        platform: str | None = None,
+        playbook_id: str | None = None,
+    ) -> PlaybookDefinition:
+        resolved_platform = platform or account.platform
+        if playbook_id is not None:
+            playbook = self.get(playbook_id)
+            if playbook.domain != account.domain or resolved_platform not in playbook.platforms:
+                raise LookupError(
+                    f"Playbook {playbook_id!r} does not support account={account.account_id!r}"
+                )
+            return playbook
+        return self.select(domain=account.domain, platform=resolved_platform)
+
     def list_playbooks(self) -> list[PlaybookDefinition]:
         return list(self._playbooks)
 
@@ -53,4 +78,3 @@ class PlaybookRegistry:
                 )
             )
         return playbooks
-

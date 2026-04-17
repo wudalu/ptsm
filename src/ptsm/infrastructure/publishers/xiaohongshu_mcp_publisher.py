@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import timedelta
 import json
 from pathlib import Path
 from typing import Any, Protocol, Sequence
@@ -31,6 +32,8 @@ class McpToolRunner(Protocol):
 class LangChainMcpToolRunner:
     """Thin wrapper around MultiServerMCPClient for named tool execution."""
 
+    streamable_http_sse_read_timeout = timedelta(minutes=15)
+
     def __init__(self, *, server_url: str):
         self.server_url = server_url
         self._tools: dict[str, Any] | None = None
@@ -50,6 +53,7 @@ class LangChainMcpToolRunner:
                     "xiaohongshu": {
                         "transport": "http",
                         "url": self.server_url,
+                        "sse_read_timeout": self.streamable_http_sse_read_timeout,
                     }
                 }
             )
@@ -229,12 +233,14 @@ class XiaohongshuMcpPublisher:
         visibility: str,
     ) -> dict[str, object]:
         hashtags = [str(tag).lstrip("#").strip() for tag in content.get("hashtags", [])]
+        # Current xiaohongshu-mcp releases reject unknown fields on publish_content,
+        # so keep the payload limited to the upstream tool contract.
+        _ = visibility
         return {
             "title": str(content["title"]).strip(),
             "content": str(content["body"]).strip(),
             "images": image_paths,
             "tags": [tag for tag in hashtags if tag],
-            "visibility": visibility,
         }
 
     def _extract_text(self, payload: object) -> str:

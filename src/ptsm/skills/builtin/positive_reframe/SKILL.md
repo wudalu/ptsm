@@ -3,6 +3,11 @@ skill_name: positive_reframe
 display_name: Positive Reframe
 description: 把过于负面的发疯文学结尾改写成带一点正向缓冲的收束。
 display_order: 20
+domain_tags: 发疯文学
+platform_tags: xiaohongshu
+playbook_tags: fengkuang_daily_post
+token_budget_hint: 160
+assets_present: false
 ---
 
 # Positive Reframe

@@ -2,18 +2,20 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from datetime import timedelta
 import json
 from typing import Any, Sequence
 
 from langchain_mcp_adapters.client import MultiServerMCPClient
 
 
-def build_server_config(server_url: str) -> dict[str, dict[str, str]]:
+def build_server_config(server_url: str) -> dict[str, dict[str, object]]:
     """Build the minimal HTTP MCP client config for xiaohongshu-mcp."""
     return {
         "xiaohongshu": {
             "transport": "http",
             "url": server_url,
+            "sse_read_timeout": timedelta(minutes=15),
         }
     }
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ptsm.accounts.registry import AccountRegistry
 from ptsm.playbooks.registry import PlaybookRegistry
 
 
@@ -18,3 +19,14 @@ def test_playbook_registry_selects_fengkuang_daily_post() -> None:
         "positive_reframe",
         "xhs_hashtagging",
     ]
+
+
+def test_playbook_registry_selects_by_account_domain_and_platform() -> None:
+    registry = PlaybookRegistry(
+        playbook_root=Path("src/ptsm/playbooks/definitions"),
+    )
+    account = AccountRegistry().get("acct-fk-local")
+
+    playbook = registry.select_for_account(account=account)
+
+    assert playbook.playbook_id == "fengkuang_daily_post"

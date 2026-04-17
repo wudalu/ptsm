@@ -33,6 +33,11 @@ def _parse_skill_markdown(path: Path) -> SkillSpec:
         short_description=description,
         display_order=display_order,
         source_path=path,
+        domain_tags=_parse_tag_list(front_matter.get("domain_tags", "")),
+        platform_tags=_parse_tag_list(front_matter.get("platform_tags", "")),
+        playbook_tags=_parse_tag_list(front_matter.get("playbook_tags", "")),
+        token_budget_hint=_parse_optional_int(front_matter.get("token_budget_hint")),
+        assets_present=_parse_bool(front_matter.get("assets_present", "false")),
         metadata=front_matter,
     )
 
@@ -80,3 +85,18 @@ def _normalize_skill_name(value: str) -> str:
     normalized = re.sub(r"_+", "_", normalized)
     return normalized.strip("_")
 
+
+def _parse_tag_list(value: str) -> list[str]:
+    if not value.strip():
+        return []
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def _parse_optional_int(value: str | None) -> int | None:
+    if value is None or not value.strip():
+        return None
+    return int(value)
+
+
+def _parse_bool(value: str) -> bool:
+    return value.strip().lower() in {"1", "true", "yes", "on"}

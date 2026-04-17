@@ -5,7 +5,7 @@ from typing import Any
 
 from ptsm.accounts.registry import AccountRegistry
 from ptsm.agent_runtime.runtime import build_fengkuang_workflow
-from ptsm.application.models import FengkuangRequest
+from ptsm.application.models import FengkuangRequest, PlaybookRequest
 from ptsm.application.use_cases.xhs_login import (
     DEFAULT_XHS_LOGIN_QRCODE_PATH,
     build_xhs_login_instructions,
@@ -20,39 +20,53 @@ from ptsm.infrastructure.memory.store import InMemoryExecutionMemory
 from ptsm.infrastructure.publishers.contracts import Publisher
 from ptsm.infrastructure.publishers.factory import build_publisher
 from ptsm.infrastructure.publishers.xiaohongshu_mcp_publisher import PublisherPreflightError
+from ptsm.playbooks.registry import PlaybookRegistry
+
+PACKAGE_ROOT = Path(__file__).resolve().parents[2]
+PLAYBOOK_ROOT = PACKAGE_ROOT / "playbooks" / "definitions"
 
 
-def run_fengkuang_playbook(
-    request: FengkuangRequest,
+def run_playbook(
+    request: PlaybookRequest,
     *,
     thread_id: str | None = None,
     settings: Settings | None = None,
     memory: InMemoryExecutionMemory | None = None,
     accounts: AccountRegistry | None = None,
+    playbooks: PlaybookRegistry | None = None,
     publisher: Publisher | None = None,
     run_store: RunStore | None = None,
+    command_name: str = "run-playbook",
 ) -> dict[str, Any]:
-    """Execute the fengkuang workflow and prepare a publish receipt."""
+    """Execute the selected playbook workflow and prepare a publish receipt."""
 
     settings = settings or get_settings()
     memory = memory or InMemoryExecutionMemory()
     accounts = accounts or AccountRegistry()
+    playbooks = playbooks or PlaybookRegistry(playbook_root=PLAYBOOK_ROOT)
     run_store = run_store or RunStore()
     artifact_store = FileArtifactStore()
+    account = accounts.get(request.account_id)
+    resolved_platform = request.platform or account.platform
+    if resolved_platform != account.platform:
+        raise ValueError(
+            f"Request platform {resolved_platform!r} does not match account platform {account.platform!r}"
+        )
+    playbook = playbooks.select_for_account(
+        account=account,
+        platform=resolved_platform,
+        playbook_id=request.playbook_id,
+    )
     run = run_store.start(
-        command="run-fengkuang",
+        command=command_name,
         account_id=request.account_id,
-        platform=request.platform,
+        platform=resolved_platform,
+        playbook_id=playbook.playbook_id,
     )
 
-    account = accounts.get(request.account_id)
-    if request.platform != account.platform:
-        raise ValueError(
-            f"Request platform {request.platform!r} does not match account platform {account.platform!r}"
-        )
     publish_mode = request.publish_mode or account.publish_mode
     publisher = publisher or build_publisher(
-        platform=request.platform,
+        platform=resolved_platform,
         publish_mode=publish_mode,
         settings=settings,
     )
@@ -80,6 +94,8 @@ def run_fengkuang_playbook(
                     provider=getattr(publisher, "provider_name", publisher.__class__.__name__),
                     preflight=preflight,
                     request=request,
+                    command_name=command_name,
+                    resolved_platform=resolved_platform,
                 )
                 if request.open_browser_if_needed:
                     browser_result = open_xhs_browser(
@@ -93,8 +109,9 @@ def run_fengkuang_playbook(
                 post_publish_checks["publish_status"] = "login_required"
                 return {
                     "scene": request.scene,
-                    "platform": request.platform,
+                    "platform": resolved_platform,
                     "account_id": request.account_id,
+                    "playbook_id": playbook.playbook_id,
                     "status": "login_required",
                     "account": account.to_dict(),
                     "publish_mode": publish_mode,
@@ -107,9 +124,21 @@ def run_fengkuang_playbook(
                     ),
                 }
 
-    workflow = build_fengkuang_workflow(memory=memory, settings=settings)
-    config = {"configurable": {"thread_id": thread_id}} if thread_id else None
-    result = workflow.invoke(request.model_dump(mode="python"), config=config)
+    workflow = _build_workflow_for_playbook(
+        playbook_id=playbook.playbook_id,
+        memory=memory,
+        settings=settings,
+    )
+    effective_thread_id = thread_id or run.run_id
+    config = {"configurable": {"thread_id": effective_thread_id}}
+    result = workflow.invoke(
+        {
+            **request.model_dump(mode="python"),
+            "platform": resolved_platform,
+        },
+        config=config,
+    )
+    result = {"playbook_id": playbook.playbook_id, **result}
     run_store.append_event(
         run.run_id,
         event="workflow_completed",
@@ -141,6 +170,8 @@ def run_fengkuang_playbook(
                     provider=getattr(publisher, "provider_name", publisher.__class__.__name__),
                     preflight=preflight,
                     request=request,
+                    command_name=command_name,
+                    resolved_platform=resolved_platform,
                 ),
                 "artifact_path": result["artifact_path"],
                 "error": str(exc),
@@ -224,6 +255,28 @@ def run_fengkuang_playbook(
     }
 
 
+def run_fengkuang_playbook(
+    request: FengkuangRequest,
+    *,
+    thread_id: str | None = None,
+    settings: Settings | None = None,
+    memory: InMemoryExecutionMemory | None = None,
+    accounts: AccountRegistry | None = None,
+    publisher: Publisher | None = None,
+    run_store: RunStore | None = None,
+) -> dict[str, Any]:
+    return run_playbook(
+        request,
+        thread_id=thread_id,
+        settings=settings,
+        memory=memory,
+        accounts=accounts,
+        publisher=publisher,
+        run_store=run_store,
+        command_name="run-fengkuang",
+    )
+
+
 def _build_login_required_result(
     *,
     account_id: str,
@@ -231,15 +284,18 @@ def _build_login_required_result(
     platform: str,
     provider: str,
     preflight: dict[str, Any],
-    request: FengkuangRequest,
+    request: PlaybookRequest,
+    command_name: str,
+    resolved_platform: str,
 ) -> dict[str, Any]:
     qrcode_output_path = None
     qrcode = preflight.get("qrcode")
     if isinstance(qrcode, dict):
         qrcode_output_path = qrcode.get("output_path")
-    rerun_command = (
-        f"ptsm run-fengkuang --scene '{request.scene}' --platform {request.platform} "
-        f"--account-id {request.account_id} --publish-mode mcp-real"
+    rerun_command = _build_rerun_command(
+        command_name=command_name,
+        request=request,
+        resolved_platform=resolved_platform,
     )
     return {
         "status": "login_required",
@@ -253,3 +309,31 @@ def _build_login_required_result(
             rerun_command=rerun_command,
         ),
     }
+
+
+def _build_workflow_for_playbook(
+    *,
+    playbook_id: str,
+    memory: InMemoryExecutionMemory,
+    settings: Settings,
+):
+    if playbook_id == "fengkuang_daily_post":
+        return build_fengkuang_workflow(memory=memory, settings=settings)
+    raise ValueError(f"Unsupported playbook runtime: {playbook_id}")
+
+
+def _build_rerun_command(
+    *,
+    command_name: str,
+    request: PlaybookRequest,
+    resolved_platform: str,
+) -> str:
+    if command_name == "run-fengkuang" or request.playbook_id in {None, "fengkuang_daily_post"}:
+        return (
+            f"ptsm run-fengkuang --scene '{request.scene}' --platform {resolved_platform} "
+            f"--account-id {request.account_id} --publish-mode mcp-real"
+        )
+    return (
+        f"ptsm run-playbook --account-id {request.account_id} "
+        f"--scene '{request.scene}' --publish-mode mcp-real"
+    )

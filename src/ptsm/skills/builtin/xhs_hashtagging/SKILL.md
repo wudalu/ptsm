@@ -3,6 +3,11 @@ skill_name: xhs_hashtagging
 display_name: XHS Hashtagging
 description: 为小红书短内容补齐平台友好的标签组合。
 display_order: 30
+domain_tags: 发疯文学
+platform_tags: xiaohongshu
+playbook_tags: fengkuang_daily_post
+token_budget_hint: 120
+assets_present: false
 ---
 
 # XHS Hashtagging

@@ -143,6 +143,7 @@ def run_plan_cli(
 
     def codex_exec(invocation: CodexInvocation):
         command = [codex_bin, "exec", "-C", str(Path.cwd())]
+        command.append("--skip-git-repo-check")
         if full_auto:
             command.append("--full-auto")
         if sandbox:

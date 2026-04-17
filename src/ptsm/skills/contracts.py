@@ -13,5 +13,9 @@ class SkillSpec:
     short_description: str
     display_order: int
     source_path: Path
+    domain_tags: list[str] = field(default_factory=list)
+    platform_tags: list[str] = field(default_factory=list)
+    playbook_tags: list[str] = field(default_factory=list)
+    token_budget_hint: int | None = None
+    assets_present: bool = False
     metadata: dict[str, str] = field(default_factory=dict)
-

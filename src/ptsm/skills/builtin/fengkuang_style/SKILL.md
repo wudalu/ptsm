@@ -3,6 +3,11 @@ skill_name: fengkuang_style
 display_name: Fengkuang Style
 description: 用夸张、自嘲、共鸣式语气生成发疯文学文案。
 display_order: 10
+domain_tags: 发疯文学
+platform_tags: xiaohongshu
+playbook_tags: fengkuang_daily_post
+token_budget_hint: 200
+assets_present: false
 ---
 
 # Fengkuang Style
