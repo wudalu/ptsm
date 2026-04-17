@@ -1,5 +1,6 @@
 .DS_Store
 .codex-plan-runner/
+.worktrees/
 .env
 .ptsm/
 .pytest_cache/
