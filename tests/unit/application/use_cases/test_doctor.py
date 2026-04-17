@@ -16,7 +16,9 @@ class FakePreflightPublisher:
         return self.payload
 
 
-def test_run_doctor_reports_settings_and_mcp_status() -> None:
+def test_run_doctor_reports_settings_and_mcp_status(tmp_path: Path) -> None:
+    (tmp_path / "outputs" / "artifacts").mkdir(parents=True)
+
     result = run_doctor(
         settings=Settings(_env_file=None),
         publisher=FakePreflightPublisher(
@@ -27,6 +29,7 @@ def test_run_doctor_reports_settings_and_mcp_status() -> None:
                 "available_tools": ["check_login_status", "publish_content"],
             }
         ),
+        project_root=tmp_path,
     )
 
     assert result["status"] == "ok"
