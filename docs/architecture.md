@@ -2,7 +2,7 @@
 title: PTSM Architecture
 status: active
 owner: ptsm
-last_verified: 2026-04-17
+last_verified: 2026-04-18
 source_of_truth: true
 related_paths:
   - src/ptsm
@@ -38,6 +38,7 @@ PTSM 当前不是“多领域平台已全部完成”的状态，而是一个已
 - CLI 和 bootstrap 已是稳定入口。
 - 发布链路当前以小红书为主，支持 dry-run 和 MCP 实发。
 - 平台抽象正在形成，但第二垂直领域和持久化 memory 仍未完成。
+- reporting / eval / inspection surface 优先放在 `application/use_cases` 上，并复用本地 artifact stores，而不是引入独立服务层。
 
 ## Current Design Pressure
 

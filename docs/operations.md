@@ -25,6 +25,7 @@ related_paths:
 - `uv run python -m ptsm.bootstrap doctor`
 - `uv run python -m ptsm.bootstrap gc`
 - `uv run python -m ptsm.bootstrap gc --apply --runs-retention-days 14 --plan-runs-retention-days 14`
+- `uv run python -m ptsm.bootstrap harness-evals --platform xiaohongshu --playbook-id fengkuang_daily_post`
 - `uv run python -m ptsm.bootstrap logs --run-id <run_id>`
 - `uv run python -m ptsm.bootstrap logs --artifact outputs/artifacts/<artifact>.json`
 - `uv run python -m ptsm.bootstrap runs --account-id <account_id> --status completed`
@@ -37,5 +38,6 @@ related_paths:
 
 - 默认校验门禁优先使用 `pytest` 和 `doctor`。
 - `gc` 默认只报告候选项；只有 `--apply` 才会删除本地 harness artifacts。
+- `harness-evals` 只输出本地 JSON 汇总，不负责修改 artifact 或触发修复动作。
 - 浏览器动作保留为人工或条件触发，不应成为默认无人值守 gate。
 - 更细的触发策略以 [`docs/operations/task-completion-automation.md`](operations/task-completion-automation.md) 为准。

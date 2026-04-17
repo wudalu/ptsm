@@ -74,6 +74,8 @@ Expected: PASS.
 
 **Outcome:** Turn run evidence into a lightweight local eval surface.
 
+**Status:** Implemented on branch `harness-roadmap` with `ptsm harness-evals` as the first local eval surface.
+
 **Files:**
 - Create: `src/ptsm/application/use_cases/harness_evals.py`
 - Modify: `src/ptsm/interfaces/cli/main.py`

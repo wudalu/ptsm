@@ -36,6 +36,7 @@ repository.
 - verification evidence artifacts for `run-plan` verify loops
 - normalized plan-run failure reasons and evidence query CLI
 - drift checks and safe garbage collection for stale harness artifacts
+- local harness eval summaries over runs, events, and plan-run evidence
 
 ## What We Should Build Next
 

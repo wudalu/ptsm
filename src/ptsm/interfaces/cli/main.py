@@ -9,6 +9,7 @@ import uuid
 
 from ptsm.application.models import FengkuangRequest
 from ptsm.application.use_cases.doctor import run_doctor
+from ptsm.application.use_cases.harness_evals import run_harness_evals
 from ptsm.application.use_cases.harness_gc import run_harness_gc
 from ptsm.application.use_cases.logs import run_logs
 from ptsm.application.use_cases.plan_runs import run_plan_runs
@@ -75,6 +76,12 @@ def build_parser() -> argparse.ArgumentParser:
     gc.add_argument("--apply", action="store_true")
     gc.add_argument("--runs-retention-days", type=int, default=30)
     gc.add_argument("--plan-runs-retention-days", type=int, default=30)
+
+    harness_evals = subparsers.add_parser("harness-evals")
+    harness_evals.add_argument("--account-id")
+    harness_evals.add_argument("--platform")
+    harness_evals.add_argument("--playbook-id")
+    harness_evals.add_argument("--plan-path")
 
     logs = subparsers.add_parser("logs")
     logs.add_argument("--run-id")
@@ -265,6 +272,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             apply=args.apply,
             runs_retention_days=args.runs_retention_days,
             plan_runs_retention_days=args.plan_runs_retention_days,
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "harness-evals":
+        result = run_harness_evals(
+            account_id=args.account_id,
+            platform=args.platform,
+            playbook_id=args.playbook_id,
+            plan_path=args.plan_path,
         )
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0

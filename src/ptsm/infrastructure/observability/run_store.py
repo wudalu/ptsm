@@ -144,7 +144,7 @@ class RunStore:
         platform: str | None = None,
         playbook_id: str | None = None,
         status: str | None = None,
-        limit: int = 20,
+        limit: int | None = 20,
     ) -> list[dict[str, object]]:
         summaries = list(
             self._iter_summaries(
@@ -155,6 +155,8 @@ class RunStore:
             )
         )
         summaries.sort(key=lambda item: str(item.get("started_at", "")), reverse=True)
+        if limit is None:
+            return summaries
         return summaries[:limit]
 
     def list_events(

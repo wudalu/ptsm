@@ -218,6 +218,30 @@ def test_build_parser_supports_gc() -> None:
     assert args.plan_runs_retention_days == 7
 
 
+def test_build_parser_supports_harness_evals() -> None:
+    parser = build_parser()
+
+    args = parser.parse_args(
+        [
+            "harness-evals",
+            "--account-id",
+            "acct-fk-local",
+            "--platform",
+            "xiaohongshu",
+            "--playbook-id",
+            "fengkuang_daily_post",
+            "--plan-path",
+            "demo",
+        ]
+    )
+
+    assert args.command == "harness-evals"
+    assert args.account_id == "acct-fk-local"
+    assert args.platform == "xiaohongshu"
+    assert args.playbook_id == "fengkuang_daily_post"
+    assert args.plan_path == "demo"
+
+
 def test_build_parser_supports_xhs_open_browser() -> None:
     parser = build_parser()
 
@@ -464,6 +488,40 @@ def test_main_dispatches_gc(monkeypatch, capsys) -> None:
     assert captured["runs_retention_days"] == 14
     assert captured["plan_runs_retention_days"] == 7
     assert '"removed_count": 1' in capsys.readouterr().out
+
+
+def test_main_dispatches_harness_evals(monkeypatch, capsys) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run_harness_evals(**kwargs):
+        captured.update(kwargs)
+        return {"runs": {"total": 2}, "plan_runs": {"total": 1}, "recent_failures": []}
+
+    monkeypatch.setattr(
+        "ptsm.interfaces.cli.main.run_harness_evals",
+        fake_run_harness_evals,
+    )
+
+    exit_code = main(
+        [
+            "harness-evals",
+            "--account-id",
+            "acct-fk-local",
+            "--platform",
+            "xiaohongshu",
+            "--playbook-id",
+            "fengkuang_daily_post",
+            "--plan-path",
+            "demo",
+        ]
+    )
+
+    assert exit_code == 0
+    assert captured["account_id"] == "acct-fk-local"
+    assert captured["platform"] == "xiaohongshu"
+    assert captured["playbook_id"] == "fengkuang_daily_post"
+    assert captured["plan_path"] == "demo"
+    assert '"total": 2' in capsys.readouterr().out
 
 
 def test_main_dispatches_xhs_login_qrcode(monkeypatch, tmp_path: Path, capsys) -> None:

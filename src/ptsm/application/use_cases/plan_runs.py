@@ -9,7 +9,7 @@ def run_plan_runs(
     status: str | None = None,
     failure_reason: str | None = None,
     plan_path: str | None = None,
-    limit: int = 20,
+    limit: int | None = 20,
     base_dir: Path | str = ".ptsm/plan_runs",
 ) -> dict[str, object]:
     base_path = Path(base_dir)
@@ -26,9 +26,10 @@ def run_plan_runs(
         runs.append(summary)
 
     runs.sort(key=lambda item: str(item.get("generated_at", "")), reverse=True)
+    limited_runs = runs if limit is None else runs[:limit]
     return {
-        "count": len(runs[:limit]),
-        "runs": runs[:limit],
+        "count": len(limited_runs),
+        "runs": limited_runs,
     }
 
 

@@ -70,3 +70,50 @@ def test_run_plan_runs_filters_evidence_summaries(tmp_path: Path) -> None:
     assert result["runs"][0]["artifact_path"] == str(failed_path)
     assert result["runs"][0]["failure_reasons"] == ["pytest_failed"]
     assert result["runs"][0]["failed_task_count"] == 1
+
+
+def test_run_plan_runs_returns_all_matches_when_limit_is_none(tmp_path: Path) -> None:
+    first_path = tmp_path / "first.evidence.json"
+    first_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "1",
+                "kind": "ptsm.run_plan.verification_evidence",
+                "generated_at": "2026-04-18T10:00:00+00:00",
+                "plan_path": "docs/plans/demo.md",
+                "state_path": str(tmp_path / "first.json"),
+                "status": "completed",
+                "tasks": [],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    second_path = tmp_path / "second.evidence.json"
+    second_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "1",
+                "kind": "ptsm.run_plan.verification_evidence",
+                "generated_at": "2026-04-18T11:00:00+00:00",
+                "plan_path": "docs/plans/demo.md",
+                "state_path": str(tmp_path / "second.json"),
+                "status": "completed",
+                "tasks": [],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_plan_runs(
+        base_dir=tmp_path,
+        plan_path="demo",
+        limit=None,
+    )
+
+    assert result["count"] == 2
+    assert [item["artifact_path"] for item in result["runs"]] == [
+        str(second_path),
+        str(first_path),
+    ]

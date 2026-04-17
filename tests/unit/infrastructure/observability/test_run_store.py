@@ -86,6 +86,47 @@ def test_run_store_lists_recent_runs_with_filters(tmp_path: Path) -> None:
     assert [item["run_id"] for item in result] == [newest.run_id, older.run_id]
 
 
+def test_run_store_lists_all_runs_when_limit_is_none(tmp_path: Path) -> None:
+    store = RunStore(base_dir=tmp_path)
+
+    oldest = store.start(
+        command="run-fengkuang",
+        account_id="acct-fk-local",
+        platform="xiaohongshu",
+        playbook_id="fengkuang_daily_post",
+    )
+    store.finish(oldest.run_id, status="completed")
+
+    middle = store.start(
+        command="run-fengkuang",
+        account_id="acct-fk-local",
+        platform="xiaohongshu",
+        playbook_id="fengkuang_daily_post",
+    )
+    store.finish(middle.run_id, status="completed")
+
+    newest = store.start(
+        command="run-fengkuang",
+        account_id="acct-fk-local",
+        platform="xiaohongshu",
+        playbook_id="fengkuang_daily_post",
+    )
+    store.finish(newest.run_id, status="completed")
+
+    result = store.list_runs(
+        account_id="acct-fk-local",
+        platform="xiaohongshu",
+        status="completed",
+        limit=None,
+    )
+
+    assert [item["run_id"] for item in result] == [
+        newest.run_id,
+        middle.run_id,
+        oldest.run_id,
+    ]
+
+
 def test_run_store_lists_filtered_events_across_runs(tmp_path: Path) -> None:
     store = RunStore(base_dir=tmp_path)
 
