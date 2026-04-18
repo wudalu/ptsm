@@ -39,6 +39,7 @@ PTSM 当前不是“多领域平台已全部完成”的状态，而是一个已
 - 发布链路当前以小红书为主，支持 dry-run 和 MCP 实发。
 - 平台抽象正在形成，但第二垂直领域和持久化 memory 仍未完成。
 - reporting / eval / inspection surface 优先放在 `application/use_cases` 上，并复用本地 artifact stores，而不是引入独立服务层。
+- composed operator snapshots such as `harness-report` 也留在 `application/use_cases`，只读复用现有 harness surfaces，而不是新增 orchestration service。
 - side-effect replay control 也放在 `application/services + application/use_cases`，避免让 `agent_runtime` 直接承担发布副作用策略。
 
 ## Current Design Pressure

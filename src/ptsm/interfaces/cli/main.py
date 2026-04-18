@@ -11,6 +11,7 @@ from ptsm.application.models import FengkuangRequest
 from ptsm.application.use_cases.doctor import run_doctor
 from ptsm.application.use_cases.harness_evals import run_harness_evals
 from ptsm.application.use_cases.harness_gc import run_harness_gc
+from ptsm.application.use_cases.harness_report import run_harness_report
 from ptsm.application.use_cases.logs import run_logs
 from ptsm.application.use_cases.plan_runs import run_plan_runs
 from ptsm.application.use_cases.run_events import run_run_events
@@ -82,6 +83,20 @@ def build_parser() -> argparse.ArgumentParser:
     harness_evals.add_argument("--platform")
     harness_evals.add_argument("--playbook-id")
     harness_evals.add_argument("--plan-path")
+
+    harness_report = subparsers.add_parser("harness-report")
+    harness_report.add_argument("--server-url")
+    harness_report.add_argument("--account-id")
+    harness_report.add_argument("--platform")
+    harness_report.add_argument("--playbook-id")
+    harness_report.add_argument("--plan-path")
+    harness_report.add_argument("--runs-retention-days", type=int, default=30)
+    harness_report.add_argument("--plan-runs-retention-days", type=int, default=30)
+    harness_report.add_argument("--max-stale-docs", type=int)
+    harness_report.add_argument("--max-gc-candidates", type=int)
+    harness_report.add_argument("--min-run-completion-rate", type=float)
+    harness_report.add_argument("--min-plan-completion-rate", type=float)
+    harness_report.add_argument("--fail-on-warning", action="store_true")
 
     logs = subparsers.add_parser("logs")
     logs.add_argument("--run-id")
@@ -284,6 +299,25 @@ def main(argv: Sequence[str] | None = None) -> int:
             plan_path=args.plan_path,
         )
         print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "harness-report":
+        result = run_harness_report(
+            settings=build_login_settings(server_url=args.server_url),
+            account_id=args.account_id,
+            platform=args.platform,
+            playbook_id=args.playbook_id,
+            plan_path=args.plan_path,
+            runs_retention_days=args.runs_retention_days,
+            plan_runs_retention_days=args.plan_runs_retention_days,
+            max_stale_docs=args.max_stale_docs,
+            max_gc_candidates=args.max_gc_candidates,
+            min_run_completion_rate=args.min_run_completion_rate,
+            min_plan_completion_rate=args.min_plan_completion_rate,
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        if args.fail_on_warning and result.get("status") in {"warning", "error"}:
+            return 1
         return 0
 
     if args.command == "logs":

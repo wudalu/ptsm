@@ -3,6 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from ptsm.application.use_cases.harness_gc import (
+    DEFAULT_DOC_STALE_DAYS,
+    DEFAULT_PLAN_RUNS_RETENTION_DAYS,
+    DEFAULT_RUNS_RETENTION_DAYS,
+)
 from ptsm.config.settings import Settings, get_settings
 from ptsm.application.use_cases.harness_gc import inspect_harness_state
 from ptsm.infrastructure.publishers.xiaohongshu_mcp_publisher import XiaohongshuMcpPublisher
@@ -14,6 +19,9 @@ def run_doctor(
     publisher: XiaohongshuMcpPublisher | None = None,
     project_root: Path | str = ".",
     now=None,
+    doc_stale_days: int = DEFAULT_DOC_STALE_DAYS,
+    runs_retention_days: int = DEFAULT_RUNS_RETENTION_DAYS,
+    plan_runs_retention_days: int = DEFAULT_PLAN_RUNS_RETENTION_DAYS,
 ) -> dict[str, object]:
     """Collect local environment and MCP readiness checks."""
     settings = settings or get_settings()
@@ -61,6 +69,9 @@ def run_doctor(
     harness_state = inspect_harness_state(
         project_root=project_root,
         now=now,
+        doc_stale_days=doc_stale_days,
+        runs_retention_days=runs_retention_days,
+        plan_runs_retention_days=plan_runs_retention_days,
     )
     checks.extend(harness_state["checks"])
 

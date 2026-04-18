@@ -242,6 +242,53 @@ def test_build_parser_supports_harness_evals() -> None:
     assert args.plan_path == "demo"
 
 
+def test_build_parser_supports_harness_report() -> None:
+    parser = build_parser()
+
+    args = parser.parse_args(
+        [
+            "harness-report",
+            "--server-url",
+            "http://localhost:19000/mcp",
+            "--account-id",
+            "acct-fk-local",
+            "--platform",
+            "xiaohongshu",
+            "--playbook-id",
+            "fengkuang_daily_post",
+            "--plan-path",
+            "docs/plans/demo.md",
+            "--runs-retention-days",
+            "14",
+            "--plan-runs-retention-days",
+            "7",
+            "--max-stale-docs",
+            "0",
+            "--max-gc-candidates",
+            "1",
+            "--min-run-completion-rate",
+            "0.8",
+            "--min-plan-completion-rate",
+            "0.9",
+            "--fail-on-warning",
+        ]
+    )
+
+    assert args.command == "harness-report"
+    assert args.server_url == "http://localhost:19000/mcp"
+    assert args.account_id == "acct-fk-local"
+    assert args.platform == "xiaohongshu"
+    assert args.playbook_id == "fengkuang_daily_post"
+    assert args.plan_path == "docs/plans/demo.md"
+    assert args.runs_retention_days == 14
+    assert args.plan_runs_retention_days == 7
+    assert args.max_stale_docs == 0
+    assert args.max_gc_candidates == 1
+    assert args.min_run_completion_rate == 0.8
+    assert args.min_plan_completion_rate == 0.9
+    assert args.fail_on_warning is True
+
+
 def test_build_parser_supports_xhs_open_browser() -> None:
     parser = build_parser()
 
@@ -522,6 +569,67 @@ def test_main_dispatches_harness_evals(monkeypatch, capsys) -> None:
     assert captured["playbook_id"] == "fengkuang_daily_post"
     assert captured["plan_path"] == "demo"
     assert '"total": 2' in capsys.readouterr().out
+
+
+def test_main_dispatches_harness_report_and_can_fail_on_warning(
+    monkeypatch, capsys
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run_harness_report(**kwargs):
+        captured.update(kwargs)
+        return {
+            "status": "warning",
+            "thresholds": {"configured": {"max_stale_docs": 0}, "violations": []},
+        }
+
+    monkeypatch.setattr(
+        "ptsm.interfaces.cli.main.run_harness_report",
+        fake_run_harness_report,
+    )
+
+    exit_code = main(
+        [
+            "harness-report",
+            "--server-url",
+            "http://localhost:19000/mcp",
+            "--account-id",
+            "acct-fk-local",
+            "--platform",
+            "xiaohongshu",
+            "--playbook-id",
+            "fengkuang_daily_post",
+            "--plan-path",
+            "docs/plans/demo.md",
+            "--runs-retention-days",
+            "14",
+            "--plan-runs-retention-days",
+            "7",
+            "--max-stale-docs",
+            "0",
+            "--max-gc-candidates",
+            "1",
+            "--min-run-completion-rate",
+            "0.8",
+            "--min-plan-completion-rate",
+            "0.9",
+            "--fail-on-warning",
+        ]
+    )
+
+    assert exit_code == 1
+    assert captured["settings"].xhs_mcp_server_url == "http://localhost:19000/mcp"
+    assert captured["account_id"] == "acct-fk-local"
+    assert captured["platform"] == "xiaohongshu"
+    assert captured["playbook_id"] == "fengkuang_daily_post"
+    assert captured["plan_path"] == "docs/plans/demo.md"
+    assert captured["runs_retention_days"] == 14
+    assert captured["plan_runs_retention_days"] == 7
+    assert captured["max_stale_docs"] == 0
+    assert captured["max_gc_candidates"] == 1
+    assert captured["min_run_completion_rate"] == 0.8
+    assert captured["min_plan_completion_rate"] == 0.9
+    assert '"status": "warning"' in capsys.readouterr().out
 
 
 def test_main_dispatches_xhs_login_qrcode(monkeypatch, tmp_path: Path, capsys) -> None:

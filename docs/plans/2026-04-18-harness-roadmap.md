@@ -122,6 +122,17 @@ Expected: PASS.
 - do not start here until Phase 1 and Phase 2 are stable
 - prefer a local index or export layer before adding external stacks
 
+### Follow-Up: Operational Harness Report
+
+**Outcome:** Compose the existing harness surfaces into one read-only local report that operators and automation can query or gate on directly.
+
+**Status:** Implemented in follow-up work as `ptsm harness-report`.
+
+**Implementation Notes:**
+- keep composition in `application/use_cases`
+- reuse `doctor`, `gc`, and `harness-evals` instead of adding a new artifact store
+- support threshold checks before investing in traces or metrics
+
 ### Verification And Delivery
 
 **Step 1: Run targeted verification for the active phase**
