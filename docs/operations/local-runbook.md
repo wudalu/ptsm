@@ -105,6 +105,28 @@ uv run python -m ptsm.bootstrap xhs-check-publish \
   --artifact outputs/artifacts/<artifact>.json
 ```
 
+If you want one read-only diagnosis that combines login readiness, artifact metadata, run logs, and publish verification:
+
+```bash
+uv run python -m ptsm.bootstrap diagnose-publish \
+  --artifact outputs/artifacts/<artifact>.json
+```
+
+You can also start from the run id if you only have a run handle:
+
+```bash
+uv run python -m ptsm.bootstrap diagnose-publish \
+  --run-id <run_id>
+```
+
+`diagnose-publish` will return:
+
+- `likely_cause`
+- `evidence`
+- `next_actions`
+
+Use it when `xhs-check-publish` alone is not enough to tell whether the root issue is login state, missing publish identifiers, unsupported MCP status checks, or a real publish error.
+
 If you only need to open the resulting post or fall back to creator center:
 
 ```bash

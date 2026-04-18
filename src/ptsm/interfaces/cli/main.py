@@ -8,6 +8,7 @@ from typing import Sequence
 import uuid
 
 from ptsm.application.models import FengkuangRequest
+from ptsm.application.use_cases.diagnose_publish import run_diagnose_publish
 from ptsm.application.use_cases.doctor import run_doctor
 from ptsm.application.use_cases.harness_evals import run_harness_evals
 from ptsm.application.use_cases.harness_gc import run_harness_gc
@@ -139,6 +140,11 @@ def build_parser() -> argparse.ArgumentParser:
     xhs_check_publish = subparsers.add_parser("xhs-check-publish")
     xhs_check_publish.add_argument("--artifact", type=Path, required=True)
     xhs_check_publish.add_argument("--server-url")
+
+    diagnose_publish = subparsers.add_parser("diagnose-publish")
+    diagnose_publish.add_argument("--artifact", type=Path)
+    diagnose_publish.add_argument("--run-id")
+    diagnose_publish.add_argument("--server-url")
 
     run_plan = subparsers.add_parser("run-plan")
     run_plan.add_argument("--plan", type=Path, required=True)
@@ -377,6 +383,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "xhs-check-publish":
         result = check_xhs_publish_status(
             artifact_path=args.artifact,
+            settings=build_login_settings(server_url=args.server_url),
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "diagnose-publish":
+        result = run_diagnose_publish(
+            artifact_path=args.artifact,
+            run_id=args.run_id,
             settings=build_login_settings(server_url=args.server_url),
         )
         print(json.dumps(result, ensure_ascii=False, indent=2))

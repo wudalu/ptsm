@@ -20,6 +20,7 @@ def test_harness_engineering_doc_exists_with_key_sections() -> None:
     assert "agent readability" in doc_text
     assert "observability" in doc_text
     assert "threshold" in doc_text
+    assert "diagnostic" in doc_text
 
 
 def test_task_completion_automation_mentions_verification_evidence() -> None:
@@ -39,6 +40,7 @@ def test_operations_doc_mentions_plan_runs_command() -> None:
     assert "gc" in doc_text
     assert "harness-evals" in doc_text
     assert "harness-report" in doc_text
+    assert "diagnose-publish" in doc_text
 
 
 def test_docs_index_links_core_maps() -> None:

@@ -307,6 +307,27 @@ def test_build_parser_supports_xhs_check_publish() -> None:
     assert args.artifact == Path("outputs/artifacts/demo.json")
 
 
+def test_build_parser_supports_diagnose_publish() -> None:
+    parser = build_parser()
+
+    args = parser.parse_args(
+        [
+            "diagnose-publish",
+            "--run-id",
+            "run-123",
+            "--artifact",
+            "outputs/artifacts/demo.json",
+            "--server-url",
+            "http://localhost:19000/mcp",
+        ]
+    )
+
+    assert args.command == "diagnose-publish"
+    assert args.run_id == "run-123"
+    assert args.artifact == Path("outputs/artifacts/demo.json")
+    assert args.server_url == "http://localhost:19000/mcp"
+
+
 def test_scaffold_files_pin_python_runtime() -> None:
     assert (PROJECT_ROOT / ".env.example").is_file()
     assert (PROJECT_ROOT / "README.md").is_file()
@@ -766,6 +787,42 @@ def test_main_dispatches_xhs_check_publish(monkeypatch, capsys, tmp_path: Path) 
     assert captured["artifact_path"] == artifact_path
     assert captured["settings"].xhs_mcp_server_url == "http://localhost:19000/mcp"
     assert '"status": "published_visible"' in capsys.readouterr().out
+
+
+def test_main_dispatches_diagnose_publish(monkeypatch, capsys, tmp_path: Path) -> None:
+    artifact_path = tmp_path / "artifact.json"
+    captured: dict[str, object] = {}
+
+    def fake_run_diagnose_publish(**kwargs):
+        captured.update(kwargs)
+        return {
+            "status": "warning",
+            "likely_cause": "publish_identifiers_missing",
+            "next_actions": ["Inspect artifact metadata."],
+        }
+
+    monkeypatch.setattr(
+        "ptsm.interfaces.cli.main.run_diagnose_publish",
+        fake_run_diagnose_publish,
+    )
+
+    exit_code = main(
+        [
+            "diagnose-publish",
+            "--run-id",
+            "run-123",
+            "--artifact",
+            str(artifact_path),
+            "--server-url",
+            "http://localhost:19000/mcp",
+        ]
+    )
+
+    assert exit_code == 0
+    assert captured["run_id"] == "run-123"
+    assert captured["artifact_path"] == artifact_path
+    assert captured["settings"].xhs_mcp_server_url == "http://localhost:19000/mcp"
+    assert '"likely_cause": "publish_identifiers_missing"' in capsys.readouterr().out
 
 
 def test_run_plan_cli_generates_default_state_path(monkeypatch, tmp_path: Path) -> None:

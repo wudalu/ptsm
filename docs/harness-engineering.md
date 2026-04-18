@@ -39,6 +39,7 @@ repository.
 - local harness eval summaries over runs, events, and plan-run evidence
 - an operational `harness-report` snapshot that composes `doctor`, `gc`, and `harness-evals`
 - threshold checks that let local automation treat harness drift or reliability regressions as warnings
+- a publish diagnostic surface that classifies likely failure causes and returns next actions for a single publish attempt
 - side-effect ledger for safe publish replay on the same `thread_id`
 
 ## What We Should Build Next
