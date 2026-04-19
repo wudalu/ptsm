@@ -31,6 +31,8 @@ PACKAGE_ROOT = Path(__file__).resolve().parents[2]
 PLAYBOOK_ROOT = PACKAGE_ROOT / "playbooks" / "definitions"
 DEFAULT_SIDE_EFFECT_LEDGER_PATH = Path(".ptsm") / "agent_runtime" / "side-effects.json"
 DEFAULT_GENERATED_IMAGES_DIR = Path("outputs") / "generated_images"
+WAIT_FOR_PUBLISH_STATUS_SEARCH_RETRY_ATTEMPTS = 4
+WAIT_FOR_PUBLISH_STATUS_SEARCH_RETRY_INTERVAL_SECONDS = 2.0
 
 
 def run_playbook(
@@ -272,7 +274,9 @@ def run_playbook(
             status_result = check_xhs_publish_status(
                 artifact_path=artifact_path,
                 settings=settings,
-                publisher=publisher,
+                publisher=None,
+                search_retry_attempts=WAIT_FOR_PUBLISH_STATUS_SEARCH_RETRY_ATTEMPTS,
+                search_retry_interval_seconds=WAIT_FOR_PUBLISH_STATUS_SEARCH_RETRY_INTERVAL_SECONDS,
             )
             post_publish_checks["status_result"] = status_result
             post_publish_checks["publish_status"] = str(
@@ -455,19 +459,36 @@ def _build_image_generation_prompt(
     scene: str,
     final_content: dict[str, Any],
 ) -> str:
-    title = str(final_content.get("title", "")).strip()
-    image_text = str(final_content.get("image_text", "")).strip()
-    body = str(final_content.get("body", "")).strip()
-    hashtags = " ".join(str(tag).strip() for tag in final_content.get("hashtags", []))
-    return (
+    scene_text = _truncate_text(str(final_content.get("scene", scene)).strip() or scene, 80)
+    title = _truncate_text(str(final_content.get("title", "")).strip(), 80)
+    image_text = _truncate_text(str(final_content.get("image_text", "")).strip(), 120)
+    body = _truncate_text(
+        " ".join(str(final_content.get("body", "")).split()),
+        260,
+    )
+    hashtags = _truncate_text(
+        " ".join(str(tag).strip() for tag in final_content.get("hashtags", [])[:3]),
+        80,
+    )
+    prompt = (
         "为小红书帖子生成一张 3:4 竖版封面图，适合中文社交媒体发布。"
-        f"主题场景：{scene}。"
+        f"主题场景：{scene_text}。"
         f"标题氛围：{title}。"
         f"封面文案参考：{image_text}。"
-        f"正文情绪：{body}。"
+        f"正文情绪摘要：{body}。"
         f"标签氛围：{hashtags}。"
-        "画面需要有留白，风格统一，情绪准确，适合作为单图封面。"
+        "要求：中文互联网感，构图干净，有留白，情绪准确，不要复杂小字，不要水印。"
     )
+    return _truncate_text(prompt, 800)
+
+
+def _truncate_text(value: str, limit: int) -> str:
+    normalized = value.strip()
+    if len(normalized) <= limit:
+        return normalized
+    if limit <= 1:
+        return normalized[:limit]
+    return normalized[: limit - 1].rstrip() + "…"
 
 
 def _should_record_publish_result(result: dict[str, Any] | None) -> bool:

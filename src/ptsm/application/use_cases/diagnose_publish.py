@@ -194,11 +194,18 @@ def _classify(
         return ("error", "artifact_missing")
 
     publish_status_value = str(publish_status.get("status", "unknown"))
-    if publish_status_value in {"published_visible", "published", "success"}:
+    if publish_status_value in {
+        "published_visible",
+        "published",
+        "success",
+        "published_search_verified",
+    }:
         return ("ok", "publish_status_verified")
     if publish_status_value == "unsupported":
         return ("warning", "publish_status_unsupported")
     if publish_status_value == "manual_check_required":
+        if publish_status.get("reason_code") == "private_missing_identifiers":
+            return ("warning", "private_publish_identifiers_missing")
         if not _artifact_has_publish_identifiers(artifact):
             return ("warning", "publish_identifiers_missing")
         return ("warning", "manual_review_required")
@@ -242,6 +249,9 @@ def _build_evidence(
 
     if publish_status is not None:
         evidence.append(f"publish_status.status={publish_status.get('status', 'unknown')}")
+        reason_code = publish_status.get("reason_code")
+        if reason_code is not None:
+            evidence.append(f"publish_status.reason_code={reason_code}")
 
     return evidence
 
@@ -274,6 +284,12 @@ def _next_actions(
             f"Inspect `{artifact_arg}` and confirm `publish_result` contains post_id/post_url.",
             f"Use `uv run python -m ptsm.bootstrap xhs-open-browser --target artifact --artifact {artifact_arg}` for manual verification.",
             "If publish succeeded, update publisher metadata extraction so future artifacts keep identifiers.",
+        ]
+    if likely_cause == "private_publish_identifiers_missing":
+        return [
+            f"`{artifact_arg}` was published with `仅自己可见`, but the upstream response did not return post_id/post_url.",
+            "Current tooling cannot auto-verify private posts without upstream identifiers.",
+            f"Use `uv run python -m ptsm.bootstrap xhs-open-browser --target artifact --artifact {artifact_arg}` for manual verification.",
         ]
     if likely_cause == "publish_status_unsupported":
         return [

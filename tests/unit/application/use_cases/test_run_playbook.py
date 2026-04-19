@@ -6,7 +6,10 @@ from pathlib import Path
 import pytest
 
 from ptsm.application.models import FengkuangRequest
-from ptsm.application.use_cases.run_playbook import run_fengkuang_playbook
+from ptsm.application.use_cases.run_playbook import (
+    _build_image_generation_prompt,
+    run_fengkuang_playbook,
+)
 from ptsm.infrastructure.memory.checkpoint import FileCheckpointSaver
 from ptsm.infrastructure.memory.store import FileExecutionMemory
 from ptsm.infrastructure.observability.run_store import RunStore
@@ -396,6 +399,102 @@ def test_run_fengkuang_playbook_runs_post_publish_checks_when_requested(
     assert result["post_publish_checks"]["browser_result"]["status"] == "opened"
 
 
+def test_run_fengkuang_playbook_uses_retry_window_for_publish_status_wait(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    artifact_path = tmp_path / "artifact.json"
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "fengkuang_daily_post",
+                "final_content": {"title": "旧标题"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_fengkuang_workflow",
+        lambda **_: FakeWorkflow(artifact_path),
+    )
+
+    def fake_check_xhs_publish_status(**kwargs: object) -> dict[str, object]:
+        captured.update(kwargs)
+        return {
+            "status": "published_search_verified",
+            "post_id": "note-123",
+            "post_url": "https://www.xiaohongshu.com/explore/note-123",
+            "source": "mcp_search",
+        }
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.check_xhs_publish_status",
+        fake_check_xhs_publish_status,
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = run_fengkuang_playbook(
+        FengkuangRequest(
+            scene="周六晚上十点半，公开发一条打工人周末快结束的发疯文学测试",
+            platform="xiaohongshu",
+            account_id="acct-fk-local",
+            wait_for_publish_status=True,
+        ),
+        publisher=SuccessfulPublisher(),
+    )
+
+    assert result["post_publish_checks"]["publish_status"] == "published_search_verified"
+    assert captured["search_retry_attempts"] == 4
+    assert captured["search_retry_interval_seconds"] == 2.0
+
+
+def test_run_fengkuang_playbook_uses_fresh_status_publisher_for_wait(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    artifact_path = tmp_path / "artifact.json"
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "fengkuang_daily_post",
+                "final_content": {"title": "旧标题"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    publisher = SuccessfulPublisher()
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_fengkuang_workflow",
+        lambda **_: FakeWorkflow(artifact_path),
+    )
+
+    def fake_check_xhs_publish_status(**kwargs: object) -> dict[str, object]:
+        captured.update(kwargs)
+        return {"status": "manual_check_required", "artifact_path": str(kwargs["artifact_path"])}
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.check_xhs_publish_status",
+        fake_check_xhs_publish_status,
+    )
+    monkeypatch.chdir(tmp_path)
+
+    run_fengkuang_playbook(
+        FengkuangRequest(
+            scene="等回复",
+            platform="xiaohongshu",
+            account_id="acct-fk-local",
+            wait_for_publish_status=True,
+        ),
+        publisher=publisher,
+    )
+
+    assert captured["publisher"] is None
+
+
 def test_run_fengkuang_playbook_returns_preflight_payload_on_login_required(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -624,3 +723,25 @@ def test_run_fengkuang_playbook_skips_generation_for_dry_run_without_flag(
 
     assert publisher.received_image_paths == []
     assert result.get("image_generation") is None
+
+
+def test_build_image_generation_prompt_stays_within_bailian_limit() -> None:
+    prompt = _build_image_generation_prompt(
+        scene="周六社畜躺平",
+        final_content={
+            "title": "周六躺平失败实录：我的床好像有结界",
+            "image_text": "试图在床上躺成一条咸鱼，结果被自己的焦虑反复煎烤。",
+            "body": "周六躺平失败。" * 300,
+            "hashtags": [
+                "#发疯文学",
+                "#成年人的崩溃瞬间",
+                "#周末躺平计划",
+                "#社畜日常",
+                "#精神状态良好",
+            ],
+        },
+    )
+
+    assert len(prompt) <= 800
+    assert "周六社畜躺平" in prompt
+    assert "周六躺平失败实录" in prompt

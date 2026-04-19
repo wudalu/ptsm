@@ -4,8 +4,10 @@ import asyncio
 from datetime import timedelta
 import json
 from pathlib import Path
+import re
 from typing import Any, Protocol, Sequence
 
+from langchain_core.messages import ToolMessage
 from langchain_mcp_adapters.client import MultiServerMCPClient
 
 from ptsm.accounts.registry import AccountProfile
@@ -44,7 +46,7 @@ class LangChainMcpToolRunner:
 
     async def invoke_tool(self, tool_name: str, payload: dict[str, object]) -> object:
         tools = await self._load_tools()
-        return await tools[tool_name].ainvoke(payload)
+        return await tools[tool_name].arun(payload, tool_call_id=f"ptsm:{tool_name}")
 
     async def _load_tools(self) -> dict[str, Any]:
         if self._tools is None:
@@ -119,6 +121,14 @@ class XiaohongshuMcpPublisher:
         return asyncio.run(
             self._check_publish_status_async(post_id=post_id, post_url=post_url)
         )
+
+    def find_published_note(
+        self,
+        *,
+        title: str,
+        body: str,
+    ) -> dict[str, object] | None:
+        return asyncio.run(self._find_published_note_async(title=title, body=body))
 
     async def _publish_async(
         self,
@@ -215,6 +225,52 @@ class XiaohongshuMcpPublisher:
             "details": data,
         }
 
+    async def _find_published_note_async(
+        self,
+        *,
+        title: str,
+        body: str,
+    ) -> dict[str, object] | None:
+        if not title.strip():
+            return None
+
+        tool_names = await self.tool_runner.list_tool_names()
+        if "search_feeds" not in tool_names:
+            return None
+
+        response = await self.tool_runner.invoke_tool("search_feeds", {"keyword": title.strip()})
+        data = self._extract_json_payload(response)
+        if not isinstance(data, dict):
+            return None
+
+        feeds = data.get("feeds")
+        if not isinstance(feeds, list):
+            return None
+
+        for feed in feeds:
+            if not isinstance(feed, dict):
+                continue
+            note_card = feed.get("noteCard")
+            if not isinstance(note_card, dict):
+                continue
+            display_title = note_card.get("displayTitle")
+            if not isinstance(display_title, str) or display_title.strip() != title.strip():
+                continue
+            post_id = self._find_first_string(feed, "id")
+            xsec_token = self._find_first_string(feed, "xsecToken", "xsec_token")
+            if post_id is None:
+                continue
+            result: dict[str, object] = {
+                "post_id": post_id,
+                "post_url": f"https://www.xiaohongshu.com/explore/{post_id}",
+                "source": "mcp_search",
+            }
+            if xsec_token is not None:
+                result["xsec_token"] = xsec_token
+            return result
+
+        return None
+
     def _validate_images(self, image_paths: Sequence[str]) -> list[str]:
         resolved = [str(Path(path)) for path in image_paths if str(path).strip()]
         if not resolved:
@@ -241,9 +297,14 @@ class XiaohongshuMcpPublisher:
             "content": str(content["body"]).strip(),
             "images": image_paths,
             "tags": [tag for tag in hashtags if tag],
+            "visibility": visibility,
         }
 
     def _extract_text(self, payload: object) -> str:
+        if isinstance(payload, ToolMessage):
+            return self._extract_text(payload.content)
+        if isinstance(payload, tuple) and payload:
+            return self._extract_text(payload[0])
         if isinstance(payload, str):
             return payload
         if isinstance(payload, list):
@@ -257,6 +318,23 @@ class XiaohongshuMcpPublisher:
         return json.dumps(payload, ensure_ascii=False)
 
     def _extract_json_payload(self, payload: object) -> object:
+        if isinstance(payload, ToolMessage):
+            artifact = payload.artifact
+            if isinstance(artifact, dict):
+                structured = artifact.get("structured_content") or artifact.get("structuredContent")
+                if isinstance(structured, dict):
+                    return structured
+                return artifact
+            return self._extract_json_payload(payload.content)
+        if isinstance(payload, tuple) and payload:
+            content = payload[0]
+            artifact = payload[1] if len(payload) > 1 else None
+            if isinstance(artifact, dict):
+                structured = artifact.get("structured_content") or artifact.get("structuredContent")
+                if isinstance(structured, dict):
+                    return structured
+                return artifact
+            return self._extract_json_payload(content)
         if isinstance(payload, dict):
             return payload
         if isinstance(payload, list) and payload:
@@ -274,18 +352,62 @@ class XiaohongshuMcpPublisher:
 
     def _extract_publish_metadata(self, payload: object) -> dict[str, object]:
         data = self._extract_json_payload(payload)
-        if not isinstance(data, dict):
-            return {}
-
         metadata: dict[str, object] = {}
-        for source_key, target_key in (
-            ("post_id", "post_id"),
-            ("note_id", "post_id"),
-            ("id", "post_id"),
-            ("post_url", "post_url"),
-            ("url", "post_url"),
-        ):
-            value = data.get(source_key)
-            if isinstance(value, str) and value.strip():
-                metadata[target_key] = value
+        post_id = self._find_first_string(data, "post_id", "note_id", "noteId", "id")
+        post_url = self._find_first_string(
+            data,
+            "post_url",
+            "note_url",
+            "noteUrl",
+            "url",
+            "share_url",
+            "shareUrl",
+            "canonical_url",
+            "canonicalUrl",
+        )
+        text = self._extract_text(payload)
+
+        if post_url is None:
+            post_url = self._extract_post_url_from_text(text)
+        if post_id is None:
+            post_id = self._extract_post_id_from_text(text)
+        if post_id is None and post_url is not None:
+            match = re.search(r"/explore/([^/?#]+)", post_url)
+            if match:
+                post_id = match.group(1)
+
+        if post_id is not None:
+            metadata["post_id"] = post_id
+        if post_url is not None:
+            metadata["post_url"] = post_url
         return metadata
+
+    def _find_first_string(self, payload: object, *keys: str) -> str | None:
+        if isinstance(payload, dict):
+            for key in keys:
+                value = payload.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+            for value in payload.values():
+                found = self._find_first_string(value, *keys)
+                if found is not None:
+                    return found
+            return None
+        if isinstance(payload, list):
+            for item in payload:
+                found = self._find_first_string(item, *keys)
+                if found is not None:
+                    return found
+        return None
+
+    def _extract_post_url_from_text(self, text: str) -> str | None:
+        match = re.search(r"https://www\.xiaohongshu\.com/explore/[A-Za-z0-9_-]+", text)
+        if match:
+            return match.group(0)
+        return None
+
+    def _extract_post_id_from_text(self, text: str) -> str | None:
+        match = re.search(r"(?:PostID|post_id|note_id|noteId)[:=]\s*([A-Za-z0-9_-]+)", text)
+        if match:
+            return match.group(1)
+        return None

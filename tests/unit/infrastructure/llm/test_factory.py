@@ -113,6 +113,32 @@ def test_factory_sanitizes_scene_before_deepseek_prompt() -> None:
     assert "周六社畜躺平" in user_prompt
 
 
+def test_factory_deepseek_prompt_hardens_required_phrase_and_hashtag() -> None:
+    settings = Settings.model_construct(
+        default_model_provider="deepseek",
+        default_model="deepseek-chat",
+        deepseek_api_key="sk-test",
+        deepseek_model="deepseek-chat",
+        deepseek_base_url="https://api.deepseek.com/v1",
+        deepseek_temperature=0.3,
+        deepseek_max_tokens=1024,
+    )
+
+    backend = build_drafting_backend(settings, chat_model_cls=CapturingChatDeepSeek)
+    backend.generate(
+        scene="周日晚上想到明天又要开工",
+        reflection_feedback="# 发疯文学 Reflection\n3. 结尾是否有轻量正向收束，优先包含“也算”这类词。",
+        skill_contents=[
+            "# Positive Reframe\n结尾加入“也算”“至少”“还能”一类轻量正向缓冲。",
+            "# XHS Hashtagging\n发疯文学方向优先包含 `#发疯文学`。",
+        ],
+    )
+
+    user_prompt = CapturingChatDeepSeek.last_messages[1].content
+    assert "正文必须包含“也算”" in user_prompt
+    assert "hashtags 数组必须包含 '#发疯文学'" in user_prompt
+
+
 def test_parse_json_payload_accepts_prose_wrapped_fenced_json() -> None:
     content = """
     下面是你要的结果：
@@ -154,6 +180,27 @@ def test_parse_json_payload_recovers_deepseek_hashtag_formatting_glitch() -> Non
         "#躺平失败实录",
         "#周末悖论",
         "#职场后遗症",
+    ]
+
+
+def test_parse_json_payload_recovers_bare_hashtag_entries_without_opening_quotes() -> None:
+    content = """```json
+{
+    "title": "周一早高峰地铁，我的灵魂被挤成了二维码",
+    "image_text": "照片里：一只被挤到变形的帆布包。",
+    "body": "周一早高峰地铁通勤，不过熬过去也算今天还有点战绩。",
+    "hashtags": ["#发疯文学", "#周一早高峰", #地铁人类观察", "#通勤发疯实录", #我的精神状态]
+}
+```"""
+
+    payload = _parse_json_payload(content)
+
+    assert payload["hashtags"] == [
+        "#发疯文学",
+        "#周一早高峰",
+        "#地铁人类观察",
+        "#通勤发疯实录",
+        "#我的精神状态",
     ]
 
 

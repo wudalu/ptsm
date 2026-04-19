@@ -82,13 +82,18 @@ class DeepSeekDraftBackend:
         skill_contents: list[str] | None = None,
     ) -> dict[str, Any]:
         scene = _normalize_scene(scene)
-        extra_context = "\n\n".join(
-            chunk for chunk in [planner_prompt or "", *(skill_contents or [])] if chunk
-        )
+        extra_context_chunks = [
+            planner_prompt or "",
+            reflection_feedback or "",
+            *(skill_contents or []),
+        ]
+        extra_context = "\n\n".join(chunk for chunk in extra_context_chunks if chunk)
+        hard_requirements = _build_deepseek_hard_requirements(extra_context)
         user_prompt = (
             f"场景：{scene}\n"
             f"修正意见：{reflection_feedback or '无'}\n"
             f"补充约束：{extra_context or '无'}\n"
+            f"硬性约束：{hard_requirements}\n"
             "请生成一条小红书发疯文学文案，并返回严格 JSON。"
         )
         response = self._llm.invoke(
@@ -232,7 +237,28 @@ def _parse_json_payload(content: str) -> dict[str, Any]:
 def _repair_json_payload_text(content: str) -> str:
     repaired = content.strip()
     repaired = re.sub(r'(?<=[\[,])\s*#"', ' "#', repaired)
+    repaired = re.sub(
+        r'([,\[]\s*)(#([^",\]\s]+))"',
+        r'\1"\2"',
+        repaired,
+    )
+    repaired = re.sub(
+        r'([,\[]\s*)(#([^",\]\s]+))(?=\s*[,}\]])',
+        r'\1"\2"',
+        repaired,
+    )
     return repaired
+
+
+def _build_deepseek_hard_requirements(extra_context: str) -> str:
+    requirements = [
+        "只输出 JSON 对象，不要 Markdown 代码块，不要额外解释。",
+    ]
+    if "#发疯文学" in extra_context:
+        requirements.append("hashtags 数组必须包含 '#发疯文学'。")
+    if "也算" in extra_context:
+        requirements.append("正文必须包含“也算”，并把它放在结尾的轻量正向收束句里。")
+    return " ".join(requirements)
 
 
 def _normalize_hashtags(raw_hashtags: object) -> list[str]:

@@ -42,6 +42,9 @@ PTSM 当前的观测性核心是本地文件系统里的 run store 和 artifacts
 - `RunStore.list_events()`、`RunStore.aggregate_events()` 和 `ptsm run-events` 支持按 run 维度和 event 维度过滤最近事件，并做轻量聚合。
 - `run-plan` 现在会把 verify 命令的 attempt history、stdout/stderr 和 normalized `failure_reason` 落成 sibling evidence artifact，便于审计和 resume 后回看。
 - `ptsm plan-runs` 支持按 `status`、`failure_reason`、`plan_path` 查询最近 plan-run evidence。
+- real publish artifacts now persist the requested publish payload, including `visibility`, and will retain `post_id` / `post_url` when upstream XiaoHongShu MCP responses expose identifiers.
+- `xhs-check-publish` now has a narrow public-post fallback: when upstream publish responses omit identifiers, it can use MCP `search_feeds` to verify a post only if the requested visibility is not `仅自己可见` and an exact title match is found.
+- `run-fengkuang --wait-for-publish-status` now gives that public `search_feeds` fallback a short bounded retry window, so posts that become searchable a few seconds after publish can still settle into `published_search_verified` during the initial run.
 - `doctor` 现在会额外报告 harness drift，包括 stale active docs、orphan plan-run evidence 和 malformed run dirs。
 - `ptsm gc` 默认以 dry-run 方式列出可安全清理的 completed run artifacts 和 orphan evidence，`--apply` 才会删除。
 - `ptsm harness-evals` 会把 runs、events 和 plan-run evidence 聚成一个本地 eval 视图，输出 completion rate、status breakdown、failure reason breakdown 和 recent failures。
@@ -59,6 +62,7 @@ PTSM 当前的观测性核心是本地文件系统里的 run store 和 artifacts
 - 现在的 eval surface 仍然是本地只读 JSON 汇总，不是持续回归系统或外部 dashboard。
 - 现在的 report surface 仍是本地单次 snapshot，不是长期历史报表或外部告警系统。
 - 现在的 publish diagnostic 仍然是单次 case diagnosis，不是自动批量归因或跨运行统计。
+- `仅自己可见` 的帖子如果上游仍未回传 `post_id/post_url`，当前工具链仍然无法自动核验，只能人工确认或等待上游补齐标识。
 
 ## Related Entry Points
 

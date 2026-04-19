@@ -51,6 +51,16 @@ uv run python -m ptsm.bootstrap run-fengkuang \
   --wait-for-publish-status
 ```
 
+Force a real publish to stay private:
+
+```bash
+uv run python -m ptsm.bootstrap run-fengkuang \
+  --scene "周三下班地铁没座位" \
+  --account-id acct-fk-local \
+  --publish-mode mcp-real \
+  --publish-visibility "仅自己可见"
+```
+
 If you also want the workflow to open the browser when the status cannot be verified automatically:
 
 ```bash
@@ -127,6 +137,8 @@ uv run python -m ptsm.bootstrap xhs-check-publish \
   --artifact outputs/artifacts/<artifact>.json
 ```
 
+When upstream publish responses omit identifiers, `xhs-check-publish` will also try a narrow MCP search fallback for posts that were not published as `仅自己可见`. The fallback only succeeds on exact title matches; it does not try to guess fuzzy matches. During `run-fengkuang --wait-for-publish-status`, PTSM gives that public fallback a short retry window so newly published posts can become searchable before the initial run finishes.
+
 If you want one read-only diagnosis that combines login readiness, artifact metadata, run logs, and publish verification:
 
 ```bash
@@ -147,7 +159,7 @@ uv run python -m ptsm.bootstrap diagnose-publish \
 - `evidence`
 - `next_actions`
 
-Use it when `xhs-check-publish` alone is not enough to tell whether the root issue is login state, missing publish identifiers, unsupported MCP status checks, or a real publish error.
+Use it when `xhs-check-publish` alone is not enough to tell whether the root issue is login state, missing publish identifiers, private-post verification limits, unsupported MCP status checks, or a real publish error.
 
 If you only need to open the resulting post or fall back to creator center:
 
@@ -160,5 +172,7 @@ uv run python -m ptsm.bootstrap xhs-open-browser \
 ## Current Limits
 
 - `xhs-open-browser` was not exercised end-to-end in automation here because opening a GUI browser requires local approval.
-- `xhs-check-publish` can only auto-verify when the artifact has a resolvable `post_id` or `post_url`, or when the MCP server exposes a supported status tool.
+- successful real publishes now persist the requested `visibility` in `publish_result.platform_payload`, and will also persist `post_id` / `post_url` when the upstream MCP response exposes them.
+- `xhs-check-publish` can auto-verify public posts either from direct identifiers or, when identifiers are missing, from an exact-title `search_feeds` fallback. `run-fengkuang --wait-for-publish-status` will retry that public fallback briefly, but a longer upstream indexing delay can still leave the first run at `manual_check_required`.
+- `仅自己可见` posts still cannot be auto-verified if upstream did not return `post_id` / `post_url`; current tooling can only fall back to manual confirmation in that case.
 - Real publish still depends on a reachable `xiaohongshu-mcp` server and valid login state.

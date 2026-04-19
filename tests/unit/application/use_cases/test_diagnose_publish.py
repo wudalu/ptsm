@@ -116,6 +116,35 @@ def test_run_diagnose_publish_classifies_publish_identifiers_missing(
     assert any("post_id/post_url" in item for item in result["next_actions"])
 
 
+def test_run_diagnose_publish_classifies_private_publish_identifiers_missing(
+    tmp_path: Path,
+) -> None:
+    artifact_path = _write_artifact(
+        tmp_path,
+        {
+            "publish_result": {
+                "status": "published",
+                "platform_payload": {
+                    "title": "周日晚上，我的灵魂已经提前在工位坐牢",
+                    "content": "至少今晚还能再瘫两小时，也算最后的狂欢。",
+                    "visibility": "仅自己可见",
+                },
+            }
+        },
+    )
+
+    result = run_diagnose_publish(
+        artifact_path=artifact_path,
+        project_root=tmp_path,
+        publisher=FakePublisher(preflight_payload={"status": "ready"}),
+    )
+
+    assert result["status"] == "warning"
+    assert result["likely_cause"] == "private_publish_identifiers_missing"
+    assert result["publish_status"]["reason_code"] == "private_missing_identifiers"
+    assert any("仅自己可见" in item for item in result["next_actions"])
+
+
 def test_run_diagnose_publish_classifies_publish_status_unsupported(
     tmp_path: Path,
 ) -> None:
