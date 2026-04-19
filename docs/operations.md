@@ -5,6 +5,7 @@ owner: ptsm
 last_verified: 2026-04-19
 source_of_truth: true
 related_paths:
+  - docs/operations/cloud-bootstrap.md
   - docs/operations/local-runbook.md
   - docs/operations/task-completion-automation.md
   - src/ptsm/interfaces/cli/main.py
@@ -16,6 +17,7 @@ related_paths:
 
 ## Primary Runbooks
 
+- 云上 clone 与启动: [`docs/operations/cloud-bootstrap.md`](operations/cloud-bootstrap.md)
 - 本地运行与排障: [`docs/operations/local-runbook.md`](operations/local-runbook.md)
 - 任务完成后的自动校验: [`docs/operations/task-completion-automation.md`](operations/task-completion-automation.md)
 
