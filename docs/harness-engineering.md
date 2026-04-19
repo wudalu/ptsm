@@ -2,7 +2,7 @@
 title: Harness Engineering In PTSM
 status: active
 owner: ptsm
-last_verified: 2026-04-18
+last_verified: 2026-04-19
 source_of_truth: true
 related_paths:
   - README.md
@@ -41,6 +41,7 @@ repository.
 - threshold checks that let local automation treat harness drift or reliability regressions as warnings
 - a publish diagnostic surface that classifies likely failure causes and returns next actions for a single publish attempt
 - side-effect ledger for safe publish replay on the same `thread_id`
+- provider-backed image generation that can fill missing publish images and persist evidence into artifacts
 
 ## What We Should Build Next
 

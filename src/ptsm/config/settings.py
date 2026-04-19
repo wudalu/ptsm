@@ -51,6 +51,26 @@ class Settings(BaseSettings):
         default="仅自己可见",
         validation_alias="XHS_DEFAULT_VISIBILITY",
     )
+    pic_model_api_key: str | None = Field(default=None, validation_alias="PIC_MODEL_API_KEY")
+    pic_model_base_url: str = Field(
+        default="https://dashscope.aliyuncs.com/api/v1",
+        validation_alias="PIC_MODEL_BASE_URL",
+    )
+    pic_model_model: str = Field(
+        default="qwen-image-2.0-pro",
+        validation_alias="PIC_MODEL_MODEL",
+    )
+    pic_model_size: str = Field(
+        default="1104*1472",
+        validation_alias="PIC_MODEL_SIZE",
+    )
+    pic_model_negative_prompt: str = Field(
+        default=(
+            "低清晰度，文字残缺，脸部畸形，四肢异常，构图混乱，"
+            "过曝，过度饱和，模糊，水印，logo。"
+        ),
+        validation_alias="PIC_MODEL_NEGATIVE_PROMPT",
+    )
 
 
 @lru_cache(maxsize=1)

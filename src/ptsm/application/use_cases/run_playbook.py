@@ -21,6 +21,7 @@ from ptsm.config.settings import Settings, get_settings
 from ptsm.infrastructure.observability.run_store import RunStore
 from ptsm.infrastructure.artifacts.file_store import FileArtifactStore
 from ptsm.infrastructure.memory.store import ExecutionMemoryStore
+from ptsm.infrastructure.images.factory import build_image_backend
 from ptsm.infrastructure.publishers.contracts import Publisher
 from ptsm.infrastructure.publishers.factory import build_publisher
 from ptsm.infrastructure.publishers.xiaohongshu_mcp_publisher import PublisherPreflightError
@@ -29,6 +30,7 @@ from ptsm.playbooks.registry import PlaybookRegistry
 PACKAGE_ROOT = Path(__file__).resolve().parents[2]
 PLAYBOOK_ROOT = PACKAGE_ROOT / "playbooks" / "definitions"
 DEFAULT_SIDE_EFFECT_LEDGER_PATH = Path(".ptsm") / "agent_runtime" / "side-effects.json"
+DEFAULT_GENERATED_IMAGES_DIR = Path("outputs") / "generated_images"
 
 
 def run_playbook(
@@ -162,13 +164,41 @@ def run_playbook(
     )
 
     publish_result = None
+    image_generation: dict[str, Any] | None = None
     if result["status"] == "completed":
+        resolved_image_paths = list(request.publish_image_paths)
+        artifact_path = Path(result["artifact_path"])
+        if not resolved_image_paths and _should_generate_images(
+            publish_mode=publish_mode,
+            auto_generate_images=request.auto_generate_images,
+        ):
+            image_backend = build_image_backend(settings)
+            if image_backend is None:
+                image_generation = {
+                    "status": "skipped",
+                    "reason": "backend_not_configured",
+                }
+            else:
+                image_generation = image_backend.generate(
+                    prompt=_build_image_generation_prompt(
+                        scene=request.scene,
+                        final_content=result["final_content"],
+                    ),
+                    output_dir=Path.cwd() / DEFAULT_GENERATED_IMAGES_DIR,
+                    output_stem=f"{artifact_path.stem}-cover",
+                )
+                resolved_image_paths = list(
+                    image_generation.get("generated_image_paths")
+                    or image_generation.get("image_paths")
+                    or []
+                )
+
         publish_idempotency_key = _build_publish_idempotency_key(
             account_id=account.account_id,
             playbook_id=playbook.playbook_id,
             publish_mode=publish_mode,
             artifact_path=str(result["artifact_path"]),
-            image_paths=request.publish_image_paths,
+            image_paths=resolved_image_paths,
             visibility=request.publish_visibility or settings.xhs_default_visibility,
         )
         cached_publish_result = side_effect_ledger.read(
@@ -184,7 +214,7 @@ def run_playbook(
                     account=account,
                     content=result["final_content"],
                     artifact_path=result["artifact_path"],
-                    image_paths=request.publish_image_paths,
+                    image_paths=resolved_image_paths,
                     visibility=request.publish_visibility or settings.xhs_default_visibility,
                 )
             except PublisherPreflightError as exc:
@@ -231,6 +261,7 @@ def run_playbook(
                 "account": account.to_dict(),
                 "publish_mode": publish_mode,
                 "publish_result": publish_result,
+                "image_generation": image_generation,
                 "run": run.to_dict(),
             },
         )
@@ -287,6 +318,7 @@ def run_playbook(
         "account": account.to_dict(),
         "publish_mode": publish_mode,
         "publish_result": publish_result,
+        "image_generation": image_generation,
         "post_publish_checks": post_publish_checks,
         "run": run_summary,
     }
@@ -403,6 +435,38 @@ def _build_publish_idempotency_key(
             ",".join(image_paths),
             visibility or "",
         ]
+    )
+
+
+def _should_generate_images(
+    *,
+    publish_mode: str,
+    auto_generate_images: bool | None,
+) -> bool:
+    if auto_generate_images is True:
+        return True
+    if auto_generate_images is False:
+        return False
+    return publish_mode == "mcp-real"
+
+
+def _build_image_generation_prompt(
+    *,
+    scene: str,
+    final_content: dict[str, Any],
+) -> str:
+    title = str(final_content.get("title", "")).strip()
+    image_text = str(final_content.get("image_text", "")).strip()
+    body = str(final_content.get("body", "")).strip()
+    hashtags = " ".join(str(tag).strip() for tag in final_content.get("hashtags", []))
+    return (
+        "为小红书帖子生成一张 3:4 竖版封面图，适合中文社交媒体发布。"
+        f"主题场景：{scene}。"
+        f"标题氛围：{title}。"
+        f"封面文案参考：{image_text}。"
+        f"正文情绪：{body}。"
+        f"标签氛围：{hashtags}。"
+        "画面需要有留白，风格统一，情绪准确，适合作为单图封面。"
     )
 
 

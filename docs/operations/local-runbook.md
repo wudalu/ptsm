@@ -20,6 +20,28 @@ uv run python -m ptsm.bootstrap run-fengkuang \
   --account-id acct-fk-local
 ```
 
+If you want dry-run to exercise model image generation too:
+
+```bash
+uv run python -m ptsm.bootstrap run-fengkuang \
+  --scene "周六社畜躺平" \
+  --account-id acct-fk-local \
+  --auto-generate-image
+```
+
+For real publish runs, PTSM now defaults to auto-generating a cover image when `--publish-image-path` is omitted and Bailian image config is present.
+
+Required `.env` fields for Bailian image generation:
+
+```env
+PIC_MODEL_API_KEY=sk-...
+PIC_MODEL_MODEL=qwen-image-2.0-pro
+PIC_MODEL_BASE_URL=https://dashscope.aliyuncs.com/api/v1
+PIC_MODEL_SIZE=1104*1472
+```
+
+Generated images are persisted under `outputs/generated_images/`, and the artifact records `image_generation.provider/model/prompt/generated_image_paths`.
+
 Ask the workflow to do a post-publish status check after the dry-run finishes:
 
 ```bash

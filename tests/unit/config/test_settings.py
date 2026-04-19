@@ -39,3 +39,24 @@ def test_settings_accepts_pub_and_aether_deepseek_env_names(monkeypatch) -> None
     assert settings.deepseek_max_tokens == 2048
     assert settings.xhs_mcp_server_url == "http://localhost:18060/mcp"
     assert settings.xhs_default_visibility == "仅自己可见"
+
+
+def test_settings_accept_bailian_image_generation_env_names(monkeypatch) -> None:
+    for key in [
+        "PIC_MODEL_API_KEY",
+        "PIC_MODEL_BASE_URL",
+        "PIC_MODEL_MODEL",
+        "PIC_MODEL_SIZE",
+        "PIC_MODEL_NEGATIVE_PROMPT",
+    ]:
+        monkeypatch.delenv(key, raising=False)
+
+    monkeypatch.setenv("PIC_MODEL_API_KEY", "sk-image-test")
+    monkeypatch.setenv("PIC_MODEL_MODEL", "qwen-image-2.0-pro")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.pic_model_api_key == "sk-image-test"
+    assert settings.pic_model_model == "qwen-image-2.0-pro"
+    assert settings.pic_model_base_url == "https://dashscope.aliyuncs.com/api/v1"
+    assert settings.pic_model_size == "1104*1472"

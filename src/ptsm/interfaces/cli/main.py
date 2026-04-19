@@ -51,6 +51,17 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         default=[],
     )
+    fengkuang.add_argument(
+        "--auto-generate-image",
+        dest="auto_generate_image",
+        action="store_true",
+    )
+    fengkuang.add_argument(
+        "--no-auto-generate-image",
+        dest="auto_generate_image",
+        action="store_false",
+    )
+    fengkuang.set_defaults(auto_generate_image=None)
     fengkuang.add_argument("--publish-visibility")
     fengkuang.add_argument("--open-browser-if-needed", action="store_true")
     fengkuang.add_argument("--wait-for-publish-status", action="store_true")
@@ -241,6 +252,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 account_id=args.account_id,
                 publish_mode=args.publish_mode,
                 publish_image_paths=args.publish_image_path,
+                auto_generate_images=args.auto_generate_image,
                 publish_visibility=args.publish_visibility,
                 login_qrcode_output_path=str(args.login_qrcode_output),
                 open_browser_if_needed=args.open_browser_if_needed,

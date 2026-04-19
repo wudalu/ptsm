@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
+import pytest
+
+from ptsm.application.models import FengkuangRequest
+from ptsm.interfaces.cli.main import main
 from ptsm.interfaces.cli.main import build_default_state_path, run_plan_cli
 from ptsm.plan_runner.runner import CodexInvocation, CommandResult
 
@@ -121,3 +126,47 @@ def test_build_default_state_path_uses_plan_runs_directory(monkeypatch, tmp_path
     assert state_path.parent == tmp_path / ".ptsm" / "plan_runs"
     assert state_path.name.startswith("demo-")
     assert state_path.suffix == ".json"
+
+
+def test_run_fengkuang_cli_passes_auto_generate_image_flag(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run_fengkuang_playbook(
+        request: FengkuangRequest,
+        *,
+        thread_id: str | None = None,
+    ) -> dict[str, object]:
+        captured["request"] = request
+        captured["thread_id"] = thread_id
+        return {
+            "status": "completed",
+            "publish_result": {"status": "dry_run"},
+            "post_publish_checks": {"requested": False},
+        }
+
+    monkeypatch.setattr(
+        "ptsm.interfaces.cli.main.run_fengkuang_playbook",
+        fake_run_fengkuang_playbook,
+    )
+
+    exit_code = main(
+        [
+            "run-fengkuang",
+            "--scene",
+            "周六社畜躺平",
+            "--account-id",
+            "acct-fk-local",
+            "--auto-generate-image",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload["status"] == "completed"
+    request = captured["request"]
+    assert isinstance(request, FengkuangRequest)
+    assert request.auto_generate_images is True

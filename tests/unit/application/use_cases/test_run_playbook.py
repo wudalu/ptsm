@@ -18,7 +18,12 @@ class FailingPublisher:
         raise RuntimeError("publisher login required")
 
 
-def test_run_fengkuang_playbook_returns_publish_error_receipt() -> None:
+def test_run_fengkuang_playbook_returns_publish_error_receipt(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
     result = run_fengkuang_playbook(
         FengkuangRequest(
             scene="周一晨会开始前五分钟",
@@ -77,6 +82,20 @@ class CountingPublisher:
         }
 
 
+class CapturingPublisher:
+    def __init__(self) -> None:
+        self.received_image_paths: list[str] = []
+
+    def publish(self, **kwargs: object) -> dict[str, object]:
+        self.received_image_paths = list(kwargs["image_paths"])
+        return {
+            "status": "published",
+            "platform": "xiaohongshu",
+            "provider": "xiaohongshu_mcp",
+            "artifact_path": kwargs["artifact_path"],
+        }
+
+
 class PreflightFailingPublisher:
     def publish(self, **_: object) -> dict[str, object]:
         raise PublisherPreflightError(
@@ -127,6 +146,7 @@ def test_run_fengkuang_playbook_persists_publish_result_into_artifact(
         "ptsm.application.use_cases.run_playbook.build_fengkuang_workflow",
         lambda **_: FakeWorkflow(artifact_path),
     )
+    monkeypatch.chdir(tmp_path)
 
     result = run_fengkuang_playbook(
         FengkuangRequest(
@@ -165,6 +185,7 @@ def test_run_fengkuang_playbook_returns_run_metadata(
         "ptsm.application.use_cases.run_playbook.build_fengkuang_workflow",
         lambda **_: FakeWorkflow(artifact_path),
     )
+    monkeypatch.chdir(tmp_path)
 
     result = run_fengkuang_playbook(
         FengkuangRequest(
@@ -356,6 +377,7 @@ def test_run_fengkuang_playbook_runs_post_publish_checks_when_requested(
             "destination": "https://creator.xiaohongshu.com/publish/publish",
         },
     )
+    monkeypatch.chdir(tmp_path)
 
     result = run_fengkuang_playbook(
         FengkuangRequest(
@@ -393,6 +415,7 @@ def test_run_fengkuang_playbook_returns_preflight_payload_on_login_required(
         "ptsm.application.use_cases.run_playbook.build_fengkuang_workflow",
         lambda **_: FakeWorkflow(artifact_path),
     )
+    monkeypatch.chdir(tmp_path)
 
     result = run_fengkuang_playbook(
         FengkuangRequest(
@@ -430,6 +453,7 @@ def test_run_fengkuang_real_publish_returns_qrcode_and_skips_workflow_when_login
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aF9sAAAAASUVORK5CYII=",
         },
     )
+    monkeypatch.chdir(tmp_path)
 
     result = run_fengkuang_playbook(
         FengkuangRequest(
@@ -451,3 +475,152 @@ def test_run_fengkuang_real_publish_returns_qrcode_and_skips_workflow_when_login
     assert result["publish_result"]["preflight"]["qrcode"]["output_path"] == str(qrcode_path)
     assert str(qrcode_path) in result["publish_result"]["login_instructions"][0]
     assert "rerun" in result["publish_result"]["login_instructions"][-1]
+
+
+def test_run_fengkuang_playbook_generates_image_for_real_publish_when_missing(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    artifact_path = tmp_path / "artifact.json"
+    generated_path = tmp_path / "generated.png"
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "fengkuang_daily_post",
+                "final_content": {"title": "旧标题"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    publisher = CapturingPublisher()
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_fengkuang_workflow",
+        lambda **_: FakeWorkflow(artifact_path),
+    )
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_image_backend",
+        lambda settings: type(
+            "FakeImageBackend",
+            (),
+            {
+                "generate": lambda self, **kwargs: {
+                    "status": "generated",
+                    "provider": "bailian",
+                    "model": "qwen-image-2.0-pro",
+                    "prompt": kwargs["prompt"],
+                    "image_paths": [str(generated_path)],
+                    "generated_image_paths": [str(generated_path)],
+                    "source_url": "https://example.com/generated.png",
+                }
+            },
+        )(),
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = run_fengkuang_playbook(
+        FengkuangRequest(
+            scene="周六社畜躺平",
+            platform="xiaohongshu",
+            account_id="acct-fk-local",
+            publish_mode="mcp-real",
+        ),
+        publisher=publisher,
+    )
+
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+
+    assert publisher.received_image_paths == [str(generated_path)]
+    assert result["image_generation"]["provider"] == "bailian"
+    assert artifact["image_generation"]["generated_image_paths"] == [str(generated_path)]
+
+
+def test_run_fengkuang_playbook_prefers_manual_image_paths(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    artifact_path = tmp_path / "artifact.json"
+    manual_image = tmp_path / "manual.png"
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "fengkuang_daily_post",
+                "final_content": {"title": "旧标题"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    publisher = CapturingPublisher()
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_fengkuang_workflow",
+        lambda **_: FakeWorkflow(artifact_path),
+    )
+
+    def fail_build_image_backend(settings):
+        raise AssertionError("image backend should not be built when manual paths are provided")
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_image_backend",
+        fail_build_image_backend,
+    )
+    monkeypatch.chdir(tmp_path)
+
+    run_fengkuang_playbook(
+        FengkuangRequest(
+            scene="周六社畜躺平",
+            platform="xiaohongshu",
+            account_id="acct-fk-local",
+            publish_mode="mcp-real",
+            publish_image_paths=[str(manual_image)],
+        ),
+        publisher=publisher,
+    )
+
+    assert publisher.received_image_paths == [str(manual_image)]
+
+
+def test_run_fengkuang_playbook_skips_generation_for_dry_run_without_flag(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    artifact_path = tmp_path / "artifact.json"
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "fengkuang_daily_post",
+                "final_content": {"title": "旧标题"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    publisher = CapturingPublisher()
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_fengkuang_workflow",
+        lambda **_: FakeWorkflow(artifact_path),
+    )
+
+    def fail_build_image_backend(settings):
+        raise AssertionError("image backend should not be built for dry-run by default")
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_image_backend",
+        fail_build_image_backend,
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = run_fengkuang_playbook(
+        FengkuangRequest(
+            scene="周六社畜躺平",
+            platform="xiaohongshu",
+            account_id="acct-fk-local",
+        ),
+        publisher=publisher,
+    )
+
+    assert publisher.received_image_paths == []
+    assert result.get("image_generation") is None

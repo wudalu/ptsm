@@ -12,6 +12,7 @@ class PlaybookRequest(BaseModel):
     playbook_id: str | None = None
     publish_mode: str | None = None
     publish_image_paths: list[str] = Field(default_factory=list)
+    auto_generate_images: bool | None = None
     publish_visibility: str | None = None
     login_qrcode_output_path: str | None = None
     open_browser_if_needed: bool = False

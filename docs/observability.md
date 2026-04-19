@@ -2,7 +2,7 @@
 title: PTSM Observability
 status: active
 owner: ptsm
-last_verified: 2026-04-18
+last_verified: 2026-04-19
 source_of_truth: true
 related_paths:
   - src/ptsm/infrastructure/observability/run_store.py
@@ -11,8 +11,10 @@ related_paths:
   - src/ptsm/application/use_cases/run_events.py
   - src/ptsm/application/use_cases/runs.py
   - src/ptsm/application/use_cases/harness_report.py
+  - src/ptsm/infrastructure/images
   - src/ptsm/plan_runner/runner.py
   - outputs/artifacts
+  - outputs/generated_images
   - .ptsm/runs
   - .ptsm/plan_runs
 ---
@@ -28,6 +30,7 @@ PTSM 当前的观测性核心是本地文件系统里的 run store 和 artifacts
 - `.ptsm/plan_runs/<run_id>.json`
 - `.ptsm/plan_runs/<run_id>.evidence.json`
 - `outputs/artifacts/*.json`
+- `outputs/generated_images/*`
 
 ## Current Capabilities
 
@@ -44,6 +47,7 @@ PTSM 当前的观测性核心是本地文件系统里的 run store 和 artifacts
 - `ptsm harness-evals` 会把 runs、events 和 plan-run evidence 聚成一个本地 eval 视图，输出 completion rate、status breakdown、failure reason breakdown 和 recent failures。
 - `ptsm harness-report` 会把 `doctor`、`gc` 和 `harness-evals` 合成一个本地快照，并支持对 stale docs、gc candidate、run completion rate、plan-run completion rate 做 threshold 检查。
 - `ptsm diagnose-publish` 会把 `doctor`、run logs、artifact metadata 和 `xhs-check-publish` 的结果组合成一次只读诊断，给出 `likely_cause`、`evidence` 和 `next_actions`。
+- real publish 或显式 `--auto-generate-image` 运行现在会把 `image_generation` metadata 落进 artifact，包含 provider、model、prompt、source_url 和 `generated_image_paths`。
 
 ## Current Limits
 
@@ -65,6 +69,7 @@ PTSM 当前的观测性核心是本地文件系统里的 run store 和 artifacts
 - harness evals: [`src/ptsm/application/use_cases/harness_evals.py`](../src/ptsm/application/use_cases/harness_evals.py)
 - harness report: [`src/ptsm/application/use_cases/harness_report.py`](../src/ptsm/application/use_cases/harness_report.py)
 - publish diagnostics: [`src/ptsm/application/use_cases/diagnose_publish.py`](../src/ptsm/application/use_cases/diagnose_publish.py)
+- image backend: [`src/ptsm/infrastructure/images/`](../src/ptsm/infrastructure/images/)
 - 日志读取: [`src/ptsm/application/use_cases/logs.py`](../src/ptsm/application/use_cases/logs.py)
 - 事件查询: [`src/ptsm/application/use_cases/run_events.py`](../src/ptsm/application/use_cases/run_events.py)
 - 运行查询: [`src/ptsm/application/use_cases/runs.py`](../src/ptsm/application/use_cases/runs.py)

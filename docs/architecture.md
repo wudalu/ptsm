@@ -2,7 +2,7 @@
 title: PTSM Architecture
 status: active
 owner: ptsm
-last_verified: 2026-04-18
+last_verified: 2026-04-19
 source_of_truth: true
 related_paths:
   - src/ptsm
@@ -29,7 +29,7 @@ PTSM 当前不是“多领域平台已全部完成”的状态，而是一个已
 - `src/ptsm/skills/`
   builtin skill metadata、选择、surface 和加载。
 - `src/ptsm/infrastructure/`
-  artifacts、observability、publishers、LLM backend、memory 等适配层。
+  artifacts、observability、publishers、LLM backend、image backend、memory 等适配层。
 - `src/ptsm/accounts/`
   本地账号定义和注册表。
 
@@ -42,6 +42,7 @@ PTSM 当前不是“多领域平台已全部完成”的状态，而是一个已
 - composed operator snapshots such as `harness-report` 也留在 `application/use_cases`，只读复用现有 harness surfaces，而不是新增 orchestration service。
 - single-case diagnostics such as `diagnose-publish` 同样留在 `application/use_cases`，通过组合 `doctor`、logs 和 artifact readers 来输出归因，而不是把诊断逻辑塞进 publisher 或 CLI。
 - side-effect replay control 也放在 `application/services + application/use_cases`，避免让 `agent_runtime` 直接承担发布副作用策略。
+- provider-backed image generation 也留在 `infrastructure`，由 `application/use_cases/run_playbook.py` 在发布前编排调用，避免把外部 API 协议直接塞进 runtime graph。
 
 ## Current Design Pressure
 
