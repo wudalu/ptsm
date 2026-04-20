@@ -32,7 +32,10 @@ DOMAIN_FENGKUANG = "发疯文学"
 DEFAULT_RUNTIME_STATE_DIR = Path(".ptsm") / "agent_runtime"
 
 
-def build_fengkuang_workflow(
+def build_playbook_workflow(
+    *,
+    playbook_id: str,
+    domain: str,
     memory: ExecutionMemoryStore | None = None,
     drafting_agent: FengkuangDraftingAgent | None = None,
     max_attempts: int = 2,
@@ -40,7 +43,7 @@ def build_fengkuang_workflow(
     artifact_store: FileArtifactStore | None = None,
     checkpointer: object | None = None,
 ):
-    """Build a dry-run fengkuang workflow with one revision loop."""
+    """Build a workflow for a specific playbook/domain pair."""
     execution_memory = memory or InMemoryExecutionMemory()
     playbooks = PlaybookRegistry(playbook_root=PLAYBOOK_ROOT)
     playbook_loader = PlaybookLoader(playbook_root=PLAYBOOK_ROOT)
@@ -55,7 +58,8 @@ def build_fengkuang_workflow(
     return build_execution_graph(
         ingest=build_ingest_node(drafting_provider=drafting_provider),
         planner=build_planner_node(
-            domain=DOMAIN_FENGKUANG,
+            domain=domain,
+            playbook_id=playbook_id,
             playbooks=playbooks,
             playbook_loader=playbook_loader,
             skills=skills,
@@ -68,6 +72,27 @@ def build_fengkuang_workflow(
             artifact_store=artifact_store,
         ),
         checkpointer=checkpointer or InMemorySaver(),
+    )
+
+
+def build_fengkuang_workflow(
+    memory: ExecutionMemoryStore | None = None,
+    drafting_agent: FengkuangDraftingAgent | None = None,
+    max_attempts: int = 2,
+    settings: Settings | None = None,
+    artifact_store: FileArtifactStore | None = None,
+    checkpointer: object | None = None,
+):
+    """Build a dry-run fengkuang workflow with one revision loop."""
+    return build_playbook_workflow(
+        playbook_id="fengkuang_daily_post",
+        domain=DOMAIN_FENGKUANG,
+        memory=memory,
+        drafting_agent=drafting_agent,
+        max_attempts=max_attempts,
+        settings=settings,
+        artifact_store=artifact_store,
+        checkpointer=checkpointer,
     )
 
 

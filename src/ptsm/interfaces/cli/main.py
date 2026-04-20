@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Sequence
 import uuid
 
-from ptsm.application.models import FengkuangRequest
+from ptsm.application.models import FengkuangRequest, PlaybookRequest
 from ptsm.application.use_cases.diagnose_publish import run_diagnose_publish
 from ptsm.application.use_cases.doctor import run_doctor
 from ptsm.application.use_cases.docs_sync import run_docs_sync
@@ -20,7 +20,7 @@ from ptsm.application.use_cases.logs import run_logs
 from ptsm.application.use_cases.plan_runs import run_plan_runs
 from ptsm.application.use_cases.run_events import run_run_events
 from ptsm.application.use_cases.runs import run_runs
-from ptsm.application.use_cases.run_playbook import run_fengkuang_playbook
+from ptsm.application.use_cases.run_playbook import run_fengkuang_playbook, run_playbook
 from ptsm.application.use_cases.xhs_browser import open_xhs_browser
 from ptsm.application.use_cases.xhs_login import (
     DEFAULT_XHS_LOGIN_QRCODE_PATH,
@@ -69,6 +69,38 @@ def build_parser() -> argparse.ArgumentParser:
     fengkuang.add_argument("--open-browser-if-needed", action="store_true")
     fengkuang.add_argument("--wait-for-publish-status", action="store_true")
     fengkuang.add_argument(
+        "--login-qrcode-output",
+        type=Path,
+        default=DEFAULT_XHS_LOGIN_QRCODE_PATH,
+    )
+
+    run_playbook_cli = subparsers.add_parser("run-playbook")
+    run_playbook_cli.add_argument("--scene", required=True)
+    run_playbook_cli.add_argument("--platform")
+    run_playbook_cli.add_argument("--account-id", required=True)
+    run_playbook_cli.add_argument("--playbook-id")
+    run_playbook_cli.add_argument("--thread-id")
+    run_playbook_cli.add_argument("--publish-mode")
+    run_playbook_cli.add_argument(
+        "--publish-image-path",
+        action="append",
+        default=[],
+    )
+    run_playbook_cli.add_argument(
+        "--auto-generate-image",
+        dest="auto_generate_image",
+        action="store_true",
+    )
+    run_playbook_cli.add_argument(
+        "--no-auto-generate-image",
+        dest="auto_generate_image",
+        action="store_false",
+    )
+    run_playbook_cli.set_defaults(auto_generate_image=None)
+    run_playbook_cli.add_argument("--publish-visibility")
+    run_playbook_cli.add_argument("--open-browser-if-needed", action="store_true")
+    run_playbook_cli.add_argument("--wait-for-publish-status", action="store_true")
+    run_playbook_cli.add_argument(
         "--login-qrcode-output",
         type=Path,
         default=DEFAULT_XHS_LOGIN_QRCODE_PATH,
@@ -278,6 +310,26 @@ def main(argv: Sequence[str] | None = None) -> int:
                 scene=args.scene,
                 platform=args.platform,
                 account_id=args.account_id,
+                publish_mode=args.publish_mode,
+                publish_image_paths=args.publish_image_path,
+                auto_generate_images=args.auto_generate_image,
+                publish_visibility=args.publish_visibility,
+                login_qrcode_output_path=str(args.login_qrcode_output),
+                open_browser_if_needed=args.open_browser_if_needed,
+                wait_for_publish_status=args.wait_for_publish_status,
+            ),
+            thread_id=args.thread_id,
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "run-playbook":
+        result = run_playbook(
+            PlaybookRequest(
+                scene=args.scene,
+                platform=args.platform,
+                account_id=args.account_id,
+                playbook_id=args.playbook_id,
                 publish_mode=args.publish_mode,
                 publish_image_paths=args.publish_image_path,
                 auto_generate_images=args.auto_generate_image,

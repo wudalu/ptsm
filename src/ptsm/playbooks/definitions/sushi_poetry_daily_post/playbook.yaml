@@ -1,0 +1,12 @@
+playbook_id: sushi_poetry_daily_post
+version: 1
+domain: 苏轼诗词赏析
+platforms:
+  - xiaohongshu
+required_skills:
+  - sushi_poetry_style
+  - xhs_poetry_hashtagging
+optional_skills: []
+reflection:
+  must_include_phrase: 苏轼
+  required_hashtag: "#苏轼"

@@ -2,7 +2,7 @@
 title: PTSM Runtime
 status: active
 owner: ptsm
-last_verified: 2026-04-19
+last_verified: 2026-04-21
 source_of_truth: true
 related_paths:
   - src/ptsm/agent_runtime/runtime.py
@@ -10,6 +10,7 @@ related_paths:
   - src/ptsm/agent_runtime/nodes
   - src/ptsm/application/use_cases/run_playbook.py
   - src/ptsm/application/use_cases/runs.py
+  - src/ptsm/infrastructure/llm
   - src/ptsm/infrastructure/images
   - src/ptsm/infrastructure/memory/checkpoint.py
   - src/ptsm/infrastructure/memory/store.py
@@ -22,18 +23,19 @@ related_paths:
 ## Main Flow
 
 1. `run_playbook()` 接收 `PlaybookRequest`，解析账号和 playbook。
-2. `build_fengkuang_workflow()` 组装 LangGraph 图。
+2. `build_playbook_workflow()` 按所选 playbook/domain 组装 LangGraph 图。
 3. graph 依次运行 ingest、planner、executor、reflector、finalize。
 4. finalize 写入 artifact 和执行 lessons memory。
 5. 应用层根据结果决定是否生成发布图片、发布、查状态、开浏览器。
 
 ## Current Runtime Facts
 
-- 当前兼容入口仍是 `build_fengkuang_workflow()`。
+- 当前通用运行时入口是 `build_playbook_workflow()`，`build_fengkuang_workflow()` 只是兼容 wrapper。
 - 运行结果会落到 artifact，并写入本地 run store。
 - `run_playbook()` 默认会在 `.ptsm/agent_runtime/` 下创建持久 execution memory 和 checkpoint。
 - `run_playbook()` 现在也会在 `.ptsm/agent_runtime/side-effects.json` 下记录成功副作用结果，用于同一 `thread_id` 的安全重放。
 - `run_playbook()` 现在可以在真实发布缺图时调用 provider-backed image backend，默认把生成图写到 `outputs/generated_images/`。
+- deterministic / deepseek drafting backend 现在会读取 playbook prompt 与 scoped skills，不再只面向发疯文学。
 - 显式注入依赖时，运行时仍兼容 `InMemoryExecutionMemory` 和 `InMemorySaver`。
 - 持久 checkpoint 以 `thread_id` 为键保存；复用同一个 `thread_id` 才能跨进程读取同一条执行线程。
 - 当前 side-effect ledger 只复用成功 publish 结果，不缓存失败 publish 或只读状态检查。

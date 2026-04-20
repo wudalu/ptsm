@@ -5,6 +5,7 @@ from typing import Any
 
 from ptsm.accounts.registry import AccountRegistry
 from ptsm.agent_runtime.runtime import (
+    build_playbook_workflow,
     build_fengkuang_workflow,
     build_file_backed_runtime_state,
 )
@@ -142,6 +143,7 @@ def run_playbook(
                 }
 
     workflow = _build_workflow_for_playbook(
+        domain=playbook.domain,
         playbook_id=playbook.playbook_id,
         memory=memory,
         checkpointer=checkpointer,
@@ -390,6 +392,7 @@ def _build_login_required_result(
 
 def _build_workflow_for_playbook(
     *,
+    domain: str,
     playbook_id: str,
     memory: ExecutionMemoryStore,
     checkpointer: object,
@@ -401,7 +404,13 @@ def _build_workflow_for_playbook(
             checkpointer=checkpointer,
             settings=settings,
         )
-    raise ValueError(f"Unsupported playbook runtime: {playbook_id}")
+    return build_playbook_workflow(
+        playbook_id=playbook_id,
+        domain=domain,
+        memory=memory,
+        checkpointer=checkpointer,
+        settings=settings,
+    )
 
 
 def _build_rerun_command(
@@ -415,10 +424,17 @@ def _build_rerun_command(
             f"ptsm run-fengkuang --scene '{request.scene}' --platform {resolved_platform} "
             f"--account-id {request.account_id} --publish-mode mcp-real"
         )
-    return (
-        f"ptsm run-playbook --account-id {request.account_id} "
-        f"--scene '{request.scene}' --publish-mode mcp-real"
-    )
+    parts = [
+        "ptsm run-playbook",
+        f"--account-id {request.account_id}",
+        f"--scene '{request.scene}'",
+        f"--publish-mode mcp-real",
+    ]
+    if request.playbook_id:
+        parts.append(f"--playbook-id {request.playbook_id}")
+    if request.platform:
+        parts.append(f"--platform {resolved_platform}")
+    return " ".join(parts)
 
 
 def _build_publish_idempotency_key(

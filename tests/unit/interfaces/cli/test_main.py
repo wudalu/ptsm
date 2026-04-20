@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from ptsm.application.models import FengkuangRequest
+from ptsm.application.models import FengkuangRequest, PlaybookRequest
 from ptsm.interfaces.cli.main import main
 from ptsm.interfaces.cli.main import build_default_state_path, run_plan_cli
 from ptsm.plan_runner.runner import CodexInvocation, CommandResult
@@ -170,3 +170,70 @@ def test_run_fengkuang_cli_passes_auto_generate_image_flag(
     request = captured["request"]
     assert isinstance(request, FengkuangRequest)
     assert request.auto_generate_images is True
+
+
+def test_run_playbook_cli_passes_generic_request_fields(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run_playbook(
+        request: PlaybookRequest,
+        *,
+        thread_id: str | None = None,
+    ) -> dict[str, object]:
+        captured["request"] = request
+        captured["thread_id"] = thread_id
+        return {
+            "status": "completed",
+            "playbook_id": request.playbook_id,
+            "publish_result": {"status": "dry_run"},
+            "post_publish_checks": {"requested": True},
+        }
+
+    monkeypatch.setattr(
+        "ptsm.interfaces.cli.main.run_playbook",
+        fake_run_playbook,
+        raising=False,
+    )
+
+    exit_code = main(
+        [
+            "run-playbook",
+            "--scene",
+            "夜里读到定风波",
+            "--account-id",
+            "acct-sushi-local",
+            "--playbook-id",
+            "sushi_poetry_daily_post",
+            "--thread-id",
+            "thread-sushi-001",
+            "--publish-mode",
+            "dry-run",
+            "--publish-image-path",
+            "outputs/generated_images/cover-1.png",
+            "--auto-generate-image",
+            "--publish-visibility",
+            "仅自己可见",
+            "--open-browser-if-needed",
+            "--wait-for-publish-status",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload["playbook_id"] == "sushi_poetry_daily_post"
+    request = captured["request"]
+    assert isinstance(request, PlaybookRequest)
+    assert request.scene == "夜里读到定风波"
+    assert request.account_id == "acct-sushi-local"
+    assert request.playbook_id == "sushi_poetry_daily_post"
+    assert request.publish_mode == "dry-run"
+    assert request.publish_image_paths == ["outputs/generated_images/cover-1.png"]
+    assert request.auto_generate_images is True
+    assert request.publish_visibility == "仅自己可见"
+    assert request.open_browser_if_needed is True
+    assert request.wait_for_publish_status is True
+    assert captured["thread_id"] == "thread-sushi-001"

@@ -12,10 +12,10 @@ from langchain_core.utils.json import parse_and_check_json_markdown
 
 from ptsm.config.settings import Settings
 
-FENGKUANG_SYSTEM_PROMPT = (
-    "你是一个负责小红书发疯文学草稿的文案助手。"
+XHS_DRAFT_SYSTEM_PROMPT = (
+    "你是一个负责小红书中文内容草稿的文案助手。"
     "请输出严格 JSON，对象字段必须是 title, image_text, body, hashtags。"
-    "语气要自嘲、有共鸣、不过度攻击。"
+    "语气要自然、可读、贴近社交媒体发布。"
 )
 
 SCENE_META_PATTERNS = (
@@ -38,7 +38,8 @@ class DeterministicDraftBackend:
         prompt = PromptTemplate.from_template(
             "场景: {scene}\n"
             "修正意见: {reflection_feedback}\n"
-            "任务: 生成一条用于小红书 dry-run 的发疯文学文案。"
+            "补充约束: {extra_context}\n"
+            "任务: 生成一条用于小红书 dry-run 的中文内容草稿。"
         )
         self._chain = prompt | RunnableLambda(self._render)
 
@@ -55,6 +56,12 @@ class DeterministicDraftBackend:
             {
                 "scene": scene,
                 "reflection_feedback": reflection_feedback or "无",
+                "extra_context": "\n\n".join(
+                    chunk
+                    for chunk in [planner_prompt or "", *(skill_contents or [])]
+                    if chunk
+                )
+                or "无",
             }
         )
 
@@ -62,7 +69,12 @@ class DeterministicDraftBackend:
         prompt_text = prompt_value.to_string()
         scene = _normalize_scene(_extract_field(prompt_text, prefix="场景: "))
         feedback = _extract_field(prompt_text, prefix="修正意见: ")
-        return _build_deterministic_draft(scene=scene, feedback=feedback)
+        extra_context = _extract_field(prompt_text, prefix="补充约束: ")
+        return _build_deterministic_draft(
+            scene=scene,
+            feedback=feedback,
+            extra_context=extra_context,
+        )
 
 
 class DeepSeekDraftBackend:
@@ -94,11 +106,11 @@ class DeepSeekDraftBackend:
             f"修正意见：{reflection_feedback or '无'}\n"
             f"补充约束：{extra_context or '无'}\n"
             f"硬性约束：{hard_requirements}\n"
-            "请生成一条小红书发疯文学文案，并返回严格 JSON。"
+            "请生成一条适合小红书发布的中文内容草稿，并返回严格 JSON。"
         )
         response = self._llm.invoke(
             [
-                SystemMessage(content=FENGKUANG_SYSTEM_PROMPT),
+                SystemMessage(content=XHS_DRAFT_SYSTEM_PROMPT),
                 HumanMessage(content=user_prompt),
             ]
         )
@@ -154,7 +166,30 @@ def _normalize_scene(scene: str) -> str:
     return cleaned or scene.strip()
 
 
-def _build_deterministic_draft(*, scene: str, feedback: str) -> dict[str, Any]:
+def _build_deterministic_draft(
+    *,
+    scene: str,
+    feedback: str,
+    extra_context: str = "",
+) -> dict[str, Any]:
+    if _is_sushi_poetry_context(scene=scene, extra_context=extra_context):
+        title = "读苏轼时突然读懂了今天"
+        image_text = "把风雨读慢一点"
+        body = (
+            f"{scene}。\n"
+            "再回头看苏轼写风雨和行路，才发现很多狼狈不是非要立刻赢过去，"
+            "而是可以先被看见、被安放。"
+        )
+        hashtags = ["#苏轼", "#诗词赏析", "#小红书读书笔记"]
+        if feedback != "无" and "苏轼" not in body:
+            body += "\n顺着苏轼再读一遍，情绪也会慢一点落下来。"
+        return {
+            "title": title,
+            "image_text": image_text,
+            "body": body,
+            "hashtags": hashtags,
+        }
+
     if _is_weekend_rest_scene(scene):
         title = "周六躺平回血实录"
         image_text = "今天先躺"
@@ -197,6 +232,14 @@ def _build_deterministic_draft(*, scene: str, feedback: str) -> dict[str, Any]:
         "body": body,
         "hashtags": hashtags,
     }
+
+
+def _is_sushi_poetry_context(*, scene: str, extra_context: str) -> bool:
+    combined = f"{scene}\n{extra_context}"
+    return any(
+        keyword in combined
+        for keyword in ("苏轼", "诗词赏析", "#苏轼", "定风波", "赤壁赋", "水调歌头")
+    )
 
 
 def _is_weekend_rest_scene(scene: str) -> bool:
@@ -254,10 +297,13 @@ def _build_deepseek_hard_requirements(extra_context: str) -> str:
     requirements = [
         "只输出 JSON 对象，不要 Markdown 代码块，不要额外解释。",
     ]
-    if "#发疯文学" in extra_context:
-        requirements.append("hashtags 数组必须包含 '#发疯文学'。")
+    for hashtag in ("#发疯文学", "#苏轼"):
+        if hashtag in extra_context:
+            requirements.append(f"hashtags 数组必须包含 '{hashtag}'。")
     if "也算" in extra_context:
         requirements.append("正文必须包含“也算”，并把它放在结尾的轻量正向收束句里。")
+    if "苏轼" in extra_context:
+        requirements.append("正文必须包含“苏轼”。")
     return " ".join(requirements)
 
 

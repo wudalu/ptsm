@@ -82,6 +82,24 @@ def test_deterministic_backend_sanitizes_meta_scene_and_adapts_weekend_theme() -
     assert "#发疯文学" in draft["hashtags"]
 
 
+def test_deterministic_backend_can_follow_sushi_poetry_context() -> None:
+    backend = DeterministicDraftBackend()
+
+    draft = backend.generate(
+        scene="夜里读到《定风波》，突然想把今天的狼狈也写成一段赏析",
+        reflection_feedback="正文需要出现苏轼。",
+        planner_prompt="# 苏轼诗词赏析 Planner\n目标：写成适合小红书的诗词赏析短帖。",
+        skill_contents=[
+            "# Sushi Poetry Style\n正文要点出苏轼，并保持可读、亲切。",
+            "# XHS Poetry Hashtagging\n标签必须包含 `#苏轼`。",
+        ],
+    )
+
+    assert "苏轼" in draft["body"]
+    assert "#苏轼" in draft["hashtags"]
+    assert "发疯文学" not in draft["body"]
+
+
 class CapturingChatDeepSeek(FakeChatDeepSeek):
     last_messages = None
 
@@ -137,6 +155,32 @@ def test_factory_deepseek_prompt_hardens_required_phrase_and_hashtag() -> None:
     user_prompt = CapturingChatDeepSeek.last_messages[1].content
     assert "正文必须包含“也算”" in user_prompt
     assert "hashtags 数组必须包含 '#发疯文学'" in user_prompt
+
+
+def test_factory_uses_generic_system_prompt_for_non_fengkuang_playbooks() -> None:
+    settings = Settings.model_construct(
+        default_model_provider="deepseek",
+        default_model="deepseek-chat",
+        deepseek_api_key="sk-test",
+        deepseek_model="deepseek-chat",
+        deepseek_base_url="https://api.deepseek.com/v1",
+        deepseek_temperature=0.3,
+        deepseek_max_tokens=1024,
+    )
+
+    backend = build_drafting_backend(settings, chat_model_cls=CapturingChatDeepSeek)
+    backend.generate(
+        scene="夜里读到《定风波》",
+        planner_prompt="# 苏轼诗词赏析 Planner\n写成小红书诗词赏析短帖。",
+        reflection_feedback="# 苏轼诗词赏析 Reflection\n正文需要出现苏轼。",
+        skill_contents=["# XHS Poetry Hashtagging\n必须包含 `#苏轼`。"],
+    )
+
+    system_prompt = CapturingChatDeepSeek.last_messages[0].content
+    user_prompt = CapturingChatDeepSeek.last_messages[1].content
+    assert "发疯文学" not in system_prompt
+    assert "发疯文学文案" not in user_prompt
+    assert "hashtags 数组必须包含 '#苏轼'" in user_prompt
 
 
 def test_parse_json_payload_accepts_prose_wrapped_fenced_json() -> None:

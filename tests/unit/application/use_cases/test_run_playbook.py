@@ -5,15 +5,18 @@ from pathlib import Path
 
 import pytest
 
-from ptsm.application.models import FengkuangRequest
+from ptsm.accounts.registry import AccountRegistry
+from ptsm.application.models import FengkuangRequest, PlaybookRequest
 from ptsm.application.use_cases.run_playbook import (
     _build_image_generation_prompt,
+    run_playbook,
     run_fengkuang_playbook,
 )
 from ptsm.infrastructure.memory.checkpoint import FileCheckpointSaver
 from ptsm.infrastructure.memory.store import FileExecutionMemory
 from ptsm.infrastructure.observability.run_store import RunStore
 from ptsm.infrastructure.publishers.xiaohongshu_mcp_publisher import PublisherPreflightError
+from ptsm.playbooks.registry import PlaybookRegistry
 
 
 class FailingPublisher:
@@ -745,3 +748,138 @@ def test_build_image_generation_prompt_stays_within_bailian_limit() -> None:
     assert len(prompt) <= 800
     assert "周六社畜躺平" in prompt
     assert "周六躺平失败实录" in prompt
+
+
+def test_run_playbook_supports_non_fengkuang_playbook_with_generic_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    artifact_path = tmp_path / "artifact.json"
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "sushi_poetry_daily_post",
+                "final_content": {"title": "旧标题"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    _write_account_definition(
+        tmp_path / "accounts" / "acct-sushi-local.yaml",
+        account_id="acct-sushi-local",
+        nickname="苏轼诗词赏析实验号",
+        domain="苏轼诗词赏析",
+    )
+    _write_playbook_definition(
+        tmp_path / "playbooks" / "sushi_poetry_daily_post",
+        playbook_id="sushi_poetry_daily_post",
+        domain="苏轼诗词赏析",
+        required_hashtag="#苏轼",
+        required_phrase="苏轼",
+    )
+    captured: dict[str, object] = {}
+
+    def fake_build_playbook_workflow(**kwargs: object) -> FakeWorkflow:
+        captured.update(kwargs)
+        return FakeWorkflow(artifact_path)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        fake_build_playbook_workflow,
+        raising=False,
+    )
+
+    result = run_playbook(
+        PlaybookRequest(
+            scene="夜里读到定风波",
+            account_id="acct-sushi-local",
+            playbook_id="sushi_poetry_daily_post",
+        ),
+        accounts=AccountRegistry(account_root=tmp_path / "accounts"),
+        playbooks=PlaybookRegistry(playbook_root=tmp_path / "playbooks"),
+        publisher=SuccessfulPublisher(),
+        run_store=RunStore(base_dir=tmp_path / "runs"),
+    )
+
+    assert result["status"] == "completed"
+    assert result["playbook_id"] == "sushi_poetry_daily_post"
+    assert captured["playbook_id"] == "sushi_poetry_daily_post"
+    assert captured["domain"] == "苏轼诗词赏析"
+
+
+def test_run_playbook_supports_sushi_poetry_repo_assets(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    result = run_playbook(
+        PlaybookRequest(
+            scene="夜里读到《定风波》，突然想把今天的狼狈也写成一段赏析",
+            account_id="acct-sushi-local",
+            playbook_id="sushi_poetry_daily_post",
+        ),
+        publisher=SuccessfulPublisher(),
+        run_store=RunStore(base_dir=tmp_path / "runs"),
+    )
+
+    assert result["status"] == "completed"
+    assert result["playbook_id"] == "sushi_poetry_daily_post"
+    assert result["account"]["account_id"] == "acct-sushi-local"
+    assert "#苏轼" in result["final_content"]["hashtags"]
+
+
+def _write_account_definition(
+    path: Path,
+    *,
+    account_id: str,
+    nickname: str,
+    domain: str,
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "\n".join(
+            [
+                f"account_id: {account_id}",
+                f"nickname: {nickname}",
+                "platform: xiaohongshu",
+                f"domain: {domain}",
+                "publish_mode: dry-run",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+
+def _write_playbook_definition(
+    path: Path,
+    *,
+    playbook_id: str,
+    domain: str,
+    required_hashtag: str,
+    required_phrase: str,
+) -> None:
+    path.mkdir(parents=True, exist_ok=True)
+    (path / "playbook.yaml").write_text(
+        "\n".join(
+            [
+                f"playbook_id: {playbook_id}",
+                "version: 1",
+                f"domain: {domain}",
+                "platforms:",
+                "  - xiaohongshu",
+                "required_skills: []",
+                "optional_skills: []",
+                "reflection:",
+                f"  must_include_phrase: {required_phrase}",
+                f"  required_hashtag: \"{required_hashtag}\"",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (path / "planner.md").write_text("# planner\n", encoding="utf-8")
+    (path / "reflection.md").write_text("# reflection\n", encoding="utf-8")

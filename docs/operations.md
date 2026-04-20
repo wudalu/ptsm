@@ -2,13 +2,14 @@
 title: PTSM Operations
 status: active
 owner: ptsm
-last_verified: 2026-04-20
+last_verified: 2026-04-21
 source_of_truth: true
 related_paths:
   - docs/operations/cloud-bootstrap.md
   - docs/operations/local-runbook.md
   - docs/operations/task-completion-automation.md
   - src/ptsm/interfaces/cli/main.py
+  - src/ptsm/application/use_cases/run_playbook.py
   - src/ptsm/application/use_cases/docs_sync.py
   - src/ptsm/application/use_cases/harness_check.py
   - src/ptsm/application/use_cases/install_git_hooks.py
@@ -49,6 +50,7 @@ related_paths:
 - `uv run python -m ptsm.bootstrap runs --account-id <account_id> --status completed`
 - `uv run python -m ptsm.bootstrap run-events --account-id <account_id> --event publish_finished --group-by status`
 - `uv run python -m ptsm.bootstrap plan-runs --status failed --failure-reason pytest_failed`
+- `uv run python -m ptsm.bootstrap run-playbook --scene "夜里读到《定风波》，突然想把今天的狼狈也写成一段赏析" --account-id acct-sushi-local --playbook-id sushi_poetry_daily_post`
 - `uv run python -m ptsm.bootstrap run-fengkuang --scene "..." --account-id acct-fk-local`
 - `uv run python -m ptsm.bootstrap run-fengkuang --scene "..." --account-id acct-fk-local --auto-generate-image`
 - `uv run python -m ptsm.bootstrap xhs-check-publish --artifact outputs/artifacts/<artifact>.json`
@@ -65,6 +67,7 @@ related_paths:
 - `harness-evals` 只输出本地 JSON 汇总，不负责修改 artifact 或触发修复动作。
 - `harness-report` 是对 `doctor`、`gc`、`harness-evals` 的只读组合入口；需要把 warning 当成 gate 时，再显式加 `--fail-on-warning`。
 - `diagnose-publish` 是对单次发布问题的只读诊断入口，适合排查 “为什么没法自动确认已发布” 或 “为什么发布后状态不明确”。
+- `run-playbook` 是多 playbook 的通用入口；`run-fengkuang` 只保留给已有发疯文学兼容脚本和习惯命令。
 - `run-fengkuang --auto-generate-image` 会在缺少 `--publish-image-path` 时尝试调用百炼图像模型生成封面；真实发布模式下默认也会尝试自动补图。
 - 浏览器动作保留为人工或条件触发，不应成为默认无人值守 gate。
 - 更细的触发策略以 [`docs/operations/task-completion-automation.md`](operations/task-completion-automation.md) 为准。

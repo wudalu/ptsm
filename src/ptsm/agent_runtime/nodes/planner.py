@@ -11,13 +11,17 @@ from ptsm.skills.selector import SkillSelector
 def build_planner_node(
     *,
     domain: str,
+    playbook_id: str | None,
     playbooks: PlaybookRegistry,
     playbook_loader: PlaybookLoader,
     skills: SkillRegistry,
     skill_loader: SkillLoader,
 ):
     def planner(state: ExecutionState) -> ExecutionState:
-        playbook = playbooks.select(domain=domain, platform=state["platform"])
+        if playbook_id is not None:
+            playbook = playbooks.get(playbook_id)
+        else:
+            playbook = playbooks.select(domain=domain, platform=state["platform"])
         surface = SkillSelector(registry=skills, loader=skill_loader).select(
             domain=domain,
             platform=state["platform"],

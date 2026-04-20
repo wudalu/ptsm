@@ -40,6 +40,30 @@ def test_build_fengkuang_workflow_uses_generic_runtime_builder(
     assert callable(captured["finalize"])
 
 
+def test_build_fengkuang_workflow_delegates_to_build_playbook_workflow(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sentinel = object()
+    captured: dict[str, object] = {}
+
+    def fake_build_playbook_workflow(**kwargs: object) -> object:
+        captured.update(kwargs)
+        return sentinel
+
+    monkeypatch.setattr(
+        runtime_module,
+        "build_playbook_workflow",
+        fake_build_playbook_workflow,
+        raising=False,
+    )
+
+    workflow = runtime_module.build_fengkuang_workflow()
+
+    assert workflow is sentinel
+    assert captured["playbook_id"] == "fengkuang_daily_post"
+    assert captured["domain"] == runtime_module.DOMAIN_FENGKUANG
+
+
 def test_fengkuang_workflow_revises_once_and_persists_memory() -> None:
     memory = InMemoryExecutionMemory()
     workflow = build_fengkuang_workflow(memory=memory)

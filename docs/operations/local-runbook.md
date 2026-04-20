@@ -20,6 +20,15 @@ uv run python -m ptsm.bootstrap run-fengkuang \
   --account-id acct-fk-local
 ```
 
+Run a local dry-run for the generic playbook entrypoint:
+
+```bash
+uv run python -m ptsm.bootstrap run-playbook \
+  --scene "夜里读到《定风波》，突然想把今天的狼狈也写成一段赏析" \
+  --account-id acct-sushi-local \
+  --playbook-id sushi_poetry_daily_post
+```
+
 If you want dry-run to exercise model image generation too:
 
 ```bash

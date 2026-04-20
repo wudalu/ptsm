@@ -49,6 +49,53 @@ def test_build_parser_supports_post_publish_flags() -> None:
     assert args.wait_for_publish_status is True
 
 
+def test_build_parser_supports_run_playbook() -> None:
+    parser = build_parser()
+
+    args = parser.parse_args(
+        [
+            "run-playbook",
+            "--scene",
+            "夜里读到定风波",
+            "--account-id",
+            "acct-sushi-local",
+            "--playbook-id",
+            "sushi_poetry_daily_post",
+            "--thread-id",
+            "thread-sushi-001",
+            "--publish-mode",
+            "dry-run",
+            "--publish-image-path",
+            "outputs/generated_images/cover-1.png",
+            "--publish-image-path",
+            "outputs/generated_images/cover-2.png",
+            "--auto-generate-image",
+            "--publish-visibility",
+            "仅自己可见",
+            "--open-browser-if-needed",
+            "--wait-for-publish-status",
+            "--login-qrcode-output",
+            "/tmp/xhs-login-qrcode.png",
+        ]
+    )
+
+    assert args.command == "run-playbook"
+    assert args.scene == "夜里读到定风波"
+    assert args.account_id == "acct-sushi-local"
+    assert args.playbook_id == "sushi_poetry_daily_post"
+    assert args.thread_id == "thread-sushi-001"
+    assert args.publish_mode == "dry-run"
+    assert args.publish_image_path == [
+        "outputs/generated_images/cover-1.png",
+        "outputs/generated_images/cover-2.png",
+    ]
+    assert args.auto_generate_image is True
+    assert args.publish_visibility == "仅自己可见"
+    assert args.open_browser_if_needed is True
+    assert args.wait_for_publish_status is True
+    assert args.login_qrcode_output == Path("/tmp/xhs-login-qrcode.png")
+
+
 def test_build_parser_supports_run_plan() -> None:
     parser = build_parser()
 
@@ -784,6 +831,49 @@ def test_main_dispatches_doctor(monkeypatch, capsys) -> None:
     assert exit_code == 0
     assert captured["settings"].xhs_mcp_server_url == "http://localhost:19000/mcp"
     assert '"status": "ok"' in capsys.readouterr().out
+
+
+def test_main_dispatches_run_playbook(monkeypatch, capsys) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run_playbook(request, *, thread_id: str | None = None):
+        captured["request"] = request
+        captured["thread_id"] = thread_id
+        return {
+            "status": "completed",
+            "playbook_id": "sushi_poetry_daily_post",
+            "publish_result": {"status": "dry_run"},
+            "post_publish_checks": {"requested": True},
+        }
+
+    monkeypatch.setattr(
+        "ptsm.interfaces.cli.main.run_playbook",
+        fake_run_playbook,
+        raising=False,
+    )
+
+    exit_code = main(
+        [
+            "run-playbook",
+            "--scene",
+            "夜里读到定风波",
+            "--account-id",
+            "acct-sushi-local",
+            "--playbook-id",
+            "sushi_poetry_daily_post",
+            "--thread-id",
+            "thread-sushi-001",
+            "--publish-mode",
+            "dry-run",
+        ]
+    )
+
+    assert exit_code == 0
+    assert captured["thread_id"] == "thread-sushi-001"
+    assert captured["request"].scene == "夜里读到定风波"
+    assert captured["request"].account_id == "acct-sushi-local"
+    assert captured["request"].playbook_id == "sushi_poetry_daily_post"
+    assert '"playbook_id": "sushi_poetry_daily_post"' in capsys.readouterr().out
 
 
 def test_main_dispatches_docs_sync_and_fails_on_error(monkeypatch, capsys) -> None:
