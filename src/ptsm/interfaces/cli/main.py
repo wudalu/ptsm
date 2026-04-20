@@ -10,9 +10,12 @@ import uuid
 from ptsm.application.models import FengkuangRequest
 from ptsm.application.use_cases.diagnose_publish import run_diagnose_publish
 from ptsm.application.use_cases.doctor import run_doctor
+from ptsm.application.use_cases.docs_sync import run_docs_sync
+from ptsm.application.use_cases.harness_check import run_harness_check
 from ptsm.application.use_cases.harness_evals import run_harness_evals
 from ptsm.application.use_cases.harness_gc import run_harness_gc
 from ptsm.application.use_cases.harness_report import run_harness_report
+from ptsm.application.use_cases.install_git_hooks import install_git_hooks
 from ptsm.application.use_cases.logs import run_logs
 from ptsm.application.use_cases.plan_runs import run_plan_runs
 from ptsm.application.use_cases.run_events import run_run_events
@@ -84,6 +87,31 @@ def build_parser() -> argparse.ArgumentParser:
 
     doctor = subparsers.add_parser("doctor")
     doctor.add_argument("--server-url")
+
+    docs_sync = subparsers.add_parser("docs-sync")
+    docs_sync.add_argument("--base-ref")
+    docs_sync.add_argument("--head-ref", default="HEAD")
+    docs_sync.add_argument(
+        "--changed-path",
+        dest="changed_paths",
+        action="append",
+        default=None,
+    )
+
+    harness_check = subparsers.add_parser("harness-check")
+    harness_check.add_argument("--base-ref")
+    harness_check.add_argument("--head-ref", default="HEAD")
+    harness_check.add_argument("--strict", action="store_true")
+    harness_check.add_argument(
+        "--changed-path",
+        dest="changed_paths",
+        action="append",
+        default=None,
+    )
+
+    install_hooks = subparsers.add_parser("install-git-hooks")
+    install_hooks.add_argument("--base-ref", default="origin/main")
+    install_hooks.add_argument("--force", action="store_true")
 
     gc = subparsers.add_parser("gc")
     gc.add_argument("--apply", action="store_true")
@@ -296,6 +324,37 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "doctor":
         result = run_doctor(
             settings=build_login_settings(server_url=args.server_url),
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "docs-sync":
+        result = run_docs_sync(
+            changed_paths=args.changed_paths,
+            base_ref=args.base_ref,
+            head_ref=args.head_ref,
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        if result.get("status") != "ok":
+            return 1
+        return 0
+
+    if args.command == "harness-check":
+        result = run_harness_check(
+            base_ref=args.base_ref,
+            head_ref=args.head_ref,
+            changed_paths=args.changed_paths,
+            strict=args.strict,
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        if result.get("status") != "ok":
+            return 1
+        return 0
+
+    if args.command == "install-git-hooks":
+        result = install_git_hooks(
+            base_ref=args.base_ref,
+            force=args.force,
         )
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0

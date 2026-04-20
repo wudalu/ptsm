@@ -2,12 +2,17 @@
 title: Harness Engineering In PTSM
 status: active
 owner: ptsm
-last_verified: 2026-04-19
+last_verified: 2026-04-20
 source_of_truth: true
 related_paths:
   - README.md
   - docs/index.md
   - docs/plans/2026-04-17-harness-engineering-first-stage.md
+  - docs/plans/2026-04-20-docs-sync-gate.md
+  - docs/plans/2026-04-20-harness-enforcement.md
+  - src/ptsm/application/use_cases/docs_sync.py
+  - src/ptsm/application/use_cases/harness_check.py
+  - src/ptsm/application/use_cases/install_git_hooks.py
 ---
 
 # Harness Engineering In PTSM
@@ -30,6 +35,10 @@ repository.
 - a stable pytest-based verification loop
 - a docs map with source-of-truth pointers
 - freshness and ownership metadata on active docs
+- a path-aware `docs-sync` gate that uses `related_paths` to block code changes that skip their most specific source-of-truth docs
+- a single `harness-check` entrypoint that runs the docs gate, local harness drift checks, and deterministic pytest
+- an installable pre-push hook plus GitHub workflow so the same harness rules run locally and in CI
+- a two-tier enforcement model: practical local gates by default, full `--strict` gates in CI branch protection
 - mechanical architecture checks for import boundaries
 - durable local runtime memory and checkpoints
 - queryable run summaries and run events

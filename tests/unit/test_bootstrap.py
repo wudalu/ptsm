@@ -108,6 +108,72 @@ def test_build_parser_supports_doctor() -> None:
     assert args.command == "doctor"
 
 
+def test_build_parser_supports_docs_sync() -> None:
+    parser = build_parser()
+
+    args = parser.parse_args(
+        [
+            "docs-sync",
+            "--base-ref",
+            "origin/main",
+            "--head-ref",
+            "HEAD",
+            "--changed-path",
+            "src/ptsm/interfaces/cli/main.py",
+            "--changed-path",
+            "docs/operations.md",
+        ]
+    )
+
+    assert args.command == "docs-sync"
+    assert args.base_ref == "origin/main"
+    assert args.head_ref == "HEAD"
+    assert args.changed_paths == [
+        "src/ptsm/interfaces/cli/main.py",
+        "docs/operations.md",
+    ]
+
+
+def test_build_parser_supports_harness_check() -> None:
+    parser = build_parser()
+
+    args = parser.parse_args(
+        [
+            "harness-check",
+            "--base-ref",
+            "origin/main",
+            "--head-ref",
+            "HEAD",
+            "--strict",
+            "--changed-path",
+            "src/ptsm/interfaces/cli/main.py",
+        ]
+    )
+
+    assert args.command == "harness-check"
+    assert args.base_ref == "origin/main"
+    assert args.head_ref == "HEAD"
+    assert args.strict is True
+    assert args.changed_paths == ["src/ptsm/interfaces/cli/main.py"]
+
+
+def test_build_parser_supports_install_git_hooks() -> None:
+    parser = build_parser()
+
+    args = parser.parse_args(
+        [
+            "install-git-hooks",
+            "--base-ref",
+            "origin/main",
+            "--force",
+        ]
+    )
+
+    assert args.command == "install-git-hooks"
+    assert args.base_ref == "origin/main"
+    assert args.force is True
+
+
 def test_build_parser_supports_logs() -> None:
     parser = build_parser()
 
@@ -718,6 +784,99 @@ def test_main_dispatches_doctor(monkeypatch, capsys) -> None:
     assert exit_code == 0
     assert captured["settings"].xhs_mcp_server_url == "http://localhost:19000/mcp"
     assert '"status": "ok"' in capsys.readouterr().out
+
+
+def test_main_dispatches_docs_sync_and_fails_on_error(monkeypatch, capsys) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run_docs_sync(**kwargs):
+        captured.update(kwargs)
+        return {
+            "status": "error",
+            "missing_updates": [
+                {
+                    "changed_path": "src/ptsm/interfaces/cli/main.py",
+                    "candidate_docs": [{"doc": "docs/operations.md"}],
+                }
+            ],
+            "unmapped_changes": [],
+        }
+
+    monkeypatch.setattr(
+        "ptsm.interfaces.cli.main.run_docs_sync",
+        fake_run_docs_sync,
+    )
+
+    exit_code = main(
+        [
+            "docs-sync",
+            "--base-ref",
+            "origin/main",
+            "--head-ref",
+            "HEAD",
+            "--changed-path",
+            "src/ptsm/interfaces/cli/main.py",
+        ]
+    )
+
+    assert exit_code == 1
+    assert captured["base_ref"] == "origin/main"
+    assert captured["head_ref"] == "HEAD"
+    assert captured["changed_paths"] == ["src/ptsm/interfaces/cli/main.py"]
+    assert '"status": "error"' in capsys.readouterr().out
+
+
+def test_main_dispatches_harness_check_and_fails_on_error(monkeypatch, capsys) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run_harness_check(**kwargs):
+        captured.update(kwargs)
+        return {"status": "error", "docs_sync": {"status": "error"}}
+
+    monkeypatch.setattr(
+        "ptsm.interfaces.cli.main.run_harness_check",
+        fake_run_harness_check,
+    )
+
+    exit_code = main(
+        [
+            "harness-check",
+            "--base-ref",
+            "origin/main",
+            "--head-ref",
+            "HEAD",
+            "--strict",
+            "--changed-path",
+            "src/ptsm/interfaces/cli/main.py",
+        ]
+    )
+
+    assert exit_code == 1
+    assert captured["base_ref"] == "origin/main"
+    assert captured["head_ref"] == "HEAD"
+    assert captured["strict"] is True
+    assert captured["changed_paths"] == ["src/ptsm/interfaces/cli/main.py"]
+    assert '"status": "error"' in capsys.readouterr().out
+
+
+def test_main_dispatches_install_git_hooks(monkeypatch, capsys) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_install_git_hooks(**kwargs):
+        captured.update(kwargs)
+        return {"status": "installed", "hook_path": ".git/hooks/pre-push"}
+
+    monkeypatch.setattr(
+        "ptsm.interfaces.cli.main.install_git_hooks",
+        fake_install_git_hooks,
+    )
+
+    exit_code = main(["install-git-hooks", "--base-ref", "origin/main", "--force"])
+
+    assert exit_code == 0
+    assert captured["base_ref"] == "origin/main"
+    assert captured["force"] is True
+    assert '"status": "installed"' in capsys.readouterr().out
 
 
 def test_main_dispatches_logs(monkeypatch, capsys, tmp_path: Path) -> None:

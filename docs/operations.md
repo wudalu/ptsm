@@ -2,13 +2,19 @@
 title: PTSM Operations
 status: active
 owner: ptsm
-last_verified: 2026-04-19
+last_verified: 2026-04-20
 source_of_truth: true
 related_paths:
   - docs/operations/cloud-bootstrap.md
   - docs/operations/local-runbook.md
   - docs/operations/task-completion-automation.md
   - src/ptsm/interfaces/cli/main.py
+  - src/ptsm/application/use_cases/docs_sync.py
+  - src/ptsm/application/use_cases/harness_check.py
+  - src/ptsm/application/use_cases/install_git_hooks.py
+  - .github/workflows/harness.yml
+  - .github/workflows/docs-sync.yml
+  - .github/pull_request_template.md
 ---
 
 # Operations
@@ -25,6 +31,12 @@ related_paths:
 
 - `uv run python -m ptsm.bootstrap --help`
 - `uv run python -m ptsm.bootstrap doctor`
+- `uv run python -m ptsm.bootstrap docs-sync --base-ref origin/main`
+- `uv run python -m ptsm.bootstrap docs-sync --changed-path src/ptsm/interfaces/cli/main.py --changed-path docs/operations/local-runbook.md`
+- `uv run python -m ptsm.bootstrap harness-check --base-ref origin/main`
+- `uv run python -m ptsm.bootstrap harness-check --base-ref origin/main --strict`
+- `uv run python -m ptsm.bootstrap harness-check --changed-path src/ptsm/application/use_cases/harness_check.py --changed-path docs/operations.md`
+- `uv run python -m ptsm.bootstrap install-git-hooks --base-ref origin/main`
 - `uv run python -m ptsm.bootstrap gc`
 - `uv run python -m ptsm.bootstrap gc --apply --runs-retention-days 14 --plan-runs-retention-days 14`
 - `uv run python -m ptsm.bootstrap harness-evals --platform xiaohongshu --playbook-id fengkuang_daily_post`
@@ -44,6 +56,11 @@ related_paths:
 ## Usage Notes
 
 - 默认校验门禁优先使用 `pytest` 和 `doctor`。
+- `docs-sync` 会读取 source-of-truth 文档 front matter 里的 `related_paths`，要求相关代码变更至少伴随一个最具体候选文档面的更新。
+- `harness-check` 会串起 `docs-sync`、本地 `harness-report` 和 deterministic `pytest -q`，是本地 pre-push 和 CI 的统一入口。
+- `docs-sync --base-ref ...` 和 `harness-check --base-ref ...` 比较的是 `<base-ref>...HEAD` 的已提交 diff；如果要在 commit 之前预检当前工作树改动，改用 `--changed-path ...` 显式传入。
+- 本地默认 `harness-check` 只把 `docs-sync`、source-of-truth docs freshness 和 deterministic pytest 当成阻塞门禁；`--strict` 会把完整 `harness-report` warning 也变成阻塞。
+- `install-git-hooks` 会写入 `.git/hooks/pre-push`，默认记录 `origin/main` 作为 base ref，并在 push 前先计算 `git merge-base HEAD origin/main`，再执行 `harness-check --base-ref <merge-base-sha>`。
 - `gc` 默认只报告候选项；只有 `--apply` 才会删除本地 harness artifacts。
 - `harness-evals` 只输出本地 JSON 汇总，不负责修改 artifact 或触发修复动作。
 - `harness-report` 是对 `doctor`、`gc`、`harness-evals` 的只读组合入口；需要把 warning 当成 gate 时，再显式加 `--fail-on-warning`。
@@ -51,3 +68,16 @@ related_paths:
 - `run-fengkuang --auto-generate-image` 会在缺少 `--publish-image-path` 时尝试调用百炼图像模型生成封面；真实发布模式下默认也会尝试自动补图。
 - 浏览器动作保留为人工或条件触发，不应成为默认无人值守 gate。
 - 更细的触发策略以 [`docs/operations/task-completion-automation.md`](operations/task-completion-automation.md) 为准。
+
+## Daily Enforcement
+
+- 本地开发:
+  `uv run python -m ptsm.bootstrap install-git-hooks --base-ref origin/main`
+- 手动预检:
+  `uv run python -m ptsm.bootstrap harness-check --base-ref origin/main`
+- 手动严格预检:
+  `uv run python -m ptsm.bootstrap harness-check --base-ref origin/main --strict`
+- CI:
+  `.github/workflows/harness.yml` 会在 PR 和 `main` push 上运行 `harness-check --strict`
+- GitHub 仓库设置:
+  在 branch protection 里把 `harness` 设成 required status check；如果要更快失败，也可以把 `docs-sync` 一起设成 required
