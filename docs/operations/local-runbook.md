@@ -12,6 +12,15 @@ Check available commands:
 uv run python -m ptsm.bootstrap --help
 ```
 
+If you plan to use XiaoHongShu real publish, start the external `xiaohongshu-mcp` server in a separate terminal first:
+
+```bash
+.ptsm/bin/xhs-mcp/xiaohongshu-mcp-darwin-amd64
+```
+
+This listens on `:18060` by default, which matches `XHS_MCP_SERVER_URL=http://localhost:18060/mcp`.
+PTSM does not auto-start this external service for you. If it is not running, `doctor`, `xhs-login-status`, and `run-fengkuang --publish-mode mcp-real` will fail with a connection error.
+
 Run a local dry-run:
 
 ```bash
@@ -117,6 +126,8 @@ uv run python -m ptsm.bootstrap logs --artifact outputs/artifacts/<artifact>.jso
 ```
 
 ## Login Troubleshooting
+
+If `xhs-login-status` or real publish fails with a connection error, first confirm the local MCP server process above is still running.
 
 Check current login preflight:
 

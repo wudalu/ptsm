@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import httpx
 import pytest
 from langchain_core.messages import ToolMessage
 
@@ -23,6 +24,17 @@ class FakeMcpRunner:
     async def invoke_tool(self, tool_name: str, payload: dict[str, object]) -> object:
         self.calls.append((tool_name, payload))
         return self.responses[tool_name]
+
+
+class ExplodingMcpRunner:
+    async def list_tool_names(self) -> list[str]:
+        raise ExceptionGroup(
+            "unhandled errors in a TaskGroup",
+            [httpx.ConnectError("All connection attempts failed")],
+        )
+
+    async def invoke_tool(self, tool_name: str, payload: dict[str, object]) -> object:
+        raise AssertionError("invoke_tool should not be reached")
 
 
 def build_account() -> AccountProfile:
@@ -125,6 +137,19 @@ def test_xiaohongshu_mcp_publisher_preflight_returns_qrcode_metadata() -> None:
     assert preflight["qrcode"]["timeout"] == "4m0s"
     assert preflight["qrcode"]["is_logged_in"] is False
     assert preflight["qrcode"]["img"] == "data:image/png;base64,abc"
+
+
+def test_xiaohongshu_mcp_publisher_preflight_surfaces_connection_errors() -> None:
+    publisher = XiaohongshuMcpPublisher(
+        server_url="http://localhost:18060/mcp",
+        tool_runner=ExplodingMcpRunner(),
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="Unable to connect to xiaohongshu-mcp server at http://localhost:18060/mcp",
+    ):
+        publisher.preflight()
 
 
 def test_xiaohongshu_mcp_publisher_requires_at_least_one_existing_image(tmp_path: Path) -> None:

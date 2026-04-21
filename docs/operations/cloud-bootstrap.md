@@ -2,7 +2,7 @@
 title: PTSM Cloud Bootstrap
 status: active
 owner: ptsm
-last_verified: 2026-04-19
+last_verified: 2026-04-22
 source_of_truth: true
 related_paths:
   - README.md
@@ -137,7 +137,15 @@ uv run python -m ptsm.bootstrap run-fengkuang \
 
 ## Step 6: Real Publish Prerequisites
 
-真实发布前，先确认小红书 MCP 服务可用：
+真实发布前，先启动小红书 MCP 服务。PTSM 只会调用这个外部 HTTP 服务，不会自动把它拉起：
+
+```bash
+.ptsm/bin/xhs-mcp/xiaohongshu-mcp-darwin-amd64
+```
+
+这个二进制默认监听 `:18060`，对应 `.env` 里的 `XHS_MCP_SERVER_URL=http://localhost:18060/mcp`。
+
+服务启动后，再确认小红书 MCP 服务可用：
 
 ```bash
 uv run python -m ptsm.bootstrap xhs-login-status

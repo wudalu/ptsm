@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 from typing import Any, Protocol, Sequence
 
+import httpx
 from langchain_core.messages import ToolMessage
 from langchain_mcp_adapters.client import MultiServerMCPClient
 
@@ -144,7 +145,7 @@ class XiaohongshuMcpPublisher:
                 preflight=preflight,
             )
 
-        publish_response = await self.tool_runner.invoke_tool("publish_content", publish_args)
+        publish_response = await self._invoke_tool("publish_content", publish_args)
         publish_text = self._extract_text(publish_response)
         publish_metadata = self._extract_publish_metadata(publish_response)
 
@@ -163,7 +164,7 @@ class XiaohongshuMcpPublisher:
         }
 
     async def _preflight_async(self, *, require_publish_tool: bool = False) -> dict[str, Any]:
-        tool_names = await self.tool_runner.list_tool_names()
+        tool_names = await self._list_tool_names()
         required_tools = {"check_login_status"}
         if require_publish_tool:
             required_tools.add("publish_content")
@@ -171,7 +172,7 @@ class XiaohongshuMcpPublisher:
         if missing:
             raise RuntimeError(f"xiaohongshu-mcp missing required tools: {missing}")
 
-        login_status = await self.tool_runner.invoke_tool("check_login_status", {})
+        login_status = await self._invoke_tool("check_login_status", {})
         login_text = self._extract_text(login_status).strip()
         preflight: dict[str, Any] = {
             "status": "ready",
@@ -184,7 +185,7 @@ class XiaohongshuMcpPublisher:
 
         preflight["status"] = "login_required"
         if "get_login_qrcode" in tool_names:
-            qrcode_response = await self.tool_runner.invoke_tool("get_login_qrcode", {})
+            qrcode_response = await self._invoke_tool("get_login_qrcode", {})
             preflight["qrcode"] = self._extract_json_payload(qrcode_response)
         return preflight
 
@@ -194,7 +195,7 @@ class XiaohongshuMcpPublisher:
         post_id: str | None = None,
         post_url: str | None = None,
     ) -> dict[str, Any]:
-        tool_names = await self.tool_runner.list_tool_names()
+        tool_names = await self._list_tool_names()
         if "check_publish_status" not in tool_names:
             return {
                 "status": "unsupported",
@@ -209,7 +210,7 @@ class XiaohongshuMcpPublisher:
             payload["post_id"] = post_id
         if post_url:
             payload["post_url"] = post_url
-        response = await self.tool_runner.invoke_tool("check_publish_status", payload)
+        response = await self._invoke_tool("check_publish_status", payload)
         data = self._extract_json_payload(response)
         if isinstance(data, dict):
             return {
@@ -234,11 +235,11 @@ class XiaohongshuMcpPublisher:
         if not title.strip():
             return None
 
-        tool_names = await self.tool_runner.list_tool_names()
+        tool_names = await self._list_tool_names()
         if "search_feeds" not in tool_names:
             return None
 
-        response = await self.tool_runner.invoke_tool("search_feeds", {"keyword": title.strip()})
+        response = await self._invoke_tool("search_feeds", {"keyword": title.strip()})
         data = self._extract_json_payload(response)
         if not isinstance(data, dict):
             return None
@@ -280,6 +281,59 @@ class XiaohongshuMcpPublisher:
         if missing:
             raise ValueError(f"Image paths do not exist: {missing}")
         return resolved
+
+    async def _list_tool_names(self) -> list[str]:
+        try:
+            return await self.tool_runner.list_tool_names()
+        except Exception as exc:
+            self._raise_if_connection_error(exc)
+            raise
+
+    async def _invoke_tool(self, tool_name: str, payload: dict[str, object]) -> object:
+        try:
+            return await self.tool_runner.invoke_tool(tool_name, payload)
+        except Exception as exc:
+            self._raise_if_connection_error(exc)
+            raise
+
+    def _raise_if_connection_error(self, exc: BaseException) -> None:
+        if not self._contains_connection_error(exc):
+            return
+        raise RuntimeError(
+            f"Unable to connect to xiaohongshu-mcp server at {self.server_url}. "
+            "Ensure the HTTP MCP server is running and reachable."
+        ) from exc
+
+    def _contains_connection_error(self, exc: BaseException) -> bool:
+        for candidate in self._iter_nested_exceptions(exc):
+            if isinstance(candidate, httpx.ConnectError):
+                return True
+        return False
+
+    def _iter_nested_exceptions(
+        self,
+        exc: BaseException,
+        *,
+        seen: set[int] | None = None,
+    ) -> list[BaseException]:
+        if seen is None:
+            seen = set()
+        identifier = id(exc)
+        if identifier in seen:
+            return []
+        seen.add(identifier)
+
+        nested = [exc]
+        if isinstance(exc, BaseExceptionGroup):
+            for child in exc.exceptions:
+                nested.extend(self._iter_nested_exceptions(child, seen=seen))
+        cause = getattr(exc, "__cause__", None)
+        if isinstance(cause, BaseException):
+            nested.extend(self._iter_nested_exceptions(cause, seen=seen))
+        context = getattr(exc, "__context__", None)
+        if isinstance(context, BaseException):
+            nested.extend(self._iter_nested_exceptions(context, seen=seen))
+        return nested
 
     def _build_publish_args(
         self,
