@@ -2,7 +2,7 @@
 title: PTSM Cloud Bootstrap
 status: active
 owner: ptsm
-last_verified: 2026-04-22
+last_verified: 2026-05-02
 source_of_truth: true
 related_paths:
   - README.md
@@ -69,7 +69,18 @@ XHS_MCP_SERVER_URL=http://localhost:18060/mcp
 XHS_DEFAULT_VISIBILITY=仅自己可见
 ```
 
-如果要自动生成封面图，再补：
+如果要自动生成封面图，优先使用即梦配置：
+
+```env
+JIMENG_API_KEY=your-volcengine-ak
+JIMENG_SECRET_KEY=your-volcengine-sk
+JIMENG_MODEL=jimeng_t2i_v40
+JIMENG_BASE_URL=https://visual.volcengineapi.com
+JIMENG_WIDTH=1536
+JIMENG_HEIGHT=2048
+```
+
+没有即梦凭证时，也可以使用百炼配置：
 
 ```env
 PIC_MODEL_API_KEY=your-bailian-key
@@ -133,7 +144,7 @@ uv run python -m ptsm.bootstrap run-fengkuang \
   --auto-generate-image
 ```
 
-真实发布模式下，如果未显式传 `--publish-image-path`，且 Bailian 配置可用，PTSM 默认也会尝试自动补图。
+真实发布模式下，如果未显式传 `--publish-image-path`，且图片后端配置可用，PTSM 默认也会尝试自动补图。即梦和百炼同时配置时优先使用即梦。
 
 ## Step 6: Real Publish Prerequisites
 

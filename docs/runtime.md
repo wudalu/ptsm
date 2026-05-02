@@ -2,7 +2,7 @@
 title: PTSM Runtime
 status: active
 owner: ptsm
-last_verified: 2026-04-21
+last_verified: 2026-05-02
 source_of_truth: true
 related_paths:
   - src/ptsm/agent_runtime/runtime.py
@@ -34,7 +34,7 @@ related_paths:
 - 运行结果会落到 artifact，并写入本地 run store。
 - `run_playbook()` 默认会在 `.ptsm/agent_runtime/` 下创建持久 execution memory 和 checkpoint。
 - `run_playbook()` 现在也会在 `.ptsm/agent_runtime/side-effects.json` 下记录成功副作用结果，用于同一 `thread_id` 的安全重放。
-- `run_playbook()` 现在可以在真实发布缺图时调用 provider-backed image backend，默认把生成图写到 `outputs/generated_images/`。
+- `run_playbook()` 现在可以在真实发布缺图时调用 provider-backed image backend，默认把生成图写到 `outputs/generated_images/`；即梦配置优先于百炼配置。
 - deterministic / deepseek drafting backend 现在会读取 playbook prompt 与 scoped skills，不再只面向发疯文学。
 - 显式注入依赖时，运行时仍兼容 `InMemoryExecutionMemory` 和 `InMemorySaver`。
 - 持久 checkpoint 以 `thread_id` 为键保存；复用同一个 `thread_id` 才能跨进程读取同一条执行线程。

@@ -60,3 +60,32 @@ def test_settings_accept_bailian_image_generation_env_names(monkeypatch) -> None
     assert settings.pic_model_model == "qwen-image-2.0-pro"
     assert settings.pic_model_base_url == "https://dashscope.aliyuncs.com/api/v1"
     assert settings.pic_model_size == "1104*1472"
+
+
+def test_settings_accept_jimeng_image_generation_env_names(monkeypatch) -> None:
+    for key in [
+        "JIMENG_API_KEY",
+        "JIMENG_SECRET_KEY",
+        "JIMENG_BASE_URL",
+        "JIMENG_MODEL",
+        "JIMENG_WIDTH",
+        "JIMENG_HEIGHT",
+        "JIMENG_POLL_INTERVAL_SECONDS",
+        "JIMENG_MAX_POLL_ATTEMPTS",
+    ]:
+        monkeypatch.delenv(key, raising=False)
+
+    monkeypatch.setenv("JIMENG_API_KEY", "ak-test")
+    monkeypatch.setenv("JIMENG_SECRET_KEY", "sk-test")
+    monkeypatch.setenv("JIMENG_MODEL", "jimeng_t2i_v40")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.jimeng_api_key == "ak-test"
+    assert settings.jimeng_secret_key == "sk-test"
+    assert settings.jimeng_base_url == "https://visual.volcengineapi.com"
+    assert settings.jimeng_model == "jimeng_t2i_v40"
+    assert settings.jimeng_width == 1536
+    assert settings.jimeng_height == 2048
+    assert settings.jimeng_poll_interval_seconds == 2.0
+    assert settings.jimeng_max_poll_attempts == 60

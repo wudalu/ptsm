@@ -47,9 +47,20 @@ uv run python -m ptsm.bootstrap run-fengkuang \
   --auto-generate-image
 ```
 
-For real publish runs, PTSM now defaults to auto-generating a cover image when `--publish-image-path` is omitted and Bailian image config is present.
+For real publish runs, PTSM now defaults to auto-generating a cover image when `--publish-image-path` is omitted and an image backend is configured.
 
-Required `.env` fields for Bailian image generation:
+Preferred `.env` fields for Volcengine Jimeng image generation:
+
+```env
+JIMENG_API_KEY=your-volcengine-ak
+JIMENG_SECRET_KEY=your-volcengine-sk
+JIMENG_MODEL=jimeng_t2i_v40
+JIMENG_BASE_URL=https://visual.volcengineapi.com
+JIMENG_WIDTH=1536
+JIMENG_HEIGHT=2048
+```
+
+Fallback `.env` fields for Bailian image generation:
 
 ```env
 PIC_MODEL_API_KEY=sk-...
@@ -58,6 +69,7 @@ PIC_MODEL_BASE_URL=https://dashscope.aliyuncs.com/api/v1
 PIC_MODEL_SIZE=1104*1472
 ```
 
+When both are present, PTSM uses Jimeng first.
 Generated images are persisted under `outputs/generated_images/`, and the artifact records `image_generation.provider/model/prompt/generated_image_paths`.
 
 Ask the workflow to do a post-publish status check after the dry-run finishes:

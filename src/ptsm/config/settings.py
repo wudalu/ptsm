@@ -71,6 +71,26 @@ class Settings(BaseSettings):
         ),
         validation_alias="PIC_MODEL_NEGATIVE_PROMPT",
     )
+    jimeng_api_key: str | None = Field(default=None, validation_alias="JIMENG_API_KEY")
+    jimeng_secret_key: str | None = Field(default=None, validation_alias="JIMENG_SECRET_KEY")
+    jimeng_base_url: str = Field(
+        default="https://visual.volcengineapi.com",
+        validation_alias="JIMENG_BASE_URL",
+    )
+    jimeng_model: str = Field(
+        default="jimeng_t2i_v40",
+        validation_alias="JIMENG_MODEL",
+    )
+    jimeng_width: int = Field(default=1536, validation_alias="JIMENG_WIDTH")
+    jimeng_height: int = Field(default=2048, validation_alias="JIMENG_HEIGHT")
+    jimeng_poll_interval_seconds: float = Field(
+        default=2.0,
+        validation_alias="JIMENG_POLL_INTERVAL_SECONDS",
+    )
+    jimeng_max_poll_attempts: int = Field(
+        default=60,
+        validation_alias="JIMENG_MAX_POLL_ATTEMPTS",
+    )
 
 
 @lru_cache(maxsize=1)

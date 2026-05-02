@@ -44,13 +44,15 @@ def test_operations_doc_mentions_plan_runs_command() -> None:
     assert "--auto-generate-image" in doc_text
 
 
-def test_docs_cover_bailian_image_generation_paths() -> None:
+def test_docs_cover_image_generation_provider_paths() -> None:
     runbook_text = (DOCS_ROOT / "operations" / "local-runbook.md").read_text(
         encoding="utf-8"
     )
     observability_text = (DOCS_ROOT / "observability.md").read_text(encoding="utf-8")
 
     assert "PIC_MODEL_API_KEY" in runbook_text
+    assert "JIMENG_API_KEY" in runbook_text
+    assert "JIMENG_SECRET_KEY" in runbook_text
     assert "outputs/generated_images" in observability_text
 
 
