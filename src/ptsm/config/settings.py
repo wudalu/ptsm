@@ -91,6 +91,18 @@ class Settings(BaseSettings):
         default=60,
         validation_alias="JIMENG_MAX_POLL_ATTEMPTS",
     )
+    watermark_removal_enabled: bool = Field(
+        default=False,
+        validation_alias="WATERMARK_REMOVAL_ENABLED",
+    )
+    watermark_removal_corner_search_ratio: float = Field(
+        default=0.25,
+        validation_alias="WATERMARK_REMOVAL_CORNER_SEARCH_RATIO",
+    )
+    watermark_removal_inpaint_radius: float = Field(
+        default=8.0,
+        validation_alias="WATERMARK_REMOVAL_INPAINT_RADIUS",
+    )
 
 
 @lru_cache(maxsize=1)

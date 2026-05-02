@@ -23,6 +23,7 @@ from ptsm.infrastructure.observability.run_store import RunStore
 from ptsm.infrastructure.artifacts.file_store import FileArtifactStore
 from ptsm.infrastructure.memory.store import ExecutionMemoryStore
 from ptsm.infrastructure.images.factory import build_image_backend
+from ptsm.infrastructure.images.watermark_remover import WatermarkRemover
 from ptsm.infrastructure.publishers.contracts import Publisher
 from ptsm.infrastructure.publishers.factory import build_publisher
 from ptsm.infrastructure.publishers.xiaohongshu_mcp_publisher import PublisherPreflightError
@@ -169,6 +170,7 @@ def run_playbook(
 
     publish_result = None
     image_generation: dict[str, Any] | None = None
+    watermark_removal: dict[str, Any] | None = None
     if result["status"] == "completed":
         resolved_image_paths = list(request.publish_image_paths)
         artifact_path = Path(result["artifact_path"])
@@ -186,6 +188,7 @@ def run_playbook(
                 image_generation = image_backend.generate(
                     prompt=_build_image_generation_prompt(
                         scene=request.scene,
+                        persona_prompt=str(result.get("persona_prompt") or ""),
                         final_content=result["final_content"],
                     ),
                     output_dir=Path.cwd() / DEFAULT_GENERATED_IMAGES_DIR,
@@ -196,6 +199,32 @@ def run_playbook(
                     or image_generation.get("image_paths")
                     or []
                 )
+
+        watermark_removal = None
+        if settings.watermark_removal_enabled and resolved_image_paths:
+            remover = WatermarkRemover(
+                corner_search_ratio=settings.watermark_removal_corner_search_ratio,
+                inpaint_radius=settings.watermark_removal_inpaint_radius,
+            )
+            cleaned_paths: list[str] = []
+            watermark_results: list[dict[str, object]] = []
+            for img_path_str in resolved_image_paths:
+                img_path = Path(img_path_str)
+                wm_result = remover.remove(
+                    image_path=img_path,
+                    output_dir=Path.cwd() / DEFAULT_GENERATED_IMAGES_DIR,
+                    output_stem=f"{img_path.stem}-nowm",
+                )
+                watermark_results.append(wm_result)
+                cleaned = wm_result.get("output_path")
+                if isinstance(cleaned, str):
+                    cleaned_paths.append(cleaned)
+            watermark_removal = {
+                "status": "completed",
+                "results": watermark_results,
+            }
+            if cleaned_paths:
+                resolved_image_paths = cleaned_paths
 
         publish_idempotency_key = _build_publish_idempotency_key(
             account_id=account.account_id,
@@ -266,6 +295,7 @@ def run_playbook(
                 "publish_mode": publish_mode,
                 "publish_result": publish_result,
                 "image_generation": image_generation,
+                "watermark_removal": watermark_removal,
                 "run": run.to_dict(),
             },
         )
@@ -325,6 +355,7 @@ def run_playbook(
         "publish_mode": publish_mode,
         "publish_result": publish_result,
         "image_generation": image_generation,
+        "watermark_removal": watermark_removal,
         "post_publish_checks": post_publish_checks,
         "run": run_summary,
     }
@@ -473,6 +504,7 @@ def _should_generate_images(
 def _build_image_generation_prompt(
     *,
     scene: str,
+    persona_prompt: str | None = None,
     final_content: dict[str, Any],
 ) -> str:
     scene_text = _truncate_text(str(final_content.get("scene", scene)).strip() or scene, 80)
@@ -486,6 +518,7 @@ def _build_image_generation_prompt(
         " ".join(str(tag).strip() for tag in final_content.get("hashtags", [])[:3]),
         80,
     )
+    persona = _truncate_text(" ".join((persona_prompt or "").split()), 180)
     prompt = (
         "为小红书帖子生成一张 3:4 竖版封面图，适合中文社交媒体发布。"
         f"主题场景：{scene_text}。"
@@ -493,7 +526,8 @@ def _build_image_generation_prompt(
         f"封面文案参考：{image_text}。"
         f"正文情绪摘要：{body}。"
         f"标签氛围：{hashtags}。"
-        "要求：中文互联网感，构图干净，有留白，情绪准确，不要复杂小字，不要水印。"
+        f"账号人设参考：{persona or '像真实创作者在发帖'}。"
+        "要求：中文互联网感，构图干净，有留白，像真人账号会发的封面，避免机械对称、塑料质感和营销海报感，保留真实随手拍氛围，真人随手拍，不要复杂小字，不要额外水印。"
     )
     return _truncate_text(prompt, 800)
 
