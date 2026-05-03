@@ -60,6 +60,11 @@ class FakeWorkflow:
                 "body": f"{payload['scene']}，今天开会开到灵魂出窍，也算活着下班了。",
                 "hashtags": ["#发疯文学", "#打工人日常"],
             },
+            "runtime_skill_contents": [
+                "# XHS Trend Scan Live Context\n"
+                "- 主切口：`怎么才周四`\n"
+                "- 场景张力：`下班前被新需求拽回工位`"
+            ],
         }
 
 
@@ -99,6 +104,28 @@ class CapturingPublisher:
             "platform": "xiaohongshu",
             "provider": "xiaohongshu_mcp",
             "artifact_path": kwargs["artifact_path"],
+        }
+
+
+class CapturingImageBackend:
+    def __init__(self, generated_path: Path) -> None:
+        self.generated_path = generated_path
+        self.prompts: list[str] = []
+
+    def generate(
+        self,
+        *,
+        prompt: str,
+        output_dir: Path,
+        output_stem: str,
+    ) -> dict[str, object]:
+        self.prompts.append(prompt)
+        return {
+            "provider": "bailian",
+            "model": "wanx2.1-t2i-turbo",
+            "generated_image_paths": [str(self.generated_path)],
+            "output_dir": str(output_dir),
+            "output_stem": output_stem,
         }
 
 
@@ -731,6 +758,12 @@ def test_run_fengkuang_playbook_skips_generation_for_dry_run_without_flag(
 def test_build_image_generation_prompt_stays_within_bailian_limit() -> None:
     prompt = _build_image_generation_prompt(
         scene="周六社畜躺平",
+        persona_prompt="# Persona 普通打工人，表达要有人味和网感。",
+        runtime_skill_contents=[
+            "# XHS Trend Scan Live Context\n"
+            "- 主切口：`怎么才周四`\n"
+            "- 场景张力：`下班前被新需求拽回工位`"
+        ],
         final_content={
             "title": "周六躺平失败实录：我的床好像有结界",
             "image_text": "试图在床上躺成一条咸鱼，结果被自己的焦虑反复煎烤。",
@@ -748,6 +781,62 @@ def test_build_image_generation_prompt_stays_within_bailian_limit() -> None:
     assert len(prompt) <= 800
     assert "周六社畜躺平" in prompt
     assert "周六躺平失败实录" in prompt
+    assert "普通打工人" in prompt
+    assert "怎么才周四" in prompt
+    assert "下班前被新需求拽回工位" in prompt
+    assert "真人随手拍" in prompt
+
+
+def test_run_fengkuang_playbook_passes_runtime_context_into_image_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    artifact_path = tmp_path / "artifact.json"
+    generated_path = tmp_path / "generated.png"
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "fengkuang_daily_post",
+                "final_content": {"title": "旧标题"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    publisher = CapturingPublisher()
+    image_backend = CapturingImageBackend(generated_path)
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_fengkuang_workflow",
+        lambda **_: FakeWorkflow(artifact_path),
+    )
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_image_backend",
+        lambda _settings: image_backend,
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = run_fengkuang_playbook(
+        FengkuangRequest(
+            scene="周四下午四点半，老板还在群里发新需求",
+            platform="xiaohongshu",
+            account_id="acct-fk-local",
+            publish_mode="mcp-real",
+        ),
+        publisher=publisher,
+    )
+
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+
+    assert len(image_backend.prompts) == 1
+    assert "怎么才周四" in image_backend.prompts[0]
+    assert "下班前被新需求拽回工位" in image_backend.prompts[0]
+    assert result["image_generation"]["runtime_context_summary"] == (
+        "主切口 怎么才周四，场景张力 下班前被新需求拽回工位"
+    )
+    assert artifact["image_generation"]["runtime_context_summary"] == (
+        "主切口 怎么才周四，场景张力 下班前被新需求拽回工位"
+    )
 
 
 def test_run_playbook_supports_non_fengkuang_playbook_with_generic_runtime(

@@ -4,6 +4,7 @@ domain: 苏轼诗词赏析
 platforms:
   - xiaohongshu
 required_skills:
+  - xhs_trend_scan
   - sushi_poetry_style
   - xhs_poetry_hashtagging
 optional_skills: []

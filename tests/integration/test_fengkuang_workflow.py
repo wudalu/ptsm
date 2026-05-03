@@ -8,9 +8,34 @@ import pytest
 from ptsm.agent_runtime import runtime as runtime_module
 from ptsm.agent_runtime.runtime import build_fengkuang_workflow
 from ptsm.application.models import FengkuangRequest
+from ptsm.config.settings import Settings
 from ptsm.infrastructure.artifacts.file_store import FileArtifactStore
 from ptsm.infrastructure.memory.checkpoint import FileCheckpointSaver
 from ptsm.infrastructure.memory.store import FileExecutionMemory, InMemoryExecutionMemory
+
+
+class FakeTrendContextResolver:
+    def resolve(self, *, state, playbook, loaded_skills) -> dict[str, str]:
+        return {
+            "xhs_trend_scan": (
+                "# XHS Trend Scan Live Context\n"
+                "- 主切口：`怎么才周四`\n"
+                "- 场景张力：`下班前被新需求拽回工位`"
+            )
+        }
+
+
+def _deterministic_settings() -> Settings:
+    return Settings.model_construct(
+        default_model_provider="deterministic",
+        default_model="deterministic",
+        deepseek_api_key=None,
+        deepseek_model="deepseek-chat",
+        deepseek_base_url="https://api.deepseek.com/v1",
+        deepseek_temperature=0.3,
+        deepseek_max_tokens=1024,
+        xhs_mcp_server_url="http://localhost:18060/mcp",
+    )
 
 
 def test_build_fengkuang_workflow_uses_generic_runtime_builder(
@@ -66,7 +91,7 @@ def test_build_fengkuang_workflow_delegates_to_build_playbook_workflow(
 
 def test_fengkuang_workflow_revises_once_and_persists_memory() -> None:
     memory = InMemoryExecutionMemory()
-    workflow = build_fengkuang_workflow(memory=memory)
+    workflow = build_fengkuang_workflow(memory=memory, settings=_deterministic_settings())
 
     result = workflow.invoke(
         FengkuangRequest(
@@ -91,6 +116,8 @@ def test_fengkuang_workflow_revises_once_and_persists_memory() -> None:
 def test_fengkuang_workflow_writes_final_artifact(tmp_path: Path) -> None:
     workflow = build_fengkuang_workflow(
         artifact_store=FileArtifactStore(base_dir=tmp_path),
+        settings=_deterministic_settings(),
+        skill_context_resolver=FakeTrendContextResolver(),
     )
 
     result = workflow.invoke(
@@ -108,6 +135,8 @@ def test_fengkuang_workflow_writes_final_artifact(tmp_path: Path) -> None:
     artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
     assert artifact["playbook_id"] == "fengkuang_daily_post"
     assert artifact["final_content"]["hashtags"][0] == "#发疯文学"
+    assert "怎么才周四" in artifact["final_content"]["title"]
+    assert "runtime_skill_contents" in artifact
 
 
 def test_fengkuang_workflow_persists_checkpoint_with_file_backed_saver(
@@ -117,6 +146,7 @@ def test_fengkuang_workflow_persists_checkpoint_with_file_backed_saver(
     workflow = build_fengkuang_workflow(
         artifact_store=FileArtifactStore(base_dir=tmp_path / "artifacts"),
         checkpointer=FileCheckpointSaver(path=checkpoint_path),
+        settings=_deterministic_settings(),
     )
 
     result = workflow.invoke(
@@ -145,6 +175,7 @@ def test_fengkuang_workflow_persists_lessons_with_file_backed_memory(
     workflow = build_fengkuang_workflow(
         memory=FileExecutionMemory(path=memory_path),
         artifact_store=FileArtifactStore(base_dir=tmp_path / "artifacts"),
+        settings=_deterministic_settings(),
     )
 
     result = workflow.invoke(
@@ -171,8 +202,10 @@ class NeverImprovingDraftingAgent:
         *,
         scene: str,
         reflection_feedback: str | None = None,
+        persona_prompt: str | None = None,
         planner_prompt: str | None = None,
         skill_contents: list[str] | None = None,
+        runtime_skill_contents: list[str] | None = None,
     ) -> dict[str, object]:
         return {
             "title": "一直在疯",
@@ -186,6 +219,7 @@ def test_fengkuang_workflow_stops_after_max_attempts() -> None:
     workflow = build_fengkuang_workflow(
         drafting_agent=NeverImprovingDraftingAgent(),
         max_attempts=3,
+        settings=_deterministic_settings(),
     )
 
     result = workflow.invoke(

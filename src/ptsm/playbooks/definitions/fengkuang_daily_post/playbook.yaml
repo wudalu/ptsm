@@ -4,6 +4,7 @@ domain: 发疯文学
 platforms:
   - xiaohongshu
 required_skills:
+  - xhs_trend_scan
   - fengkuang_style
   - positive_reframe
   - xhs_hashtagging

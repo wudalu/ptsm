@@ -2,11 +2,12 @@
 title: PTSM Docs Index
 status: active
 owner: ptsm
-last_verified: 2026-04-17
+last_verified: 2026-04-22
 source_of_truth: true
 related_paths:
   - README.md
   - docs/harness-engineering.md
+  - docs/xhs-topics/index.md
   - docs/plans/2026-03-24-ptsm-agent-platform-rebaseline.md
   - docs/plans/2026-04-17-agent-readable-docs-map.md
   - docs/plans/2026-04-17-harness-engineering-first-stage.md
@@ -32,6 +33,7 @@ related_paths:
 - 运行时地图: [`runtime.md`](runtime.md)
 - Playbook 地图: [`playbooks.md`](playbooks.md)
 - Skill 地图: [`skills.md`](skills.md)
+- 小红书主题索引: [`xhs-topics/index.md`](xhs-topics/index.md)
 - 观测性地图: [`observability.md`](observability.md)
 - 操作文档索引: [`operations.md`](operations.md)
 - Shared contracts 索引: [`shared-contracts.md`](shared-contracts.md)
@@ -40,7 +42,7 @@ related_paths:
 
 1. 先看 [`architecture.md`](architecture.md) 了解仓库分层和目录职责。
 2. 再看 [`runtime.md`](runtime.md) 理解 `plan -> execute -> reflect` 运行时。
-3. 做内容与策略改动时，转到 [`playbooks.md`](playbooks.md) 和 [`skills.md`](skills.md)。
+3. 做内容与策略改动时，先看 [`playbooks.md`](playbooks.md) 和 [`skills.md`](skills.md)，再按需进入 [`xhs-topics/index.md`](xhs-topics/index.md)。
 4. 排查运行结果时，转到 [`observability.md`](observability.md) 和 [`operations.md`](operations.md)。
 5. 设计未来扩展合同时，转到 [`shared-contracts.md`](shared-contracts.md)。
 

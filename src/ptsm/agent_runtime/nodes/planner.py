@@ -5,6 +5,7 @@ from ptsm.playbooks.loader import PlaybookLoader
 from ptsm.playbooks.registry import PlaybookRegistry
 from ptsm.skills.loader import SkillLoader
 from ptsm.skills.registry import SkillRegistry
+from ptsm.skills.runtime_context import SkillContextResolver
 from ptsm.skills.selector import SkillSelector
 
 
@@ -16,6 +17,7 @@ def build_planner_node(
     playbook_loader: PlaybookLoader,
     skills: SkillRegistry,
     skill_loader: SkillLoader,
+    skill_context_resolver: SkillContextResolver | None = None,
 ):
     def planner(state: ExecutionState) -> ExecutionState:
         if playbook_id is not None:
@@ -35,6 +37,15 @@ def build_planner_node(
         loaded_skills = [surface.activate(name) for name in playbook.required_skills]
         loaded_playbook = playbook_loader.load(playbook.playbook_id)
         activated_skills = [skill.skill.skill_name for skill in loaded_skills]
+        runtime_skill_contexts = (
+            skill_context_resolver.resolve(
+                state=state,
+                playbook=playbook,
+                loaded_skills=loaded_skills,
+            )
+            if skill_context_resolver is not None
+            else []
+        )
 
         return {
             "planner_iterations": int(state.get("planner_iterations", 0)) + 1,
@@ -43,9 +54,11 @@ def build_planner_node(
             "candidate_skills": list(playbook.required_skills),
             "activated_skills": activated_skills,
             "planner_prompt": loaded_playbook.planner_prompt,
+            "persona_prompt": loaded_playbook.persona_prompt,
             "reflection_prompt": loaded_playbook.reflection_prompt,
             "reflection_rules": loaded_playbook.definition.reflection,
             "loaded_skill_contents": [skill.content for skill in loaded_skills],
+            "runtime_skill_contents": list(runtime_skill_contexts.values()),
         }
 
     return planner

@@ -24,6 +24,7 @@ from ptsm.playbooks.loader import PlaybookLoader
 from ptsm.playbooks.registry import PlaybookRegistry
 from ptsm.skills.loader import SkillLoader
 from ptsm.skills.registry import SkillRegistry
+from ptsm.skills.runtime_context import SkillContextResolver, build_skill_context_resolver
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 PLAYBOOK_ROOT = PACKAGE_ROOT / "playbooks" / "definitions"
@@ -42,6 +43,7 @@ def build_playbook_workflow(
     settings: Settings | None = None,
     artifact_store: FileArtifactStore | None = None,
     checkpointer: object | None = None,
+    skill_context_resolver: SkillContextResolver | None = None,
 ):
     """Build a workflow for a specific playbook/domain pair."""
     execution_memory = memory or InMemoryExecutionMemory()
@@ -50,6 +52,9 @@ def build_playbook_workflow(
     skills = SkillRegistry(skill_root=SKILL_ROOT)
     skill_loader = SkillLoader(skills)
     settings = settings or get_settings()
+    skill_context_resolver = skill_context_resolver or build_skill_context_resolver(
+        settings=settings
+    )
     drafting_agent = drafting_agent or FengkuangDraftingAgent(
         backend=build_drafting_backend(settings)
     )
@@ -64,6 +69,7 @@ def build_playbook_workflow(
             playbook_loader=playbook_loader,
             skills=skills,
             skill_loader=skill_loader,
+            skill_context_resolver=skill_context_resolver,
         ),
         executor=build_executor_node(drafting_agent=drafting_agent),
         reflector=build_reflector_node(max_attempts=max_attempts),
@@ -82,6 +88,7 @@ def build_fengkuang_workflow(
     settings: Settings | None = None,
     artifact_store: FileArtifactStore | None = None,
     checkpointer: object | None = None,
+    skill_context_resolver: SkillContextResolver | None = None,
 ):
     """Build a dry-run fengkuang workflow with one revision loop."""
     return build_playbook_workflow(
@@ -93,6 +100,7 @@ def build_fengkuang_workflow(
         settings=settings,
         artifact_store=artifact_store,
         checkpointer=checkpointer,
+        skill_context_resolver=skill_context_resolver,
     )
 
 
@@ -122,6 +130,7 @@ def build_finalize_node(
                 "drafting_provider": state["drafting_provider"],
                 "loaded_skills": activated_skills,
                 "activated_skills": activated_skills,
+                "runtime_skill_contents": list(state.get("runtime_skill_contents", [])),
                 "final_content": state["final_content"],
             },
             run_key=f"{state['account_id']}-{state['playbook_id']}-{state['attempt_count']}",

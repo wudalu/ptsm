@@ -25,8 +25,10 @@ class ExecutionState(TypedDict, total=False):
     planner_iterations: int
     drafting_provider: str
     planner_prompt: str
+    persona_prompt: str
     reflection_prompt: str
     reflection_rules: dict[str, str]
     loaded_skill_contents: list[str]
+    runtime_skill_contents: list[str]
     artifact_path: str
     memory_hits: list[dict[str, Any]]

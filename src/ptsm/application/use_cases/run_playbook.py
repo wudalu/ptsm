@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 from typing import Any
 
 from ptsm.accounts.registry import AccountRegistry
@@ -185,15 +186,21 @@ def run_playbook(
                     "reason": "backend_not_configured",
                 }
             else:
+                runtime_skill_contents = list(result.get("runtime_skill_contents") or [])
+                runtime_context_summary = _summarize_runtime_skill_contents(
+                    runtime_skill_contents
+                )
                 image_generation = image_backend.generate(
                     prompt=_build_image_generation_prompt(
                         scene=request.scene,
                         persona_prompt=str(result.get("persona_prompt") or ""),
+                        runtime_skill_contents=runtime_skill_contents,
                         final_content=result["final_content"],
                     ),
                     output_dir=Path.cwd() / DEFAULT_GENERATED_IMAGES_DIR,
                     output_stem=f"{artifact_path.stem}-cover",
                 )
+                image_generation["runtime_context_summary"] = runtime_context_summary
                 resolved_image_paths = list(
                     image_generation.get("generated_image_paths")
                     or image_generation.get("image_paths")
@@ -505,6 +512,7 @@ def _build_image_generation_prompt(
     *,
     scene: str,
     persona_prompt: str | None = None,
+    runtime_skill_contents: list[str] | None = None,
     final_content: dict[str, Any],
 ) -> str:
     scene_text = _truncate_text(str(final_content.get("scene", scene)).strip() or scene, 80)
@@ -519,6 +527,10 @@ def _build_image_generation_prompt(
         80,
     )
     persona = _truncate_text(" ".join((persona_prompt or "").split()), 180)
+    runtime_context = _truncate_text(
+        _summarize_runtime_skill_contents(runtime_skill_contents or []),
+        120,
+    )
     prompt = (
         "为小红书帖子生成一张 3:4 竖版封面图，适合中文社交媒体发布。"
         f"主题场景：{scene_text}。"
@@ -527,9 +539,31 @@ def _build_image_generation_prompt(
         f"正文情绪摘要：{body}。"
         f"标签氛围：{hashtags}。"
         f"账号人设参考：{persona or '像真实创作者在发帖'}。"
+        f"实时话题切口：{runtime_context or '贴近日常讨论热感即可'}。"
         "要求：中文互联网感，构图干净，有留白，像真人账号会发的封面，避免机械对称、塑料质感和营销海报感，保留真实随手拍氛围，真人随手拍，不要复杂小字，不要额外水印。"
     )
     return _truncate_text(prompt, 800)
+
+
+def _summarize_runtime_skill_contents(contents: list[str]) -> str:
+    signals: list[str] = []
+    for content in contents:
+        primary_hook = _extract_runtime_signal(content, label="主切口")
+        tension = _extract_runtime_signal(content, label="场景张力")
+        if primary_hook:
+            signals.append(f"主切口 {primary_hook}")
+        if tension:
+            signals.append(f"场景张力 {tension}")
+        if signals:
+            break
+    return "，".join(signals)
+
+
+def _extract_runtime_signal(content: str, *, label: str) -> str:
+    match = re.search(rf"{re.escape(label)}[:：]\s*`?([^`\n]+)`?", content)
+    if match is None:
+        return ""
+    return match.group(1).strip()
 
 
 def _truncate_text(value: str, limit: int) -> str:

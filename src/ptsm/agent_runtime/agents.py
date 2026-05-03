@@ -17,12 +17,16 @@ class FengkuangDraftingAgent:
         *,
         scene: str,
         reflection_feedback: str | None = None,
+        persona_prompt: str | None = None,
         planner_prompt: str | None = None,
         skill_contents: list[str] | None = None,
+        runtime_skill_contents: list[str] | None = None,
     ) -> dict[str, Any]:
         return self._backend.generate(
             scene=scene,
             reflection_feedback=reflection_feedback,
+            persona_prompt=persona_prompt,
             planner_prompt=planner_prompt,
             skill_contents=skill_contents,
+            runtime_skill_contents=runtime_skill_contents,
         )

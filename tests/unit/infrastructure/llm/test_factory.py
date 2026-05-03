@@ -157,6 +157,83 @@ def test_factory_deepseek_prompt_hardens_required_phrase_and_hashtag() -> None:
     assert "hashtags 数组必须包含 '#发疯文学'" in user_prompt
 
 
+def test_factory_includes_persona_prompt_in_deepseek_context() -> None:
+    settings = Settings.model_construct(
+        default_model_provider="deepseek",
+        default_model="deepseek-chat",
+        deepseek_api_key="sk-test",
+        deepseek_model="deepseek-chat",
+        deepseek_base_url="https://api.deepseek.com/v1",
+        deepseek_temperature=0.3,
+        deepseek_max_tokens=1024,
+    )
+
+    backend = build_drafting_backend(settings, chat_model_cls=CapturingChatDeepSeek)
+    backend.generate(
+        scene="周六社畜躺平",
+        persona_prompt="# Persona\n普通打工人，表达要有人味和网感，不要 AI 腔。",
+    )
+
+    user_prompt = CapturingChatDeepSeek.last_messages[1].content
+    assert "普通打工人" in user_prompt
+    assert "不要 AI 腔" in user_prompt
+
+
+def test_deterministic_backend_uses_persona_for_more_human_copy() -> None:
+    backend = DeterministicDraftBackend()
+
+    draft = backend.generate(
+        scene="周六社畜躺平",
+        persona_prompt="# Persona\n普通打工人，表达要有人味和网感。",
+    )
+
+    assert "谁懂" in draft["body"]
+    assert "评论区" in draft["body"]
+
+
+def test_deterministic_backend_uses_runtime_trend_context_for_title_hook() -> None:
+    backend = DeterministicDraftBackend()
+
+    draft = backend.generate(
+        scene="下午四点半，老板还在群里发新需求",
+        runtime_skill_contents=[
+            "# XHS Trend Scan Live Context\n"
+            "- 主切口：`怎么才周四`\n"
+            "- 场景张力：`下班前被新需求拽回工位`\n"
+            "- 约束：只借情绪结构和讨论点，不复写原题，不堆砌热词。"
+        ],
+    )
+
+    assert "怎么才周四" in draft["title"]
+    assert "新需求" in draft["body"]
+
+
+def test_factory_puts_runtime_trend_context_in_dedicated_prompt_section() -> None:
+    settings = Settings.model_construct(
+        default_model_provider="deepseek",
+        default_model="deepseek-chat",
+        deepseek_api_key="sk-test",
+        deepseek_model="deepseek-chat",
+        deepseek_base_url="https://api.deepseek.com/v1",
+        deepseek_temperature=0.3,
+        deepseek_max_tokens=1024,
+    )
+
+    backend = build_drafting_backend(settings, chat_model_cls=CapturingChatDeepSeek)
+    backend.generate(
+        scene="下午四点半，老板还在群里发新需求",
+        runtime_skill_contents=[
+            "# XHS Trend Scan Live Context\n"
+            "- 主切口：`怎么才周四`\n"
+            "- 场景张力：`下班前被新需求拽回工位`"
+        ],
+    )
+
+    user_prompt = CapturingChatDeepSeek.last_messages[1].content
+    assert "实时上下文" in user_prompt
+    assert "怎么才周四" in user_prompt
+
+
 def test_factory_uses_generic_system_prompt_for_non_fengkuang_playbooks() -> None:
     settings = Settings.model_construct(
         default_model_provider="deepseek",

@@ -12,6 +12,7 @@ class LoadedPlaybook:
 
     definition: PlaybookDefinition
     planner_prompt: str
+    persona_prompt: str
     reflection_prompt: str
     playbook_dir: Path
 
@@ -30,6 +31,7 @@ class PlaybookLoader:
                 return LoadedPlaybook(
                     definition=definition,
                     planner_prompt=(playbook_dir / "planner.md").read_text(encoding="utf-8"),
+                    persona_prompt=(playbook_dir / "persona.md").read_text(encoding="utf-8"),
                     reflection_prompt=(playbook_dir / "reflection.md").read_text(encoding="utf-8"),
                     playbook_dir=playbook_dir,
                 )

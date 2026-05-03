@@ -67,3 +67,31 @@ def test_docs_index_links_core_maps() -> None:
     assert "observability.md" in index_text
     assert "operations.md" in index_text
     assert "shared-contracts.md" in index_text
+    assert "xhs-topics/index.md" in index_text
+
+
+def test_playbooks_doc_mentions_persona_assets() -> None:
+    playbooks_text = (DOCS_ROOT / "playbooks.md").read_text(encoding="utf-8")
+    runtime_text = (DOCS_ROOT / "runtime.md").read_text(encoding="utf-8")
+    skills_text = (DOCS_ROOT / "skills.md").read_text(encoding="utf-8")
+
+    assert "persona.md" in playbooks_text
+    assert "persona prompt" in runtime_text
+    assert "runtime_skill_contents" in runtime_text
+    assert "runtime_skill_contents" in skills_text
+
+
+def test_skills_doc_links_xhs_topic_index() -> None:
+    skills_text = (DOCS_ROOT / "skills.md").read_text(encoding="utf-8")
+
+    assert "xhs-topics/index.md" in skills_text
+
+
+def test_xhs_docs_record_trend_scan_as_builtin_skill() -> None:
+    skills_text = (DOCS_ROOT / "skills.md").read_text(encoding="utf-8")
+    harness_text = (DOCS_ROOT / "xhs-topics" / "harness-integration.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "xhs_trend_scan" in skills_text
+    assert "builtin skill" in harness_text

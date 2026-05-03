@@ -11,8 +11,10 @@ def build_executor_node(*, drafting_agent: Any):
         draft = drafting_agent.generate(
             scene=state["scene"],
             reflection_feedback=state.get("reflection_feedback"),
+            persona_prompt=state.get("persona_prompt"),
             planner_prompt=state.get("planner_prompt"),
             skill_contents=state.get("loaded_skill_contents", []),
+            runtime_skill_contents=state.get("runtime_skill_contents", []),
         )
         return {
             "attempt_count": attempt_count,
