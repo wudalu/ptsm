@@ -8,6 +8,7 @@ related_paths:
   - src/topic_radar
   - docs/index.md
   - docs/xhs-topics/index.md
+  - docs/operations/topic-radar-runbook.md
   - docs/plans/2026-05-03-topic-radar-research-agent.md
 ---
 
