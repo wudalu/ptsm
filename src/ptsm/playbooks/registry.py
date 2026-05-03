@@ -19,6 +19,7 @@ class PlaybookDefinition:
     required_skills: list[str]
     optional_skills: list[str] = field(default_factory=list)
     reflection: dict[str, str] = field(default_factory=dict)
+    trend_keywords: list[str] = field(default_factory=list)
     source_path: Path | None = None
 
 
@@ -74,6 +75,7 @@ class PlaybookRegistry:
                     required_skills=list(payload["required_skills"]),
                     optional_skills=list(payload.get("optional_skills", [])),
                     reflection=dict(payload.get("reflection", {})),
+                    trend_keywords=list(payload.get("trend_keywords", [])),
                     source_path=path,
                 )
             )

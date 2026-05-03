@@ -24,7 +24,7 @@ _POETRY_CUES = ("苏轼", "定风波", "赤壁赋", "水调歌头", "诗词")
 class RuntimeContextBuilder(Protocol):
     """Build dynamic skill context for a planner pass."""
 
-    def build(self, *, scene: str, domain: str, playbook_id: str) -> str | None:
+    def build(self, *, scene: str, domain: str, playbook_id: str, keyword_hints: list[str] | None = None) -> str | None:
         """Return dynamic context text or `None` when unavailable."""
 
 
@@ -57,6 +57,7 @@ class SkillContextResolver:
         loaded_skills: Sequence[LoadedSkill],
     ) -> dict[str, str]:
         contexts: dict[str, str] = {}
+        keyword_hints = list(playbook.trend_keywords) if playbook.trend_keywords else None
         for loaded_skill in loaded_skills:
             builder = self._builders.get(loaded_skill.skill.skill_name)
             if builder is None:
@@ -65,6 +66,7 @@ class SkillContextResolver:
                 scene=state["scene"],
                 domain=playbook.domain,
                 playbook_id=playbook.playbook_id,
+                keyword_hints=keyword_hints,
             )
             if context:
                 contexts[loaded_skill.skill.skill_name] = context
@@ -83,10 +85,10 @@ class XhsTrendScanContextBuilder:
         self.server_url = server_url
         self.tool_runner = tool_runner or LangChainMcpToolRunner(server_url=server_url)
 
-    def build(self, *, scene: str, domain: str, playbook_id: str) -> str | None:
+    def build(self, *, scene: str, domain: str, playbook_id: str, keyword_hints: list[str] | None = None) -> str | None:
         try:
             return asyncio.run(
-                self._build_async(scene=scene, domain=domain, playbook_id=playbook_id)
+                self._build_async(scene=scene, domain=domain, playbook_id=playbook_id, keyword_hints=keyword_hints)
             )
         except RuntimeError as exc:
             if "asyncio.run()" in str(exc):
@@ -101,6 +103,7 @@ class XhsTrendScanContextBuilder:
         scene: str,
         domain: str,
         playbook_id: str,
+        keyword_hints: list[str] | None = None,
     ) -> str | None:
         tool_names = await self.tool_runner.list_tool_names()
         if "check_login_status" not in tool_names or "search_feeds" not in tool_names:
@@ -111,7 +114,7 @@ class XhsTrendScanContextBuilder:
         if "已登录" not in login_text or "未登录" in login_text:
             return None
 
-        keywords = _derive_keywords(scene=scene, domain=domain, playbook_id=playbook_id)
+        keywords = _derive_keywords(scene=scene, domain=domain, playbook_id=playbook_id, hints=keyword_hints)
         if not keywords:
             return None
 
@@ -141,8 +144,10 @@ def build_skill_context_resolver(
     )
 
 
-def _derive_keywords(*, scene: str, domain: str, playbook_id: str) -> list[str]:
+def _derive_keywords(*, scene: str, domain: str, playbook_id: str, hints: list[str] | None = None) -> list[str]:
     keywords: list[str] = []
+    if hints:
+        keywords.extend(hints)
     day_token = next((token for token in _WEEKDAY_TOKENS if token in scene), None)
     is_work_scene = any(cue in scene for cue in _WORK_CUES) or domain == "发疯文学"
     is_poetry_scene = any(cue in scene for cue in _POETRY_CUES) or domain == "苏轼诗词赏析"
