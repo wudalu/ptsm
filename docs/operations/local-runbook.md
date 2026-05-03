@@ -198,6 +198,12 @@ uv run python -m ptsm.bootstrap run-playbook \
   --scene "夜里读到《定风波》" \
   --account-id acct-sushi-local \
   --playbook-id sushi_poetry_daily_post
+
+# Wuxia character commentary dry-run
+uv run python -m ptsm.bootstrap run-playbook \
+  --scene "分析令狐冲的自由人格与当代职场人不愿被体制化" \
+  --account-id acct-wuxia-local \
+  --playbook-id wuxia_character_post
 ```
 
 ## Diagnostics

@@ -48,3 +48,11 @@ def test_run_playbook_routes_sushi_account_to_sushi_playbook() -> None:
     assert result["playbook_id"] == "sushi_poetry_daily_post"
     assert result["account"]["account_id"] == "acct-sushi-local"
     assert "#苏轼" in result["final_content"]["hashtags"]
+
+
+def test_wuxia_playbook_is_selected_for_wuxia_account():
+    from ptsm.accounts.registry import AccountRegistry
+
+    account = AccountRegistry().get("acct-wuxia-local")
+    assert account.domain == "武侠人物评述"
+    assert account.platform == "xiaohongshu"

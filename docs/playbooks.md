@@ -19,6 +19,7 @@ Playbook 是 PTSM 的业务编排单元。它把领域、平台、技能需求�
 ## Current State
 
 - 当前仓库里已经有两个真实 playbook：`fengkuang_daily_post` 和 `sushi_poetry_daily_post`。
+- `wuxia_character_post` 是第三个 playbook，专门输出长篇武侠人物评述（800-1500字），用当代流行文化视角解读金庸古龙人物。默认绑定 `acct-wuxia-local`。
 - `PlaybookRegistry` 支持列出定义、按 id 查询，以及按账号选择。
 - `PlaybookLoader` 负责把 markdown 资产读出来供运行时使用，包括 planner、persona 和 reflection 三类文本输入。
 
