@@ -1,0 +1,18 @@
+playbook_id: wuxia_character_post
+version: 1
+domain: 武侠人物评述
+platforms:
+  - xiaohongshu
+required_skills:
+  - xhs_trend_scan
+  - wuxia_commentary_style
+  - xhs_wuxia_hashtagging
+optional_skills: []
+reflection:
+  must_include_phrase: ""
+  required_hashtag: "#金庸"
+trend_keywords:
+  - 金庸群侠
+  - 武侠人物
+  - 令狐冲 性格分析
+  - 射雕英雄传 人物

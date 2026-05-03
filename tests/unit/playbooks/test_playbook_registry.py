@@ -57,3 +57,33 @@ def test_playbook_registry_selects_sushi_poetry_by_account_domain_and_platform()
     playbook = registry.select_for_account(account=account)
 
     assert playbook.playbook_id == "sushi_poetry_daily_post"
+
+
+def test_registry_loads_wuxia_playbook() -> None:
+    registry = PlaybookRegistry(
+        playbook_root=Path("src/ptsm/playbooks/definitions"),
+    )
+
+    playbook = registry.get("wuxia_character_post")
+
+    assert playbook.domain == "武侠人物评述"
+    assert "xiaohongshu" in playbook.platforms
+    assert "wuxia_commentary_style" in playbook.required_skills
+    assert "xhs_wuxia_hashtagging" in playbook.required_skills
+    assert playbook.trend_keywords == [
+        "金庸群侠",
+        "武侠人物",
+        "令狐冲 性格分析",
+        "射雕英雄传 人物",
+    ]
+
+
+def test_registry_selects_wuxia_by_account() -> None:
+    registry = PlaybookRegistry(
+        playbook_root=Path("src/ptsm/playbooks/definitions"),
+    )
+    account = AccountRegistry().get("acct-wuxia-local")
+
+    playbook = registry.select_for_account(account=account)
+
+    assert playbook.playbook_id == "wuxia_character_post"

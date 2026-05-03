@@ -78,6 +78,21 @@ def test_surface_activates_sushi_poetry_skill_content_on_demand() -> None:
     assert "苏轼" in loaded.content
 
 
+def test_selector_exposes_wuxia_skills() -> None:
+    selector = _build_selector()
+
+    surface = selector.select(
+        domain="武侠人物评述",
+        platform="xiaohongshu",
+        playbook_id="wuxia_character_post",
+    )
+
+    skill_names = {skill.skill_name for skill in surface.list_summaries()}
+    assert "wuxia_commentary_style" in skill_names
+    assert "xhs_wuxia_hashtagging" in skill_names
+    assert "xhs_trend_scan" in skill_names
+
+
 def test_surface_activates_xhs_trend_scan_for_xiaohongshu_requests() -> None:
     selector = _build_selector()
 

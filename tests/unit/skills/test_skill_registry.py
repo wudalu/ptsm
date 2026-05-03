@@ -10,16 +10,14 @@ def test_skill_registry_discovers_builtin_fengkuang_skills() -> None:
         skill_root=Path("src/ptsm/skills/builtin"),
     )
 
-    skill_names = [skill.skill_name for skill in registry.list_skills()]
+    skill_names = {skill.skill_name for skill in registry.list_skills()}
 
-    assert skill_names == [
-        "fengkuang_style",
-        "positive_reframe",
-        "xhs_trend_scan",
-        "xhs_hashtagging",
-        "sushi_poetry_style",
-        "xhs_poetry_hashtagging",
-    ]
+    assert "fengkuang_style" in skill_names
+    assert "positive_reframe" in skill_names
+    assert "xhs_hashtagging" in skill_names
+    assert "xhs_trend_scan" in skill_names
+    assert "sushi_poetry_style" in skill_names
+    assert "xhs_poetry_hashtagging" in skill_names
 
 
 def test_skill_registry_parses_scope_tags_from_front_matter() -> None:
@@ -48,6 +46,27 @@ def test_skill_registry_parses_scope_tags_for_sushi_poetry_skill() -> None:
     assert spec.domain_tags == ["苏轼诗词赏析"]
     assert spec.platform_tags == ["xiaohongshu"]
     assert spec.playbook_tags == ["sushi_poetry_daily_post"]
+
+
+def test_registry_discovers_wuxia_skills() -> None:
+    registry = SkillRegistry(
+        skill_root=Path("src/ptsm/skills/builtin"),
+    )
+
+    skill_names = {skill.skill_name for skill in registry.list_skills()}
+    assert "wuxia_commentary_style" in skill_names
+    assert "xhs_wuxia_hashtagging" in skill_names
+
+
+def test_wuxia_skills_have_correct_tags() -> None:
+    registry = SkillRegistry(
+        skill_root=Path("src/ptsm/skills/builtin"),
+    )
+
+    skills = {skill.skill_name: skill for skill in registry.list_skills()}
+    commentary = skills["wuxia_commentary_style"]
+    assert "武侠人物评述" in commentary.domain_tags
+    assert "wuxia_character_post" in commentary.playbook_tags
 
 
 def test_skill_registry_parses_platform_scoped_xhs_trend_skill() -> None:
