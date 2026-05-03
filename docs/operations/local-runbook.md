@@ -56,9 +56,13 @@ This exercises:
 
 Review the output. If content quality is good, proceed to real publish.
 
-### Step 3 — Real Publish with Image
+### Step 3 — Real Publish
 
-For a real publish with auto-generated cover image:
+After dry-run looks good, choose one of the two paths below based on your intent.
+
+#### Path A: Private Test — 先验货
+
+Publish as `仅自己可见` for safe content review. Open the XHS app to manually confirm the post looks right before going public.
 
 ```bash
 uv run python -m ptsm.bootstrap run-fengkuang \
@@ -66,19 +70,34 @@ uv run python -m ptsm.bootstrap run-fengkuang \
   --account-id acct-fk-local \
   --publish-mode mcp-real \
   --auto-generate-image \
-  --publish-visibility "仅自己可见" \
+  --publish-visibility "仅自己可见"
+```
+
+Note: `--wait-for-publish-status` is less useful here — private posts typically can't be auto-verified since the upstream MCP may not return `post_id`. Manual confirmation in the app is the expected verify step.
+
+#### Path B: Public Publish — 公开发布
+
+Publish as public for real engagement. Auto-verification via `search_feeds` exact-title match works for public posts.
+
+```bash
+uv run python -m ptsm.bootstrap run-fengkuang \
+  --scene "你的场景描述" \
+  --account-id acct-fk-local \
+  --publish-mode mcp-real \
+  --auto-generate-image \
+  --publish-visibility "公开" \
   --wait-for-publish-status
 ```
 
-What happens beyond the dry-run flow:
+With `--wait-for-publish-status`, PTSM retries `search_feeds` title match for ~8s to account for upstream indexing delay. If auto-verify still fails, add `--open-browser-if-needed` to fall back to the browser.
 
-1. **Image generation**: If `--auto-generate-image` is set or publish_mode is `mcp-real` (and no `--publish-image-path` is provided), the image backend is invoked. Priority: Jimeng (`jimeng_t2i_v40`) → Bailian (`qwen-image-2.0-pro`). The image prompt incorporates scene, title, image_text, body summary, persona, and runtime trend context — but **no hashtags or tag text are added to the image** (the prompt explicitly forbids rendering `#发疯文学` or any topic tags on the image). Output lands in `outputs/generated_images/`.
+#### What happens in both paths
+
+1. **Image generation**: Auto-triggered when `publish_mode=mcp-real` and no `--publish-image-path` is provided. Priority: Jimeng (`jimeng_t2i_v40`) → Bailian (`qwen-image-2.0-pro`). The image prompt incorporates scene, title, image_text, body summary, persona, and runtime trend context — but **no hashtags or tag text are added to the image** (the prompt explicitly forbids rendering `#发疯文学` or any topic tags on the image). Output lands in `outputs/generated_images/`.
 
 2. **Watermark removal** (optional): If `WATERMARK_REMOVAL_ENABLED=true` in `.env`, OpenCV Canny edge detection + TELEA inpainting is applied to remove residual watermarks in image corners. Result written to `*-nowm.png`.
 
 3. **Publish**: XHS MCP `publish_content` is called with title, body, images, tags, and visibility. The side-effect ledger (`.ptsm/agent_runtime/side-effects.json`) records successful publishes keyed by `thread_id` — re-running with the same thread_id will skip duplicate publish.
-
-4. **Post-publish verification**: With `--wait-for-publish-status`, PTSM attempts to auto-verify the publish via `search_feeds` exact-title match (with short retry window for indexing delay). Public posts can often be auto-verified; `仅自己可见` posts may return `manual_check_required` if upstream MCP doesn't return `post_id`.
 
 ### Step 4 — Verify Publish
 
@@ -107,7 +126,8 @@ uv run python -m ptsm.bootstrap xhs-open-browser \
 |------|---------|
 | `--publish-mode mcp-real` | Real publish via XHS MCP (omit for dry-run) |
 | `--auto-generate-image` | Force image generation even in dry-run |
-| `--publish-visibility "仅自己可见"` | Publish as private (default) |
+| `--publish-visibility "仅自己可见"` | Private post — safe for review before going public |
+| `--publish-visibility "公开"` | Public post — visible to all, supports auto-verification |
 | `--wait-for-publish-status` | Block until publish status is auto-verified or times out |
 | `--open-browser-if-needed` | Open browser when status can't be auto-verified |
 

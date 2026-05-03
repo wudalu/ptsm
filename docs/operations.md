@@ -53,6 +53,8 @@ related_paths:
 - `uv run python -m ptsm.bootstrap run-playbook --scene "夜里读到《定风波》，突然想把今天的狼狈也写成一段赏析" --account-id acct-sushi-local --playbook-id sushi_poetry_daily_post`
 - `uv run python -m ptsm.bootstrap run-fengkuang --scene "..." --account-id acct-fk-local`
 - `uv run python -m ptsm.bootstrap run-fengkuang --scene "..." --account-id acct-fk-local --auto-generate-image`
+- `uv run python -m ptsm.bootstrap run-fengkuang --scene "..." --account-id acct-fk-local --publish-mode mcp-real --auto-generate-image --publish-visibility "仅自己可见"`
+- `uv run python -m ptsm.bootstrap run-fengkuang --scene "..." --account-id acct-fk-local --publish-mode mcp-real --auto-generate-image --publish-visibility "公开" --wait-for-publish-status`
 - `uv run python -m ptsm.bootstrap xhs-check-publish --artifact outputs/artifacts/<artifact>.json`
 
 ## Usage Notes
