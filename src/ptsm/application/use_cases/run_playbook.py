@@ -522,10 +522,6 @@ def _build_image_generation_prompt(
         " ".join(str(final_content.get("body", "")).split()),
         260,
     )
-    hashtags = _truncate_text(
-        " ".join(str(tag).strip() for tag in final_content.get("hashtags", [])[:3]),
-        80,
-    )
     persona = _truncate_text(" ".join((persona_prompt or "").split()), 180)
     runtime_context = _truncate_text(
         _summarize_runtime_skill_contents(runtime_skill_contents or []),
@@ -537,10 +533,11 @@ def _build_image_generation_prompt(
         f"标题氛围：{title}。"
         f"封面文案参考：{image_text}。"
         f"正文情绪摘要：{body}。"
-        f"标签氛围：{hashtags}。"
         f"账号人设参考：{persona or '像真实创作者在发帖'}。"
         f"实时话题切口：{runtime_context or '贴近日常讨论热感即可'}。"
-        "要求：中文互联网感，构图干净，有留白，像真人账号会发的封面，避免机械对称、塑料质感和营销海报感，保留真实随手拍氛围，真人随手拍，不要复杂小字，不要额外水印。"
+        "要求：中文互联网感，构图干净，有留白，像真人账号会发的封面"
+        "，避免机械对称、塑料质感和营销海报感，保留真实随手拍氛围，"
+        "真人随手拍，不要复杂小字，不要在图片上添加任何标签文字如#发疯文学等话题标签，不要额外水印。"
     )
     return _truncate_text(prompt, 800)
 

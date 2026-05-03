@@ -7,7 +7,6 @@ import json
 import re
 from typing import Any, Protocol, Sequence
 
-from ptsm.agent_runtime.state import ExecutionState
 from ptsm.config.settings import Settings
 from ptsm.infrastructure.publishers.xiaohongshu_mcp_publisher import (
     LangChainMcpToolRunner,
@@ -53,7 +52,7 @@ class SkillContextResolver:
     def resolve(
         self,
         *,
-        state: ExecutionState,
+        state: dict[str, Any],
         playbook: PlaybookDefinition,
         loaded_skills: Sequence[LoadedSkill],
     ) -> dict[str, str]:
@@ -299,30 +298,39 @@ def _infer_tension(scene: str) -> str:
 
 
 def _extract_text(payload: object) -> str:
-    if isinstance(payload, str):
-        return payload
-    if isinstance(payload, list):
+    content = _normalize_mcp_payload(payload)
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
         texts: list[str] = []
-        for item in payload:
+        for item in content:
             if isinstance(item, dict) and "text" in item:
                 texts.append(str(item["text"]))
             else:
                 texts.append(json.dumps(item, ensure_ascii=False))
         return "\n".join(texts)
-    return json.dumps(payload, ensure_ascii=False)
+    return json.dumps(content, ensure_ascii=False)
+
+
+def _normalize_mcp_payload(payload: object) -> object:
+    """Unwrap LangChain message objects to their raw content."""
+    if hasattr(payload, "content") and not isinstance(payload, (str, list, dict)):
+        return getattr(payload, "content")
+    return payload
 
 
 def _extract_json_payload(payload: object) -> object:
-    if isinstance(payload, dict):
-        return payload
-    if isinstance(payload, list) and payload:
-        first = payload[0]
+    content = _normalize_mcp_payload(payload)
+    if isinstance(content, dict):
+        return content
+    if isinstance(content, list) and content:
+        first = content[0]
         if isinstance(first, dict) and "text" in first:
             try:
                 return json.loads(str(first["text"]))
             except json.JSONDecodeError:
                 return {"text": str(first["text"])}
     try:
-        return json.loads(_extract_text(payload))
+        return json.loads(_extract_text(content))
     except json.JSONDecodeError:
-        return {"text": _extract_text(payload)}
+        return {"text": _extract_text(content)}
