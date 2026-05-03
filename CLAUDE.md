@@ -20,6 +20,9 @@ ptsm logs --run-id <id>                   # view run logs
 ptsm runs --account-id <id> --limit 5     # list recent runs
 ptsm gc --apply                           # clean stale artifacts
 ptsm harness-report                       # snapshot: doctor + gc + evals
+topic-radar scan                          # multi-platform topic scan
+topic-radar scan --platforms xhs --mcp-check  # check MCP health only
+topic-radar teardown <feed_id>            # deconstruct a XHS post
 ```
 
 ## Architecture

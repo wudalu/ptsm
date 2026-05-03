@@ -2,7 +2,7 @@
 title: PTSM Docs Index
 status: active
 owner: ptsm
-last_verified: 2026-04-22
+last_verified: 2026-05-03
 source_of_truth: true
 related_paths:
   - README.md
@@ -36,6 +36,7 @@ related_paths:
 - Playbook 地图: [`playbooks.md`](playbooks.md)
 - Skill 地图: [`skills.md`](skills.md)
 - 小红书主题索引: [`xhs-topics/index.md`](xhs-topics/index.md)
+- 选题研究雷达: [`topic-radar.md`](topic-radar.md)
 - 观测性地图: [`observability.md`](observability.md)
 - 操作文档索引: [`operations.md`](operations.md)
 - Shared contracts 索引: [`shared-contracts.md`](shared-contracts.md)

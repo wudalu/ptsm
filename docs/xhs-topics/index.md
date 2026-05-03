@@ -11,6 +11,8 @@ related_paths:
   - docs/research/xhs-mcp-spike.md
   - src/ptsm/skills/builtin
   - src/ptsm/playbooks/definitions
+  - src/topic_radar
+  - docs/topic-radar.md
 ---
 
 # XHS Topic Index
