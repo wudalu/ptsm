@@ -7,6 +7,7 @@ source_of_truth: true
 related_paths:
   - docs/operations/cloud-bootstrap.md
   - docs/operations/local-runbook.md
+  - docs/operations/topic-radar-runbook.md
   - docs/operations/task-completion-automation.md
   - src/ptsm/interfaces/cli/main.py
   - src/ptsm/application/use_cases/run_playbook.py
