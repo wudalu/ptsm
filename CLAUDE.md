@@ -63,6 +63,7 @@ Start at `docs/index.md` — the agent-readable docs map. Key docs: `architectur
 ### Harness engineering conventions
 
 - **先读 docs/ 再写代码。** 每次开发前，先查阅 `docs/index.md` 找到相关文档，了解当前架构、运行时、playbook/skill 结构和操作规范。`docs-sync` gate 会强制要求代码变更伴随文档更新。
+- **新增领域只加文件不改旧代码。** 新增账号域（playbook + skills + account）时，优先通过添加新定义文件实现，不修改已有运行时逻辑、现有 playbook/skill 定义和基础设施代码。需要新行为时，通过扩展点（registry、配置、回调注入）追加新模块，而非在旧文件内部加 if-else 分支。
 - Pre-push hook runs `harness-check` (docs-sync + drift checks + pytest)
 - Import boundary tests in `tests/unit/architecture/`
 - Run artifacts stored locally in `outputs/`
