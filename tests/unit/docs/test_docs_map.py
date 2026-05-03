@@ -13,6 +13,18 @@ def test_readme_links_docs_index() -> None:
     assert "docs/index.md" in readme_text
 
 
+def test_agent_entrypoints_link_major_development_workflow() -> None:
+    agents_text = (PROJECT_ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    claude_text = (PROJECT_ROOT / "CLAUDE.md").read_text(encoding="utf-8")
+
+    assert "docs/development-workflow.md" in agents_text
+    assert "new product features" in agents_text
+    assert "new domains or" in agents_text
+    assert "verify:" in agents_text
+    assert "done_when:" in agents_text
+    assert "docs/development-workflow.md" in claude_text
+
+
 def test_harness_engineering_doc_exists_with_key_sections() -> None:
     doc_text = (DOCS_ROOT / "harness-engineering.md").read_text(encoding="utf-8")
 
@@ -60,6 +72,7 @@ def test_docs_index_links_core_maps() -> None:
     index_text = (DOCS_ROOT / "index.md").read_text(encoding="utf-8")
 
     assert "harness-engineering.md" in index_text
+    assert "development-workflow.md" in index_text
     assert "architecture.md" in index_text
     assert "runtime.md" in index_text
     assert "playbooks.md" in index_text
@@ -95,3 +108,14 @@ def test_xhs_docs_record_trend_scan_as_builtin_skill() -> None:
 
     assert "xhs_trend_scan" in skills_text
     assert "builtin skill" in harness_text
+
+
+def test_development_workflow_doc_scopes_major_development() -> None:
+    workflow_text = (DOCS_ROOT / "development-workflow.md").read_text(encoding="utf-8")
+
+    assert "new product features" in workflow_text
+    assert "new domains or playbooks" in workflow_text
+    assert "new publish, verification, observability, or harness surfaces" in workflow_text
+    assert "It does not cover small bug fixes" in workflow_text
+    assert "verify:" in workflow_text
+    assert "harness-check" in workflow_text

@@ -7,6 +7,7 @@ source_of_truth: true
 related_paths:
   - README.md
   - docs/harness-engineering.md
+  - docs/development-workflow.md
   - docs/xhs-topics/index.md
   - docs/plans/2026-03-24-ptsm-agent-platform-rebaseline.md
   - docs/plans/2026-04-17-agent-readable-docs-map.md
@@ -22,6 +23,7 @@ related_paths:
 
 - 项目基线: [`README.md`](../README.md)
 - harness engineering 对照与落地: [`harness-engineering.md`](harness-engineering.md)
+- 大型新增开发流程: [`development-workflow.md`](development-workflow.md)
 - 当前平台化实施真源: [`docs/plans/2026-03-24-ptsm-agent-platform-rebaseline.md`](plans/2026-03-24-ptsm-agent-platform-rebaseline.md)
 - 本次文档治理实施计划: [`docs/plans/2026-04-17-agent-readable-docs-map.md`](plans/2026-04-17-agent-readable-docs-map.md)
 - harness engineering 第一阶段计划: [`docs/plans/2026-04-17-harness-engineering-first-stage.md`](plans/2026-04-17-harness-engineering-first-stage.md)
@@ -45,6 +47,7 @@ related_paths:
 3. 做内容与策略改动时，先看 [`playbooks.md`](playbooks.md) 和 [`skills.md`](skills.md)，再按需进入 [`xhs-topics/index.md`](xhs-topics/index.md)。
 4. 排查运行结果时，转到 [`observability.md`](observability.md) 和 [`operations.md`](operations.md)。
 5. 设计未来扩展合同时，转到 [`shared-contracts.md`](shared-contracts.md)。
+6. 做新增功能、新增领域或新增发布链路这类大型开发时，按 [`development-workflow.md`](development-workflow.md) 收敛需求、计划和验证。
 
 ## Historical Context
 

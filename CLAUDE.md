@@ -58,11 +58,12 @@ All settings aliases are defined in `src/ptsm/config/settings.py`.
 
 ### Docs as source of truth
 
-Start at `docs/index.md` — the agent-readable docs map. Key docs: `architecture.md`, `runtime.md`, `playbooks.md`, `skills.md`, `harness-engineering.md`. When changing code, the `docs-sync` gate checks whether corresponding docs in `related_paths` were also updated.
+Start at `docs/index.md` — the agent-readable docs map. Key docs: `architecture.md`, `runtime.md`, `playbooks.md`, `skills.md`, `harness-engineering.md`, `development-workflow.md`. When changing code, the `docs-sync` gate checks whether corresponding docs in `related_paths` were also updated.
 
 ### Harness engineering conventions
 
 - **先读 docs/ 再写代码。** 每次开发前，先查阅 `docs/index.md` 找到相关文档，了解当前架构、运行时、playbook/skill 结构和操作规范。`docs-sync` gate 会强制要求代码变更伴随文档更新。
+- **大型新增开发先走 workflow。** 新增功能、新增领域、新增 runtime skill、新增发布链路、观测面或 harness 规则时，先读 `docs/development-workflow.md`，再写 `docs/plans/YYYY-MM-DD-<topic>.md`，并在计划里定义 `verify:` / `done_when:`。
 - **所有设计和计划文档写入 `docs/plans/`。** 不另开 `docs/superpowers/` 或其他目录。命名规范：`YYYY-MM-DD-<topic>.md`。历史计划也放在同一目录下，与 `docs/index.md` 的 Historical Context 一致。
 - **新增领域只加文件不改旧代码。** 新增账号域（playbook + skills + account）时，优先通过添加新定义文件实现，不修改已有运行时逻辑、现有 playbook/skill 定义和基础设施代码。需要新行为时，通过扩展点（registry、配置、回调注入）追加新模块，而非在旧文件内部加 if-else 分支。
 - Pre-push hook runs `harness-check` (docs-sync + drift checks + pytest)

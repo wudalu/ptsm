@@ -11,6 +11,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DOCS_ROOT = PROJECT_ROOT / "docs"
 CORE_DOCS = [
     DOCS_ROOT / "harness-engineering.md",
+    DOCS_ROOT / "development-workflow.md",
     DOCS_ROOT / "index.md",
     DOCS_ROOT / "architecture.md",
     DOCS_ROOT / "runtime.md",
