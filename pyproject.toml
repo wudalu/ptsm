@@ -23,6 +23,7 @@ dependencies = [
 
 [project.scripts]
 ptsm = "ptsm.bootstrap:main"
+topic-radar = "topic_radar.cli:main"
 
 [dependency-groups]
 dev = [
@@ -30,11 +31,12 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/ptsm"]
+packages = ["src/ptsm", "src/topic_radar"]
 
 [tool.pytest.ini_options]
 addopts = "-q"
 testpaths = ["tests"]
+pythonpath = ["src"]
 
 [tool.uv]
 default-groups = ["dev"]
