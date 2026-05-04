@@ -51,6 +51,8 @@ class Comment:
 
 class PlatformUnavailable(Exception):
     def __init__(self, platform: str, reason: str):
+        if not reason.strip():
+            reason = "connection timeout (not logged in or server unreachable)"
         super().__init__(f"{platform} unavailable: {reason}")
         self.platform = platform
         self.reason = reason
@@ -62,12 +64,36 @@ class XiaohongshuPlatform:
     def __init__(self, client: McpClient) -> None:
         self._client = client
 
+    async def check_login(self) -> tuple[bool, str | None]:
+        """Return (is_logged_in, qr_code_data_or_none)."""
+        try:
+            payload = await self._client.invoke_tool(
+                "xiaohongshu", "check_login_status", {}
+            )
+        except (KeyError, asyncio.TimeoutError, ExceptionGroup) as exc:
+            raise PlatformUnavailable(self.platform_name, str(exc)) from exc
+
+        text = extract_text(payload)
+        if "已登录" in text:
+            return True, None
+
+        # Try get QR code
+        qr_data: str | None = None
+        try:
+            qr_payload = await self._client.invoke_tool(
+                "xiaohongshu", "get_login_qrcode", {}
+            )
+            qr_data = extract_text(qr_payload)
+        except Exception:
+            pass
+        return False, qr_data
+
     async def search_feeds(self, keyword: str, limit: int = 20) -> list[FeedItem]:
         try:
             payload = await self._client.invoke_tool(
                 "xiaohongshu", "search_feeds", {"keyword": keyword}
             )
-        except (KeyError, ConnectionError, OSError) as exc:
+        except (KeyError, ConnectionError, OSError, asyncio.TimeoutError, ExceptionGroup) as exc:
             raise PlatformUnavailable(self.platform_name, str(exc)) from exc
 
         data = extract_json_payload(payload)
@@ -114,7 +140,7 @@ class XiaohongshuPlatform:
                 "xiaohongshu", "get_feed_detail",
                 {"feed_id": feed_id, "xsec_token": xsec_token},
             )
-        except (KeyError, ConnectionError, OSError) as exc:
+        except (KeyError, ConnectionError, OSError, asyncio.TimeoutError, ExceptionGroup) as exc:
             raise PlatformUnavailable(self.platform_name, str(exc)) from exc
 
         data = extract_json_payload(payload)
@@ -174,7 +200,7 @@ class XiaohongshuPlatform:
             payload = await self._client.invoke_tool(
                 "xiaohongshu", "list_feeds", {}
             )
-        except (KeyError, ConnectionError, OSError) as exc:
+        except (KeyError, ConnectionError, OSError, asyncio.TimeoutError, ExceptionGroup) as exc:
             raise PlatformUnavailable(self.platform_name, str(exc)) from exc
 
         data = extract_json_payload(payload)

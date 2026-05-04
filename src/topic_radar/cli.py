@@ -66,22 +66,31 @@ async def _scan(args: argparse.Namespace) -> None:
     if "xiaohongshu" in platforms:
         try:
             xhs = XiaohongshuPlatform(client)
-            keywords = (args.keywords or "").split(",") if args.keywords else None
-            kws = [kw.strip() for kw in keywords if kw.strip()] if keywords else ["打工人", "治愈"]
-            xhs_items: list[TrendingItem] = []
-            for kw in kws[:3]:
-                feeds = await xhs.search_feeds(kw, limit=config.scan_sample_limit // len(kws))
-                for feed in feeds:
-                    xhs_items.append(TrendingItem(
-                        rank=0, title=feed.title,
-                        hot_score=feed.engagement_score,
-                        platform="xiaohongshu",
-                    ))
-            all_trending["xiaohongshu"] = xhs_items
-            print(f"xiaohongshu: {len(xhs_items)} feeds")
+
+            is_logged_in, qr_data = await xhs.check_login()
+            if not is_logged_in:
+                print("xiaohongshu: not logged in")
+                print("  To log in, run: python -m ptsm.bootstrap xhs-login-qrcode")
+                if qr_data:
+                    print(f"  QR code data available — scan with XHS app to log in")
+                all_trending["xiaohongshu"] = []
+            else:
+                keywords = (args.keywords or "").split(",") if args.keywords else None
+                kws = [kw.strip() for kw in keywords if kw.strip()] if keywords else ["打工人", "治愈"]
+                xhs_items: list[TrendingItem] = []
+                for kw in kws[:3]:
+                    feeds = await xhs.search_feeds(kw, limit=config.scan_sample_limit // len(kws))
+                    for feed in feeds:
+                        xhs_items.append(TrendingItem(
+                            rank=0, title=feed.title,
+                            hot_score=feed.engagement_score,
+                            platform="xiaohongshu",
+                        ))
+                all_trending["xiaohongshu"] = xhs_items
+                print(f"xiaohongshu: {len(xhs_items)} feeds")
         except PlatformUnavailable as e:
             errors["xiaohongshu"] = str(e)
-            print(f"xiaohongshu: unavailable ({e.reason})")
+            print(f"xiaohongshu: unavailable — {e.reason}")
 
     if "weibo" in platforms:
         try:

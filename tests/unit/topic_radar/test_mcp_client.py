@@ -20,9 +20,9 @@ class TestGuessServer:
             assert _guess_server(tool) == "xiaohongshu"
 
     def test_unknown_tool_defaults_to_trends_hub(self):
-        assert _guess_server("get-weibo-trending") == "trends_hub"
-        assert _guess_server("get-douyin-trending") == "trends_hub"
-        assert _guess_server("get-zhihu-trending") == "trends_hub"
+        assert _guess_server("get_weibo_trending") == "trends_hub"
+        assert _guess_server("get_douyin_trending") == "trends_hub"
+        assert _guess_server("get_zhihu_trending") == "trends_hub"
 
 
 class TestExtractText:

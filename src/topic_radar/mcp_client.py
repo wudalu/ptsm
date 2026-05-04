@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from datetime import timedelta
 import json
+import sys
 from typing import Any
 
 from langchain_mcp_adapters.client import MultiServerMCPClient
@@ -25,29 +27,23 @@ class McpClient:
     def __init__(
         self,
         xhs_server_url: str = "http://localhost:18060/mcp",
-        enable_trends_hub: bool = True,
+        enable_trends_hub: bool = False,
     ) -> None:
-        servers: dict[str, dict[str, Any]] = {
-            "xiaohongshu": {
-                "transport": "http",
-                "url": xhs_server_url,
-                "sse_read_timeout": self.streamable_http_sse_read_timeout,
-            }
-        }
-        if enable_trends_hub:
-            servers["trends_hub"] = {
-                "transport": "stdio",
-                "command": "npx",
-                "args": ["-y", "mcp-trends-hub"],
-            }
-
-        self._client = MultiServerMCPClient(servers)
+        self._xhs_url = xhs_server_url
+        self._enable_trends_hub = enable_trends_hub
         self._tools: dict[str, dict[str, Any]] | None = None
+        self._client: MultiServerMCPClient | None = None
 
     async def get_tools(self) -> dict[str, dict[str, Any]]:
         if self._tools is None:
-            raw = await self._client.get_tools()
             self._tools = {}
+            client = self._build_client()
+            self._client = client
+            try:
+                raw = await client.get_tools()
+            except BaseException:
+                self._client = None
+                raise
             for tool in raw:
                 server = getattr(tool, "server_name", None) or _guess_server(tool.name)
                 self._tools.setdefault(server, {})[tool.name] = tool
@@ -55,46 +51,111 @@ class McpClient:
 
     async def health(self) -> dict[str, ServerHealth]:
         result: dict[str, ServerHealth] = {}
-        try:
-            tools = await self.get_tools()
-        except Exception as exc:
-            for server_name in _infer_server_names(self._client):
-                result[server_name] = ServerHealth(
-                    name=server_name,
-                    reachable=False,
-                    error=str(exc),
-                )
-            return result
+        server_names = ["xiaohongshu"] + (["trends_hub"] if self._enable_trends_hub else [])
 
-        for server_name in _infer_server_names(self._client):
-            server_tools = tools.get(server_name, {})
-            result[server_name] = ServerHealth(
-                name=server_name,
-                reachable=len(server_tools) > 0,
-                tool_count=len(server_tools),
-                tool_names=sorted(server_tools),
-            )
+        for name in server_names:
+            try:
+                client = _make_single_client(name, self._xhs_url)
+                raw = await client.get_tools()
+                tools = {}
+                for tool in raw:
+                    srv = getattr(tool, "server_name", None) or _guess_server(tool.name)
+                    tools.setdefault(srv, {})[tool.name] = tool
+                server_tools = tools.get(name, {})
+                result[name] = ServerHealth(
+                    name=name,
+                    reachable=len(server_tools) > 0,
+                    tool_count=len(server_tools),
+                    tool_names=sorted(server_tools),
+                )
+            except Exception as exc:
+                result[name] = ServerHealth(
+                    name=name,
+                    reachable=False,
+                    error=_clean_error(exc),
+                )
+            finally:
+                await _close_safely(client)
         return result
 
     async def invoke_tool(
-        self, server: str, tool_name: str, payload: dict[str, object]
+        self, server: str, tool_name: str, payload: dict[str, object],
+        timeout: float = 20.0,
     ) -> object:
         tools = await self.get_tools()
         server_tools = tools.get(server, {})
         if tool_name not in server_tools:
             raise KeyError(f"Tool '{tool_name}' not found on server '{server}'")
-        return await server_tools[tool_name].arun(payload, tool_call_id=f"topic_radar:{tool_name}")
+        return await asyncio.wait_for(
+            server_tools[tool_name].arun(payload, tool_call_id=f"topic_radar:{tool_name}"),
+            timeout=timeout,
+        )
 
     async def list_tools(self, server: str) -> list[str]:
         tools = await self.get_tools()
         return sorted(tools.get(server, {}))
 
+    def _build_client(self) -> MultiServerMCPClient:
+        servers: dict[str, dict[str, Any]] = {
+            "xiaohongshu": {
+                "transport": "http",
+                "url": self._xhs_url,
+                "sse_read_timeout": self.streamable_http_sse_read_timeout,
+            }
+        }
+        if self._enable_trends_hub:
+            servers["trends_hub"] = {
+                "transport": "stdio",
+                "command": "npx",
+                "args": ["-y", "mcp-trends-hub"],
+            }
+        return MultiServerMCPClient(servers)
 
-def _infer_server_names(client: MultiServerMCPClient) -> list[str]:
-    connections = getattr(client, "_connections", {}) or getattr(client, "connections", {})
-    if isinstance(connections, dict):
-        return list(connections)
-    return ["xiaohongshu", "trends_hub"]
+
+def _make_single_client(name: str, xhs_url: str) -> MultiServerMCPClient:
+    if name == "xiaohongshu":
+        servers = {"xiaohongshu": {
+            "transport": "http",
+            "url": xhs_url,
+            "sse_read_timeout": McpClient.streamable_http_sse_read_timeout,
+        }}
+    else:
+        servers = {"trends_hub": {
+            "transport": "stdio",
+            "command": "npx",
+            "args": ["-y", "mcp-trends-hub"],
+        }}
+    return MultiServerMCPClient(servers)
+
+
+async def _close_safely(client: MultiServerMCPClient) -> None:
+    try:
+        if hasattr(client, "close"):
+            await client.close()
+    except Exception:
+        pass
+
+
+def _clean_error(exc: BaseException) -> str:
+    msg = str(exc)
+    if isinstance(exc, asyncio.TimeoutError) or "Timeout" in type(exc).__name__:
+        return "timeout (MCP server may not be logged in or browser not ready)"
+    if "unhandled errors in a TaskGroup" in msg:
+        parts: list[str] = []
+        if hasattr(exc, "exceptions"):
+            for sub in exc.exceptions:  # type: ignore[attr-defined]
+                sub_msg = str(sub).strip()
+                if sub_msg:
+                    parts.append(sub_msg)
+        if parts:
+            detail = "; ".join(parts[:2])
+            if "500" in detail:
+                return "MCP server internal error (500) — browser session may not be ready, try restarting the MCP server"
+            return detail
+        return "MCP connection failed — check if server is healthy"
+    if "cannot access local variable" in msg:
+        return "connection failed (MCP server unreachable)"
+    return msg.split("\n")[0][:120]
 
 
 def _guess_server(tool_name: str) -> str:
