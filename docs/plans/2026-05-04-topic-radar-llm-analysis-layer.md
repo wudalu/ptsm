@@ -24,7 +24,7 @@
 
 3. **Same LLM provider as PTSM.** Reuses `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL`, `DEEPSEEK_BASE_URL` from `.env`. Adds `TOPIC_RADAR_LLM_MODEL` (default: `deepseek-chat`) as override.
 
-4. **Rule engine = fallback.** If LLM call fails (API error, timeout, invalid response), output from old rule-based modules is used instead. CLI reports which path was taken.
+4. **LLM first, rules as fallback.** No CLI flag. Default path: normalize → LLM analyze → output. If LLM call fails (API error, timeout, invalid response, missing key), silently fall back to rule-based modules. Artifact records `analysis_method: "llm"` or `"rules"`.
 
 ---
 
@@ -75,14 +75,14 @@ uv run pytest tests/unit/topic_radar/test_schemas.py -q
 ```bash
 uv run pytest tests/unit/topic_radar/test_llm_analyzer.py -q
 # Smoke test with real API:
-uv run topic-radar scan --platforms weibo,douyin --use-llm
+uv run topic-radar scan --platforms weibo,douyin
 ```
 
 **done_when:**
 - Prompt is generated correctly from trending items
 - LLM response is parsed into validated `LLMScanOutput`
-- Fallback path works when LLM is unavailable
-- CLI flag `--use-llm` triggers LLM path, absence uses rule path
+- Fallback to rule-based path when LLM is unavailable (no API key, network error, invalid response)
+- Artifact records `analysis_method`
 
 ---
 
@@ -93,22 +93,20 @@ uv run topic-radar scan --platforms weibo,douyin --use-llm
 - Modify: `src/topic_radar/config.py`
 
 **What:**
-- Add `--use-llm` flag to `scan` subcommand
-- Add `TOPIC_RADAR_LLM_MODEL` env var (default: `deepseek-chat`)
-- Wire `LLMAnalyzer` into `_scan()`:
-  - With `--use-llm`: normalize → LLM analyze → output
-  - Without: normalize → rule analyze → output (current behavior)
-- Report which analysis path was used in CLI output and artifact
+- Add `TOPIC_RADAR_LLM_MODEL` env var (default: `deepseek-chat`) in config
+- Wire `LLMAnalyzer` into `_scan()`. Default path: normalize → LLM analyze → output. If LLM fails (no API key, network error, invalid response), fallback to rule-based analysis.
+- Report which analysis path was used in CLI output and artifact metadata
+- No new CLI flags — the switch is automatic
 
 **verify:**
 ```bash
 uv run pytest tests/unit/topic_radar/test_cli.py -q
-uv run topic-radar scan --platforms weibo --use-llm
+uv run topic-radar scan --platforms weibo
 ```
 
 **done_when:**
-- `--use-llm` flag produces LLM-analyzed output
-- Default (no flag) still uses rule-based path
+- Scan with valid API key uses LLM path
+- Scan without API key falls back to rules
 - Artifact records `analysis_method: "llm"` or `"rules"`
 
 ---
@@ -146,9 +144,8 @@ uv run pytest tests/unit/topic_radar/test_llm_analyzer.py -q
 
 **What:**
 - Document LLM analysis path in architecture overview
-- Add `--use-llm` usage to runbook with examples
-- Note fallback behavior
-- Document required env vars
+- Document LLM-first with rule fallback behavior
+- Note required env vars: `DEEPSEEK_API_KEY` (or `TOPIC_RADAR_LLM_MODEL`)
 
 **verify:**
 ```bash
@@ -169,14 +166,14 @@ uv run pytest tests/unit/docs/test_docs_map.py -q
 
 **What:**
 - Run full test suite
-- Run production scan with `--use-llm` against live weibo+douyin data
+- Run production scan with `默认路径` against live weibo+douyin data
 - Verify artifact quality improvement over rule-based output
 - Commit evidence
 
 **verify:**
 ```bash
 uv run pytest -q
-uv run topic-radar scan --platforms weibo,douyin --use-llm
+uv run topic-radar scan --platforms weibo,douyin
 ```
 
 **done_when:**
