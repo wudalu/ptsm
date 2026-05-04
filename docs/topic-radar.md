@@ -64,7 +64,7 @@ artifact 中 `analysis_method` 字段标记实际使用的路径（`"llm"` 或 `
 ## 数据来源
 
 - **小红书**: 本地 xiaohongshu-mcp (HTTP MCP on localhost:18060)
-- **微博/抖音**: mcp-trends-hub (stdio MCP via npx)
+- **微博/抖音/知乎/B站/今日头条/豆瓣/少数派**: mcp-trends-hub (stdio MCP via npx)，共覆盖 7 个中文内容平台
 
 ## 分析能力
 

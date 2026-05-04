@@ -84,6 +84,8 @@ topic-radar scan
 
 默认三平台（xiaohongshu, weibo, douyin）。
 
+可选平台：`xiaohongshu, weibo, douyin, zhihu, bilibili, toutiao, douban, sspai`（共 8 个）。
+
 如果 mcp-trends-hub 未安装或不可达，微博和抖音会被标记为 `unavailable`，小红书继续正常扫描。退出码 `1` 表示部分平台不可用，`2` 表示全平台无数据。
 
 ### Step 4 — Targeted Keyword Scan
@@ -121,8 +123,13 @@ Top terms: [('治愈', 24), ('教程', 18), ('求教程', 12), ('试试', 10), (
 | 平台 | 数据源 | 传输方式 | 需要登录 | 工具名 |
 |------|--------|----------|----------|--------|
 | 小红书 | xiaohongshu-mcp | HTTP MCP | 是 | search_feeds, get_feed_detail, list_feeds |
-| 微博 | mcp-trends-hub | stdio MCP (npx) | 否 | get-weibo-trending |
-| 抖音 | mcp-trends-hub | stdio MCP (npx) | 否 | get-douyin-trending |
+| 微博 | mcp-trends-hub | stdio MCP (npx) | 否 | get_weibo_trending |
+| 抖音 | mcp-trends-hub | stdio MCP (npx) | 否 | get_douyin_trending |
+| 知乎 | mcp-trends-hub | stdio MCP (npx) | 否 | get_zhihu_trending |
+| B站 | mcp-trends-hub | stdio MCP (npx) | 否 | get_bilibili_rank |
+| 今日头条 | mcp-trends-hub | stdio MCP (npx) | 否 | get_toutiao_trending |
+| 豆瓣 | mcp-trends-hub | stdio MCP (npx) | 否 | get_douban_rank |
+| 少数派 | mcp-trends-hub | stdio MCP (npx) | 否 | get_sspai_rank |
 
 小红书需要扫码登录（通过 `ptsm xhs-login-qrcode`）。微博和抖音通过 mcp-trends-hub 聚合，无需登录。
 
