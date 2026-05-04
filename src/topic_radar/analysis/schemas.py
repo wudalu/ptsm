@@ -14,6 +14,14 @@ class LLMTopicSignal(BaseModel):
     discussion_value: str = Field(
         description="Why this topic is likely to generate comments, 1-2 sentences in Chinese"
     )
+    mechanism: str = Field(
+        default="",
+        description="Which cognitive hijack mechanism this topic triggers (from lens 1), e.g. 悬念型/反常识型/身份共鸣型",
+    )
+    archetype: str = Field(
+        default="",
+        description="Which Jung archetype this topic activates (from lens 2), e.g. 英雄/叛逆者/智者",
+    )
 
 
 class LLMAngle(BaseModel):
@@ -22,6 +30,10 @@ class LLMAngle(BaseModel):
     vertical: str = Field(description="Which vertical this angle belongs to")
     angle: str = Field(description="Concrete angle description in Chinese, no placeholders")
     why: str = Field(description="Why this angle would trigger discussion, 1-2 sentences in Chinese")
+    hook_mechanism: str = Field(
+        default="",
+        description="Which cognitive mechanism this angle leverages to hook readers (from lens 1)",
+    )
 
 
 class LLMVertical(BaseModel):

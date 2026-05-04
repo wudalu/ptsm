@@ -8,6 +8,7 @@ from typing import Any
 
 from openai import OpenAI
 
+from topic_radar.analysis.methodology import META_PROMPT
 from topic_radar.analysis.schemas import LLMScanOutput
 from topic_radar.platforms.weibo import TrendingItem
 
@@ -21,7 +22,9 @@ _PROMPT_SYSTEM = """你是一个内容策略分析师。你的任务是基于全
 - 垂类命名要具体，不要用"其他话题"这种兜底名称。从数据里读出来，不要套固定模板。
 - 选题角度要是可执行的帖子标题方向，不要用{占位符}。用真实的中文表达。
 
-输出格式：纯 JSON，不要加 markdown 代码块标记。"""
+输出格式：纯 JSON，不要加 markdown 代码块标记。
+
+""" + META_PROMPT
 
 
 def _build_user_prompt(
@@ -49,7 +52,9 @@ def _build_user_prompt(
       "topic": "跨平台话题名",
       "platforms": ["weibo", "douyin"],
       "velocity": "accelerating | steady | fading",
-      "discussion_value": "为什么容易引发讨论，1-2句中文"
+      "discussion_value": "为什么容易引发讨论，1-2句中文",
+      "mechanism": "触发的认知劫持机制（如：悬念型/反常识型/身份共鸣型）",
+      "archetype": "激活的荣格原型（如：英雄/叛逆者/智者）"
     }
   ],
   "discovered_verticals": [
@@ -67,7 +72,8 @@ def _build_user_prompt(
     {
       "vertical": "所属垂类",
       "angle": "具体选题角度",
-      "why": "为什么这个角度会引发讨论"
+      "why": "为什么这个角度会引发讨论",
+      "hook_mechanism": "该选题利用的认知机制（如：反常识型/身份共鸣型）"
     }
   ],
   "noise_topics": ["只热但没讨论价值的话题"]
