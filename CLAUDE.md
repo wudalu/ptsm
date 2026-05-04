@@ -65,6 +65,7 @@ Start at `docs/index.md` — the agent-readable docs map. Key docs: `architectur
 
 ### Harness engineering conventions
 
+- **NEVER skip the development workflow.** 任何新增功能、重构、架构变更，必须严格遵循 `docs/development-workflow.md` 的 8 步流程：读 docs → 澄清需求 → 写计划 → 定义验证 → 小任务实现 → 端到端验证 → 同步 docs → 跑 harness gate。不允许跳过任何步骤，不允许"先写代码再补计划"。即使看起来"很简单"的改动，也要先读相关 docs 再动手。
 - **先读 docs/ 再写代码。** 每次开发前，先查阅 `docs/index.md` 找到相关文档，了解当前架构、运行时、playbook/skill 结构和操作规范。`docs-sync` gate 会强制要求代码变更伴随文档更新。
 - **大型新增开发先走 workflow。** 新增功能、新增领域、新增 runtime skill、新增发布链路、观测面或 harness 规则时，先读 `docs/development-workflow.md`，再写 `docs/plans/YYYY-MM-DD-<topic>.md`，并在计划里定义 `verify:` / `done_when:`。
 - **所有设计和计划文档写入 `docs/plans/`。** 不另开 `docs/superpowers/` 或其他目录。命名规范：`YYYY-MM-DD-<topic>.md`。历史计划也放在同一目录下，与 `docs/index.md` 的 Historical Context 一致。
