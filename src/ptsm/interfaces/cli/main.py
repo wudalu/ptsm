@@ -68,6 +68,7 @@ def build_parser() -> argparse.ArgumentParser:
     fengkuang.add_argument("--publish-visibility")
     fengkuang.add_argument("--open-browser-if-needed", action="store_true")
     fengkuang.add_argument("--wait-for-publish-status", action="store_true")
+    fengkuang.add_argument("--fresh-topic-research", action="store_true")
     fengkuang.add_argument(
         "--login-qrcode-output",
         type=Path,
@@ -100,6 +101,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_playbook_cli.add_argument("--publish-visibility")
     run_playbook_cli.add_argument("--open-browser-if-needed", action="store_true")
     run_playbook_cli.add_argument("--wait-for-publish-status", action="store_true")
+    run_playbook_cli.add_argument("--fresh-topic-research", action="store_true")
     run_playbook_cli.add_argument(
         "--login-qrcode-output",
         type=Path,
@@ -317,6 +319,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 login_qrcode_output_path=str(args.login_qrcode_output),
                 open_browser_if_needed=args.open_browser_if_needed,
                 wait_for_publish_status=args.wait_for_publish_status,
+                fresh_topic_research=args.fresh_topic_research,
             ),
             thread_id=args.thread_id,
         )
@@ -337,6 +340,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 login_qrcode_output_path=str(args.login_qrcode_output),
                 open_browser_if_needed=args.open_browser_if_needed,
                 wait_for_publish_status=args.wait_for_publish_status,
+                fresh_topic_research=args.fresh_topic_research,
             ),
             thread_id=args.thread_id,
         )

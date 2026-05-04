@@ -17,6 +17,7 @@ class PlaybookRequest(BaseModel):
     login_qrcode_output_path: str | None = None
     open_browser_if_needed: bool = False
     wait_for_publish_status: bool = False
+    fresh_topic_research: bool = False
 
 
 class FengkuangRequest(PlaybookRequest):

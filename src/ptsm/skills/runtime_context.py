@@ -25,7 +25,15 @@ _POETRY_CUES = ("苏轼", "定风波", "赤壁赋", "水调歌头", "诗词")
 class RuntimeContextBuilder(Protocol):
     """Build dynamic skill context for a planner pass."""
 
-    def build(self, *, scene: str, domain: str, playbook_id: str, keyword_hints: list[str] | None = None) -> str | None:
+    def build(
+        self,
+        *,
+        scene: str,
+        domain: str,
+        playbook_id: str,
+        keyword_hints: list[str] | None = None,
+        fresh_topic_research: bool = False,
+    ) -> str | None:
         """Return dynamic context text or `None` when unavailable."""
 
 
@@ -68,6 +76,7 @@ class SkillContextResolver:
                 domain=playbook.domain,
                 playbook_id=playbook.playbook_id,
                 keyword_hints=keyword_hints,
+                fresh_topic_research=bool(state.get("fresh_topic_research", False)),
             )
             if context:
                 contexts[loaded_skill.skill.skill_name] = context
@@ -86,7 +95,11 @@ class XhsTrendScanContextBuilder:
         self.server_url = server_url
         self.tool_runner = tool_runner or LangChainMcpToolRunner(server_url=server_url)
 
-    def build(self, *, scene: str, domain: str, playbook_id: str, keyword_hints: list[str] | None = None) -> str | None:
+    def build(
+        self, *, scene: str, domain: str, playbook_id: str,
+        keyword_hints: list[str] | None = None,
+        fresh_topic_research: bool = False,
+    ) -> str | None:
         try:
             return asyncio.run(
                 self._build_async(scene=scene, domain=domain, playbook_id=playbook_id, keyword_hints=keyword_hints)
@@ -136,15 +149,23 @@ class TopicResearchContextBuilder:
     def __init__(self, *, artifact_dir: str = "outputs/artifacts") -> None:
         self._artifact_dir = Path(artifact_dir)
 
-    def build(self, *, scene: str, domain: str, playbook_id: str, keyword_hints: list[str] | None = None) -> str | None:  # noqa: ARG002
+    def build(
+        self, *, scene: str, domain: str, playbook_id: str,
+        keyword_hints: list[str] | None = None,
+        fresh_topic_research: bool = False,
+    ) -> str | None:
         try:
-            return self._build_sync()
+            return self._build_sync(force_fresh=fresh_topic_research)
         except Exception:
             return None
 
-    def _build_sync(self) -> str | None:
+    def _build_sync(self, *, force_fresh: bool = False) -> str | None:
         today = date.today().isoformat()
         artifact_path = self._artifact_dir / f"topic-scan-{today}.json"
+
+        if force_fresh or not artifact_path.exists():
+            _run_topic_radar_scan(str(self._artifact_dir))
+
         if not artifact_path.exists():
             return None
 
@@ -154,6 +175,52 @@ class TopicResearchContextBuilder:
             return None
 
         return _render_topic_research_context(data)
+
+
+def _run_topic_radar_scan(output_dir: str) -> None:
+    """Run topic-radar scan programmatically. Errors are silently ignored."""
+    try:
+        import asyncio as _asyncio
+        from topic_radar.config import get_config
+        from topic_radar.mcp_client import McpClient
+        from topic_radar.platforms.weibo import WeiboPlatform, DouyinPlatform
+        from topic_radar.analysis.llm_analyzer import LLMAnalyzer
+        from topic_radar.cli import _convert_llm_output
+        from topic_radar.output.report import generate_report
+        from datetime import date as _date
+
+        config = get_config()
+        client = McpClient(xhs_server_url=config.xhs_mcp_server_url, enable_trends_hub=True)
+        analyzer = LLMAnalyzer(
+            model=config.llm_model,
+            api_key=config.llm_api_key,
+            base_url=config.llm_base_url,
+        )
+        platforms_to_scan = [("weibo", WeiboPlatform), ("douyin", DouyinPlatform)]
+
+        async def _scan() -> None:
+            trending: dict[str, list] = {}
+            for name, cls in platforms_to_scan:
+                try:
+                    items = await cls(client).get_trending(limit=20)
+                    trending[name] = items
+                except Exception:
+                    pass
+            if not trending:
+                return
+
+            scan_date = _date.today().isoformat()
+            llm_output, _ = analyzer.analyze(trending, scan_date)
+            if llm_output is None:
+                return
+
+            result = _convert_llm_output(llm_output, trending, scan_date)
+            result.write(output_dir)
+            generate_report(result, output_dir)
+
+        _asyncio.run(_scan())
+    except Exception:
+        pass
 
 
 def _render_topic_research_context(data: dict) -> str | None:
