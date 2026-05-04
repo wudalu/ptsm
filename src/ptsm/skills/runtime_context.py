@@ -80,6 +80,8 @@ class SkillContextResolver:
             )
             if context:
                 contexts[loaded_skill.skill.skill_name] = context
+                if hasattr(builder, "last_selection") and builder.last_selection:  # type: ignore[union-attr]
+                    state["selected_topic_angle"] = builder.last_selection  # type: ignore[union-attr]
         return contexts
 
 
@@ -143,11 +145,28 @@ class XhsTrendScanContextBuilder:
         return _render_trend_context(scene=scene, keywords=keywords, hits=hits)
 
 
+def _repo_root() -> Path:
+    """Find the main repo root, handling worktree setups."""
+    cwd = Path.cwd()
+    git_file = cwd / ".git"
+    if git_file.is_file():
+        content = git_file.read_text()
+        if content.startswith("gitdir:"):
+            # In a worktree: .git/worktrees/<name> → .git → repo root
+            return Path(content.split(":", 1)[1].strip()).parent.parent.parent
+    return cwd
+
+
 class TopicResearchContextBuilder:
     """Read topic-radar artifact and inject topic suggestions for the `topic_research` skill."""
 
-    def __init__(self, *, artifact_dir: str = "outputs/artifacts") -> None:
-        self._artifact_dir = Path(artifact_dir)
+    def __init__(self, *, artifact_dir: str | None = None) -> None:
+        self._artifact_dir = Path(artifact_dir) if artifact_dir else _repo_root() / "outputs" / "artifacts"
+        self._last_selection: dict[str, str] | None = None
+
+    @property
+    def last_selection(self) -> dict[str, str] | None:
+        return self._last_selection
 
     def build(
         self, *, scene: str, domain: str, playbook_id: str,
@@ -155,26 +174,82 @@ class TopicResearchContextBuilder:
         fresh_topic_research: bool = False,
     ) -> str | None:
         try:
-            return self._build_sync(force_fresh=fresh_topic_research)
+            self._last_selection = None
+            today = date.today().isoformat()
+            artifact_path = self._artifact_dir / f"topic-scan-{today}.json"
+
+            if fresh_topic_research or not artifact_path.exists():
+                _run_topic_radar_scan(str(self._artifact_dir))
+
+            if not artifact_path.exists():
+                return None
+
+            data = json.loads(artifact_path.read_text(encoding="utf-8"))
+
+            if self._is_domain_hint(scene):
+                # Domain mode: select angle from topic-radar, construct scene
+                return self._build_with_angle_selection(scene, data)
+            else:
+                # Scene mode: user provided specific scene, use topic-radar as supplement
+                return _render_topic_research_context(data)
         except Exception:
             return None
 
-    def _build_sync(self, *, force_fresh: bool = False) -> str | None:
-        today = date.today().isoformat()
-        artifact_path = self._artifact_dir / f"topic-scan-{today}.json"
+    def _is_domain_hint(self, scene: str) -> bool:
+        """A short, non-specific scene is treated as a domain filter."""
+        return len(scene) < 20 and not any(
+            cue in scene for cue in ("今天", "昨天", "刚才", "路上", "工位", "回家", "开会", "地铁", "我")
+        )
 
-        if force_fresh or not artifact_path.exists():
-            _run_topic_radar_scan(str(self._artifact_dir))
+    def _build_with_angle_selection(self, scene: str, data: dict) -> str | None:
+        """Render context with explicit angle selection based on scene."""
+        angles = data.get("recommended_angles", [])
+        verticals = data.get("discovered_verticals", [])
+        noise = data.get("noise_topics", [])
+        summary = data.get("scan_summary", "")
 
-        if not artifact_path.exists():
+        if not angles and not verticals:
             return None
 
-        try:
-            data = json.loads(artifact_path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            return None
+        # Select best matching angle based on scene keywords
+        selected = _pick_best_angle(scene, angles, verticals)
+        lines = [
+            "# Topic Research — Selected Angle",
+            "",
+        ]
 
-        return _render_topic_research_context(data)
+        if summary:
+            lines.append(f"今日趋势摘要：{summary}")
+            lines.append("")
+
+        if selected:
+            raw_scene = _angle_to_scene(selected)
+            lines.append(f"## 选定选题方向：{selected.get('vertical', '')}")
+            lines.append(f"**选题角度**: {selected.get('angle', '')}")
+            lines.append(f"**讨论诱因**: {selected.get('why_discussion_likely', '')}")
+            lines.append(f"**构造场景**: {raw_scene}")
+            lines.append("")
+            lines.append("你将以这个场景为出发点撰写内容。场景是选题角度的具体化，保持角度核心不变。")
+            # Store selection for traceability
+            self._last_selection = {
+                "vertical": selected.get("vertical", ""),
+                "angle": selected.get("angle", ""),
+                "why": selected.get("why_discussion_likely", ""),
+                "constructed_scene": raw_scene,
+            }
+        else:
+            lines.append("## 参考选题（按讨论度排序）")
+            for a in angles[:3]:
+                lines.append(f"- [{a.get('vertical', '')}] {a.get('angle', '')}")
+            lines.append("")
+
+        if noise:
+            lines.append(f"## 避免话题")
+            lines.append(f"{', '.join(noise[:5])}")
+            lines.append("")
+
+        lines.append("约束：以选定角度为核心，将场景展开为具体故事。不要复写报告原文。")
+        return "\n".join(lines)
 
 
 def _run_topic_radar_scan(output_dir: str) -> None:
@@ -221,6 +296,41 @@ def _run_topic_radar_scan(output_dir: str) -> None:
         _asyncio.run(_scan())
     except Exception:
         pass
+
+
+def _pick_best_angle(scene: str, angles: list[dict], verticals: list[dict]) -> dict | None:
+    """Pick the best matching angle from topic-radar recommendations based on scene keywords."""
+    if not angles:
+        if verticals and verticals[0].get("suggested_angles"):
+            return {
+                "vertical": verticals[0].get("name", ""),
+                "angle": verticals[0]["suggested_angles"][0],
+                "why_discussion_likely": verticals[0].get("discussion_density", ""),
+            }
+        return None
+
+    # Score each angle by keyword overlap with scene
+    scene_terms = set(scene)
+    best_score = 0
+    best_angle = angles[0]
+    for a in angles:
+        vertical = a.get("vertical", "")
+        angle = a.get("angle", "")
+        text = f"{vertical} {angle}"
+        score = sum(1 for c in scene_terms if c in text)
+        if score > best_score:
+            best_score = score
+            best_angle = a
+
+    return best_angle
+
+
+def _angle_to_scene(selected: dict) -> str:
+    """Convert a topic-radar angle into a concrete scene for the executor."""
+    angle = selected.get("angle", "")
+    # Strip common angle templates and extract core imagery
+    scene = angle.replace("？", "，").replace("!", "，").rstrip("，。")
+    return f"以'{scene}'为选题切入点，构建一个具体的个人化场景"
 
 
 def _render_topic_research_context(data: dict) -> str | None:
