@@ -222,7 +222,11 @@ async def _scan(args: argparse.Namespace) -> None:
 
     # Analyze: LLM first, rules fallback
     scan_date = date.today().isoformat()
-    analyzer = LLMAnalyzer()
+    analyzer = LLMAnalyzer(
+        model=config.llm_model,
+        api_key=config.llm_api_key,
+        base_url=config.llm_base_url,
+    )
     llm_output, method = analyzer.analyze(all_trending, scan_date)
 
     if llm_output is not None:

@@ -93,6 +93,7 @@ class LLMAnalyzer:
         self.model = model or os.getenv("TOPIC_RADAR_LLM_MODEL") or os.getenv("DEEPSEEK_MODEL") or "deepseek-chat"
         self.api_key = api_key or os.getenv("DEEPSEEK_API_KEY") or ""
         self.base_url = base_url or os.getenv("DEEPSEEK_BASE_URL") or "https://api.deepseek.com/v1"
+        self._config_api_key = api_key  # track if explicitly provided
         self._client: OpenAI | None = None
 
     @property

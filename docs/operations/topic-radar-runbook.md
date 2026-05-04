@@ -7,7 +7,19 @@ See also:
 
 ## Canonical Research Workflow (Agent-Ready)
 
-### Step 0 — Prerequisites
+### Step 0 — Activate Environment
+
+topic-radar 运行时需要 DeepSeek API key。在 PTSM 主仓库的 `.env` 中已配置，worktree 会自动发现。
+
+```bash
+# 进入 worktree 并激活 venv
+cd /Users/wudalu/llm-app/ptsm/.worktrees/feat-topic-radar
+source .venv/bin/activate
+```
+
+之后所有 `topic-radar` 命令直接在终端执行，无需 `uv run` 或 `DEEPSEEK_API_KEY=` 前缀。
+
+### Step 1 — Prerequisites
 
 topic-radar 需要两个外部服务：
 
