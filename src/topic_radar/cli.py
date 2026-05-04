@@ -14,8 +14,85 @@ from topic_radar.analysis.cross_platform import (
     discover_cross_platform,
     discover_verticals,
 )
-from topic_radar.output.artifacts import build_scan_result
+from topic_radar.analysis.llm_analyzer import LLMAnalyzer
+from topic_radar.output.artifacts import build_scan_result, TopicScanResult
 from topic_radar.output.report import generate_report
+from datetime import date
+
+
+def _convert_llm_output(
+    llm_output, trending_items: dict[str, list[TrendingItem]], scan_date: str
+) -> TopicScanResult:
+    """Convert LLM analysis output to TopicScanResult format."""
+    from topic_radar.analysis.cross_platform import CrossPlatformSignal, DiscoveredVertical
+
+    verticals = [
+        DiscoveredVertical(
+            name=v.name,
+            keywords=v.keywords,
+            confidence=v.confidence,
+            heat_signals=_compute_heat(trending_items, v),
+            discussion_density=v.discussion_density,
+            sample_topics=v.sample_topics,
+            suggested_angles=v.suggested_angles,
+            comment_themes=v.comment_themes,
+        )
+        for v in llm_output.discovered_verticals
+    ]
+
+    cross_signals = [
+        CrossPlatformSignal(
+            topic=s.topic,
+            platforms=s.platforms,
+            first_seen_platform=s.platforms[0] if s.platforms else "",
+            velocity=s.velocity,
+        )
+        for s in llm_output.cross_platform_signals
+    ]
+
+    patterns = [{
+        "top_hook_types": ["(LLM分析)"],
+        "top_engagement_triggers": [a.why for a in llm_output.recommended_angles[:3]],
+        "teardown_count": 0,
+        "avg_hook_confidence": 0,
+    }]
+
+    angles = [
+        {
+            "vertical": a.vertical,
+            "angle": a.angle,
+            "why_discussion_likely": a.why,
+            "confidence": next(
+                (v.confidence for v in llm_output.discovered_verticals if v.name == a.vertical), 0.5
+            ),
+        }
+        for a in llm_output.recommended_angles
+    ]
+
+    return TopicScanResult(
+        scan_date=scan_date,
+        platforms=sorted(trending_items),
+        discovered_verticals=verticals,
+        cross_platform_signals=cross_signals,
+        high_engagement_patterns=patterns,
+        recommended_angles=angles,
+        analysis_method="llm",
+        scan_summary=llm_output.scan_summary,
+        noise_topics=llm_output.noise_topics,
+    )
+
+
+def _compute_heat(
+    trending: dict[str, list[TrendingItem]], vertical
+) -> dict[str, float]:
+    """Estimate per-platform heat for a vertical from its sample topics."""
+    heat: dict[str, float] = {}
+    sample_set = set(vertical.sample_topics)
+    for platform, items in trending.items():
+        matched = [i for i in items if i.title in sample_set]
+        if matched:
+            heat[platform] = round(sum(i.hot_score for i in matched) / len(matched), 1)
+    return heat
 
 
 def main() -> None:
@@ -119,17 +196,25 @@ async def _scan(args: argparse.Namespace) -> None:
                 print(f"  {p}: {e}")
         sys.exit(2)
 
-    # Analyze
-    flat_items = [item for items in all_trending.values() for item in items]
-    verticals = discover_verticals(flat_items)
-    cross_signals = discover_cross_platform(all_trending)
+    # Analyze: LLM first, rules fallback
+    scan_date = date.today().isoformat()
+    analyzer = LLMAnalyzer()
+    llm_output, method = analyzer.analyze(all_trending, scan_date)
 
-    result = build_scan_result(
-        trending_items=all_trending,
-        verticals=verticals,
-        cross_signals=cross_signals,
-        errors=errors,
-    )
+    if llm_output is not None:
+        result = _convert_llm_output(llm_output, all_trending, scan_date)
+        print(f"\nAnalysis: LLM ({len(llm_output.discovered_verticals)} verticals, {len(llm_output.recommended_angles)} angles)")
+    else:
+        flat_items = [item for items in all_trending.values() for item in items]
+        verticals = discover_verticals(flat_items)
+        cross_signals = discover_cross_platform(all_trending)
+        result = build_scan_result(
+            trending_items=all_trending,
+            verticals=verticals,
+            cross_signals=cross_signals,
+            errors=errors,
+        )
+        print(f"\nAnalysis: rules (LLM unavailable, {len(verticals)} verticals)")
 
     # Output
     json_path = result.write(output_dir)

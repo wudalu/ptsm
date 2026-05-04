@@ -20,6 +20,9 @@ class TopicScanResult:
     recommended_angles: list[dict] = field(default_factory=list)
     raw_trending: list[dict] = field(default_factory=list)
     platform_errors: dict[str, str] = field(default_factory=dict)
+    analysis_method: str = "rules"
+    scan_summary: str = ""
+    noise_topics: list[str] = field(default_factory=list)
 
     def to_json(self) -> str:
         return json.dumps(self, ensure_ascii=False, indent=2, default=_serialize)
