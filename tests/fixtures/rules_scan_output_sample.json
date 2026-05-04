@@ -1,0 +1,458 @@
+{
+  "scan_date": "2026-05-04",
+  "platforms": [
+    "douyin",
+    "weibo"
+  ],
+  "discovered_verticals": [
+    {
+      "name": "其他话题",
+      "keywords": [
+        "国乒",
+        "男团",
+        "乒男",
+        "国羽",
+        "羽汤",
+        "汤杯",
+        "杯卫",
+        "卫冕"
+      ],
+      "confidence": 1.0,
+      "heat_signals": {
+        "weibo": 399275.0,
+        "douyin": 9347704.7
+      },
+      "discussion_density": "high",
+      "sample_topics": [
+        "国乒男团2比3瑞典",
+        "国乒",
+        "2026五一档总票房已破5亿",
+        "追撞致女警身亡大学生打110求保护",
+        "吴宜泽10比7墨菲"
+      ],
+      "suggested_angles": [
+        "{curiosity}如何用{method}实现{outcome}"
+      ],
+      "comment_themes": [
+        "打卡记录",
+        "提问求解"
+      ],
+      "is_noise": false
+    },
+    {
+      "name": "美食烹饪",
+      "keywords": [
+        "假期",
+        "期的",
+        "的快",
+        "快乐",
+        "乐是",
+        "是美",
+        "美食",
+        "食给"
+      ],
+      "confidence": 0.55,
+      "heat_signals": {
+        "douyin": 11507498.0
+      },
+      "discussion_density": "high",
+      "sample_topics": [
+        "假期的快乐是美食给的"
+      ],
+      "suggested_angles": [
+        "{curiosity}如何用{method}实现{outcome}"
+      ],
+      "comment_themes": [],
+      "is_noise": false
+    },
+    {
+      "name": "AI效率",
+      "keywords": [
+        "湖南",
+        "南广",
+        "广电",
+        "AI播新闻",
+        "公司",
+        "司引",
+        "引进",
+        "AI后将员工降薪裁员"
+      ],
+      "confidence": 0.372,
+      "heat_signals": {
+        "weibo": 272356.0
+      },
+      "discussion_density": "medium",
+      "sample_topics": [
+        "湖南广电 AI播新闻",
+        "公司引进AI后将员工降薪裁员"
+      ],
+      "suggested_angles": [
+        "普通人用AI{tool}搞定{task}，附上步骤"
+      ],
+      "comment_themes": [],
+      "is_noise": false
+    }
+  ],
+  "cross_platform_signals": [
+    {
+      "topic": "国羽汤杯卫冕",
+      "platforms": [
+        "douyin",
+        "weibo"
+      ],
+      "first_seen_platform": "douyin",
+      "velocity": "accelerating",
+      "shared_keywords": [
+        "国羽",
+        "羽汤",
+        "汤杯",
+        "杯卫",
+        "卫冕"
+      ]
+    }
+  ],
+  "high_engagement_patterns": [],
+  "recommended_angles": [
+    {
+      "vertical": "其他话题",
+      "angle": "{curiosity}如何用{method}实现{outcome}",
+      "why_discussion_likely": "通用讨论诱因：低门槛参与 + 情绪共鸣 + 经验交换",
+      "confidence": 1.0
+    },
+    {
+      "vertical": "美食烹饪",
+      "angle": "{curiosity}如何用{method}实现{outcome}",
+      "why_discussion_likely": "通用讨论诱因：低门槛参与 + 情绪共鸣 + 经验交换",
+      "confidence": 0.55
+    },
+    {
+      "vertical": "AI效率",
+      "angle": "普通人用AI{tool}搞定{task}，附上步骤",
+      "why_discussion_likely": "反常识开头 + 实用性驱动 + 收藏/转发激励",
+      "confidence": 0.372
+    }
+  ],
+  "raw_trending": [
+    {
+      "platform": "weibo",
+      "rank": 1,
+      "title": "国乒男团2比3瑞典",
+      "hot_score": 1167930,
+      "label": "",
+      "url": "https://s.weibo.com/weibo?q=%23%E5%9B%BD%E4%B9%92%E7%94%B7%E5%9B%A22%E6%AF%943%E7%91%9E%E5%85%B8%23&band_rank=1&Refer=top"
+    },
+    {
+      "platform": "weibo",
+      "rank": 2,
+      "title": "国乒",
+      "hot_score": 838859,
+      "label": "",
+      "url": "https://s.weibo.com/weibo?q=%E5%9B%BD%E4%B9%92&band_rank=1&Refer=top"
+    },
+    {
+      "platform": "weibo",
+      "rank": 3,
+      "title": "2026五一档总票房已破5亿",
+      "hot_score": 660075,
+      "label": "",
+      "url": "https://s.weibo.com/weibo?q=%232026%E4%BA%94%E4%B8%80%E6%A1%A3%E6%80%BB%E7%A5%A8%E6%88%BF%E5%B7%B2%E7%A0%B45%E4%BA%BF%23&band_rank=1&Refer=top"
+    },
+    {
+      "platform": "weibo",
+      "rank": 4,
+      "title": "追撞致女警身亡大学生打110求保护",
+      "hot_score": 571852,
+      "label": "",
+      "url": "https://s.weibo.com/weibo?q=%23%E8%BF%BD%E6%92%9E%E8%87%B4%E5%A5%B3%E8%AD%A6%E8%BA%AB%E4%BA%A1%E5%A4%A7%E5%AD%A6%E7%94%9F%E6%89%93110%E6%B1%82%E4%BF%9D%E6%8A%A4%23&band_rank=1&Refer=top"
+    },
+    {
+      "platform": "weibo",
+      "rank": 5,
+      "title": "吴宜泽10比7墨菲",
+      "hot_score": 339992,
+      "label": "",
+      "url": "https://s.weibo.com/weibo?q=%23%E5%90%B4%E5%AE%9C%E6%B3%BD10%E6%AF%947%E5%A2%A8%E8%8F%B2%23&band_rank=1&Refer=top"
+    },
+    {
+      "platform": "weibo",
+      "rank": 6,
+      "title": "黄灿灿 blackpink都没这么累",
+      "hot_score": 311994,
+      "label": "",
+      "url": "https://s.weibo.com/weibo?q=%E9%BB%84%E7%81%BF%E7%81%BF+blackpink%E9%83%BD%E6%B2%A1%E8%BF%99%E4%B9%88%E7%B4%AF&band_rank=1&Refer=top"
+    },
+    {
+      "platform": "weibo",
+      "rank": 7,
+      "title": "买三文鱼套餐吃到虹鳟食客起诉餐厅",
+      "hot_score": 305215,
+      "label": "",
+      "url": "https://s.weibo.com/weibo?q=%23%E4%B9%B0%E4%B8%89%E6%96%87%E9%B1%BC%E5%A5%97%E9%A4%90%E5%90%83%E5%88%B0%E8%99%B9%E9%B3%9F%E9%A3%9F%E5%AE%A2%E8%B5%B7%E8%AF%89%E9%A4%90%E5%8E%85%23&band_rank=1&Refer=top"
+    },
+    {
+      "platform": "weibo",
+      "rank": 8,
+      "title": "周深追不上伴舞气笑了",
+      "hot_score": 282849,
+      "label": "",
+      "url": "https://s.weibo.com/weibo?q=%E5%91%A8%E6%B7%B1%E8%BF%BD%E4%B8%8D%E4%B8%8A%E4%BC%B4%E8%88%9E%E6%B0%94%E7%AC%91%E4%BA%86&band_rank=1&Refer=top"
+    },
+    {
+      "platform": "weibo",
+      "rank": 9,
+      "title": "这届年轻人的顶级心态",
+      "hot_score": 282214,
+      "label": "",
+      "url": "https://s.weibo.com/weibo?q=%23%E8%BF%99%E5%B1%8A%E5%B9%B4%E8%BD%BB%E4%BA%BA%E7%9A%84%E9%A1%B6%E7%BA%A7%E5%BF%83%E6%80%81%23&band_rank=1&Refer=top"
+    },
+    {
+      "platform": "weibo",
+      "rank": 10,
+      "title": "湖南广电 AI播新闻",
+      "hot_score": 281053,
+      "label": "",
+      "url": "https://s.weibo.com/weibo?q=%E6%B9%96%E5%8D%97%E5%B9%BF%E7%94%B5+AI%E6%92%AD%E6%96%B0%E9%97%BB&band_rank=1&Refer=top"
+    },
+    {
+      "platform": "weibo",
+      "rank": 11,
+      "title": "国羽汤杯卫冕",
+      "hot_score": 279399,
+      "label": "",
+      "url": "https://s.weibo.com/weibo?q=%23%E5%9B%BD%E7%BE%BD%E6%B1%A4%E6%9D%AF%E5%8D%AB%E5%86%95%23&band_rank=1&Refer=top"
+    },
+    {
+      "platform": "weibo",
+      "rank": 12,
+      "title": "刘国正谈国乒男团两连败",
+      "hot_score": 276946,
+      "label": "",
+      "url": "https://s.weibo.com/weibo?q=%23%E5%88%98%E5%9B%BD%E6%AD%A3%E8%B0%88%E5%9B%BD%E4%B9%92%E7%94%B7%E5%9B%A2%E4%B8%A4%E8%BF%9E%E8%B4%A5%23&band_rank=1&Refer=top"
+    },
+    {
+      "platform": "weibo",
+      "rank": 13,
+      "title": "女子凌晨接到去世半年表弟来电",
+      "hot_score": 274767,
+      "label": "",
+      "url": "https://s.weibo.com/weibo?q=%23%E5%A5%B3%E5%AD%90%E5%87%8C%E6%99%A8%E6%8E%A5%E5%88%B0%E5%8E%BB%E4%B8%96%E5%8D%8A%E5%B9%B4%E8%A1%A8%E5%BC%9F%E6%9D%A5%E7%94%B5%23&band_rank=1&Refer=top"
+    },
+    {
+      "platform": "weibo",
+      "rank": 14,
+      "title": "莫雷加德回应击败中国男团",
+      "hot_score": 273993,
+      "label": "",
+      "url": "https://s.weibo.com/weibo?q=%23%E8%8E%AB%E9%9B%B7%E5%8A%A0%E5%BE%B7%E5%9B%9E%E5%BA%94%E5%87%BB%E8%B4%A5%E4%B8%AD%E5%9B%BD%E7%94%B7%E5%9B%A2%23&band_rank=1&Refer=top"
+    },
+    {
+      "platform": "weibo",
+      "rank": 15,
+      "title": "男子10岁溺水导致无精症无法生育",
+      "hot_score": 271331,
+      "label": "",
+      "url": "https://s.weibo.com/weibo?q=%23%E7%94%B7%E5%AD%9010%E5%B2%81%E6%BA%BA%E6%B0%B4%E5%AF%BC%E8%87%B4%E6%97%A0%E7%B2%BE%E7%97%87%E6%97%A0%E6%B3%95%E7%94%9F%E8%82%B2%23&band_rank=1&Refer=top"
+    },
+    {
+      "platform": "weibo",
+      "rank": 16,
+      "title": "曾舜晞说回家当然要穿正式点",
+      "hot_score": 270341,
+      "label": "",
+      "url": "https://s.weibo.com/weibo?q=%23%E6%9B%BE%E8%88%9C%E6%99%9E%E8%AF%B4%E5%9B%9E%E5%AE%B6%E5%BD%93%E7%84%B6%E8%A6%81%E7%A9%BF%E6%AD%A3%E5%BC%8F%E7%82%B9%23&band_rank=1&Refer=top"
+    },
+    {
+      "platform": "weibo",
+      "rank": 17,
+      "title": "这才是减脂餐的真正物价",
+      "hot_score": 269464,
+      "label": "",
+      "url": "https://s.weibo.com/weibo?q=%E8%BF%99%E6%89%8D%E6%98%AF%E5%87%8F%E8%84%82%E9%A4%90%E7%9A%84%E7%9C%9F%E6%AD%A3%E7%89%A9%E4%BB%B7&band_rank=1&Refer=top"
+    },
+    {
+      "platform": "weibo",
+      "rank": 18,
+      "title": "公司引进AI后将员工降薪裁员",
+      "hot_score": 263659,
+      "label": "",
+      "url": "https://s.weibo.com/weibo?q=%23%E5%85%AC%E5%8F%B8%E5%BC%95%E8%BF%9BAI%E5%90%8E%E5%B0%86%E5%91%98%E5%B7%A5%E9%99%8D%E8%96%AA%E8%A3%81%E5%91%98%23&band_rank=1&Refer=top"
+    },
+    {
+      "platform": "weibo",
+      "rank": 19,
+      "title": "伊朗公布最新谈判方案",
+      "hot_score": 261851,
+      "label": "",
+      "url": "https://s.weibo.com/weibo?q=%23%E4%BC%8A%E6%9C%97%E5%85%AC%E5%B8%83%E6%9C%80%E6%96%B0%E8%B0%88%E5%88%A4%E6%96%B9%E6%A1%88%23&band_rank=1&Refer=top"
+    },
+    {
+      "platform": "weibo",
+      "rank": 20,
+      "title": "NBA",
+      "hot_score": 247878,
+      "label": "",
+      "url": "https://s.weibo.com/weibo?q=NBA&band_rank=1&Refer=top"
+    },
+    {
+      "platform": "douyin",
+      "rank": 1,
+      "title": "活塞116:94大胜魔术",
+      "hot_score": 12109185,
+      "label": "",
+      "url": "https://www.douyin.com/hot/2488014"
+    },
+    {
+      "platform": "douyin",
+      "rank": 2,
+      "title": "国羽汤杯卫冕",
+      "hot_score": 11888532,
+      "label": "",
+      "url": "https://www.douyin.com/hot/2488018"
+    },
+    {
+      "platform": "douyin",
+      "rank": 3,
+      "title": "全国共有共青团员7833.6万名",
+      "hot_score": 11878713,
+      "label": "",
+      "url": "https://www.douyin.com/hot/2487212"
+    },
+    {
+      "platform": "douyin",
+      "rank": 4,
+      "title": "假期的快乐是美食给的",
+      "hot_score": 11507498,
+      "label": "",
+      "url": "https://www.douyin.com/hot/2487697"
+    },
+    {
+      "platform": "douyin",
+      "rank": 5,
+      "title": "五一在现场",
+      "hot_score": 10928534,
+      "label": "",
+      "url": "https://www.douyin.com/hot/2487328"
+    },
+    {
+      "platform": "douyin",
+      "rank": 6,
+      "title": "看见一代青年力量",
+      "hot_score": 10416438,
+      "label": "",
+      "url": "https://www.douyin.com/hot/2487995"
+    },
+    {
+      "platform": "douyin",
+      "rank": 7,
+      "title": "跟着谢霆锋一起看四川有多美",
+      "hot_score": 9113468,
+      "label": "",
+      "url": "https://www.douyin.com/hot/2487239"
+    },
+    {
+      "platform": "douyin",
+      "rank": 8,
+      "title": "日子怎么会和谁过都一样呢",
+      "hot_score": 9107354,
+      "label": "",
+      "url": "https://www.douyin.com/hot/2487275"
+    },
+    {
+      "platform": "douyin",
+      "rank": 9,
+      "title": "“上门带老人锻炼”真靠谱吗",
+      "hot_score": 9040858,
+      "label": "",
+      "url": "https://www.douyin.com/hot/2487711"
+    },
+    {
+      "platform": "douyin",
+      "rank": 10,
+      "title": "假期当然要在沙滩边嗨",
+      "hot_score": 9020820,
+      "label": "",
+      "url": "https://www.douyin.com/hot/2487886"
+    },
+    {
+      "platform": "douyin",
+      "rank": 11,
+      "title": "张雪车手德比斯回应退赛",
+      "hot_score": 8984984,
+      "label": "",
+      "url": "https://www.douyin.com/hot/2487965"
+    },
+    {
+      "platform": "douyin",
+      "rank": 12,
+      "title": "梁祯元演唱会坠落入水封神了",
+      "hot_score": 8964208,
+      "label": "",
+      "url": "https://www.douyin.com/hot/2487874"
+    },
+    {
+      "platform": "douyin",
+      "rank": 13,
+      "title": "王者农家乐第一季收官",
+      "hot_score": 8783028,
+      "label": "",
+      "url": "https://www.douyin.com/hot/2487771"
+    },
+    {
+      "platform": "douyin",
+      "rank": 14,
+      "title": "吴镇宇连散光都能演出来",
+      "hot_score": 8716458,
+      "label": "",
+      "url": "https://www.douyin.com/hot/2487821"
+    },
+    {
+      "platform": "douyin",
+      "rank": 15,
+      "title": "拼豆已正式迈入立体时代",
+      "hot_score": 8571984,
+      "label": "",
+      "url": "https://www.douyin.com/hot/2487511"
+    },
+    {
+      "platform": "douyin",
+      "rank": 16,
+      "title": "王栎鑫音乐节加歌",
+      "hot_score": 8521160,
+      "label": "",
+      "url": "https://www.douyin.com/hot/2488011"
+    },
+    {
+      "platform": "douyin",
+      "rank": 17,
+      "title": "陈泽玩铠金牌打野",
+      "hot_score": 8098978,
+      "label": "",
+      "url": "https://www.douyin.com/hot/2487809"
+    },
+    {
+      "platform": "douyin",
+      "rank": 18,
+      "title": "CBA季后赛广东力克广州",
+      "hot_score": 7954517,
+      "label": "",
+      "url": "https://www.douyin.com/hot/2487812"
+    },
+    {
+      "platform": "douyin",
+      "rank": 19,
+      "title": "CBA辽宁不敌山东无缘季后赛8强",
+      "hot_score": 7757421,
+      "label": "",
+      "url": "https://www.douyin.com/hot/2487954"
+    },
+    {
+      "platform": "douyin",
+      "rank": 20,
+      "title": "王橹杰黑白设定好绝",
+      "hot_score": 7749750,
+      "label": "",
+      "url": "https://www.douyin.com/hot/2487915"
+    }
+  ],
+  "platform_errors": {}
+}

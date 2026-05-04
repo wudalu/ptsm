@@ -41,13 +41,24 @@ src/topic_radar/
 │   ├── xiaohongshu.py     # search_feeds, get_feed_detail
 │   └── weibo.py           # Weibo/Douyin via mcp-trends-hub
 ├── analysis/
-│   ├── note_teardown.py   # 帖子拆解：钩子类型/正文结构/互动诱因
-│   ├── cross_platform.py  # 跨平台话题发现/垂类聚类
+│   ├── schemas.py         # Pydantic schemas for LLM output
+│   ├── llm_analyzer.py    # LLM-driven analysis (primary)
+│   ├── note_teardown.py   # 帖子拆解 (fallback)
+│   ├── cross_platform.py  # 跨平台话题/垂类聚类 (fallback)
 │   └── comment_signals.py # (included in note_teardown)
 └── output/
     ├── artifacts.py       # TopicScanResult → JSON
     └── report.py          # Markdown 报告
 ```
+
+### 分析路径
+
+**默认路径：LLM → fallback rules**
+1. 数据归一化（去重、排序、格式统一）
+2. LLM 分析：将所有原始 trending 数据发送给 DeepSeek，由 LLM 自主发现垂类、评估讨论价值、生成选题角度
+3. 如果 LLM 不可用（无 API key、网络错误、响应无效），自动回退到规则引擎
+
+artifact 中 `analysis_method` 字段标记实际使用的路径（`"llm"` 或 `"rules"`）。
 
 ## 数据来源
 

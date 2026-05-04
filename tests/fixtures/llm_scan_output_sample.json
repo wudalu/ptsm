@@ -1,0 +1,235 @@
+{
+  "scan_date": "2026-05-04",
+  "platforms": [
+    "douyin",
+    "weibo"
+  ],
+  "discovered_verticals": [
+    {
+      "name": "AI职场冲击",
+      "keywords": [
+        "AI",
+        "降薪",
+        "裁员",
+        "替代",
+        "职场焦虑"
+      ],
+      "confidence": 0.9,
+      "heat_signals": {
+        "weibo": 326727.0
+      },
+      "discussion_density": "high",
+      "sample_topics": [
+        "公司引进AI后将员工降薪裁员",
+        "湖南广电AI播新闻"
+      ],
+      "suggested_angles": [
+        "AI来了，你的岗位还能撑几年？",
+        "公司用AI降本后，员工如何自保？"
+      ],
+      "comment_themes": [
+        "分享被AI影响的经历",
+        "讨论哪些行业最危险",
+        "质疑企业是否滥用AI"
+      ],
+      "is_noise": false
+    },
+    {
+      "name": "国乒失利反思",
+      "keywords": [
+        "国乒",
+        "瑞典",
+        "莫雷加德",
+        "两连败",
+        "刘国正"
+      ],
+      "confidence": 0.95,
+      "heat_signals": {
+        "weibo": 486607.3
+      },
+      "discussion_density": "high",
+      "sample_topics": [
+        "国乒男团2比3瑞典",
+        "莫雷加德回应击败中国男团",
+        "刘国正谈国乒男团两连败"
+      ],
+      "suggested_angles": [
+        "国乒输球是偶然还是危机？",
+        "从两连败看国乒新生代抗压能力"
+      ],
+      "comment_themes": [
+        "分析输球原因",
+        "讨论教练组策略",
+        "对比女队稳定表现"
+      ],
+      "is_noise": false
+    },
+    {
+      "name": "消费维权实战",
+      "keywords": [
+        "三文鱼",
+        "虹鳟",
+        "起诉",
+        "餐厅",
+        "食品安全"
+      ],
+      "confidence": 0.85,
+      "heat_signals": {
+        "weibo": 343350.5
+      },
+      "discussion_density": "medium",
+      "sample_topics": [
+        "买三文鱼套餐吃到虹鳟食客起诉餐厅",
+        "这才是减脂餐的真正物价"
+      ],
+      "suggested_angles": [
+        "你吃到的三文鱼可能是虹鳟？避雷指南",
+        "减脂餐到底值不值那个价？"
+      ],
+      "comment_themes": [
+        "分享被坑经历",
+        "讨论如何辨别真假三文鱼",
+        "吐槽减脂餐性价比"
+      ],
+      "is_noise": false
+    },
+    {
+      "name": "假期出行体验",
+      "keywords": [
+        "敦煌",
+        "鸣沙山",
+        "游客",
+        "五一",
+        "现场"
+      ],
+      "confidence": 0.8,
+      "heat_signals": {
+        "weibo": 337099.0,
+        "douyin": 9691867.5
+      },
+      "discussion_density": "medium",
+      "sample_topics": [
+        "敦煌鸣沙山游客长满整座山",
+        "五一在现场",
+        "假期当然要在沙滩边嗨"
+      ],
+      "suggested_angles": [
+        "五一景区人从众，你被挤到了吗？",
+        "假期出游避坑指南：这些地方别去"
+      ],
+      "comment_themes": [
+        "晒出人山人海照片",
+        "推荐小众景点",
+        "吐槽旅行体验"
+      ],
+      "is_noise": false
+    },
+    {
+      "name": "青年节身份共鸣",
+      "keywords": [
+        "五四青年节",
+        "青年力量",
+        "共青团员",
+        "一代青年"
+      ],
+      "confidence": 0.75,
+      "heat_signals": {
+        "douyin": 10239009.7
+      },
+      "discussion_density": "medium",
+      "sample_topics": [
+        "今天是五四青年节",
+        "看见一代青年力量",
+        "全国共有共青团员7833.6万名"
+      ],
+      "suggested_angles": [
+        "当代青年最该有的样子是什么？",
+        "你心中的青年力量体现在哪里？"
+      ],
+      "comment_themes": [
+        "分享青年榜样故事",
+        "讨论青年责任",
+        "自嘲‘躺平’与‘奋斗’"
+      ],
+      "is_noise": false
+    }
+  ],
+  "cross_platform_signals": [
+    {
+      "topic": "国乒男团2比3瑞典",
+      "platforms": [
+        "weibo",
+        "douyin"
+      ],
+      "first_seen_platform": "weibo",
+      "velocity": "accelerating",
+      "shared_keywords": []
+    },
+    {
+      "topic": "公司引进AI后将员工降薪裁员",
+      "platforms": [
+        "weibo"
+      ],
+      "first_seen_platform": "weibo",
+      "velocity": "accelerating",
+      "shared_keywords": []
+    },
+    {
+      "topic": "买三文鱼套餐吃到虹鳟食客起诉餐厅",
+      "platforms": [
+        "weibo"
+      ],
+      "first_seen_platform": "weibo",
+      "velocity": "steady",
+      "shared_keywords": []
+    }
+  ],
+  "high_engagement_patterns": [
+    {
+      "top_hook_types": [
+        "(LLM分析)"
+      ],
+      "top_engagement_triggers": [
+        "直接触及职场安全感，每个人都能代入，容易引发焦虑共鸣和自救经验分享。",
+        "打破国乒不败神话，引发球迷情绪化讨论，支持与批评两极化，互动率高。",
+        "实用性强，消费者有强烈避雷需求，容易引发转发和评论补充。"
+      ],
+      "teardown_count": 0,
+      "avg_hook_confidence": 0
+    }
+  ],
+  "recommended_angles": [
+    {
+      "vertical": "AI职场冲击",
+      "angle": "AI来了，你的岗位还能撑几年？",
+      "why_discussion_likely": "直接触及职场安全感，每个人都能代入，容易引发焦虑共鸣和自救经验分享。",
+      "confidence": 0.9
+    },
+    {
+      "vertical": "国乒失利反思",
+      "angle": "国乒输球是偶然还是危机？",
+      "why_discussion_likely": "打破国乒不败神话，引发球迷情绪化讨论，支持与批评两极化，互动率高。",
+      "confidence": 0.95
+    },
+    {
+      "vertical": "消费维权实战",
+      "angle": "你吃到的三文鱼可能是虹鳟？避雷指南",
+      "why_discussion_likely": "实用性强，消费者有强烈避雷需求，容易引发转发和评论补充。",
+      "confidence": 0.85
+    }
+  ],
+  "raw_trending": [],
+  "platform_errors": {},
+  "analysis_method": "llm",
+  "scan_summary": "五一假期尾声，国乒失利、AI降薪裁员、食品安全维权等话题引发跨平台热议，青年节相关讨论与消费趋势并存。",
+  "noise_topics": [
+    "NBA",
+    "黄灿灿 blackpink都没这么累",
+    "周深追不上伴舞气笑了",
+    "曾舜晞说回家当然要穿正式点",
+    "王栎鑫音乐节加歌",
+    "梁祯元演唱会坠落入水封神了",
+    "王橹杰黑白设定好绝",
+    "消失的人路演李晨花式饭撒"
+  ]
+}

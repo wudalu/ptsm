@@ -23,6 +23,17 @@ topic-radar 需要两个外部服务：
 
 无需单独启动，topic-radar 通过 `npx -y mcp-trends-hub` 自动拉起 stdio MCP。需要 Node.js 20+ 和 npx 可用。
 
+**LLM 分析** (DeepSeek):
+
+默认使用 DeepSeek 做语义分析。无需额外配置——复用 PTSM 的 `DEEPSEEK_API_KEY`。如果 API key 不可用，自动回退到规则引擎。
+
+```env
+DEEPSEEK_API_KEY=sk-...
+DEEPSEEK_MODEL=deepseek-chat        # 可选，默认 deepseek-chat
+DEEPSEEK_BASE_URL=https://api.deepseek.com/v1  # 可选
+TOPIC_RADAR_LLM_MODEL=deepseek-chat # 可选，覆盖 DEEPSEEK_MODEL
+```
+
 验证环境:
 
 ```bash
@@ -129,6 +140,9 @@ Top terms: [('治愈', 24), ('教程', 18), ('求教程', 12), ('试试', 10), (
 | recommended_angles | list[dict] | 推荐选题角度 |
 | raw_trending | list[dict] | 原始热榜数据 (≤30/平台) |
 | platform_errors | dict | 平台错误详情 |
+| analysis_method | string | `"llm"` 或 `"rules"` |
+| scan_summary | string | LLM 模式下的整体摘要 |
+| noise_topics | list[str] | LLM 模式下的噪声话题 |
 
 ## Error Recovery
 
