@@ -8,7 +8,10 @@ import sys
 from topic_radar.config import get_config
 from topic_radar.mcp_client import McpClient
 from topic_radar.platforms.xiaohongshu import XiaohongshuPlatform, PlatformUnavailable
-from topic_radar.platforms.weibo import WeiboPlatform, DouyinPlatform, TrendingItem
+from topic_radar.platforms.weibo import (
+    WeiboPlatform, DouyinPlatform, ZhihuPlatform, BilibiliPlatform,
+    ToutiaoPlatform, DoubanPlatform, SspaiPlatform, TrendingItem,
+)
 from topic_radar.analysis.note_teardown import teardown
 from topic_radar.analysis.cross_platform import (
     discover_cross_platform,
@@ -129,7 +132,10 @@ async def _scan(args: argparse.Namespace) -> None:
 
     client = McpClient(
         xhs_server_url=config.xhs_mcp_server_url,
-        enable_trends_hub=any(p in {"weibo", "douyin"} for p in platforms),
+        enable_trends_hub=any(
+            p in {"weibo", "douyin", "zhihu", "bilibili", "toutiao", "douban", "sspai"}
+            for p in platforms
+        ),
     )
 
     if args.mcp_check:
@@ -188,6 +194,24 @@ async def _scan(args: argparse.Namespace) -> None:
         except PlatformUnavailable as e:
             errors["douyin"] = str(e)
             print(f"douyin: unavailable ({e.reason})")
+
+    for platform_name, platform_cls, display_name in [
+        ("zhihu", ZhihuPlatform, "zhihu"),
+        ("bilibili", BilibiliPlatform, "bilibili"),
+        ("toutiao", ToutiaoPlatform, "toutiao"),
+        ("douban", DoubanPlatform, "douban"),
+        ("sspai", SspaiPlatform, "sspai"),
+    ]:
+        if platform_name not in platforms:
+            continue
+        try:
+            p = platform_cls(client)
+            items = await p.get_trending(limit=config.scan_sample_limit)
+            all_trending[display_name] = items
+            print(f"{display_name}: {len(items)} trending items")
+        except PlatformUnavailable as e:
+            errors[display_name] = str(e)
+            print(f"{display_name}: unavailable ({e.reason})")
 
     if not all_trending:
         print("No data collected from any platform.")
