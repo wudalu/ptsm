@@ -43,7 +43,7 @@ class TopicRadarConfig(BaseSettings):
     )
 
     default_platforms: str = Field(
-        default="xiaohongshu,weibo,douyin",
+        default="weibo,douyin,zhihu,bilibili,toutiao,douban,sspai,xiaohongshu",
         validation_alias=AliasChoices("TOPIC_RADAR_PLATFORMS", "DEFAULT_PLATFORMS"),
     )
 
