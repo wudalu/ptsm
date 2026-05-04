@@ -43,6 +43,7 @@ src/topic_radar/
 ├── analysis/
 │   ├── schemas.py         # Pydantic schemas for LLM output
 │   ├── llm_analyzer.py    # LLM-driven analysis (primary)
+│   ├── methodology.py     # 4D methodology framework for prompt injection
 │   ├── note_teardown.py   # 帖子拆解 (fallback)
 │   ├── cross_platform.py  # 跨平台话题/垂类聚类 (fallback)
 │   └── comment_signals.py # (included in note_teardown)
@@ -55,7 +56,7 @@ src/topic_radar/
 
 **默认路径：LLM → fallback rules**
 1. 数据归一化（去重、排序、格式统一）
-2. LLM 分析：将所有原始 trending 数据发送给 DeepSeek，由 LLM 自主发现垂类、评估讨论价值、生成选题角度
+2. LLM 分析：将所有原始 trending 数据发送给 DeepSeek，system prompt 嵌入了 content-production-mcp 四维方法论框架（认知劫持机制 + 荣格原型 + 平台讨论模式 + 情绪-传播联动），LLM 据此自主发现垂类、评估讨论价值、生成选题角度
 3. 如果 LLM 不可用（无 API key、网络错误、响应无效），自动回退到规则引擎
 
 artifact 中 `analysis_method` 字段标记实际使用的路径（`"llm"` 或 `"rules"`）。
