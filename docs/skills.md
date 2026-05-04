@@ -2,7 +2,7 @@
 title: PTSM Skills
 status: active
 owner: ptsm
-last_verified: 2026-05-03
+last_verified: 2026-05-04
 source_of_truth: true
 related_paths:
   - src/ptsm/skills/contracts.py
@@ -49,7 +49,8 @@ Skill 层负责让运行时按请求范围暴露合适的 builtin skills，而�
 
 - `xhs_trend_scan` 是当前第一个小红书 research builtin skill，用来在写作前补一层热点扫描。
 - 它现在优先消费 planner 阶段注入的实时 MCP 搜索结果；这些结果不会覆盖静态 `SKILL.md` 文本，而是作为独立 runtime context 参与标题、正文和封面语气生成。如果本地 MCP 不可达或未登录，则自动回退到静态 skill 文本，不中断 workflow。
-- 这类内容策略索引仍以 [`docs/xhs-topics/index.md`](xhs-topics/index.md) 为总入口；后续是否继续产品化 `xhs_note_teardown` / `xhs_vertical_router`，以那组文档和实际运行反馈为准。
+- `topic_research` 是第二个 research builtin skill，通过读取 topic-radar 产出的多平台选题报告，为 planner 提供跨平台的热门话题和选题角度。优先消费当日 artifact JSON 中的 LLM 分析结果，artifact 不可用时静默跳过。
+- 这类内容策略索引仍以 [`docs/xhs-topics/index.md`](xhs-topics/index.md) 和 [`docs/topic-radar.md`](topic-radar.md) 为入口。
 
 ## Routing Design
 
