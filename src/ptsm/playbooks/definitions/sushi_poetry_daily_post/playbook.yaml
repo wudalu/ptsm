@@ -5,6 +5,7 @@ platforms:
   - xiaohongshu
 required_skills:
   - xhs_trend_scan
+  - topic_research
   - sushi_poetry_style
   - xhs_poetry_hashtagging
 optional_skills: []

@@ -5,6 +5,7 @@ platforms:
   - xiaohongshu
 required_skills:
   - xhs_trend_scan
+  - topic_research
   - fengkuang_style
   - positive_reframe
   - xhs_hashtagging

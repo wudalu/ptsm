@@ -29,6 +29,7 @@ def test_selector_returns_request_scoped_surface() -> None:
         "fengkuang_style",
         "positive_reframe",
         "xhs_trend_scan",
+        "topic_research",
         "xhs_hashtagging",
     ]
     assert "放大具体日常崩溃场景" not in surface.list_summaries()[0].short_description
@@ -59,6 +60,7 @@ def test_selector_returns_sushi_poetry_scoped_surface() -> None:
 
     assert [item.skill_name for item in surface.list_summaries()] == [
         "xhs_trend_scan",
+        "topic_research",
         "sushi_poetry_style",
         "xhs_poetry_hashtagging",
     ]

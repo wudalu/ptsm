@@ -70,6 +70,7 @@ def test_planner_separates_runtime_skill_contexts_from_static_skills() -> None:
             "playbook_id": "fengkuang_daily_post",
             "loaded_skills": [
                 "xhs_trend_scan",
+                "topic_research",
                 "fengkuang_style",
                 "positive_reframe",
                 "xhs_hashtagging",

@@ -83,3 +83,19 @@ def test_skill_registry_parses_platform_scoped_xhs_trend_skill() -> None:
     assert spec.playbook_tags == []
     assert spec.token_budget_hint == 180
     assert spec.assets_present is False
+
+
+def test_skill_registry_discovers_topic_research_skill() -> None:
+    registry = SkillRegistry(
+        skill_root=Path("src/ptsm/skills/builtin"),
+    )
+
+    spec = next(
+        skill for skill in registry.list_skills() if skill.skill_name == "topic_research"
+    )
+
+    assert spec.domain_tags == []
+    assert spec.platform_tags == ["xiaohongshu"]
+    assert spec.playbook_tags == []
+    assert spec.token_budget_hint == 200
+    assert spec.assets_present is False

@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import date
 import json
 import re
+from pathlib import Path
 from typing import Any, Protocol, Sequence
 
 from ptsm.config.settings import Settings
@@ -129,6 +130,78 @@ class XhsTrendScanContextBuilder:
         return _render_trend_context(scene=scene, keywords=keywords, hits=hits)
 
 
+class TopicResearchContextBuilder:
+    """Read topic-radar artifact and inject topic suggestions for the `topic_research` skill."""
+
+    def __init__(self, *, artifact_dir: str = "outputs/artifacts") -> None:
+        self._artifact_dir = Path(artifact_dir)
+
+    def build(self, *, scene: str, domain: str, playbook_id: str, keyword_hints: list[str] | None = None) -> str | None:  # noqa: ARG002
+        try:
+            return self._build_sync()
+        except Exception:
+            return None
+
+    def _build_sync(self) -> str | None:
+        today = date.today().isoformat()
+        artifact_path = self._artifact_dir / f"topic-scan-{today}.json"
+        if not artifact_path.exists():
+            return None
+
+        try:
+            data = json.loads(artifact_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return None
+
+        return _render_topic_research_context(data)
+
+
+def _render_topic_research_context(data: dict) -> str | None:
+    verticals = data.get("discovered_verticals", [])
+    angles = data.get("recommended_angles", [])
+    summary = data.get("scan_summary", "")
+    noise = data.get("noise_topics", [])
+
+    if not verticals and not angles:
+        return None
+
+    lines = [
+        "# Topic Research Live Context",
+        "",
+    ]
+    if summary:
+        lines.append(f"本周选题趋势：{summary}")
+        lines.append("")
+
+    if verticals:
+        lines.append("## 当前热门垂类")
+        for v in verticals[:4]:
+            name = v.get("name", "")
+            keywords = ", ".join(v.get("keywords", [])[:4])
+            density = v.get("discussion_density", "")
+            lines.append(f"- **{name}**（{density}讨论密度）— {keywords}")
+            for angle in v.get("suggested_angles", [])[:1]:
+                lines.append(f"  - 选题：{angle}")
+        lines.append("")
+
+    if angles:
+        lines.append("## 推荐选题角度")
+        for i, a in enumerate(angles[:3], 1):
+            lines.append(f"{i}. [{a.get('vertical', '')}] {a.get('angle', '')}")
+            why = a.get("why_discussion_likely", "")
+            if why:
+                lines.append(f"   - 讨论诱因：{why}")
+        lines.append("")
+
+    if noise:
+        lines.append(f"## 避免话题（噪声）")
+        lines.append(f"以下话题热但讨论价值低，建议跳过：{', '.join(noise[:5])}")
+        lines.append("")
+
+    lines.append("约束：只选一个角度切入，将其转化为具体场景和情绪表达，不要复写报告原文。")
+    return "\n".join(lines)
+
+
 def build_skill_context_resolver(
     *,
     settings: Settings,
@@ -139,7 +212,8 @@ def build_skill_context_resolver(
             "xhs_trend_scan": XhsTrendScanContextBuilder(
                 server_url=settings.xhs_mcp_server_url,
                 tool_runner=xhs_tool_runner,
-            )
+            ),
+            "topic_research": TopicResearchContextBuilder(),
         }
     )
 

@@ -16,6 +16,7 @@ def test_playbook_registry_selects_fengkuang_daily_post() -> None:
     assert playbook.playbook_id == "fengkuang_daily_post"
     assert playbook.required_skills == [
         "xhs_trend_scan",
+        "topic_research",
         "fengkuang_style",
         "positive_reframe",
         "xhs_hashtagging",
@@ -43,6 +44,7 @@ def test_playbook_registry_loads_sushi_poetry_playbook() -> None:
     assert playbook.domain == "苏轼诗词赏析"
     assert playbook.required_skills == [
         "xhs_trend_scan",
+        "topic_research",
         "sushi_poetry_style",
         "xhs_poetry_hashtagging",
     ]
