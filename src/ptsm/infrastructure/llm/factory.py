@@ -147,6 +147,7 @@ def build_drafting_backend(
     settings: Settings,
     *,
     chat_model_cls: type[Any] | None = None,
+    model: str | None = None,
 ) -> DeterministicDraftBackend | DeepSeekDraftBackend:
     """Build drafting backend from settings with deterministic fallback."""
     provider = settings.default_model_provider.lower().strip()
@@ -154,7 +155,7 @@ def build_drafting_backend(
     if provider == "deepseek" and settings.deepseek_api_key:
         chat_model_cls = chat_model_cls or _load_chat_deepseek()
         llm = chat_model_cls(
-            model=settings.deepseek_model or settings.default_model,
+            model=model or settings.deepseek_model or settings.default_model,
             api_key=settings.deepseek_api_key,
             api_base=settings.deepseek_base_url,
             temperature=settings.deepseek_temperature,

@@ -54,11 +54,12 @@ def build_playbook_workflow(
     settings = settings or get_settings()
     playbook_def = playbooks.get(playbook_id)
     max_attempts = max_attempts if max_attempts != 2 else playbook_def.max_attempts
+    drafting_model = playbook_def.drafting_model or None
     skill_context_resolver = skill_context_resolver or build_skill_context_resolver(
         settings=settings
     )
     drafting_agent = drafting_agent or FengkuangDraftingAgent(
-        backend=build_drafting_backend(settings)
+        backend=build_drafting_backend(settings, model=drafting_model)
     )
     drafting_provider = getattr(drafting_agent, "provider_name", "custom")
     artifact_store = artifact_store or FileArtifactStore()

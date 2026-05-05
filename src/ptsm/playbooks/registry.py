@@ -21,6 +21,7 @@ class PlaybookDefinition:
     reflection: dict[str, str] = field(default_factory=dict)
     trend_keywords: list[str] = field(default_factory=list)
     max_attempts: int = 2
+    drafting_model: str = ""
     source_path: Path | None = None
 
 
@@ -78,6 +79,7 @@ class PlaybookRegistry:
                     reflection=dict(payload.get("reflection", {})),
                     trend_keywords=list(payload.get("trend_keywords", [])),
                     max_attempts=int(payload.get("max_attempts", 2)),
+                    drafting_model=str(payload.get("drafting_model", "")),
                     source_path=path,
                 )
             )
