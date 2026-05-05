@@ -11,6 +11,7 @@ optional_skills: []
 reflection:
   must_include_phrase: ""
   required_hashtag: "#金庸"
+max_attempts: 4
 trend_keywords:
   - 金庸群侠
   - 武侠人物

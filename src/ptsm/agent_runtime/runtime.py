@@ -52,6 +52,8 @@ def build_playbook_workflow(
     skills = SkillRegistry(skill_root=SKILL_ROOT)
     skill_loader = SkillLoader(skills)
     settings = settings or get_settings()
+    playbook_def = playbooks.get(playbook_id)
+    max_attempts = max_attempts if max_attempts != 2 else playbook_def.max_attempts
     skill_context_resolver = skill_context_resolver or build_skill_context_resolver(
         settings=settings
     )

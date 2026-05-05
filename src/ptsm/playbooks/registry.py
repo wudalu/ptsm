@@ -20,6 +20,7 @@ class PlaybookDefinition:
     optional_skills: list[str] = field(default_factory=list)
     reflection: dict[str, str] = field(default_factory=dict)
     trend_keywords: list[str] = field(default_factory=list)
+    max_attempts: int = 2
     source_path: Path | None = None
 
 
@@ -76,6 +77,7 @@ class PlaybookRegistry:
                     optional_skills=list(payload.get("optional_skills", [])),
                     reflection=dict(payload.get("reflection", {})),
                     trend_keywords=list(payload.get("trend_keywords", [])),
+                    max_attempts=int(payload.get("max_attempts", 2)),
                     source_path=path,
                 )
             )
