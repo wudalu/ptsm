@@ -2,7 +2,7 @@
 title: PTSM Playbooks
 status: active
 owner: ptsm
-last_verified: 2026-05-02
+last_verified: 2026-05-05
 source_of_truth: true
 related_paths:
   - src/ptsm/playbooks/registry.py
