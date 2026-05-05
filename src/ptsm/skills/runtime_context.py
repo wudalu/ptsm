@@ -145,23 +145,11 @@ class XhsTrendScanContextBuilder:
         return _render_trend_context(scene=scene, keywords=keywords, hits=hits)
 
 
-def _repo_root() -> Path:
-    """Find the main repo root, handling worktree setups."""
-    cwd = Path.cwd()
-    git_file = cwd / ".git"
-    if git_file.is_file():
-        content = git_file.read_text()
-        if content.startswith("gitdir:"):
-            # In a worktree: .git/worktrees/<name> → .git → repo root
-            return Path(content.split(":", 1)[1].strip()).parent.parent.parent
-    return cwd
-
-
 class TopicResearchContextBuilder:
     """Read topic-radar artifact and inject topic suggestions for the `topic_research` skill."""
 
-    def __init__(self, *, artifact_dir: str | None = None) -> None:
-        self._artifact_dir = Path(artifact_dir) if artifact_dir else _repo_root() / "outputs" / "artifacts"
+    def __init__(self, *, artifact_dir: str = "outputs/artifacts") -> None:
+        self._artifact_dir = Path(artifact_dir)
         self._last_selection: dict[str, str] | None = None
 
     @property

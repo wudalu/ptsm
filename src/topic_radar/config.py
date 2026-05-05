@@ -1,32 +1,14 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from pathlib import Path
 
 from pydantic import Field, AliasChoices
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-def _find_env_file() -> str:
-    """Find .env file: CWD first, then main repo (for worktree support)."""
-    cwd_env = Path(".env")
-    if cwd_env.exists():
-        return ".env"
-    # Check main repo via worktree .git file
-    git_file = Path(".git")
-    if git_file.is_file():
-        git_content = git_file.read_text()
-        if git_content.startswith("gitdir:"):
-            main_dir = Path(git_content.split(":", 1)[1].strip()).parent.parent.parent
-            main_env = main_dir / ".env"
-            if main_env.exists():
-                return str(main_env)
-    return ".env"
-
-
 class TopicRadarConfig(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=_find_env_file(),
+        env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
