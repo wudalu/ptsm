@@ -10,6 +10,7 @@ import uuid
 from ptsm.application.models import FengkuangRequest, PlaybookRequest
 from ptsm.application.use_cases.diagnose_publish import run_diagnose_publish
 from ptsm.application.use_cases.doctor import run_doctor
+from ptsm.accounts.registry import AccountRegistry
 from ptsm.application.use_cases.docs_sync import run_docs_sync
 from ptsm.application.use_cases.harness_check import run_harness_check
 from ptsm.application.use_cases.harness_evals import run_harness_evals
@@ -146,6 +147,8 @@ def build_parser() -> argparse.ArgumentParser:
     install_hooks = subparsers.add_parser("install-git-hooks")
     install_hooks.add_argument("--base-ref", default="origin/main")
     install_hooks.add_argument("--force", action="store_true")
+
+    accounts = subparsers.add_parser("accounts")
 
     gc = subparsers.add_parser("gc")
     gc.add_argument("--apply", action="store_true")
@@ -375,6 +378,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             settings=build_login_settings(server_url=args.server_url),
         )
         print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "accounts":
+        registry = AccountRegistry()
+        rows = []
+        for a in registry.list_accounts():
+            rows.append(a.to_dict())
+        print(json.dumps(rows, ensure_ascii=False, indent=2))
         return 0
 
     if args.command == "doctor":
