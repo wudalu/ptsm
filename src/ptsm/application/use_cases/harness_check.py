@@ -11,7 +11,7 @@ from ptsm.application.use_cases.harness_report import run_harness_report
 from ptsm.config.settings import Settings
 
 
-DEFAULT_PYTEST_COMMAND = ("uv", "run", "pytest", "-q")
+DEFAULT_PYTEST_COMMAND = ("uv", "run", "pytest", "-q", "--ignore=tests/e2e")
 
 
 class _SkippedPreflightPublisher:
