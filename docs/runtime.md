@@ -2,7 +2,7 @@
 title: PTSM Runtime
 status: active
 owner: ptsm
-last_verified: 2026-05-03
+last_verified: 2026-05-05
 source_of_truth: true
 related_paths:
   - src/ptsm/agent_runtime/runtime.py

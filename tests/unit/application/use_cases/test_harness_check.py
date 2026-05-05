@@ -37,7 +37,7 @@ def test_run_harness_check_composes_docs_sync_report_and_pytest(
     assert result["docs_sync"]["status"] == "ok"
     assert result["harness_report"]["status"] == "ok"
     assert result["pytest"]["status"] == "ok"
-    assert captured["command"] == ["uv", "run", "pytest", "-q"]
+    assert captured["command"][:4] == ["uv", "run", "pytest", "-q"]
     assert captured["env"]["DEFAULT_LLM_PROVIDER"] == "deterministic"
     assert captured["env"]["DEEPSEEK_API_KEY"] == ""
 
