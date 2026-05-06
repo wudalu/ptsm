@@ -222,6 +222,131 @@ uv run python -m ptsm.bootstrap logs --artifact outputs/artifacts/<artifact>.jso
 
 Each run writes metadata under `.ptsm/runs/<run_id>/` (summary.json, events.jsonl).
 
+## Multi-Account Operations
+
+PTSM 支持多个小红书账号，每个账号绑定独立的 cookie 文件和内容领域，互不串号。
+
+### Account Inventory
+
+```bash
+ptsm accounts
+```
+
+输出：
+```json
+[
+  {
+    "account_id": "acct-fk-local",
+    "nickname": "发疯文学实验号",
+    "platform": "xiaohongshu",
+    "domain": "发疯文学",
+    "publish_mode": "dry-run",
+    "cookie_profile_id": "fk-local-cookie",
+    "cookie_path": "cookies/fk-local.json"
+  },
+  {
+    "account_id": "acct-sushi-local",
+    "nickname": "苏轼诗词赏析实验号",
+    "platform": "xiaohongshu",
+    "domain": "苏轼诗词赏析",
+    "publish_mode": "dry-run",
+    "cookie_profile_id": "sushi-local-cookie",
+    "cookie_path": "cookies/sushi-local.json"
+  }
+]
+```
+
+### Domain-Account Mapping
+
+| 领域 | 账号 | Cookie Profile | 说明 |
+|------|------|---------------|------|
+| 发疯文学 | `acct-fk-local` | `cookies/fk-local.json` | 打工人日常、情绪宣泄、自嘲治愈 |
+| 苏轼诗词赏析 | `acct-sushi-local` | `cookies/sushi-local.json` | 诗词赏析、文化体验、生活感悟 |
+| 武侠人物评述 | `acct-wuxia-local` | (未绑定 cookie) | dry-run 仅做内容生成测试 |
+
+账号定义在 `src/ptsm/accounts/definitions/*.yaml`。新增账号只需加一个 YAML 文件。
+
+### Per-Account Login
+
+每个账号需要独立扫码登录，cookie 保存到账号绑定的 `cookie_path`。
+
+**Step 1 — 启动 MCP Server（账号级 cookie）**
+
+账号级 cookie 通过 `COOKIES_PATH` 环境变量传入 xiaohongshu-mcp：
+
+```bash
+# 登录发疯文学账号
+COOKIES_PATH=cookies/fk-local.json .ptsm/bin/xhs-mcp/xiaohongshu-mcp-darwin-amd64
+
+# 登录苏轼诗词账号（另一个终端，另一个端口）
+COOKIES_PATH=cookies/sushi-local.json .ptsm/bin/xhs-mcp/xiaohongshu-mcp-darwin-amd64 -port :18061
+```
+
+如果只有一个 MCP server 实例但要切换账号，重新启动并更换 `COOKIES_PATH` 即可。
+
+**Step 2 — 扫码登录**
+
+```bash
+# 生成 QR code
+uv run python -m ptsm.bootstrap xhs-login-qrcode --output /tmp/xhs-qr-fk.png
+```
+
+扫码后 cookie 自动存入 `cookies/fk-local.json`。确认登录状态：
+
+```bash
+uv run python -m ptsm.bootstrap xhs-login-status
+# → ✅ 已登录
+# → 用户名: xiaohongshu-mcp
+```
+
+**Step 3 — 验证账号级登录**
+
+```bash
+ptsm accounts
+# 确认 cookie_profile_id 和 cookie_path 已绑定
+```
+
+### Running With Specific Account
+
+```bash
+# 发疯文学领域
+uv run python -m ptsm.bootstrap run-fengkuang \
+  --scene "周四加班到崩溃" \
+  --account-id acct-fk-local
+
+# 苏轼诗词领域
+uv run python -m ptsm.bootstrap run-playbook \
+  --scene "夜里读到《定风波》" \
+  --account-id acct-sushi-local \
+  --playbook-id sushi_poetry_daily_post
+```
+
+账号的 `domain` 决定了自动选哪个 playbook。`publish_mode: dry-run` 默认只生成不发布。改为 `mcp-real` 后走真实发布链路。
+
+### Cookie File Location
+
+扫码登录后，cookie 按 `COOKIES_PATH` 环境变量指定的路径保存：
+
+| 账号 | Cookie 路径 |
+|------|-------------|
+| `acct-fk-local` | `cookies/fk-local.json` |
+| `acct-sushi-local` | `cookies/sushi-local.json` |
+
+Cookie 文件由 xiaohongshu-mcp 管理，PTSM 通过账号定义引用，不直接读写。升级或重建 session 时只需在启动 MCP server 时指定新的 cookie 路径，重新扫码即可。
+
+```bash
+# 重建 cookie（例如 session 过期）
+rm cookies/fk-local.json
+COOKIES_PATH=cookies/fk-local.json .ptsm/bin/xhs-mcp/xiaohongshu-mcp-darwin-amd64
+# 然后重新扫码
+```
+
+### Safety: Cookie-Scoped Isolation
+
+- **Side-effect ledger** 按 `thread_id + cookie_profile_id` 去重，不同账号的同名 thread 不会串号。
+- **Artifact** 中包含 `cookie_profile_id` 摘要，排障时能看出哪次发布用的哪个账号。
+- **Dry-run** 不需要 cookie；`cookie_profile_id` 为空时用全局 settings fallback。
+
 ## Login Troubleshooting
 
 ```bash
