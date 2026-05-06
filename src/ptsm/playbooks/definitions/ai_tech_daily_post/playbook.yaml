@@ -1,0 +1,14 @@
+playbook_id: ai_tech_daily_post
+version: 1
+domain: AI科技资讯
+platforms:
+  - xiaohongshu
+required_skills:
+  - xhs_trend_scan
+  - topic_research
+  - ai_tech_style
+  - ai_tech_hashtagging
+optional_skills: []
+reflection:
+  must_include_phrase: ""
+  required_hashtag: "#AI资讯"
