@@ -3,3 +3,5 @@ nickname: 发疯文学实验号
 platform: xiaohongshu
 domain: 发疯文学
 publish_mode: dry-run
+cookie_profile_id: fk-local-cookie
+cookie_path: cookies/fk-local.json

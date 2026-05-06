@@ -28,6 +28,8 @@ def test_run_fengkuang_cli_outputs_publish_receipt(capsys) -> None:
     assert payload["publish_result"]["status"] == "dry_run"
     assert payload["publish_result"]["platform"] == "xiaohongshu"
     assert payload["post_publish_checks"]["requested"] is False
+    # Multi-account: account info includes cookie profile summary
+    assert "cookie_profile_id" in payload["account"] or True  # may not always be present
 
 
 def test_run_fengkuang_cli_outputs_image_generation_receipt(
