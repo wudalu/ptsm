@@ -4,6 +4,7 @@ display_name: AI Tech Hashtagging
 description: 为 AI/科技类短内容补齐平台友好标签。
 display_order: 48
 platform_tags: xiaohongshu
+domain_tags: AI科技资讯
 token_budget_hint: 120
 assets_present: false
 ---
