@@ -4,6 +4,7 @@ display_name: AI Tech Style
 description: 专业但不枯燥的AI/科技资讯内容风格；有观点但不偏激，信息密度高但可读性强。
 display_order: 45
 platform_tags: xiaohongshu
+domain_tags: AI科技资讯
 token_budget_hint: 160
 assets_present: false
 ---
