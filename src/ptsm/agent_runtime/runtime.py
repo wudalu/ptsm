@@ -127,13 +127,17 @@ def build_finalize_node(
             return {"status": "failed"}
 
         activated_skills = list(state.get("activated_skills", []))
+        activated_skill_details = list(state.get("activated_skill_details", []))
+        runtime_skill_details = list(state.get("runtime_skill_details", []))
         artifact_path = artifact_store.write(
             {
                 "playbook_id": state["playbook_id"],
                 "drafting_provider": state["drafting_provider"],
                 "loaded_skills": activated_skills,
                 "activated_skills": activated_skills,
+                "activated_skill_details": activated_skill_details,
                 "runtime_skill_contents": list(state.get("runtime_skill_contents", [])),
+                "runtime_skill_details": runtime_skill_details,
                 "final_content": state["final_content"],
             },
             run_key=f"{state['account_id']}-{state['playbook_id']}-{state['attempt_count']}",

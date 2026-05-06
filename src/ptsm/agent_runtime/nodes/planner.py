@@ -37,6 +37,15 @@ def build_planner_node(
         loaded_skills = [surface.activate(name) for name in playbook.required_skills]
         loaded_playbook = playbook_loader.load(playbook.playbook_id)
         activated_skills = [skill.skill.skill_name for skill in loaded_skills]
+        activated_skill_details = [
+            {
+                "skill_name": skill.skill.skill_name,
+                "display_name": skill.skill.display_name,
+                "resource_type": "static_skill",
+                "source_path": str(skill.source_path),
+            }
+            for skill in loaded_skills
+        ]
         runtime_skill_contexts = (
             skill_context_resolver.resolve(
                 state=state,
@@ -46,6 +55,16 @@ def build_planner_node(
             if skill_context_resolver is not None
             else []
         )
+        runtime_skill_details = [
+            {
+                "skill_name": skill_name,
+                "resource_type": "runtime_context",
+                "resource_id": f"{skill_name}:runtime_context",
+                "source_path": None,
+                "content_preview": context.splitlines()[0].strip() if context.strip() else "",
+            }
+            for skill_name, context in runtime_skill_contexts.items()
+        ]
 
         return {
             "planner_iterations": int(state.get("planner_iterations", 0)) + 1,
@@ -53,12 +72,14 @@ def build_planner_node(
             "playbook_id": playbook.playbook_id,
             "candidate_skills": list(playbook.required_skills),
             "activated_skills": activated_skills,
+            "activated_skill_details": activated_skill_details,
             "planner_prompt": loaded_playbook.planner_prompt,
             "persona_prompt": loaded_playbook.persona_prompt,
             "reflection_prompt": loaded_playbook.reflection_prompt,
             "reflection_rules": loaded_playbook.definition.reflection,
             "loaded_skill_contents": [skill.content for skill in loaded_skills],
             "runtime_skill_contents": list(runtime_skill_contexts.values()),
+            "runtime_skill_details": runtime_skill_details,
         }
 
     return planner

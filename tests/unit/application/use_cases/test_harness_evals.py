@@ -19,6 +19,14 @@ def test_run_harness_evals_aggregates_runs_events_and_plan_runs(tmp_path: Path) 
             "account_id": "acct-fk-local",
             "platform": "xiaohongshu",
             "playbook_id": "fengkuang_daily_post",
+            "activated_skills": ["xhs_trend_scan", "fengkuang_style"],
+            "runtime_skill_details": [
+                {
+                    "skill_name": "xhs_trend_scan",
+                    "resource_type": "runtime_context",
+                    "resource_id": "xhs_trend_scan:runtime_context",
+                }
+            ],
             "started_at": "2026-04-18T10:00:00+00:00",
             "finished_at": "2026-04-18T10:05:00+00:00",
         },
@@ -35,6 +43,14 @@ def test_run_harness_evals_aggregates_runs_events_and_plan_runs(tmp_path: Path) 
             "account_id": "acct-fk-local",
             "platform": "xiaohongshu",
             "playbook_id": "fengkuang_daily_post",
+            "activated_skills": ["xhs_trend_scan", "positive_reframe"],
+            "runtime_skill_details": [
+                {
+                    "skill_name": "xhs_trend_scan",
+                    "resource_type": "runtime_context",
+                    "resource_id": "xhs_trend_scan:runtime_context",
+                }
+            ],
             "started_at": "2026-04-18T11:00:00+00:00",
             "finished_at": "2026-04-18T11:05:00+00:00",
         },
@@ -51,6 +67,8 @@ def test_run_harness_evals_aggregates_runs_events_and_plan_runs(tmp_path: Path) 
             "account_id": "acct-other",
             "platform": "douyin",
             "playbook_id": "other_playbook",
+            "activated_skills": ["other_skill"],
+            "runtime_skill_details": [],
             "started_at": "2026-04-18T12:00:00+00:00",
             "finished_at": "2026-04-18T12:05:00+00:00",
         },
@@ -120,6 +138,29 @@ def test_run_harness_evals_aggregates_runs_events_and_plan_runs(tmp_path: Path) 
         "completion_rate": 0.5,
         "by_status": {"completed": 1, "failed": 1},
         "by_failure_reason": {"pytest_failed": 1},
+    }
+    assert result["skills"] == {
+        "total_runs_with_skills": 2,
+        "by_skill": {
+            "xhs_trend_scan": {
+                "runs": 2,
+                "completed": 1,
+                "completion_rate": 0.5,
+                "runtime_context_runs": 2,
+            },
+            "fengkuang_style": {
+                "runs": 1,
+                "completed": 1,
+                "completion_rate": 1.0,
+                "runtime_context_runs": 0,
+            },
+            "positive_reframe": {
+                "runs": 1,
+                "completed": 0,
+                "completion_rate": 0.0,
+                "runtime_context_runs": 0,
+            },
+        },
     }
     assert result["recent_failures"] == [
         {

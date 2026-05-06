@@ -2,7 +2,7 @@
 title: PTSM Observability
 status: active
 owner: ptsm
-last_verified: 2026-05-02
+last_verified: 2026-05-06
 source_of_truth: true
 related_paths:
   - src/ptsm/infrastructure/observability/run_store.py
@@ -37,6 +37,8 @@ PTSM 当前的观测性核心是本地文件系统里的 run store 和 artifacts
 - `RunStore.start()` 创建 run summary 和事件流。
 - `RunStore.append_event()` 记录步骤事件。
 - `RunStore.finish()` 结束并写回 summary。
+- workflow artifact 现在会持久化 `activated_skill_details` 和 `runtime_skill_details`，与已有的 `runtime_skill_contents` 一起回答本次运行读了哪些静态 skills 和哪些动态上下文资源。
+- finished run summary 现在也会写入 `activated_skills`、`activated_skill_details` 和 `runtime_skill_details`，便于先查 `.ptsm/runs/*/summary.json`，只有需要全文时再回读 artifact。
 - `run_logs()` 支持按 `run_id` 或 artifact 反查运行记录。
 - `RunStore.list_runs()` 和 `ptsm runs` 支持按账号、平台、playbook、状态筛选最近运行。
 - `RunStore.list_events()`、`RunStore.aggregate_events()` 和 `ptsm run-events` 支持按 run 维度和 event 维度过滤最近事件，并做轻量聚合。
@@ -48,6 +50,7 @@ PTSM 当前的观测性核心是本地文件系统里的 run store 和 artifacts
 - `doctor` 现在会额外报告 harness drift，包括 stale active docs、orphan plan-run evidence 和 malformed run dirs。
 - `ptsm gc` 默认以 dry-run 方式列出可安全清理的 completed run artifacts 和 orphan evidence，`--apply` 才会删除。
 - `ptsm harness-evals` 会把 runs、events 和 plan-run evidence 聚成一个本地 eval 视图，输出 completion rate、status breakdown、failure reason breakdown 和 recent failures。
+- `ptsm harness-evals` 现在还会输出 `skills` 视图，聚合每个 activated skill 的 runs、completed、completion_rate 和 `runtime_context_runs`，用于回答“某个 skill 打开以后运行是否更稳”这类局部问题。
 - `ptsm harness-report` 会把 `doctor`、`gc` 和 `harness-evals` 合成一个本地快照，并支持对 stale docs、gc candidate、run completion rate、plan-run completion rate 做 threshold 检查。
 - `ptsm diagnose-publish` 会把 `doctor`、run logs、artifact metadata 和 `xhs-check-publish` 的结果组合成一次只读诊断，给出 `likely_cause`、`evidence` 和 `next_actions`。
 - real publish 或显式 `--auto-generate-image` 运行现在会把 `image_generation` metadata 落进 artifact，包含 provider、model、prompt、source_url、`generated_image_paths`，以及从 `runtime_skill_contents` 提炼出的 `runtime_context_summary`；当前 provider 可为 `jimeng` 或 `bailian`。
@@ -60,6 +63,7 @@ PTSM 当前的观测性核心是本地文件系统里的 run store 和 artifacts
 - 现在已经比“纯文件可读”更进一步，但还不是 fully agent-queryable observability surface。
 - 现在的 cleanup 仍是人工触发 CLI，不是后台定时回收。
 - 现在的 eval surface 仍然是本地只读 JSON 汇总，不是持续回归系统或外部 dashboard。
+- skill-level eval 目前只按 run summary 聚合，不会解析 draft 质量、人工评分或更细颗粒度 step outcome。
 - 现在的 report surface 仍是本地单次 snapshot，不是长期历史报表或外部告警系统。
 - 现在的 publish diagnostic 仍然是单次 case diagnosis，不是自动批量归因或跨运行统计。
 - `仅自己可见` 的帖子如果上游仍未回传 `post_id/post_url`，当前工具链仍然无法自动核验，只能人工确认或等待上游补齐标识。

@@ -137,6 +137,17 @@ def test_fengkuang_workflow_writes_final_artifact(tmp_path: Path) -> None:
     assert artifact["final_content"]["hashtags"][0] == "#发疯文学"
     assert "怎么才周四" in artifact["final_content"]["title"]
     assert "runtime_skill_contents" in artifact
+    assert artifact["activated_skill_details"][0]["skill_name"] == "xhs_trend_scan"
+    assert artifact["activated_skill_details"][0]["resource_type"] == "static_skill"
+    assert artifact["runtime_skill_details"] == [
+        {
+            "skill_name": "xhs_trend_scan",
+            "resource_type": "runtime_context",
+            "resource_id": "xhs_trend_scan:runtime_context",
+            "source_path": None,
+            "content_preview": "# XHS Trend Scan Live Context",
+        }
+    ]
 
 
 def test_fengkuang_workflow_persists_checkpoint_with_file_backed_saver(

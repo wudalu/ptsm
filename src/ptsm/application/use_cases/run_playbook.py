@@ -354,6 +354,9 @@ def run_playbook(
             "artifact_path": result.get("artifact_path"),
             "publish_mode": publish_mode,
             "publish_status": None if publish_result is None else publish_result.get("status"),
+            "activated_skills": list(result.get("activated_skills") or []),
+            "activated_skill_details": list(result.get("activated_skill_details") or []),
+            "runtime_skill_details": list(result.get("runtime_skill_details") or []),
         },
     )
     return {

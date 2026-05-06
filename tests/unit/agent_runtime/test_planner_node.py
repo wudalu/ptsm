@@ -58,12 +58,26 @@ def test_planner_separates_runtime_skill_contexts_from_static_skills() -> None:
 
     assert result["activated_skills"][0] == "xhs_trend_scan"
     assert "普通打工人" in result["persona_prompt"]
+    assert result["activated_skill_details"][0]["skill_name"] == "xhs_trend_scan"
+    assert result["activated_skill_details"][0]["source_path"].endswith(
+        "src/ptsm/skills/builtin/xhs_trend_scan/SKILL.md"
+    )
+    assert result["activated_skill_details"][0]["resource_type"] == "static_skill"
     assert all(
         "XHS Trend Scan Live Context" not in item for item in result["loaded_skill_contents"]
     )
     assert any(
         "XHS Trend Scan Live Context" in item for item in result["runtime_skill_contents"]
     )
+    assert result["runtime_skill_details"] == [
+        {
+            "skill_name": "xhs_trend_scan",
+            "resource_type": "runtime_context",
+            "resource_id": "xhs_trend_scan:runtime_context",
+            "source_path": None,
+            "content_preview": "# XHS Trend Scan Live Context",
+        }
+    ]
     assert resolver.calls == [
         {
             "scene": "周四下午四点半，老板还在群里发新需求",

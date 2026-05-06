@@ -15,6 +15,7 @@ class ExecutionState(TypedDict, total=False):
     playbook_id: str
     candidate_skills: list[str]
     activated_skills: list[str]
+    activated_skill_details: list[dict[str, Any]]
     draft_content: dict[str, Any]
     final_content: dict[str, Any]
     reflection_feedback: str
@@ -30,5 +31,6 @@ class ExecutionState(TypedDict, total=False):
     reflection_rules: dict[str, str]
     loaded_skill_contents: list[str]
     runtime_skill_contents: list[str]
+    runtime_skill_details: list[dict[str, Any]]
     artifact_path: str
     memory_hits: list[dict[str, Any]]

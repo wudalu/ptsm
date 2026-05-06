@@ -2,7 +2,7 @@
 title: Harness Engineering In PTSM
 status: active
 owner: ptsm
-last_verified: 2026-04-20
+last_verified: 2026-05-06
 source_of_truth: true
 related_paths:
   - README.md
@@ -46,6 +46,7 @@ repository.
 - normalized plan-run failure reasons and evidence query CLI
 - drift checks and safe garbage collection for stale harness artifacts
 - local harness eval summaries over runs, events, and plan-run evidence
+- skill-aware harness eval summaries over runs, including per-skill completion rate and runtime-context usage
 - an operational `harness-report` snapshot that composes `doctor`, `gc`, and `harness-evals`
 - threshold checks that let local automation treat harness drift or reliability regressions as warnings
 - a publish diagnostic surface that classifies likely failure causes and returns next actions for a single publish attempt
@@ -55,6 +56,7 @@ repository.
 ## What We Should Build Next
 
 - traces and metrics if local file observability stops being enough
+- richer skill quality evals if completion-rate aggregation stops being enough
 
 ## What We Should Not Copy Blindly
 

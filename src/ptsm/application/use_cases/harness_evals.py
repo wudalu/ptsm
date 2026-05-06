@@ -48,6 +48,7 @@ def run_harness_evals(
         for reason in item.get("failure_reasons", [])
         if reason
     )
+    skill_stats = _aggregate_skill_stats(runs)
 
     return {
         "filters": {
@@ -78,6 +79,7 @@ def run_harness_evals(
             "by_status": dict(plan_statuses),
             "by_failure_reason": dict(failure_reasons),
         },
+        "skills": skill_stats,
         "recent_failures": _recent_failures(
             runs=runs,
             plan_runs=plan_runs,
@@ -127,6 +129,50 @@ def _recent_failures(
 
     failures.sort(key=lambda item: str(item.get("timestamp", "")), reverse=True)
     return failures[:limit]
+
+
+def _aggregate_skill_stats(runs: list[dict[str, object]]) -> dict[str, object]:
+    by_skill: dict[str, dict[str, int | float]] = {}
+    runs_with_skills = 0
+
+    for run in runs:
+        activated_skills = run.get("activated_skills")
+        if not isinstance(activated_skills, list) or not activated_skills:
+            continue
+
+        runs_with_skills += 1
+        completed = run.get("status") == "completed"
+        runtime_context_skills = {
+            str(item.get("skill_name"))
+            for item in run.get("runtime_skill_details", [])
+            if isinstance(item, dict) and item.get("skill_name")
+        }
+
+        for skill_name in activated_skills:
+            skill_key = str(skill_name)
+            current = by_skill.setdefault(
+                skill_key,
+                {
+                    "runs": 0,
+                    "completed": 0,
+                    "runtime_context_runs": 0,
+                },
+            )
+            current["runs"] = int(current["runs"]) + 1
+            if completed:
+                current["completed"] = int(current["completed"]) + 1
+            if skill_key in runtime_context_skills:
+                current["runtime_context_runs"] = int(current["runtime_context_runs"]) + 1
+
+    for skill_name, stats in by_skill.items():
+        stats["completion_rate"] = _completion_rate(
+            int(stats["completed"]), int(stats["runs"])
+        )
+
+    return {
+        "total_runs_with_skills": runs_with_skills,
+        "by_skill": by_skill,
+    }
 
 
 def _string_or_unknown(value: object) -> str:

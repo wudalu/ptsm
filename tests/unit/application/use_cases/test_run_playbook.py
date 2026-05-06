@@ -65,6 +65,31 @@ class FakeWorkflow:
                 "- 主切口：`怎么才周四`\n"
                 "- 场景张力：`下班前被新需求拽回工位`"
             ],
+            "activated_skills": [
+                "xhs_trend_scan",
+                "fengkuang_style",
+            ],
+            "activated_skill_details": [
+                {
+                    "skill_name": "xhs_trend_scan",
+                    "resource_type": "static_skill",
+                    "source_path": "src/ptsm/skills/builtin/xhs_trend_scan/SKILL.md",
+                },
+                {
+                    "skill_name": "fengkuang_style",
+                    "resource_type": "static_skill",
+                    "source_path": "src/ptsm/skills/builtin/fengkuang_style/SKILL.md",
+                },
+            ],
+            "runtime_skill_details": [
+                {
+                    "skill_name": "xhs_trend_scan",
+                    "resource_type": "runtime_context",
+                    "resource_id": "xhs_trend_scan:runtime_context",
+                    "source_path": None,
+                    "content_preview": "# XHS Trend Scan Live Context",
+                }
+            ],
         }
 
 
@@ -234,6 +259,20 @@ def test_run_fengkuang_playbook_returns_run_metadata(
     assert Path(result["run"]["run_dir"]).exists()
     assert Path(result["run"]["events_path"]).exists()
     assert Path(result["run"]["summary_path"]).exists()
+    assert result["run"]["activated_skills"] == [
+        "xhs_trend_scan",
+        "fengkuang_style",
+    ]
+    assert result["run"]["activated_skill_details"][0]["skill_name"] == "xhs_trend_scan"
+    assert result["run"]["runtime_skill_details"] == [
+        {
+            "skill_name": "xhs_trend_scan",
+            "resource_type": "runtime_context",
+            "resource_id": "xhs_trend_scan:runtime_context",
+            "source_path": None,
+            "content_preview": "# XHS Trend Scan Live Context",
+        }
+    ]
 
 
 def test_run_fengkuang_playbook_reuses_successful_publish_result_for_same_thread(
