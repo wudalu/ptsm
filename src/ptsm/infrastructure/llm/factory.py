@@ -8,7 +8,8 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.prompt_values import StringPromptValue
 from langchain_core.prompts import PromptTemplate
 from langchain_core.runnables import RunnableLambda
-from langchain_core.utils.json import parse_and_check_json_markdown
+from langchain_core.exceptions import OutputParserException
+from langchain_core.utils.json import parse_and_check_json_markdown, parse_json_markdown
 
 from ptsm.config.settings import Settings
 
@@ -335,14 +336,23 @@ def _is_meeting_scene(scene: str) -> bool:
 
 def _parse_json_payload(content: str) -> dict[str, Any]:
     cleaned = _repair_json_payload_text(content.strip())
-    payload = parse_and_check_json_markdown(
-        cleaned,
-        ["title", "image_text", "body", "hashtags"],
-    )
+    try:
+        payload = parse_and_check_json_markdown(
+            cleaned,
+            ["title", "image_text", "body", "hashtags"],
+        )
+    except OutputParserException:
+        payload = parse_json_markdown(cleaned)
+        if not isinstance(payload, dict):
+            raise
+        if "hashtags" not in payload:
+            payload["hashtags"] = _extract_hashtags_from_body(
+                payload.get("body", "")
+            )
     return {
         "title": payload["title"],
         "image_text": payload["image_text"],
-        "body": payload["body"],
+        "body": _strip_trailing_hashtags(payload["body"]),
         "hashtags": _normalize_hashtags(payload["hashtags"]),
     }
 
@@ -391,6 +401,16 @@ def _extract_runtime_signal(runtime_context: str, *, label: str) -> str:
     if match is None:
         return ""
     return match.group(1).strip()
+
+
+def _extract_hashtags_from_body(body: str) -> list[str]:
+    """Extract trailing hashtags from body text when the model embeds them inline."""
+    return re.findall(r"#[^\s#]+", body)
+
+
+def _strip_trailing_hashtags(body: str) -> str:
+    """Remove trailing hashtag block from body text."""
+    return re.sub(r"(\s*#[^\s#]+)+\s*$", "", body).rstrip()
 
 
 def _normalize_hashtags(raw_hashtags: object) -> list[str]:

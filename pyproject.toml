@@ -37,6 +37,9 @@ packages = ["src/ptsm", "src/topic_radar"]
 addopts = "-q"
 testpaths = ["tests"]
 pythonpath = ["src"]
+filterwarnings = [
+    "ignore:Use `streamable_http_client`:DeprecationWarning",
+]
 
 [tool.uv]
 default-groups = ["dev"]
