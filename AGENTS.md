@@ -18,6 +18,7 @@ surfaces, or harness rules:
 4. Create or update a `docs/plans/YYYY-MM-DD-<topic>.md` plan.
 5. Include task-level `verify:` and `done_when:` checks.
 6. Do not implement before the plan and verification path are clear.
+7. After implementation, update the matching source-of-truth docs (see step 7 of development-workflow.md).
 
 This does not apply to small bug fixes, typo fixes, docs-only cleanup, or narrow
 test maintenance. Those should use a smaller workflow when one is defined.
