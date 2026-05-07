@@ -46,7 +46,7 @@ Skill 层负责让运行时按请求范围暴露合适的 builtin skills，而�
 - `sushi_poetry_style` / `xhs_poetry_hashtagging` 只服务 `sushi_poetry_daily_post`
 - `wuxia_commentary_style` / `xhs_wuxia_hashtagging` 只服务 `wuxia_character_post`
 - `ai_tech_style` / `ai_tech_hashtagging` 只服务 `ai_tech_daily_post`
-- `wuxia_commentary_style` / `xhs_wuxia_hashtagging` 只服务 `wuxia_character_post`
+- `daily_english_style` / `daily_english_hashtagging` 只服务 `daily_english_post`
 
 ## Strategy Layer
 

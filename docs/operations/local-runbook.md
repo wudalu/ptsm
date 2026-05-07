@@ -205,12 +205,18 @@ uv run python -m ptsm.bootstrap run-playbook \
   --account-id acct-wuxia-local \
   --playbook-id wuxia_character_post
 
-# AI tech news dry-run (with fresh topic research)
+# AI tech news dry-run
 uv run python -m ptsm.bootstrap run-playbook \
-  --scene "AI付费趋势" \
+  --scene "Google发布Gemini 3模型" \
   --account-id acct-ai-tech-local \
-  --playbook-id ai_tech_daily_post \
-  --fresh-topic-research
+  --playbook-id ai_tech_daily_post
+
+# Daily English dry-run
+uv run python -m ptsm.bootstrap run-playbook \
+  --scene "学一个表示坚持的高级词汇" \
+  --account-id acct-daily-english-local \
+  --playbook-id daily_english_post
+>>>>>>> feat/ai-tech-playbook
 ```
 
 ## Diagnostics
@@ -259,6 +265,27 @@ ptsm accounts
     "publish_mode": "dry-run",
     "cookie_profile_id": "sushi-local-cookie",
     "cookie_path": "cookies/sushi-local.json"
+  },
+  {
+    "account_id": "acct-wuxia-local",
+    "nickname": "武侠人物评述实验号",
+    "platform": "xiaohongshu",
+    "domain": "武侠人物评述",
+    "publish_mode": "dry-run"
+  },
+  {
+    "account_id": "acct-ai-tech-local",
+    "nickname": "AI科技资讯实验号",
+    "platform": "xiaohongshu",
+    "domain": "AI科技资讯",
+    "publish_mode": "dry-run"
+  },
+  {
+    "account_id": "acct-daily-english-local",
+    "nickname": "英语学习日记实验号",
+    "platform": "xiaohongshu",
+    "domain": "每日英语学习",
+    "publish_mode": "dry-run"
   }
 ]
 ```
@@ -269,8 +296,9 @@ ptsm accounts
 |------|------|---------------|------|
 | 发疯文学 | `acct-fk-local` | `cookies/fk-local.json` | 打工人日常、情绪宣泄、自嘲治愈 |
 | 苏轼诗词赏析 | `acct-sushi-local` | `cookies/sushi-local.json` | 诗词赏析、文化体验、生活感悟 |
-| 武侠人物评述 | `acct-wuxia-local` | (未绑定 cookie) | dry-run 仅做内容生成测试 |
-| AI科技资讯 | `acct-ai-tech-local` | (未绑定 cookie) | AI/科技资讯解读，写后有观点有信息 |
+| 武侠人物评述 | `acct-wuxia-local` | (未绑定 cookie) | 金庸古龙人物深度评述 |
+| AI科技资讯 | `acct-ai-tech-local` | (未绑定 cookie) | AI/科技趋势速递与解读 |
+| 每日英语学习 | `acct-daily-english-local` | (未绑定 cookie) | 每日单词学习、陪伴式教育 |
 
 账号定义在 `src/ptsm/accounts/definitions/*.yaml`。新增账号只需加一个 YAML 文件。
 
@@ -327,6 +355,24 @@ uv run python -m ptsm.bootstrap run-playbook \
   --scene "夜里读到《定风波》" \
   --account-id acct-sushi-local \
   --playbook-id sushi_poetry_daily_post
+
+# 武侠人物评述领域
+uv run python -m ptsm.bootstrap run-playbook \
+  --scene "分析令狐冲的自由人格" \
+  --account-id acct-wuxia-local \
+  --playbook-id wuxia_character_post
+
+# AI科技资讯领域
+uv run python -m ptsm.bootstrap run-playbook \
+  --scene "Google发布Gemini 3模型" \
+  --account-id acct-ai-tech-local \
+  --playbook-id ai_tech_daily_post
+
+# 每日英语学习领域
+uv run python -m ptsm.bootstrap run-playbook \
+  --scene "学一个表示坚持的高级词汇" \
+  --account-id acct-daily-english-local \
+  --playbook-id daily_english_post
 ```
 
 账号的 `domain` 决定了自动选哪个 playbook。`publish_mode: dry-run` 默认只生成不发布。改为 `mcp-real` 后走真实发布链路。

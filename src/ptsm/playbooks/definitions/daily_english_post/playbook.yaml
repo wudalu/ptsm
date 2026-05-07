@@ -1,0 +1,14 @@
+playbook_id: daily_english_post
+version: 1
+domain: 每日英语学习
+platforms:
+  - xiaohongshu
+required_skills:
+  - xhs_trend_scan
+  - topic_research
+  - daily_english_style
+  - daily_english_hashtagging
+optional_skills: []
+reflection:
+  must_include_phrase: ""
+  required_hashtag: "#每日英语"
