@@ -7,7 +7,11 @@ source_of_truth: true
 related_paths:
   - src/ptsm
   - src/ptsm/application
+  - src/ptsm/application/services/account_publisher_context.py
+  - src/ptsm/application/services/side_effect_ledger.py
+  - src/ptsm/application/use_cases/harness_evals.py
   - src/ptsm/agent_runtime
+  - src/ptsm/agent_runtime/state.py
   - src/ptsm/infrastructure
   - src/ptsm/interfaces
 ---
@@ -45,6 +49,10 @@ PTSM 当前不是“多领域平台已全部完成”的状态，而是一个已
 - single-case diagnostics such as `diagnose-publish` 同样留在 `application/use_cases`，通过组合 `doctor`、logs 和 artifact readers 来输出归因，而不是把诊断逻辑塞进 publisher 或 CLI。
 - side-effect replay control 也放在 `application/services + application/use_cases`，避免让 `agent_runtime` 直接承担发布副作用策略。
 - provider-backed image generation 也留在 `infrastructure`，由 `application/use_cases/run_playbook.py` 在发布前编排调用，避免把外部 API 协议直接塞进 runtime graph。
+- `ExecutionState` 现在携带 `activated_skill_details` 和 `runtime_skill_details` 两个 observability 字段，记录每个 skill 的元信息（display_name、source_path、resource_type），供 artifact 写入和 harness evals 聚合消费。
+- `application/services/account_publisher_context.py` 提供 `PublisherContext` 解析：按 account cookie profile > settings defaults > CLI overrides 的优先级决定发布服务器、可见性和 cookie 路径。
+- `side_effect_ledger` 现在支持 `scope_id` 参数，通过 `thread_id/scope_id` 组合键实现多维度的副作用去重，而不仅限于 thread 级别。
+- `harness_evals` 新增 `_aggregate_skill_stats`，按 skill 维度聚合 runs/completed/runtime_context_runs/completion_rate，输出到 harness-report 的 `skills` 字段。
 
 ## Current Design Pressure
 

@@ -8,9 +8,11 @@ related_paths:
   - src/ptsm/agent_runtime/runtime.py
   - src/ptsm/agent_runtime/graph
   - src/ptsm/agent_runtime/nodes
+  - src/ptsm/agent_runtime/nodes/planner.py
   - src/ptsm/application/use_cases/run_playbook.py
   - src/ptsm/application/use_cases/runs.py
   - src/ptsm/infrastructure/llm
+  - src/ptsm/infrastructure/llm/factory.py
   - src/ptsm/infrastructure/images
   - src/ptsm/infrastructure/images/watermark_remover.py
   - src/ptsm/infrastructure/memory/checkpoint.py
@@ -40,6 +42,8 @@ related_paths:
 - 显式注入依赖时，运行时仍兼容 `InMemoryExecutionMemory` 和 `InMemorySaver`。
 - 持久 checkpoint 以 `thread_id` 为键保存；复用同一个 `thread_id` 才能跨进程读取同一条执行线程。
 - 当前 side-effect ledger 只复用成功 publish 结果，不缓存失败 publish 或只读状态检查。
+- planner 现在会把每个激活 skill 的元信息（`activated_skill_details`）和 runtime context 元信息（`runtime_skill_details`）注入 state，供 finalize 写入 artifact 和 harness evals 消费。
+- LLM JSON 解析现在对模型把 hashtags 内嵌在 body 中的情况有容错：缺失 `hashtags` key 时从 body 尾部提取并剥离，避免因输出格式微小偏差导致整个 run 失败。
 
 ## Practical Implications
 
