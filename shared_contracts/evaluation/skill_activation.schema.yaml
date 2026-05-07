@@ -1,0 +1,15 @@
+id: skill_activation.v1
+version: 1
+owner: shared skill/runtime
+description: Activated skill and runtime context traceability.
+type: contract
+enforcement: required
+gate_level: required
+
+required_fields:
+  - activated_skills
+  - activated_skill_details
+
+invariants:
+  - all_activated_skills_have_details
+  - runtime_skill_details_match_activated

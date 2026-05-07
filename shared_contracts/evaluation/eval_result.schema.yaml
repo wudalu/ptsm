@@ -1,0 +1,59 @@
+id: eval_result.v1
+version: 1
+owner: shared evaluation
+description: Structured evaluation result from one evaluator on one target.
+type: contract
+enforcement: required
+gate_level: required
+
+fields:
+  eval_result_id:
+    type: string
+    required: true
+  eval_run_id:
+    type: string
+    required: true
+  target_id:
+    type: string
+    required: true
+  evaluator_id:
+    type: string
+    required: true
+  evaluator_version:
+    type: string
+    required: true
+  status:
+    type: string
+    enum: [passed, failed, warning, skipped, error]
+    required: true
+  score:
+    type: float
+    range: [0.0, 1.0]
+    required: false
+  label:
+    type: string
+    required: false
+  reason:
+    type: string
+    required: true
+  evidence:
+    type: list
+    required: false
+    item:
+      type: object
+      fields:
+        path: string
+        value_preview: string
+        observation: string
+  confidence:
+    type: float
+    range: [0.0, 1.0]
+    required: false
+  cost:
+    type: object
+    required: false
+    fields:
+      provider: string
+      model: string
+      input_tokens: integer
+      output_tokens: integer

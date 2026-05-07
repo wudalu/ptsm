@@ -1,0 +1,24 @@
+id: final_content.v1
+version: 1
+owner: shared content
+description: Common title/body/hashtags shape for final content evaluation.
+type: contract
+enforcement: required
+gate_level: required
+
+fields:
+  title:
+    type: string
+    required: true
+    max_length: 30
+  body:
+    type: string
+    required: true
+  image_text:
+    type: string
+    required: false
+  hashtags:
+    type: list
+    required: true
+    min_items: 1
+    max_items: 8

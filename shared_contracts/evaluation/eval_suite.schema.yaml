@@ -1,0 +1,32 @@
+id: eval_suite.v1
+version: 1
+owner: shared evaluation
+description: Binds evaluators to a scope and thresholds.
+type: contract
+enforcement: required
+gate_level: required
+
+fields:
+  suite_id:
+    type: string
+    required: true
+  scope:
+    type: object
+    required: true
+    fields:
+      playbook_id: string
+      platform: string
+      phase: string
+  evaluators:
+    type: list
+    required: true
+    item:
+      type: object
+      fields:
+        evaluator_id: string
+        version: string
+        type: string
+        gate_level: string
+  thresholds:
+    type: object
+    required: false

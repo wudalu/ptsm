@@ -1,0 +1,55 @@
+id: eval_target.v1
+version: 1
+owner: shared evaluation
+description: Normalized view of one thing to score in PTSM evaluation.
+type: contract
+enforcement: required
+gate_level: required
+
+fields:
+  target_id:
+    type: string
+    description: "Unique target identifier, e.g. run_id:phase:name"
+    required: true
+  run_id:
+    type: string
+    required: true
+  artifact_path:
+    type: string
+    required: false
+  playbook_id:
+    type: string
+    required: true
+  account_id:
+    type: string
+    required: true
+  platform:
+    type: string
+    required: false
+  phase:
+    type: string
+    enum: [ingest, planner, executor, reflector, finalize, image, publish, post_publish, final]
+    required: true
+  target_type:
+    type: string
+    enum: [node_output, artifact_slice, event, run_summary]
+    required: true
+  input_ref:
+    type: object
+    required: false
+  output_ref:
+    type: object
+    required: false
+  metadata:
+    type: object
+    required: false
+    fields:
+      skill_names:
+        type: list
+        required: false
+      runtime_context_sources:
+        type: list
+        required: false
+      model_provider:
+        type: string
+        required: false

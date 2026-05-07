@@ -1,0 +1,21 @@
+id: artifact.v1
+version: 1
+owner: shared observability
+description: Persisted artifact completeness and run links.
+type: contract
+enforcement: required
+gate_level: required
+
+required_root_fields:
+  - playbook_id
+  - final_content
+  - activated_skill_details
+  - scene
+  - publish_mode
+
+final_content_required_fields:
+  - title
+  - body
+  - hashtags
+
+run_link_required: true
