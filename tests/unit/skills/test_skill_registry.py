@@ -85,6 +85,31 @@ def test_skill_registry_parses_platform_scoped_xhs_trend_skill() -> None:
     assert spec.assets_present is False
 
 
+def test_registry_discovers_daily_english_skills() -> None:
+    registry = SkillRegistry(
+        skill_root=Path("src/ptsm/skills/builtin"),
+    )
+
+    skill_names = {skill.skill_name for skill in registry.list_skills()}
+    assert "daily_english_style" in skill_names
+    assert "daily_english_hashtagging" in skill_names
+
+
+def test_daily_english_skills_have_correct_tags() -> None:
+    registry = SkillRegistry(
+        skill_root=Path("src/ptsm/skills/builtin"),
+    )
+
+    skills = {skill.skill_name: skill for skill in registry.list_skills()}
+    style = skills["daily_english_style"]
+    assert "每日英语学习" in style.domain_tags
+    assert "xiaohongshu" in style.platform_tags
+
+    hashtagging = skills["daily_english_hashtagging"]
+    assert "每日英语学习" in hashtagging.domain_tags
+    assert "xiaohongshu" in hashtagging.platform_tags
+
+
 def test_skill_registry_discovers_topic_research_skill() -> None:
     registry = SkillRegistry(
         skill_root=Path("src/ptsm/skills/builtin"),

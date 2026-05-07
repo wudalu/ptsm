@@ -23,6 +23,17 @@ def test_account_registry_raises_for_unknown_account() -> None:
         registry.get("missing-acct")
 
 
+def test_account_registry_loads_daily_english_account() -> None:
+    registry = AccountRegistry()
+
+    account = registry.get("acct-daily-english-local")
+
+    assert account.account_id == "acct-daily-english-local"
+    assert account.platform == "xiaohongshu"
+    assert account.domain == "每日英语学习"
+    assert account.nickname == "英语学习日记实验号"
+
+
 def test_account_profile_to_dict_exposes_routing_fields() -> None:
     account = AccountRegistry().get("acct-fk-local")
 

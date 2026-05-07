@@ -2,7 +2,7 @@
 title: PTSM Playbooks
 status: active
 owner: ptsm
-last_verified: 2026-05-06
+last_verified: 2026-05-07
 source_of_truth: true
 related_paths:
   - src/ptsm/playbooks/registry.py
@@ -18,8 +18,10 @@ Playbook 是 PTSM 的业务编排单元。它把领域、平台、技能需求�
 
 ## Current State
 
-- 当前仓库里已经有两个真实 playbook：`fengkuang_daily_post` 和 `sushi_poetry_daily_post`。
-- `wuxia_character_post` 是第三个 playbook，专门输出长篇武侠人物评述（800-1500字），用当代流行文化视角解读金庸古龙人物。默认绑定 `acct-wuxia-local`。
+- 当前仓库里有四个真实 playbook：`fengkuang_daily_post`、`sushi_poetry_daily_post`、`wuxia_character_post`、`ai_tech_daily_post`。
+- `wuxia_character_post` 专门输出长篇武侠人物评述（800-1500字），用当代流行文化视角解读金庸古龙人物。默认绑定 `acct-wuxia-local`。
+- `ai_tech_daily_post` 专门输出 AI/科技资讯速递，结构化拆解科技进展。默认绑定 `acct-ai-tech-local`。
+- `daily_english_post` 是第五个 playbook，每日英语单词学习内容，陪伴式教育风格。默认绑定 `acct-daily-english-local`。
 - `PlaybookRegistry` 支持列出定义、按 id 查询，以及按账号选择。
 - `PlaybookLoader` 负责把 markdown 资产读出来供运行时使用，包括 planner、persona 和 reflection 三类文本输入。
 
@@ -44,7 +46,7 @@ Playbook 是 PTSM 的业务编排单元。它把领域、平台、技能需求�
 
 - 账号注册表提供 `account_id -> domain/platform` 基础映射。
 - 请求可以显式指定 `playbook_id`，否则按账号域和平台做默认选择。
-- `acct-fk-local` 默认落到 `fengkuang_daily_post`，`acct-sushi-local` 默认落到 `sushi_poetry_daily_post`。
+- `acct-fk-local` 默认落到 `fengkuang_daily_post`，`acct-sushi-local` 默认落到 `sushi_poetry_daily_post`，`acct-daily-english-local` 默认落到 `daily_english_post`。
 - 兼容入口 `run-fengkuang` 仍保留，但多 playbook 场景优先使用通用 `run-playbook`。
 
 ## Related Files

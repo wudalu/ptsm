@@ -89,3 +89,27 @@ def test_registry_selects_wuxia_by_account() -> None:
     playbook = registry.select_for_account(account=account)
 
     assert playbook.playbook_id == "wuxia_character_post"
+
+
+def test_registry_loads_daily_english_playbook() -> None:
+    registry = PlaybookRegistry(
+        playbook_root=Path("src/ptsm/playbooks/definitions"),
+    )
+
+    playbook = registry.get("daily_english_post")
+
+    assert playbook.domain == "每日英语学习"
+    assert "xiaohongshu" in playbook.platforms
+    assert "daily_english_style" in playbook.required_skills
+    assert "daily_english_hashtagging" in playbook.required_skills
+
+
+def test_registry_selects_daily_english_by_account() -> None:
+    registry = PlaybookRegistry(
+        playbook_root=Path("src/ptsm/playbooks/definitions"),
+    )
+    account = AccountRegistry().get("acct-daily-english-local")
+
+    playbook = registry.select_for_account(account=account)
+
+    assert playbook.playbook_id == "daily_english_post"
