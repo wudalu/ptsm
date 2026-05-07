@@ -204,6 +204,13 @@ uv run python -m ptsm.bootstrap run-playbook \
   --scene "分析令狐冲的自由人格与当代职场人不愿被体制化" \
   --account-id acct-wuxia-local \
   --playbook-id wuxia_character_post
+
+# AI tech news dry-run (with fresh topic research)
+uv run python -m ptsm.bootstrap run-playbook \
+  --scene "AI付费趋势" \
+  --account-id acct-ai-tech-local \
+  --playbook-id ai_tech_daily_post \
+  --fresh-topic-research
 ```
 
 ## Diagnostics
@@ -263,6 +270,7 @@ ptsm accounts
 | 发疯文学 | `acct-fk-local` | `cookies/fk-local.json` | 打工人日常、情绪宣泄、自嘲治愈 |
 | 苏轼诗词赏析 | `acct-sushi-local` | `cookies/sushi-local.json` | 诗词赏析、文化体验、生活感悟 |
 | 武侠人物评述 | `acct-wuxia-local` | (未绑定 cookie) | dry-run 仅做内容生成测试 |
+| AI科技资讯 | `acct-ai-tech-local` | (未绑定 cookie) | AI/科技资讯解读，写后有观点有信息 |
 
 账号定义在 `src/ptsm/accounts/definitions/*.yaml`。新增账号只需加一个 YAML 文件。
 
