@@ -2,7 +2,7 @@
 title: PTSM Architecture
 status: active
 owner: ptsm
-last_verified: 2026-05-05
+last_verified: 2026-05-07
 source_of_truth: true
 related_paths:
   - src/ptsm
@@ -18,7 +18,7 @@ related_paths:
 
 # Architecture
 
-PTSM 当前不是“多领域平台已全部完成”的状态，而是一个已经跑通的 `fengkuang -> xiaohongshu` 单纵切 MVP，上面正在抽象通用平台能力。
+PTSM 当前已支持五个垂直领域（发疯文学、苏轼诗词赏析、武侠人物评述、AI科技资讯、每日英语学习），通过 playbook + skill + account 注册表实现多领域并行运营。
 
 ## Package Boundaries
 
@@ -41,7 +41,7 @@ PTSM 当前不是“多领域平台已全部完成”的状态，而是一个已
 
 - CLI 和 bootstrap 已是稳定入口。
 - 发布链路当前以小红书为主，支持 dry-run 和 MCP 实发。
-- 平台抽象正在形成，但第二垂直领域和持久化 memory 仍未完成。
+- 平台抽象正在形成，已支持五个垂直领域的 playbook 注册和账号矩阵管理。
 - playbook 目录现在不仅承载 planner / reflection，还可以承载 persona 这类账号口吻资产；`agent_runtime` 负责把这些资产作为显式状态传给 drafting backend，而不是把风格写死在 agent 类里。
 - 运行时还会把 `xhs_trend_scan` 这类 research skill 的动态结果单独放进 `runtime_skill_contents`，与静态 `SKILL.md` 文本分离，避免 prompt 组装时丢失实时上下文边界。
 - reporting / eval / inspection surface 优先放在 `application/use_cases` 上，并复用本地 artifact stores，而不是引入独立服务层。
