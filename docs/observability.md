@@ -2,11 +2,13 @@
 title: PTSM Observability
 status: active
 owner: ptsm
-last_verified: 2026-05-06
+last_verified: 2026-05-07
 source_of_truth: true
 related_paths:
   - src/ptsm/infrastructure/observability/run_store.py
+  - src/ptsm/infrastructure/evaluations/eval_store.py
   - src/ptsm/application/use_cases/diagnose_publish.py
+  - src/ptsm/application/use_cases/eval_artifact.py
   - src/ptsm/application/use_cases/logs.py
   - src/ptsm/application/use_cases/run_events.py
   - src/ptsm/application/use_cases/runs.py
@@ -17,6 +19,7 @@ related_paths:
   - outputs/generated_images
   - .ptsm/runs
   - .ptsm/plan_runs
+  - .ptsm/evals
 ---
 
 # Observability
@@ -31,6 +34,8 @@ PTSM 当前的观测性核心是本地文件系统里的 run store 和 artifacts
 - `.ptsm/plan_runs/<run_id>.evidence.json`
 - `outputs/artifacts/*.json`
 - `outputs/generated_images/*`
+- `.ptsm/evals/<eval_run_id>/summary.json`
+- `.ptsm/evals/<eval_run_id>/results.jsonl`
 
 ## Current Capabilities
 
@@ -54,6 +59,10 @@ PTSM 当前的观测性核心是本地文件系统里的 run store 和 artifacts
 - `ptsm harness-report` 会把 `doctor`、`gc` 和 `harness-evals` 合成一个本地快照，并支持对 stale docs、gc candidate、run completion rate、plan-run completion rate 做 threshold 检查。
 - `ptsm diagnose-publish` 会把 `doctor`、run logs、artifact metadata 和 `xhs-check-publish` 的结果组合成一次只读诊断，给出 `likely_cause`、`evidence` 和 `next_actions`。
 - real publish 或显式 `--auto-generate-image` 运行现在会把 `image_generation` metadata 落进 artifact，包含 provider、model、prompt、source_url、`generated_image_paths`，以及从 `runtime_skill_contents` 提炼出的 `runtime_context_summary`；当前 provider 可为 `jimeng` 或 `bailian`。
+- `ptsm eval-artifact --artifact <path>` 对单个 artifact 运行所有确定性 rule/contract evaluator，将结构化 EvalResult 写入 `.ptsm/evals/<eval_run_id>/results.jsonl`，并返回 eval run summary（status、counts、gate）。
+- `EvalStore` 持久化 eval runs：`.ptsm/evals/<eval_run_id>/summary.json` + `results.jsonl`，支持 `list_eval_runs()` 和 `read_results()` 查询。
+- `harness-evals` 现在聚合并报告 eval results：eval run 总数、按 status 和 suite 分布、按 passed/failed/warnings/errors 汇总。
+- `harness-report` 支持 `max_required_eval_failures` 阈值检查，可在 CI 或本地 gate 中对确定性 evaluator 失败做门槛控制。
 
 ## Current Limits
 

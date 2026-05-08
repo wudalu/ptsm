@@ -2,7 +2,7 @@
 title: Harness Engineering In PTSM
 status: active
 owner: ptsm
-last_verified: 2026-05-06
+last_verified: 2026-05-07
 source_of_truth: true
 related_paths:
   - README.md
@@ -11,6 +11,7 @@ related_paths:
   - docs/plans/2026-04-20-docs-sync-gate.md
   - docs/plans/2026-04-20-harness-enforcement.md
   - src/ptsm/application/use_cases/docs_sync.py
+  - src/ptsm/application/use_cases/eval_artifact.py
   - src/ptsm/application/use_cases/harness_check.py
   - src/ptsm/application/use_cases/install_git_hooks.py
 ---
@@ -52,6 +53,9 @@ repository.
 - a publish diagnostic surface that classifies likely failure causes and returns next actions for a single publish attempt
 - side-effect ledger for safe publish replay on the same `thread_id`
 - provider-backed image generation that can fill missing publish images and persist evidence into artifacts
+- a local-first evaluation system with rule evaluators, contract evaluators, and structured eval results stored under `.ptsm/evals`
+- `eval-artifact` CLI command to run deterministic evaluators against any PTSM artifact
+- eval result aggregation in `harness-evals` and `harness-report` with configurable failure thresholds
 
 ## What We Should Build Next
 

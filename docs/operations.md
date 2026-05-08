@@ -12,6 +12,7 @@ related_paths:
   - src/ptsm/interfaces/cli/main.py
   - src/ptsm/application/use_cases/run_playbook.py
   - src/ptsm/application/use_cases/docs_sync.py
+  - src/ptsm/application/use_cases/eval_artifact.py
   - src/ptsm/application/use_cases/harness_check.py
   - src/ptsm/application/use_cases/install_git_hooks.py
   - .github/workflows/harness.yml
@@ -44,6 +45,7 @@ related_paths:
 - `uv run python -m ptsm.bootstrap harness-evals --platform xiaohongshu --playbook-id fengkuang_daily_post`
 - `uv run python -m ptsm.bootstrap harness-report --platform xiaohongshu --playbook-id fengkuang_daily_post --max-stale-docs 0 --min-run-completion-rate 0.8`
 - `uv run python -m ptsm.bootstrap harness-report --fail-on-warning`
+- `uv run python -m ptsm.bootstrap eval-artifact --artifact outputs/artifacts/<artifact>.json`
 - `uv run python -m ptsm.bootstrap diagnose-publish --artifact outputs/artifacts/<artifact>.json`
 - `uv run python -m ptsm.bootstrap diagnose-publish --run-id <run_id>`
 - `uv run python -m ptsm.bootstrap logs --run-id <run_id>`
