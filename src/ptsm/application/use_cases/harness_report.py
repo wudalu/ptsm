@@ -30,6 +30,7 @@ def run_harness_report(
     max_gc_candidates: int | None = None,
     min_run_completion_rate: float | None = None,
     min_plan_completion_rate: float | None = None,
+    max_required_eval_failures: int | None = None,
 ) -> dict[str, object]:
     current_time = now or datetime.now(timezone.utc)
     root = Path(project_root)
@@ -55,6 +56,7 @@ def run_harness_report(
         plan_path=plan_path,
         runs_base_dir=root / ".ptsm" / "runs",
         plan_runs_base_dir=root / ".ptsm" / "plan_runs",
+        evals_base_dir=root / ".ptsm" / "evals",
     )
     thresholds = _evaluate_thresholds(
         doctor=doctor,
@@ -64,6 +66,7 @@ def run_harness_report(
         max_gc_candidates=max_gc_candidates,
         min_run_completion_rate=min_run_completion_rate,
         min_plan_completion_rate=min_plan_completion_rate,
+        max_required_eval_failures=max_required_eval_failures,
     )
 
     return {
@@ -95,6 +98,7 @@ def _evaluate_thresholds(
     max_gc_candidates: int | None,
     min_run_completion_rate: float | None,
     min_plan_completion_rate: float | None,
+    max_required_eval_failures: int | None = None,
 ) -> dict[str, object]:
     configured: dict[str, int | float] = {}
     violations: list[dict[str, object]] = []
@@ -144,6 +148,20 @@ def _evaluate_thresholds(
                     "name": "min_plan_completion_rate",
                     "actual": plan_completion_rate,
                     "expected": f">= {min_plan_completion_rate}",
+                }
+            )
+
+    eval_failures = int(
+        evals.get("evals", {}).get("results", {}).get("total_failed", 0)
+    )
+    if max_required_eval_failures is not None:
+        configured["max_required_eval_failures"] = max_required_eval_failures
+        if eval_failures > max_required_eval_failures:
+            violations.append(
+                {
+                    "name": "max_required_eval_failures",
+                    "actual": eval_failures,
+                    "expected": f"<= {max_required_eval_failures}",
                 }
             )
 

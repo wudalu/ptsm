@@ -15,6 +15,7 @@ def run_harness_evals(
     plan_path: str | None = None,
     runs_base_dir: Path | str = ".ptsm/runs",
     plan_runs_base_dir: Path | str = ".ptsm/plan_runs",
+    evals_base_dir: Path | str = ".ptsm/evals",
     recent_failure_limit: int = 10,
 ) -> dict[str, object]:
     store = RunStore(base_dir=runs_base_dir)
@@ -49,6 +50,7 @@ def run_harness_evals(
         if reason
     )
     skill_stats = _aggregate_skill_stats(runs)
+    eval_stats = _aggregate_eval_results(evals_base_dir=evals_base_dir)
 
     return {
         "filters": {
@@ -85,6 +87,7 @@ def run_harness_evals(
             plan_runs=plan_runs,
             limit=recent_failure_limit,
         ),
+        "evals": eval_stats,
     }
 
 
@@ -179,3 +182,39 @@ def _string_or_unknown(value: object) -> str:
     if value in {None, ""}:
         return "unknown"
     return str(value)
+
+
+def _aggregate_eval_results(
+    evals_base_dir: Path | str = ".ptsm/evals",
+) -> dict[str, object]:
+    from ptsm.infrastructure.evaluations.eval_store import EvalStore
+
+    store = EvalStore(base_dir=evals_base_dir)
+    eval_runs = store.list_eval_runs(limit=None)
+
+    statuses = Counter(str(r.get("status", "unknown")) for r in eval_runs)
+    suite_ids = Counter(str(r.get("suite_id", "unknown")) for r in eval_runs)
+
+    total_passed = 0
+    total_failed = 0
+    total_warnings = 0
+    total_errors = 0
+    for r in eval_runs:
+        counts = r.get("counts", {})
+        if isinstance(counts, dict):
+            total_passed += int(counts.get("passed", 0))
+            total_failed += int(counts.get("failed", 0))
+            total_warnings += int(counts.get("warnings", 0))
+            total_errors += int(counts.get("errors", 0))
+
+    return {
+        "eval_runs_total": len(eval_runs),
+        "by_status": dict(statuses),
+        "by_suite": dict(suite_ids),
+        "results": {
+            "total_passed": total_passed,
+            "total_failed": total_failed,
+            "total_warnings": total_warnings,
+            "total_errors": total_errors,
+        },
+    }
