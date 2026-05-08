@@ -10,6 +10,7 @@ import uuid
 from ptsm.application.models import FengkuangRequest, PlaybookRequest
 from ptsm.application.use_cases.diagnose_publish import run_diagnose_publish
 from ptsm.application.use_cases.doctor import run_doctor
+from ptsm.application.use_cases.eval_artifact import run_eval_artifact
 from ptsm.accounts.registry import AccountRegistry
 from ptsm.application.use_cases.docs_sync import run_docs_sync
 from ptsm.application.use_cases.harness_check import run_harness_check
@@ -216,6 +217,9 @@ def build_parser() -> argparse.ArgumentParser:
     xhs_check_publish = subparsers.add_parser("xhs-check-publish")
     xhs_check_publish.add_argument("--artifact", type=Path, required=True)
     xhs_check_publish.add_argument("--server-url")
+
+    eval_artifact_parser = subparsers.add_parser("eval-artifact")
+    eval_artifact_parser.add_argument("--artifact", type=Path, required=True)
 
     diagnose_publish = subparsers.add_parser("diagnose-publish")
     diagnose_publish.add_argument("--artifact", type=Path)
@@ -523,6 +527,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             artifact_path=args.artifact,
             settings=build_login_settings(server_url=args.server_url),
         )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "eval-artifact":
+        result = run_eval_artifact(artifact_path=args.artifact)
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
 
