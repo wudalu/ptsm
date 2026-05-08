@@ -1,0 +1,52 @@
+version: 1
+suite_id: fengkuang_daily_post.default
+uses:
+  final_content: final_content.v1
+  artifact: artifact.v1
+  skill_activation: skill_activation.v1
+
+node_contracts:
+  planner:
+    output_contract: skill_activation.v1
+    required_fields:
+      - selected_playbook
+      - activated_skills
+      - activated_skill_details
+      - planner_prompt
+      - persona_prompt
+    required_skills:
+      from_playbook: true
+    runtime_context:
+      allowed_missing:
+        - xhs_trend_scan
+      required_traceability: true
+
+  executor:
+    output_schema: final_content.v1
+    required_fields:
+      - title
+      - body
+      - image_text
+      - hashtags
+    constraints:
+      title_max_chars: 30
+      hashtags_min_count: 1
+      hashtags_max_count: 8
+      body_must_include_scene_signal: true
+
+  reflector:
+    allowed_decisions:
+      - retry
+      - finalize
+      - fail
+    invariants:
+      - retry_requires_feedback
+      - finalize_requires_passing_required_rules
+
+  finalize:
+    artifact_schema: artifact.v1
+    required_fields:
+      - playbook_id
+      - final_content
+      - activated_skill_details
+      - runtime_skill_details
