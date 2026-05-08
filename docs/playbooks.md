@@ -8,6 +8,7 @@ related_paths:
   - src/ptsm/playbooks/registry.py
   - src/ptsm/playbooks/loader.py
   - src/ptsm/playbooks/definitions
+  - src/ptsm/evaluations/playbook_contracts.py
   - src/ptsm/accounts/registry.py
   - src/ptsm/accounts/definitions
 ---
@@ -34,11 +35,16 @@ Playbook 是 PTSM 的业务编排单元。它把领域、平台、技能需求�
 - `persona.md`
 - `reflection.md`
 
+可选:
+
+- `evaluation.yaml` — 播放本地 evaluation contract 绑定，定义每个 phase 的 node contracts、约束和 invariant
+
 其中：
 
 - `planner.md` 定义任务目标和输出约束
 - `persona.md` 定义这个领域账号该像什么样的人在发帖
 - `reflection.md` 定义 revise / finalize 阶段的检查标准
+- `evaluation.yaml` 引用 shared contract ID 并对每个 node 补充业务约束
 
 当前定义目录位于 [`src/ptsm/playbooks/definitions/`](../src/ptsm/playbooks/definitions/)。
 

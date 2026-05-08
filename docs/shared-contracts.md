@@ -6,6 +6,7 @@ last_verified: 2026-04-17
 source_of_truth: true
 related_paths:
   - shared_contracts/README.md
+  - shared_contracts/evaluation
   - shared_contracts/planning
   - shared_contracts/playbook_policies
   - shared_contracts/skill_manifest.template.yaml
@@ -35,5 +36,14 @@ related_paths:
 ## Skill Metadata Template
 
 - [`shared_contracts/skill_manifest.template.yaml`](../shared_contracts/skill_manifest.template.yaml)
+
+## Evaluation Contracts
+
+- eval_target: [`shared_contracts/evaluation/eval_target.schema.yaml`](../shared_contracts/evaluation/eval_target.schema.yaml)
+- eval_result: [`shared_contracts/evaluation/eval_result.schema.yaml`](../shared_contracts/evaluation/eval_result.schema.yaml)
+- eval_suite: [`shared_contracts/evaluation/eval_suite.schema.yaml`](../shared_contracts/evaluation/eval_suite.schema.yaml)
+- artifact: [`shared_contracts/evaluation/artifact.schema.yaml`](../shared_contracts/evaluation/artifact.schema.yaml)
+- final_content: [`shared_contracts/evaluation/final_content.schema.yaml`](../shared_contracts/evaluation/final_content.schema.yaml)
+- skill_activation: [`shared_contracts/evaluation/skill_activation.schema.yaml`](../shared_contracts/evaluation/skill_activation.schema.yaml)
 
 这些文件更适合被当成未来平台化扩展的模板，而不是当前 loader 已经消费的事实来源。

@@ -12,7 +12,9 @@ related_paths:
   - src/ptsm/application/use_cases/harness_evals.py
   - src/ptsm/agent_runtime
   - src/ptsm/agent_runtime/state.py
+  - src/ptsm/evaluations
   - src/ptsm/infrastructure
+  - src/ptsm/infrastructure/evaluations
   - src/ptsm/interfaces
 ---
 
@@ -36,6 +38,10 @@ PTSM 当前已支持五个垂直领域（发疯文学、苏轼诗词赏析、武
   artifacts、observability、publishers、LLM backend、image backend、memory 等适配层。
 - `src/ptsm/accounts/`
   本地账号定义和注册表。
+- `src/ptsm/evaluations/`
+  evaluation 领域层：EvalTarget 提取、rule/contract evaluator、播放本地 evaluation contract 加载。
+- `src/ptsm/infrastructure/evaluations/`
+  eval run 和 eval result 的文件存储（EvalStore）。
 
 ## Stable Architectural Facts
 
