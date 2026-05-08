@@ -34,9 +34,7 @@ def extract_targets_from_artifact(
                 target_type="node_output",
                 output_ref={
                     "activated_skills": artifact.get("activated_skills"),
-                    "activated_skill_details_count": len(
-                        artifact.get("activated_skill_details", [])
-                    ),
+                    "activated_skill_details": artifact.get("activated_skill_details", []),
                 },
                 metadata={
                     "skill_names": skill_names,

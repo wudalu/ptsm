@@ -114,15 +114,25 @@ def _tail(text: str, *, lines: int = 40) -> list[str]:
 
 def _local_harness_gate_failed(harness_report: dict[str, object]) -> bool:
     doctor = harness_report.get("doctor")
-    if not isinstance(doctor, dict):
-        return False
-    checks = doctor.get("checks")
-    if not isinstance(checks, list):
-        return False
-    for check in checks:
-        if not isinstance(check, dict):
-            continue
-        if check.get("name") != "harness_docs_freshness":
-            continue
-        return check.get("status") != "ok"
+    if isinstance(doctor, dict):
+        checks = doctor.get("checks")
+        if isinstance(checks, list):
+            for check in checks:
+                if not isinstance(check, dict):
+                    continue
+                if check.get("name") != "harness_docs_freshness":
+                    continue
+                if check.get("status") != "ok":
+                    return True
+
+    evals = harness_report.get("evals", {})
+    if isinstance(evals, dict):
+        eval_results = evals.get("evals", {})
+        if isinstance(eval_results, dict):
+            required_failed = int(
+                eval_results.get("results", {}).get("total_failed", 0)
+            )
+            if required_failed > 0:
+                return True
+
     return False

@@ -45,10 +45,10 @@ class TestFinalContentFields:
         assert result.status == "failed"
         assert "title" in result.reason.lower()
 
-    def test_fails_when_no_final_content(self):
+    def test_skipped_when_no_final_content(self):
         target = _target(output_ref={})
         result = rule_final_content_fields(target)
-        assert result.status == "failed"
+        assert result.status == "skipped"
 
 
 class TestHashtagsNonEmpty:

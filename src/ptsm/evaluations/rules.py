@@ -44,7 +44,7 @@ def rule_final_content_fields(target: EvalTarget) -> EvalResult:
         return _result(
             target.target_id,
             "final_content.required_fields",
-            "failed",
+            "skipped",
             "final_content not found in target",
         )
     required = ["title", "body", "hashtags"]

@@ -359,6 +359,12 @@ def run_playbook(
             "runtime_skill_details": list(result.get("runtime_skill_details") or []),
         },
     )
+
+    eval_result = _run_eval_on_artifact(
+        artifact_path=result.get("artifact_path"),
+        run_id=run.run_id,
+    )
+
     return {
         **result,
         "account": account.to_dict(),
@@ -368,6 +374,7 @@ def run_playbook(
         "watermark_removal": watermark_removal,
         "post_publish_checks": post_publish_checks,
         "run": run_summary,
+        "eval": eval_result,
     }
 
 
@@ -579,3 +586,21 @@ def _should_record_publish_result(result: dict[str, Any] | None) -> bool:
     if not isinstance(result, dict):
         return False
     return result.get("status") not in {"error", "login_required", None}
+
+
+def _run_eval_on_artifact(
+    *,
+    artifact_path: str | None,
+    run_id: str,
+) -> dict[str, Any] | None:
+    if artifact_path is None:
+        return None
+    try:
+        from ptsm.application.use_cases.eval_artifact import run_eval_artifact
+
+        return run_eval_artifact(
+            artifact_path=artifact_path,
+            run_id=run_id,
+        )
+    except Exception:
+        return {"status": "error", "reason": "eval step raised exception"}

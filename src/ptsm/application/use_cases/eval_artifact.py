@@ -20,18 +20,32 @@ from ptsm.evaluations.contracts_eval import (
 from ptsm.infrastructure.evaluations.eval_store import EvalStore
 
 
-RULE_EVALUATOR_FNS = [
-    rule_final_content_fields,
-    rule_hashtags_non_empty,
-    rule_hashtags_bounded,
-    rule_publish_mode_valid,
-    rule_no_real_publish_in_dry_run,
-]
+from ptsm.evaluations.rules import ALL_RULE_EVALUATORS
+from ptsm.evaluations.contracts_eval import ALL_CONTRACT_EVALUATORS
 
-CONTRACT_EVALUATOR_FNS = [
-    contract_artifact_root_fields,
-    contract_skill_details_match,
-]
+
+RULE_EVALUATOR_FNS = {
+    "final_content.required_fields": rule_final_content_fields,
+    "hashtags.non_empty": rule_hashtags_non_empty,
+    "hashtags.bounded": rule_hashtags_bounded,
+    "publish_mode.valid": rule_publish_mode_valid,
+    "publish.dry_run_safety": rule_no_real_publish_in_dry_run,
+}
+
+CONTRACT_EVALUATOR_FNS = {
+    "artifact.root_fields": contract_artifact_root_fields,
+    "skill_activation.details_match": contract_skill_details_match,
+}
+
+
+def _evaluator_applies(evaluator_id: str, specs: list, target_phase: str) -> bool:
+    for spec in specs:
+        if spec.evaluator_id == evaluator_id:
+            phases = spec.applies_to.get("phases", [])
+            if not phases:
+                return True
+            return target_phase in phases
+    return True  # if no spec found, run it anyway
 
 
 def run_eval_artifact(
@@ -61,14 +75,19 @@ def run_eval_artifact(
     )
 
     all_results: list[EvalResult] = []
+    all_specs = list(ALL_RULE_EVALUATORS) + list(ALL_CONTRACT_EVALUATORS)
     for target in targets:
-        for fn in RULE_EVALUATOR_FNS:
+        for evaluator_id, fn in RULE_EVALUATOR_FNS.items():
+            if not _evaluator_applies(evaluator_id, all_specs, target.phase):
+                continue
             result = fn(target)
             result.eval_run_id = handle.eval_run_id
             all_results.append(result)
             store.append_result(handle.eval_run_id, result)
 
-        for fn in CONTRACT_EVALUATOR_FNS:
+        for evaluator_id, fn in CONTRACT_EVALUATOR_FNS.items():
+            if not _evaluator_applies(evaluator_id, all_specs, target.phase):
+                continue
             result = fn(target)
             result.eval_run_id = handle.eval_run_id
             all_results.append(result)
