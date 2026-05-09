@@ -2,7 +2,7 @@
 title: PTSM Development Workflow
 status: active
 owner: ptsm
-last_verified: 2026-05-03
+last_verified: 2026-05-09
 source_of_truth: true
 related_paths:
   - AGENTS.md
@@ -32,18 +32,52 @@ Major development starts from the repository's current source-of-truth docs and
 ends with machine-checkable evidence. Do not rely on memory, informal notes, or
 "remember to run this" instructions.
 
+All major development MUST use an isolated git worktree:
+
+- create a feature branch from `main`
+- create a worktree (e.g. `.worktrees/<feature-name>`) on that branch
+- develop and run all tests inside the worktree
+- merge back to `main` only after harness-check passes inside the worktree
+
+This keeps `main` clean and avoids polluting the primary workspace with
+in-progress changes.
+
 The expected path is:
 
-1. read the current docs
-2. clarify the user need
-3. write the design or implementation plan
-4. define verification before implementation
-5. implement in small tasks
-6. run task-level and end-to-end verification
-7. update source-of-truth docs
-8. run the harness gate
+1. create branch + worktree from `main`
+2. read the current docs
+3. clarify the user need
+4. write the design or implementation plan
+5. define verification before implementation
+6. implement in small tasks
+7. run task-level and end-to-end verification
+8. update source-of-truth docs
+9. run the harness gate
+10. merge back to `main` and clean up worktree
 
-## 1. Read Current Docs First
+## 1. Create Branch + Worktree
+
+```bash
+# Create feature branch from main in an isolated worktree
+git worktree add .worktrees/<feature-name> -b feat/<feature-name> main
+cd .worktrees/<feature-name>
+
+# Verify clean baseline
+uv sync
+uv run pytest -q --ignore=tests/e2e
+```
+
+Worktree directory is gitignored (`.worktrees/` in `.gitignore`). After merge:
+
+```bash
+cd /path/to/main/repo
+git checkout main
+git merge feat/<feature-name>
+git worktree remove .worktrees/<feature-name>
+git branch -d feat/<feature-name>
+```
+
+## 2. Read Current Docs First
 
 Start at [`docs/index.md`](index.md), then read the most specific active docs for
 the change:
@@ -59,7 +93,7 @@ the change:
 Historical plans in [`docs/plans/`](plans/) are useful context, but they are not
 current truth when they conflict with code or active docs.
 
-## 2. Clarify The User Need
+## 3. Clarify The User Need
 
 Before writing a plan, reduce the request to:
 
@@ -73,7 +107,7 @@ If the request touches external side effects such as real publishing, make the
 safe path explicit: dry-run first, real publish only with intentional visibility
 and verification choices.
 
-## 3. Write The Plan
+## 4. Write The Plan
 
 Major work should have a plan under `docs/plans/YYYY-MM-DD-<topic>.md`.
 
@@ -90,7 +124,7 @@ Use the current plan style:
 For new domains, prefer additive files over runtime edits. If an existing file
 must change, make it an extension point rather than a domain-specific branch.
 
-## 4. Define Verification Before Implementation
+## 5. Define Verification Before Implementation
 
 Each task should say how it will be checked before the implementation starts.
 
@@ -113,7 +147,7 @@ Task-specific smoke checks are required for runtime-visible behavior. Examples:
 Browser-opening commands and real external writes should stay manual or
 conditional unless the task explicitly requires them.
 
-## 5. Implement In Small Tasks
+## 6. Implement In Small Tasks
 
 Work task by task. A task should be small enough that its verification can run
 immediately after the change.
@@ -130,7 +164,7 @@ Expected loop:
 Do not mark a task complete because the code "looks right". Completion requires
 the planned checks to pass, or a clear explanation of why a check could not run.
 
-## 6. End-To-End Validation
+## 7. End-To-End Validation
 
 Every major change needs one final validation path that crosses the real user or
 operator surface.
@@ -147,7 +181,7 @@ For real Xiaohongshu publishing, follow
 [`docs/operations/local-runbook.md`](operations/local-runbook.md): preflight,
 dry-run, private or public publish path, then publish verification.
 
-## 7. Keep Docs In Sync
+## 8. Keep Docs In Sync
 
 When code changes affect a source-of-truth area, update the matching active doc
 in the same change. `docs-sync` uses `related_paths` to enforce this for
@@ -165,7 +199,7 @@ Common mappings:
 When touching an active source-of-truth doc, update `last_verified` if the change
 also revalidates the doc's claims.
 
-## 8. Final Handoff
+## 9. Final Handoff
 
 A major development handoff should include:
 

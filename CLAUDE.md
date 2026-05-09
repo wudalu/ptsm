@@ -66,7 +66,8 @@ Start at `docs/index.md` — the agent-readable docs map. Key docs: `architectur
 
 ### Harness engineering conventions
 
-- **NEVER skip the development workflow.** 任何新增功能、重构、架构变更，必须严格遵循 `docs/development-workflow.md` 的 8 步流程：读 docs → 澄清需求 → 写计划 → 定义验证 → 小任务实现 → 端到端验证 → 同步 docs → 跑 harness gate。不允许跳过任何步骤，不允许"先写代码再补计划"。即使看起来"很简单"的改动，也要先读相关 docs 再动手。
+- **大型开发必须用 worktree。** 新增功能、重构、架构变更必须从 `main` 打分支，在 `.worktrees/` 下开隔离工作目录，所有开发和测试在 worktree 内完成，`harness-check` 通过后再合并回 `main`。不允许直接在 `main` 上开发。
+- **NEVER skip the development workflow.** 任何新增功能、重构、架构变更，必须严格遵循 `docs/development-workflow.md` 的流程：创建 worktree → 读 docs → 澄清需求 → 写计划 → 定义验证 → 小任务实现 → 端到端验证 → 同步 docs → 跑 harness gate → 合并回 main。不允许跳过任何步骤，不允许"先写代码再补计划"。即使看起来"很简单"的改动，也要先读相关 docs 再动手。
 - **先读 docs/ 再写代码。** 每次开发前，先查阅 `docs/index.md` 找到相关文档，了解当前架构、运行时、playbook/skill 结构和操作规范。`docs-sync` gate 会强制要求代码变更伴随文档更新。
 - **开发完成后必须更新文档。** 代码变更后，同步更新对应的 source-of-truth docs（如 `docs/architecture.md`、`docs/runtime.md`、`docs/harness-engineering.md` 等），并更新文档中的 `last_verified` 日期。
 - **大型新增开发先走 workflow。** 新增功能、新增领域、新增 runtime skill、新增发布链路、观测面或 harness 规则时，先读 `docs/development-workflow.md`，再写 `docs/plans/YYYY-MM-DD-<topic>.md`，并在计划里定义 `verify:` / `done_when:`。
