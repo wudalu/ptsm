@@ -51,6 +51,7 @@ def run_playbook(
     run_store: RunStore | None = None,
     side_effect_ledger: SideEffectLedger | None = None,
     command_name: str = "run-playbook",
+    eval_enabled: bool = True,
 ) -> dict[str, Any]:
     """Execute the selected playbook workflow and prepare a publish receipt."""
 
@@ -360,10 +361,12 @@ def run_playbook(
         },
     )
 
-    eval_result = _run_eval_on_artifact(
-        artifact_path=result.get("artifact_path"),
-        run_id=run.run_id,
-    )
+    eval_result = None
+    if eval_enabled:
+        eval_result = _run_eval_on_artifact(
+            artifact_path=result.get("artifact_path"),
+            run_id=run.run_id,
+        )
 
     return {
         **result,
@@ -389,6 +392,7 @@ def run_fengkuang_playbook(
     publisher: Publisher | None = None,
     run_store: RunStore | None = None,
     side_effect_ledger: SideEffectLedger | None = None,
+    eval_enabled: bool = True,
 ) -> dict[str, Any]:
     return run_playbook(
         request,
@@ -401,6 +405,7 @@ def run_fengkuang_playbook(
         run_store=run_store,
         side_effect_ledger=side_effect_ledger,
         command_name="run-fengkuang",
+        eval_enabled=eval_enabled,
     )
 
 

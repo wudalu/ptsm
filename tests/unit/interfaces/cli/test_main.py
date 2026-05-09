@@ -138,6 +138,7 @@ def test_run_fengkuang_cli_passes_auto_generate_image_flag(
         request: FengkuangRequest,
         *,
         thread_id: str | None = None,
+        **kwargs: object,
     ) -> dict[str, object]:
         captured["request"] = request
         captured["thread_id"] = thread_id
@@ -182,6 +183,7 @@ def test_run_playbook_cli_passes_generic_request_fields(
         request: PlaybookRequest,
         *,
         thread_id: str | None = None,
+        **kwargs: object,
     ) -> dict[str, object]:
         captured["request"] = request
         captured["thread_id"] = thread_id

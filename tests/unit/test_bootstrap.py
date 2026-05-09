@@ -836,7 +836,7 @@ def test_main_dispatches_doctor(monkeypatch, capsys) -> None:
 def test_main_dispatches_run_playbook(monkeypatch, capsys) -> None:
     captured: dict[str, object] = {}
 
-    def fake_run_playbook(request, *, thread_id: str | None = None):
+    def fake_run_playbook(request, *, thread_id: str | None = None, **kwargs: object):
         captured["request"] = request
         captured["thread_id"] = thread_id
         return {
