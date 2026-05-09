@@ -216,7 +216,6 @@ uv run python -m ptsm.bootstrap run-playbook \
   --scene "学一个表示坚持的高级词汇" \
   --account-id acct-daily-english-local \
   --playbook-id daily_english_post
->>>>>>> feat/ai-tech-playbook
 ```
 
 ## Diagnostics
@@ -225,6 +224,38 @@ uv run python -m ptsm.bootstrap run-playbook \
 uv run python -m ptsm.bootstrap doctor
 uv run python -m ptsm.bootstrap doctor --server-url http://localhost:19000/mcp
 ```
+
+## Evaluation
+
+每次 `run-playbook` / `run-fengkuang` 完成后可以自动评估产物质量。默认关闭，加 `--eval` 开启。
+
+```bash
+# Dry-run + eval
+uv run python -m ptsm.bootstrap run-fengkuang \
+  --scene "周五下班" \
+  --account-id acct-fk-local \
+  --eval
+```
+
+Eval 会对 artifact 的 planner skill activation、executor final content、reflector decision、image generation、publish result、post-publish checks 和 artifact completeness 分别运行 5 个 rule evaluator（required fields、hashtags、publish mode、dry-run safety）和 2 个 contract evaluator（root fields、skill match）。结果写入 `.ptsm/evals/<eval_run_id>/summary.json` + `results.jsonl`。
+
+### 手动对已有 artifact 跑 eval
+
+```bash
+uv run python -m ptsm.bootstrap eval-artifact --artifact outputs/artifacts/<artifact>.json
+```
+
+### 查看 eval 聚合
+
+```bash
+# 按 playbook 过滤
+uv run python -m ptsm.bootstrap harness-evals --playbook-id fengkuang_daily_post
+
+# harness-report 包含 eval 结果和阈值检查
+uv run python -m ptsm.bootstrap harness-report --max-required-eval-failures 0
+```
+
+`harness-check` 会阻塞 `required_failed > 0` 的 eval 失败（确定性 rule/contract 失败），LLM judge 失败仅 warning。
 
 ## Logs
 

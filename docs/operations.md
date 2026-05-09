@@ -2,7 +2,7 @@
 title: PTSM Operations
 status: active
 owner: ptsm
-last_verified: 2026-05-07
+last_verified: 2026-05-09
 source_of_truth: true
 related_paths:
   - docs/operations/cloud-bootstrap.md
@@ -55,6 +55,7 @@ related_paths:
 - `uv run python -m ptsm.bootstrap plan-runs --status failed --failure-reason pytest_failed`
 - `uv run python -m ptsm.bootstrap run-playbook --scene "夜里读到《定风波》，突然想把今天的狼狈也写成一段赏析" --account-id acct-sushi-local --playbook-id sushi_poetry_daily_post`
 - `uv run python -m ptsm.bootstrap run-fengkuang --scene "..." --account-id acct-fk-local`
+- `uv run python -m ptsm.bootstrap run-fengkuang --scene "..." --account-id acct-fk-local --eval`
 - `uv run python -m ptsm.bootstrap run-fengkuang --scene "..." --account-id acct-fk-local --auto-generate-image`
 - `uv run python -m ptsm.bootstrap run-fengkuang --scene "..." --account-id acct-fk-local --publish-mode mcp-real --auto-generate-image --publish-visibility "仅自己可见"`
 - `uv run python -m ptsm.bootstrap run-fengkuang --scene "..." --account-id acct-fk-local --publish-mode mcp-real --auto-generate-image --publish-visibility "公开" --wait-for-publish-status`
@@ -75,8 +76,10 @@ related_paths:
 - 本地默认 `harness-check` 只把 `docs-sync`、source-of-truth docs freshness 和 deterministic pytest 当成阻塞门禁；`--strict` 会把完整 `harness-report` warning 也变成阻塞。
 - `install-git-hooks` 会写入 `.git/hooks/pre-push`，默认记录 `origin/main` 作为 base ref，并在 push 前先计算 `git merge-base HEAD origin/main`，再执行 `harness-check --base-ref <merge-base-sha>`。
 - `gc` 默认只报告候选项；只有 `--apply` 才会删除本地 harness artifacts。
-- `harness-evals` 只输出本地 JSON 汇总，不负责修改 artifact 或触发修复动作。
-- `harness-report` 是对 `doctor`、`gc`、`harness-evals` 的只读组合入口；需要把 warning 当成 gate 时，再显式加 `--fail-on-warning`。
+- `harness-evals` 只输出本地 JSON 汇总，不负责修改 artifact 或触发修复动作；现在也聚合 `.ptsm/evals` 中的 eval results。
+- `harness-report` 是对 `doctor`、`gc`、`harness-evals` 的只读组合入口；需要把 warning 当成 gate 时，再显式加 `--fail-on-warning`。支持 `--max-required-eval-failures N` 对确定性 eval 失败做阈值控制。
+- `eval` 默认关闭，每次运行时加 `--eval` 开启。eval 只运行确定性 rule/contract evaluator，LLM judge 需显式启用且仅 warning 不阻塞。
+- `eval-artifact` 可对已有 artifact 独立跑 eval，不依赖运行时。
 - `diagnose-publish` 是对单次发布问题的只读诊断入口，适合排查 “为什么没法自动确认已发布” 或 “为什么发布后状态不明确”。
 - `run-playbook` 是多 playbook 的通用入口；`run-fengkuang` 只保留给已有发疯文学兼容脚本和习惯命令。
 - `run-fengkuang --auto-generate-image` 会在缺少 `--publish-image-path` 时尝试调用已配置的图片后端生成封面；即梦配置优先于百炼配置，真实发布模式下默认也会尝试自动补图。
