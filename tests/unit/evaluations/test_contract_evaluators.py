@@ -4,9 +4,11 @@ import pytest
 from ptsm.evaluations.contracts import EvalTarget
 from ptsm.evaluations.contracts_eval import (
     contract_artifact_root_fields,
+    contract_playbook_node_contract,
     contract_skill_details_match,
     ALL_CONTRACT_EVALUATORS,
 )
+from ptsm.evaluations.playbook_contracts import PlaybookEvalContract
 
 
 def _target(**overrides):
@@ -83,6 +85,92 @@ class TestSkillDetailsMatch:
         target = _target(phase="planner", target_type="node_output", output_ref=None)
         result = contract_skill_details_match(target)
         assert result.status == "skipped"
+
+
+class TestPlaybookNodeContract:
+    def test_fails_when_executor_required_field_missing(self):
+        contract = PlaybookEvalContract(
+            suite_id="pb.default",
+            node_contracts={
+                "executor": {
+                    "required_fields": ["title", "body", "image_text", "hashtags"],
+                }
+            },
+        )
+        target = _target(
+            phase="executor",
+            target_type="artifact_slice",
+            output_ref={
+                "final_content": {
+                    "title": "短标题",
+                    "body": "正文",
+                    "hashtags": ["#tag"],
+                }
+            },
+        )
+
+        result = contract_playbook_node_contract(target, contract)
+
+        assert result.status == "failed"
+        assert "image_text" in result.reason
+        assert result.evaluator_id == "playbook.node_contract"
+
+    def test_fails_when_executor_title_exceeds_contract_limit(self):
+        contract = PlaybookEvalContract(
+            suite_id="pb.default",
+            node_contracts={
+                "executor": {
+                    "required_fields": ["title", "body", "hashtags"],
+                    "constraints": {"title_max_chars": 3},
+                }
+            },
+        )
+        target = _target(
+            phase="executor",
+            target_type="artifact_slice",
+            output_ref={
+                "final_content": {
+                    "title": "超过三字",
+                    "body": "正文",
+                    "hashtags": ["#tag"],
+                }
+            },
+        )
+
+        result = contract_playbook_node_contract(target, contract)
+
+        assert result.status == "failed"
+        assert "title_max_chars" in result.reason
+
+    def test_passes_when_phase_contract_is_satisfied(self):
+        contract = PlaybookEvalContract(
+            suite_id="pb.default",
+            node_contracts={
+                "executor": {
+                    "required_fields": ["title", "body", "hashtags"],
+                    "constraints": {
+                        "title_max_chars": 10,
+                        "hashtags_min_count": 1,
+                        "hashtags_max_count": 3,
+                    },
+                }
+            },
+        )
+        target = _target(
+            phase="executor",
+            target_type="artifact_slice",
+            output_ref={
+                "final_content": {
+                    "title": "短标题",
+                    "body": "正文",
+                    "hashtags": ["#tag"],
+                }
+            },
+        )
+
+        result = contract_playbook_node_contract(target, contract)
+
+        assert result.status == "passed"
 
 
 class TestAllContractEvaluators:

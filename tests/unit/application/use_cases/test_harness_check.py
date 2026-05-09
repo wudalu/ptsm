@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from ptsm.application.use_cases.harness_check import run_harness_check
@@ -146,6 +147,55 @@ def test_run_harness_check_strict_mode_fails_on_harness_report_warning(
     assert result["status"] == "error"
 
 
+def test_run_harness_check_does_not_gate_warning_eval_failures(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    _write_active_doc(tmp_path / "docs" / "runtime.md", last_verified="2026-04-20")
+    (tmp_path / "outputs" / "artifacts").mkdir(parents=True)
+    _write_eval_run(
+        tmp_path / ".ptsm" / "evals" / "eval-1",
+        summary={
+            "eval_run_id": "eval-1",
+            "suite_id": "fengkuang_daily_post.default",
+            "status": "warning",
+            "source": {"kind": "artifact", "path": "a.json"},
+            "counts": {
+                "targets": 1,
+                "evaluators": 1,
+                "passed": 0,
+                "failed": 1,
+                "warnings": 0,
+                "errors": 0,
+            },
+            "gate": {"required_failed": 0, "warning_failed": 1},
+        },
+    )
+
+    def fake_subprocess_run(command, **kwargs):
+        class Result:
+            returncode = 0
+            stdout = "all good\n"
+            stderr = ""
+
+        return Result()
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.harness_check.subprocess.run",
+        fake_subprocess_run,
+    )
+
+    result = run_harness_check(
+        project_root=tmp_path,
+        changed_paths=["src/ptsm/demo.py", "docs/runtime.md"],
+        strict=False,
+    )
+
+    assert result["harness_report"]["evals"]["evals"]["results"]["required_failed"] == 0
+    assert result["status"] == "ok"
+
+
 def _write_active_doc(path: Path, *, last_verified: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -161,5 +211,13 @@ def _write_active_doc(path: Path, *, last_verified: str) -> None:
             "---\n\n"
             "# Demo\n"
         ),
+        encoding="utf-8",
+    )
+
+
+def _write_eval_run(run_dir: Path, *, summary: dict[str, object]) -> None:
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "summary.json").write_text(
+        json.dumps(summary, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )

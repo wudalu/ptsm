@@ -99,6 +99,11 @@ class TestPublishModeValid:
         result = rule_publish_mode_valid(target)
         assert result.status == "passed"
 
+    def test_passes_mcp_real(self):
+        target = _target(phase="final", output_ref={"publish_mode": "mcp-real"})
+        result = rule_publish_mode_valid(target)
+        assert result.status == "passed"
+
 
 class TestDryRunSafety:
     def test_fails_on_real_publish_in_dry_run(self):

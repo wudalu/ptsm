@@ -152,7 +152,7 @@ def _evaluate_thresholds(
             )
 
     eval_failures = int(
-        evals.get("evals", {}).get("results", {}).get("total_failed", 0)
+        evals.get("evals", {}).get("results", {}).get("required_failed", 0)
     )
     if max_required_eval_failures is not None:
         configured["max_required_eval_failures"] = max_required_eval_failures

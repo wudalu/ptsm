@@ -23,6 +23,31 @@ class TestEvalStore:
             assert summary["suite_id"] == "test_suite"
             assert summary["status"] == "running"
 
+    def test_start_persists_source_metadata(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = EvalStore(base_dir=Path(tmp))
+            handle = store.start(
+                suite_id="test_suite",
+                source_kind="artifact",
+                source_path="a.json",
+                source_metadata={
+                    "run_id": "run-1",
+                    "account_id": "acct-fk-local",
+                    "platform": "xiaohongshu",
+                    "playbook_id": "fengkuang_daily_post",
+                },
+            )
+
+            summary = json.loads(handle.summary_path.read_text())
+            assert summary["source"] == {
+                "kind": "artifact",
+                "path": "a.json",
+                "run_id": "run-1",
+                "account_id": "acct-fk-local",
+                "platform": "xiaohongshu",
+                "playbook_id": "fengkuang_daily_post",
+            }
+
     def test_append_result_writes_jsonl(self):
         with tempfile.TemporaryDirectory() as tmp:
             store = EvalStore(base_dir=Path(tmp))

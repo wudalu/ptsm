@@ -28,6 +28,7 @@ class EvalStore:
         suite_id: str,
         source_kind: str,
         source_path: str | None = None,
+        source_metadata: dict[str, Any] | None = None,
     ) -> EvalRunHandle:
         eval_run_id = uuid4().hex[:12]
         run_dir = self.base_dir / eval_run_id
@@ -38,12 +39,21 @@ class EvalStore:
             results_path=run_dir / "results.jsonl",
             summary_path=run_dir / "summary.json",
         )
+        source = {"kind": source_kind, "path": source_path}
+        if source_metadata:
+            source.update(
+                {
+                    key: value
+                    for key, value in source_metadata.items()
+                    if value not in {None, ""}
+                }
+            )
         summary = {
             "eval_run_id": eval_run_id,
             "suite_id": suite_id,
             "status": "running",
             "created_at": datetime.now(timezone.utc).isoformat(),
-            "source": {"kind": source_kind, "path": source_path},
+            "source": source,
             "counts": {
                 "targets": 0, "evaluators": 0, "passed": 0,
                 "failed": 0, "warnings": 0, "errors": 0,

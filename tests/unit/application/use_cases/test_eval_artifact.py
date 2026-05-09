@@ -4,7 +4,8 @@ import json
 import pytest
 import tempfile
 from pathlib import Path
-from ptsm.application.use_cases.eval_artifact import run_eval_artifact
+from ptsm.application.use_cases.eval_artifact import _gate_counts, run_eval_artifact
+from ptsm.evaluations.contracts import EvalResult
 
 
 SAMPLE_ARTIFACT = {
@@ -14,6 +15,23 @@ SAMPLE_ARTIFACT = {
     "publish_mode": "dry-run",
     "activated_skills": ["fengkuang_style"],
     "activated_skill_details": [{"skill_name": "fengkuang_style"}],
+    "runtime_skill_details": [],
+    "step_outputs": {
+        "planner": {
+            "selected_playbook": "fengkuang_daily_post",
+            "activated_skills": ["fengkuang_style"],
+            "activated_skill_details": [{"skill_name": "fengkuang_style"}],
+            "planner_prompt": "# planner",
+            "persona_prompt": "# persona",
+        },
+        "executor": {
+            "attempt_count": 1,
+        },
+        "reflector": {
+            "reflection_decision": "finalize",
+            "reflection_feedback": "",
+        },
+    },
     "final_content": {
         "title": "test title",
         "body": "test body",
@@ -22,6 +40,16 @@ SAMPLE_ARTIFACT = {
     },
     "publish_result": {"status": "dry_run"},
 }
+
+
+class FakeJudgeBackend:
+    def __init__(self, response: str):
+        self.response = response
+        self.calls = 0
+
+    def judge(self, *, prompt: str) -> str:
+        self.calls += 1
+        return self.response
 
 
 class TestRunEvalArtifact:
@@ -65,6 +93,68 @@ class TestRunEvalArtifact:
             )
             assert results_path.exists()
 
+    def test_summary_source_includes_scope_metadata(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact_path = Path(tmp) / "artifact.json"
+            artifact_path.write_text(
+                json.dumps(
+                    {
+                        **SAMPLE_ARTIFACT,
+                        "run": {"run_id": "run-123"},
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            result = run_eval_artifact(
+                artifact_path=artifact_path,
+                evals_base_dir=Path(tmp) / "evals",
+                run_id="run-123",
+            )
+
+            assert result["source"] == {
+                "kind": "artifact",
+                "path": str(artifact_path),
+                "run_id": "run-123",
+                "account_id": "acct-fk-local",
+                "platform": "xiaohongshu",
+                "playbook_id": "fengkuang_daily_post",
+            }
+
+            summary_path = Path(tmp) / "evals" / result["eval_run_id"] / "summary.json"
+            summary = json.loads(summary_path.read_text(encoding="utf-8"))
+            assert summary["source"]["run_id"] == "run-123"
+            assert summary["source"]["playbook_id"] == "fengkuang_daily_post"
+
+    def test_gate_counts_respect_warning_gate_level(self):
+        results = [
+            EvalResult(
+                eval_result_id="r1",
+                eval_run_id="er",
+                target_id="t",
+                evaluator_id="required.eval",
+                evaluator_version="1",
+                status="failed",
+                reason="required failed",
+                gate_level="required",
+            ),
+            EvalResult(
+                eval_result_id="r2",
+                eval_run_id="er",
+                target_id="t",
+                evaluator_id="judge.eval",
+                evaluator_version="1",
+                status="failed",
+                reason="judge failed",
+                gate_level="warning",
+            ),
+        ]
+
+        assert _gate_counts(results) == {
+            "required_failed": 1,
+            "warning_failed": 1,
+        }
+
     def test_fails_on_broken_artifact(self):
         with tempfile.TemporaryDirectory() as tmp:
             artifact_path = Path(tmp) / "broken.json"
@@ -80,3 +170,151 @@ class TestRunEvalArtifact:
             )
             assert result["status"] in {"failed", "error"}
             assert result["gate"]["required_failed"] > 0
+
+    def test_applies_playbook_local_node_contracts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            definitions_root = root / "playbooks"
+            _write_eval_contract(
+                definitions_root,
+                playbook_id="fengkuang_daily_post",
+                title_max_chars=3,
+            )
+            artifact_path = root / "artifact.json"
+            artifact_path.write_text(
+                json.dumps(
+                    {
+                        **SAMPLE_ARTIFACT,
+                        "final_content": {
+                            **SAMPLE_ARTIFACT["final_content"],
+                            "title": "超过三字",
+                        },
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            result = run_eval_artifact(
+                artifact_path=artifact_path,
+                evals_base_dir=root / "evals",
+                playbook_definitions_root=definitions_root,
+            )
+
+            assert result["status"] == "failed"
+            assert result["gate"]["required_failed"] > 0
+            results_path = root / "evals" / result["eval_run_id"] / "results.jsonl"
+            result_rows = [
+                json.loads(line)
+                for line in results_path.read_text(encoding="utf-8").splitlines()
+            ]
+            assert any(
+                row["evaluator_id"] == "playbook.node_contract"
+                and "title_max_chars" in row["reason"]
+                for row in result_rows
+            )
+
+    def test_missing_playbook_local_contract_is_non_fatal(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact_path = Path(tmp) / "artifact.json"
+            artifact_path.write_text(
+                json.dumps(SAMPLE_ARTIFACT, ensure_ascii=False), encoding="utf-8"
+            )
+
+            result = run_eval_artifact(
+                artifact_path=artifact_path,
+                evals_base_dir=Path(tmp) / "evals",
+                playbook_definitions_root=Path(tmp) / "missing-definitions",
+            )
+
+            assert result["status"] == "passed"
+
+    def test_llm_judges_do_not_run_by_default(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact_path = Path(tmp) / "artifact.json"
+            artifact_path.write_text(
+                json.dumps(SAMPLE_ARTIFACT, ensure_ascii=False), encoding="utf-8"
+            )
+            backend = FakeJudgeBackend(
+                json.dumps({"score": 0.1, "reason": "bad", "confidence": 0.7})
+            )
+
+            result = run_eval_artifact(
+                artifact_path=artifact_path,
+                evals_base_dir=Path(tmp) / "evals",
+                llm_judge_backend=backend,
+            )
+
+            results_path = Path(tmp) / "evals" / result["eval_run_id"] / "results.jsonl"
+            rows = [
+                json.loads(line)
+                for line in results_path.read_text(encoding="utf-8").splitlines()
+            ]
+            assert backend.calls == 0
+            assert all(not row["evaluator_id"].startswith("llm.") for row in rows)
+
+    def test_llm_judges_run_when_explicitly_enabled_as_warning_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact_path = Path(tmp) / "artifact.json"
+            artifact_path.write_text(
+                json.dumps(SAMPLE_ARTIFACT, ensure_ascii=False), encoding="utf-8"
+            )
+            backend = FakeJudgeBackend(
+                json.dumps(
+                    {
+                        "score": 0.2,
+                        "label": "weak",
+                        "reason": "semantic quality is weak",
+                        "confidence": 0.8,
+                    }
+                )
+            )
+
+            result = run_eval_artifact(
+                artifact_path=artifact_path,
+                evals_base_dir=Path(tmp) / "evals",
+                enable_llm_judges=True,
+                llm_judge_backend=backend,
+            )
+
+            assert result["status"] == "warning"
+            assert result["gate"]["required_failed"] == 0
+            assert result["gate"]["warning_failed"] == 1
+            results_path = Path(tmp) / "evals" / result["eval_run_id"] / "results.jsonl"
+            rows = [
+                json.loads(line)
+                for line in results_path.read_text(encoding="utf-8").splitlines()
+            ]
+            assert any(
+                row["evaluator_id"] == "llm.executor.semantic_quality"
+                and row["gate_level"] == "warning"
+                for row in rows
+            )
+
+
+def _write_eval_contract(
+    definitions_root: Path,
+    *,
+    playbook_id: str,
+    title_max_chars: int,
+) -> None:
+    playbook_dir = definitions_root / playbook_id
+    playbook_dir.mkdir(parents=True, exist_ok=True)
+    (playbook_dir / "evaluation.yaml").write_text(
+        (
+            "version: 1\n"
+            f"suite_id: {playbook_id}.default\n"
+            "node_contracts:\n"
+            "  executor:\n"
+            "    required_fields:\n"
+            "      - title\n"
+            "      - body\n"
+            "      - image_text\n"
+            "      - hashtags\n"
+            "    constraints:\n"
+            f"      title_max_chars: {title_max_chars}\n"
+            "      hashtags_min_count: 1\n"
+            "      hashtags_max_count: 8\n"
+        ),
+        encoding="utf-8",
+    )

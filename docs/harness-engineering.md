@@ -2,7 +2,7 @@
 title: Harness Engineering In PTSM
 status: active
 owner: ptsm
-last_verified: 2026-05-07
+last_verified: 2026-05-09
 source_of_truth: true
 related_paths:
   - README.md
@@ -56,10 +56,14 @@ repository.
 - a local-first evaluation system with rule evaluators, contract evaluators, and structured eval results stored under `.ptsm/evals`
 - `eval-artifact` CLI command to run deterministic evaluators against any PTSM artifact
 - eval result aggregation in `harness-evals` and `harness-report` with configurable failure thresholds
+- scoped eval aggregation by run/account/platform/playbook metadata, so filtered harness views do not mix unrelated eval runs
+- gate-aware eval accounting: `required_failed` can block local harness, while warning-only judge failures remain reporting signals
+- a warning-only LLM judge adapter scaffold that requires explicit enablement and fake-backend tests, keeping default harness deterministic
 
 ## What We Should Build Next
 
 - traces and metrics if local file observability stops being enough
+- calibrated LLM judge suites and human review queues after warning-only online signals have enough examples
 - richer skill quality evals if completion-rate aggregation stops being enough
 
 ## What We Should Not Copy Blindly

@@ -138,6 +138,7 @@ def build_finalize_node(
                 "activated_skill_details": activated_skill_details,
                 "runtime_skill_contents": list(state.get("runtime_skill_contents", [])),
                 "runtime_skill_details": runtime_skill_details,
+                "step_outputs": _build_step_outputs(state),
                 "final_content": state["final_content"],
             },
             run_key=f"{state['account_id']}-{state['playbook_id']}-{state['attempt_count']}",
@@ -155,3 +156,27 @@ def build_finalize_node(
         return {"status": "completed", "artifact_path": str(artifact_path)}
 
     return finalize
+
+
+def _build_step_outputs(state: ExecutionState) -> dict[str, object]:
+    return {
+        "planner": {
+            "selected_playbook": state.get("selected_playbook"),
+            "candidate_skills": list(state.get("candidate_skills", [])),
+            "activated_skills": list(state.get("activated_skills", [])),
+            "activated_skill_details": list(state.get("activated_skill_details", [])),
+            "runtime_skill_details": list(state.get("runtime_skill_details", [])),
+            "planner_prompt": state.get("planner_prompt"),
+            "persona_prompt": state.get("persona_prompt"),
+            "reflection_prompt": state.get("reflection_prompt"),
+        },
+        "executor": {
+            "attempt_count": int(state.get("attempt_count", 0)),
+            "draft_content": state.get("draft_content"),
+        },
+        "reflector": {
+            "required_revision": state.get("required_revision"),
+            "reflection_decision": state.get("reflection_decision"),
+            "reflection_feedback": state.get("reflection_feedback"),
+        },
+    }

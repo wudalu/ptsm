@@ -181,6 +181,81 @@ def test_run_harness_evals_aggregates_runs_events_and_plan_runs(tmp_path: Path) 
     ]
 
 
+def test_run_harness_evals_filters_eval_runs_by_scope(tmp_path: Path) -> None:
+    evals_dir = tmp_path / "evals"
+    _write_eval_run(
+        evals_dir / "eval-1",
+        summary={
+            "eval_run_id": "eval-1",
+            "suite_id": "fengkuang_daily_post.default",
+            "status": "failed",
+            "source": {
+                "kind": "artifact",
+                "path": "a.json",
+                "run_id": "run-1",
+                "account_id": "acct-fk-local",
+                "platform": "xiaohongshu",
+                "playbook_id": "fengkuang_daily_post",
+            },
+            "counts": {
+                "targets": 1,
+                "evaluators": 1,
+                "passed": 0,
+                "failed": 1,
+                "warnings": 0,
+                "errors": 0,
+            },
+        },
+    )
+    _write_eval_run(
+        evals_dir / "eval-2",
+        summary={
+            "eval_run_id": "eval-2",
+            "suite_id": "sushi_poetry_daily_post.default",
+            "status": "passed",
+            "source": {
+                "kind": "artifact",
+                "path": "b.json",
+                "run_id": "run-2",
+                "account_id": "acct-sushi-local",
+                "platform": "xiaohongshu",
+                "playbook_id": "sushi_poetry_daily_post",
+            },
+            "counts": {
+                "targets": 1,
+                "evaluators": 1,
+                "passed": 1,
+                "failed": 0,
+                "warnings": 0,
+                "errors": 0,
+            },
+        },
+    )
+
+    result = run_harness_evals(
+        account_id="acct-fk-local",
+        platform="xiaohongshu",
+        playbook_id="fengkuang_daily_post",
+        runs_base_dir=tmp_path / "runs",
+        plan_runs_base_dir=tmp_path / "plan_runs",
+        evals_base_dir=evals_dir,
+    )
+
+    assert result["evals"] == {
+        "eval_runs_total": 1,
+        "by_status": {"failed": 1},
+        "by_suite": {"fengkuang_daily_post.default": 1},
+        "results": {
+            "total_passed": 0,
+            "total_failed": 1,
+            "total_warnings": 0,
+            "total_errors": 0,
+            "required_failed": 1,
+            "warning_failed": 0,
+        },
+    }
+
+
 def _write_run(run_dir: Path, *, summary: dict[str, object], events: list[dict[str, object]]) -> None:
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "summary.json").write_text(
@@ -205,5 +280,13 @@ def _write_plan_run(path: Path, *, payload: dict[str, object]) -> None:
             ensure_ascii=False,
             indent=2,
         ),
+        encoding="utf-8",
+    )
+
+
+def _write_eval_run(run_dir: Path, *, summary: dict[str, object]) -> None:
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "summary.json").write_text(
+        json.dumps(summary, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )

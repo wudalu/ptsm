@@ -50,7 +50,12 @@ def run_harness_evals(
         if reason
     )
     skill_stats = _aggregate_skill_stats(runs)
-    eval_stats = _aggregate_eval_results(evals_base_dir=evals_base_dir)
+    eval_stats = _aggregate_eval_results(
+        evals_base_dir=evals_base_dir,
+        account_id=account_id,
+        platform=platform,
+        playbook_id=playbook_id,
+    )
 
     return {
         "filters": {
@@ -186,11 +191,24 @@ def _string_or_unknown(value: object) -> str:
 
 def _aggregate_eval_results(
     evals_base_dir: Path | str = ".ptsm/evals",
+    *,
+    account_id: str | None = None,
+    platform: str | None = None,
+    playbook_id: str | None = None,
 ) -> dict[str, object]:
     from ptsm.infrastructure.evaluations.eval_store import EvalStore
 
     store = EvalStore(base_dir=evals_base_dir)
-    eval_runs = store.list_eval_runs(limit=None)
+    eval_runs = [
+        run
+        for run in store.list_eval_runs(limit=None)
+        if _eval_run_matches_scope(
+            run,
+            account_id=account_id,
+            platform=platform,
+            playbook_id=playbook_id,
+        )
+    ]
 
     statuses = Counter(str(r.get("status", "unknown")) for r in eval_runs)
     suite_ids = Counter(str(r.get("suite_id", "unknown")) for r in eval_runs)
@@ -199,6 +217,8 @@ def _aggregate_eval_results(
     total_failed = 0
     total_warnings = 0
     total_errors = 0
+    required_failed = 0
+    warning_failed = 0
     for r in eval_runs:
         counts = r.get("counts", {})
         if isinstance(counts, dict):
@@ -206,6 +226,12 @@ def _aggregate_eval_results(
             total_failed += int(counts.get("failed", 0))
             total_warnings += int(counts.get("warnings", 0))
             total_errors += int(counts.get("errors", 0))
+        gate = r.get("gate", {})
+        if isinstance(gate, dict):
+            required_failed += int(
+                gate.get("required_failed", counts.get("failed", 0) if isinstance(counts, dict) else 0)
+            )
+            warning_failed += int(gate.get("warning_failed", 0))
 
     return {
         "eval_runs_total": len(eval_runs),
@@ -216,5 +242,26 @@ def _aggregate_eval_results(
             "total_failed": total_failed,
             "total_warnings": total_warnings,
             "total_errors": total_errors,
+            "required_failed": required_failed,
+            "warning_failed": warning_failed,
         },
     }
+
+
+def _eval_run_matches_scope(
+    eval_run: dict[str, object],
+    *,
+    account_id: str | None,
+    platform: str | None,
+    playbook_id: str | None,
+) -> bool:
+    source = eval_run.get("source", {})
+    if not isinstance(source, dict):
+        return account_id is None and platform is None and playbook_id is None
+    if account_id is not None and source.get("account_id") != account_id:
+        return False
+    if platform is not None and source.get("platform") != platform:
+        return False
+    if playbook_id is not None and source.get("playbook_id") != playbook_id:
+        return False
+    return True

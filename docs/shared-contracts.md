@@ -2,7 +2,7 @@
 title: PTSM Shared Contracts
 status: active
 owner: ptsm
-last_verified: 2026-04-17
+last_verified: 2026-05-09
 source_of_truth: true
 related_paths:
   - shared_contracts/README.md
@@ -46,4 +46,4 @@ related_paths:
 - final_content: [`shared_contracts/evaluation/final_content.schema.yaml`](../shared_contracts/evaluation/final_content.schema.yaml)
 - skill_activation: [`shared_contracts/evaluation/skill_activation.schema.yaml`](../shared_contracts/evaluation/skill_activation.schema.yaml)
 
-这些文件更适合被当成未来平台化扩展的模板，而不是当前 loader 已经消费的事实来源。
+这些 shared schema 文件仍然是 canonical template，而不是直接由 runtime schema validator 消费的稳定 API。当前已接入运行时的是 playbook-local `evaluation.yaml`：`eval-artifact` 会读取其中的 `node_contracts`，并用 shared contract ID 作为结构和命名约定。

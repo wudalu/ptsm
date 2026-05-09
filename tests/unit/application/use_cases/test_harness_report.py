@@ -179,6 +179,60 @@ def test_run_harness_report_marks_warning_when_only_thresholds_fail(
     assert result["status"] == "warning"
 
 
+def test_run_harness_report_threshold_uses_required_eval_failures_only(
+    tmp_path: Path,
+) -> None:
+    _write_active_doc(
+        tmp_path / "docs" / "runtime.md",
+        last_verified="2026-04-18",
+    )
+    (tmp_path / "outputs" / "artifacts").mkdir(parents=True)
+    _write_eval_run(
+        tmp_path / ".ptsm" / "evals" / "eval-1",
+        summary={
+            "eval_run_id": "eval-1",
+            "suite_id": "fengkuang_daily_post.default",
+            "status": "warning",
+            "source": {
+                "kind": "artifact",
+                "path": "a.json",
+                "run_id": "run-1",
+                "account_id": "acct-fk-local",
+                "platform": "xiaohongshu",
+                "playbook_id": "fengkuang_daily_post",
+            },
+            "counts": {
+                "targets": 1,
+                "evaluators": 1,
+                "passed": 0,
+                "failed": 1,
+                "warnings": 0,
+                "errors": 0,
+            },
+            "gate": {
+                "required_failed": 0,
+                "warning_failed": 1,
+            },
+        },
+    )
+
+    result = run_harness_report(
+        settings=Settings(_env_file=None),
+        publisher=FakePreflightPublisher({"status": "ready"}),
+        project_root=tmp_path,
+        now=datetime(2026, 4, 18, 14, 0, tzinfo=timezone.utc),
+        account_id="acct-fk-local",
+        platform="xiaohongshu",
+        playbook_id="fengkuang_daily_post",
+        max_required_eval_failures=0,
+    )
+
+    assert result["evals"]["evals"]["results"]["total_failed"] == 1
+    assert result["evals"]["evals"]["results"]["required_failed"] == 0
+    assert result["thresholds"]["violations"] == []
+    assert result["status"] == "ok"
+
+
 def _write_active_doc(path: Path, *, last_verified: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -255,5 +309,13 @@ def _write_plan_run_pair(
             ensure_ascii=False,
             indent=2,
         ),
+        encoding="utf-8",
+    )
+
+
+def _write_eval_run(run_dir: Path, *, summary: dict[str, object]) -> None:
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "summary.json").write_text(
+        json.dumps(summary, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )

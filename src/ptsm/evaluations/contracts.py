@@ -37,6 +37,7 @@ class EvalResult:
     evidence: list[dict[str, Any]] | None = None
     confidence: float | None = None
     cost: dict[str, Any] | None = None
+    gate_level: str = "required"
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)

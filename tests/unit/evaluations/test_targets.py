@@ -70,3 +70,52 @@ class TestTargetExtraction:
         targets = extract_targets_from_artifact(artifact, run_id="run-2")
         planner = [t for t in targets if t.phase == "planner"]
         assert len(planner) == 0
+
+    def test_extracts_step_and_side_effect_targets_when_evidence_exists(self):
+        artifact = {
+            **SAMPLE_ARTIFACT,
+            "step_outputs": {
+                "planner": {
+                    "selected_playbook": "fengkuang_daily_post",
+                    "planner_prompt": "# planner",
+                    "persona_prompt": "# persona",
+                },
+                "executor": {
+                    "attempt_count": 2,
+                    "draft_content": SAMPLE_ARTIFACT["final_content"],
+                },
+                "reflector": {
+                    "reflection_decision": "finalize",
+                    "reflection_feedback": "",
+                    "required_revision": False,
+                },
+            },
+            "image_generation": {
+                "status": "completed",
+                "generated_image_paths": ["outputs/generated_images/cover.png"],
+            },
+            "publish_result": {
+                "status": "published",
+                "post_id": "post-1",
+            },
+            "post_publish_checks": {
+                "publish_status": "published_search_verified",
+            },
+        }
+
+        targets = extract_targets_from_artifact(artifact, run_id="run-3")
+        phases = {target.phase for target in targets}
+
+        assert {
+            "planner",
+            "executor",
+            "reflector",
+            "final",
+            "image",
+            "publish",
+            "post_publish",
+        }.issubset(phases)
+        reflector = [target for target in targets if target.phase == "reflector"][0]
+        assert reflector.output_ref == artifact["step_outputs"]["reflector"]
+        publish = [target for target in targets if target.phase == "publish"][0]
+        assert publish.output_ref == artifact["publish_result"]

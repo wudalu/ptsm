@@ -139,7 +139,7 @@ def rule_publish_mode_valid(target: EvalTarget) -> EvalResult:
             target.target_id, "publish_mode.valid", "skipped", "no output ref"
         )
     mode = ref.get("publish_mode")
-    valid = {"dry-run", "private", "public"}
+    valid = {"dry-run", "mcp-real"}
     if mode not in valid:
         return _result(
             target.target_id,

@@ -130,7 +130,7 @@ def _local_harness_gate_failed(harness_report: dict[str, object]) -> bool:
         eval_results = evals.get("evals", {})
         if isinstance(eval_results, dict):
             required_failed = int(
-                eval_results.get("results", {}).get("total_failed", 0)
+                eval_results.get("results", {}).get("required_failed", 0)
             )
             if required_failed > 0:
                 return True
