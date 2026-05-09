@@ -10,6 +10,7 @@ uv run pytest -q tests/unit/path/to_test.py  # single test file
 uv run pytest -q -k "test_name"           # filter by test name
 uv run python -m ptsm.bootstrap --help    # CLI help
 ptsm run-fengkuang --scene "场景描述"      # run fengkuang playbook
+ptsm run-fengkuang --scene "..." --eval      # run with evaluation enabled
 ptsm run-playbook --scene "..." --account-id <id> --playbook-id <id>  # generic playbook
 ptsm harness-check                        # pre-push docs-sync + drift + test gate
 ptsm harness-check --strict               # full gate (used in CI)

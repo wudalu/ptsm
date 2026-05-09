@@ -51,7 +51,7 @@ def run_playbook(
     run_store: RunStore | None = None,
     side_effect_ledger: SideEffectLedger | None = None,
     command_name: str = "run-playbook",
-    eval_enabled: bool = True,
+    eval_enabled: bool = False,
 ) -> dict[str, Any]:
     """Execute the selected playbook workflow and prepare a publish receipt."""
 
@@ -392,7 +392,7 @@ def run_fengkuang_playbook(
     publisher: Publisher | None = None,
     run_store: RunStore | None = None,
     side_effect_ledger: SideEffectLedger | None = None,
-    eval_enabled: bool = True,
+    eval_enabled: bool = False,
 ) -> dict[str, Any]:
     return run_playbook(
         request,

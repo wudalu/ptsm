@@ -71,7 +71,7 @@ def build_parser() -> argparse.ArgumentParser:
     fengkuang.add_argument("--open-browser-if-needed", action="store_true")
     fengkuang.add_argument("--wait-for-publish-status", action="store_true")
     fengkuang.add_argument("--fresh-topic-research", action="store_true")
-    fengkuang.add_argument("--skip-eval", action="store_true")
+    fengkuang.add_argument("--eval", action="store_true")
     fengkuang.add_argument(
         "--login-qrcode-output",
         type=Path,
@@ -105,7 +105,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_playbook_cli.add_argument("--open-browser-if-needed", action="store_true")
     run_playbook_cli.add_argument("--wait-for-publish-status", action="store_true")
     run_playbook_cli.add_argument("--fresh-topic-research", action="store_true")
-    run_playbook_cli.add_argument("--skip-eval", action="store_true")
+    run_playbook_cli.add_argument("--eval", action="store_true")
     run_playbook_cli.add_argument(
         "--login-qrcode-output",
         type=Path,
@@ -331,7 +331,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 fresh_topic_research=args.fresh_topic_research,
             ),
             thread_id=args.thread_id,
-            eval_enabled=not args.skip_eval,
+            eval_enabled=args.eval,
         )
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
@@ -353,7 +353,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 fresh_topic_research=args.fresh_topic_research,
             ),
             thread_id=args.thread_id,
-            eval_enabled=not args.skip_eval,
+            eval_enabled=args.eval,
         )
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
