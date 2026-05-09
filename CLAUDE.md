@@ -97,6 +97,12 @@ uv run python -m ptsm.bootstrap run-playbook \
   --scene "夜里读到《定风波》" \
   --account-id acct-sushi-local \
   --playbook-id sushi_poetry_daily_post
+
+# 现代心理困境观察 dry-run
+uv run python -m ptsm.bootstrap run-playbook \
+  --scene "下班后还在复盘会议上说错的那句话" \
+  --account-id acct-psychology-local \
+  --playbook-id modern_psychology_post
 ```
 
 开发完成后用 dry-run 测试端到端效果，操作细节见 `docs/operations/local-runbook.md`。
