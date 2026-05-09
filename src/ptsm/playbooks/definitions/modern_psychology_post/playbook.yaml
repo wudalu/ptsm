@@ -1,0 +1,24 @@
+playbook_id: modern_psychology_post
+version: 1
+domain: 现代心理困境观察
+platforms:
+  - xiaohongshu
+required_skills:
+  - xhs_trend_scan
+  - topic_research
+  - psychology_style
+  - psychology_safety
+  - xhs_psychology_hashtagging
+optional_skills: []
+reflection:
+  must_include_phrase: "专业"
+  required_hashtag: "#心理学"
+max_attempts: 3
+drafting_model: deepseek-v4-pro
+trend_keywords:
+  - 职场焦虑
+  - 情绪内耗
+  - 关系边界
+  - 孤独感
+  - 短视频焦虑
+  - 睡眠恢复

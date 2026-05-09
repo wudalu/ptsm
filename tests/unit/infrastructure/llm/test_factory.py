@@ -100,6 +100,27 @@ def test_deterministic_backend_can_follow_sushi_poetry_context() -> None:
     assert "发疯文学" not in draft["body"]
 
 
+def test_deterministic_backend_can_follow_modern_psychology_context() -> None:
+    backend = DeterministicDraftBackend()
+
+    draft = backend.generate(
+        scene="下班后还在反复复盘白天一句话",
+        planner_prompt="# 现代心理困境观察 Planner\n目标：解释一个心理机制，给低风险行动和专业边界。",
+        persona_prompt="# Modern Psychology Persona\n有心理学素养但不做诊断。",
+        skill_contents=[
+            "# Psychology Safety\n禁止诊断化表达，必须提示专业帮助边界。",
+            "# XHS Psychology Hashtagging\n标签必须包含 `#心理学` 或 `#情绪管理`。",
+        ],
+    )
+
+    assert "反刍思维" in draft["body"]
+    assert "专业帮助" in draft["body"]
+    assert "诊断" not in draft["title"]
+    assert "#心理学" in draft["hashtags"]
+    assert "#情绪管理" in draft["hashtags"]
+    assert "发疯文学" not in draft["body"]
+
+
 class CapturingChatDeepSeek(FakeChatDeepSeek):
     last_messages = None
 

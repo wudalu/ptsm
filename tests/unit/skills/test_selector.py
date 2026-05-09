@@ -107,3 +107,35 @@ def test_surface_activates_xhs_trend_scan_for_xiaohongshu_requests() -> None:
 
     assert loaded.skill.skill_name == "xhs_trend_scan"
     assert "热点扫描" in loaded.content
+
+
+def test_selector_exposes_modern_psychology_skills() -> None:
+    selector = _build_selector()
+
+    surface = selector.select(
+        domain="现代心理困境观察",
+        platform="xiaohongshu",
+        playbook_id="modern_psychology_post",
+    )
+
+    skill_names = [skill.skill_name for skill in surface.list_summaries()]
+    assert skill_names == [
+        "xhs_trend_scan",
+        "topic_research",
+        "psychology_style",
+        "psychology_safety",
+        "xhs_psychology_hashtagging",
+    ]
+
+
+def test_modern_psychology_safety_skill_is_not_exposed_to_fengkuang() -> None:
+    selector = _build_selector()
+
+    surface = selector.select(
+        domain="发疯文学",
+        platform="xiaohongshu",
+        playbook_id="fengkuang_daily_post",
+    )
+
+    skill_names = {skill.skill_name for skill in surface.list_summaries()}
+    assert "psychology_safety" not in skill_names

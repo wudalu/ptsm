@@ -172,6 +172,94 @@ class TestPlaybookNodeContract:
 
         assert result.status == "passed"
 
+    def test_fails_when_required_hashtag_is_missing(self):
+        contract = PlaybookEvalContract(
+            suite_id="psych.default",
+            node_contracts={
+                "executor": {
+                    "required_fields": ["title", "body", "hashtags"],
+                    "constraints": {
+                        "hashtags_must_include_any": ["#心理学", "#情绪管理"],
+                    },
+                }
+            },
+        )
+        target = _target(
+            phase="executor",
+            target_type="artifact_slice",
+            output_ref={
+                "final_content": {
+                    "title": "复盘停不下来",
+                    "body": "这是一种反刍思维。",
+                    "hashtags": ["#自我成长"],
+                }
+            },
+        )
+
+        result = contract_playbook_node_contract(target, contract)
+
+        assert result.status == "failed"
+        assert "hashtags_must_include_any" in result.reason
+
+    def test_fails_when_forbidden_body_text_is_present(self):
+        contract = PlaybookEvalContract(
+            suite_id="psych.default",
+            node_contracts={
+                "executor": {
+                    "required_fields": ["title", "body", "hashtags"],
+                    "constraints": {
+                        "body_must_not_include_any": ["你就是抑郁症", "治好焦虑"],
+                    },
+                }
+            },
+        )
+        target = _target(
+            phase="executor",
+            target_type="artifact_slice",
+            output_ref={
+                "final_content": {
+                    "title": "别再忽略这个信号",
+                    "body": "你就是抑郁症，这样做能治好焦虑。",
+                    "hashtags": ["#心理学"],
+                }
+            },
+        )
+
+        result = contract_playbook_node_contract(target, contract)
+
+        assert result.status == "failed"
+        assert "body_must_not_include_any" in result.reason
+
+    def test_passes_when_body_contains_required_psychology_safety_signals(self):
+        contract = PlaybookEvalContract(
+            suite_id="psych.default",
+            node_contracts={
+                "executor": {
+                    "required_fields": ["title", "body", "hashtags"],
+                    "constraints": {
+                        "body_must_include_any": ["心理机制", "反刍思维"],
+                        "body_must_not_include_any": ["治好焦虑"],
+                        "hashtags_must_include_any": ["#心理学", "#情绪管理"],
+                    },
+                }
+            },
+        )
+        target = _target(
+            phase="executor",
+            target_type="artifact_slice",
+            output_ref={
+                "final_content": {
+                    "title": "复盘停不下来",
+                    "body": "心理机制上，这更像反刍思维。痛苦持续时要寻求专业帮助。",
+                    "hashtags": ["#心理学", "#情绪管理"],
+                }
+            },
+        )
+
+        result = contract_playbook_node_contract(target, contract)
+
+        assert result.status == "passed"
+
 
 class TestAllContractEvaluators:
     def test_all_registered(self):

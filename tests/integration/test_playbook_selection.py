@@ -56,3 +56,26 @@ def test_wuxia_playbook_is_selected_for_wuxia_account():
     account = AccountRegistry().get("acct-wuxia-local")
     assert account.domain == "武侠人物评述"
     assert account.platform == "xiaohongshu"
+
+
+def test_modern_psychology_account_routes_to_modern_psychology_playbook():
+    from ptsm.config.settings import Settings
+
+    playbook_request_cls, run_playbook = _load_playbook_contracts()
+
+    result = run_playbook(
+        playbook_request_cls(
+            account_id="acct-psychology-local",
+            playbook_id="modern_psychology_post",
+            scene="下班后还在反复复盘白天一句话",
+        ),
+        settings=Settings.model_construct(
+            default_model_provider="deterministic",
+            deepseek_api_key=None,
+            watermark_removal_enabled=False,
+        ),
+    )
+
+    assert result["playbook_id"] == "modern_psychology_post"
+    assert result["account"]["account_id"] == "acct-psychology-local"
+    assert "#心理学" in result["final_content"]["hashtags"]

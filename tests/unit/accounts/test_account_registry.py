@@ -34,6 +34,17 @@ def test_account_registry_loads_daily_english_account() -> None:
     assert account.nickname == "英语学习日记实验号"
 
 
+def test_account_registry_loads_modern_psychology_account() -> None:
+    registry = AccountRegistry()
+
+    account = registry.get("acct-psychology-local")
+
+    assert account.account_id == "acct-psychology-local"
+    assert account.platform == "xiaohongshu"
+    assert account.domain == "现代心理困境观察"
+    assert account.nickname == "心理观察手记实验号"
+
+
 def test_account_profile_to_dict_exposes_routing_fields() -> None:
     account = AccountRegistry().get("acct-fk-local")
 

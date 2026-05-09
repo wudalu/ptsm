@@ -124,3 +124,32 @@ def test_skill_registry_discovers_topic_research_skill() -> None:
     assert spec.playbook_tags == []
     assert spec.token_budget_hint == 200
     assert spec.assets_present is False
+
+
+def test_registry_discovers_modern_psychology_skills() -> None:
+    registry = SkillRegistry(
+        skill_root=Path("src/ptsm/skills/builtin"),
+    )
+
+    skill_names = {skill.skill_name for skill in registry.list_skills()}
+
+    assert "psychology_style" in skill_names
+    assert "psychology_safety" in skill_names
+    assert "xhs_psychology_hashtagging" in skill_names
+
+
+def test_modern_psychology_skills_have_correct_tags() -> None:
+    registry = SkillRegistry(
+        skill_root=Path("src/ptsm/skills/builtin"),
+    )
+
+    skills = {skill.skill_name: skill for skill in registry.list_skills()}
+    for skill_name in [
+        "psychology_style",
+        "psychology_safety",
+        "xhs_psychology_hashtagging",
+    ]:
+        skill = skills[skill_name]
+        assert "现代心理困境观察" in skill.domain_tags
+        assert "xiaohongshu" in skill.platform_tags
+        assert "modern_psychology_post" in skill.playbook_tags

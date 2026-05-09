@@ -53,3 +53,13 @@ class TestPlaybookEvalContract:
         d = contract.to_dict()
         assert d["suite_id"] == "test.default"
         assert d["version"] == 2
+
+    def test_loads_modern_psychology_contract(self):
+        root = Path(__file__).parent.parent.parent.parent / "src" / "ptsm" / "playbooks" / "definitions"
+        contract = load_playbook_eval_contract(root, "modern_psychology_post")
+        assert contract is not None
+        assert contract.suite_id == "modern_psychology_post.default"
+        executor_constraints = contract.node_contracts["executor"]["constraints"]
+        assert "#心理学" in executor_constraints["hashtags_must_include_any"]
+        assert "诊断" in executor_constraints["body_must_not_include_any"]
+        assert "专业帮助" in executor_constraints["body_must_include_any"]

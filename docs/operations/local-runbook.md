@@ -216,6 +216,12 @@ uv run python -m ptsm.bootstrap run-playbook \
   --scene "学一个表示坚持的高级词汇" \
   --account-id acct-daily-english-local \
   --playbook-id daily_english_post
+
+# Modern psychology dry-run
+uv run python -m ptsm.bootstrap run-playbook \
+  --scene "下班后还在反复复盘白天一句话" \
+  --account-id acct-psychology-local \
+  --playbook-id modern_psychology_post
 ```
 
 ## Diagnostics
@@ -317,6 +323,13 @@ ptsm accounts
     "platform": "xiaohongshu",
     "domain": "每日英语学习",
     "publish_mode": "dry-run"
+  },
+  {
+    "account_id": "acct-psychology-local",
+    "nickname": "心理观察手记实验号",
+    "platform": "xiaohongshu",
+    "domain": "现代心理困境观察",
+    "publish_mode": "dry-run"
   }
 ]
 ```
@@ -330,6 +343,7 @@ ptsm accounts
 | 武侠人物评述 | `acct-wuxia-local` | (未绑定 cookie) | 金庸古龙人物深度评述 |
 | AI科技资讯 | `acct-ai-tech-local` | (未绑定 cookie) | AI/科技趋势速递与解读 |
 | 每日英语学习 | `acct-daily-english-local` | (未绑定 cookie) | 每日单词学习、陪伴式教育 |
+| 现代心理困境观察 | `acct-psychology-local` | (未绑定 cookie) | 场景化心理科普、情绪解释、安全边界 |
 
 账号定义在 `src/ptsm/accounts/definitions/*.yaml`。新增账号只需加一个 YAML 文件。
 
@@ -404,6 +418,12 @@ uv run python -m ptsm.bootstrap run-playbook \
   --scene "学一个表示坚持的高级词汇" \
   --account-id acct-daily-english-local \
   --playbook-id daily_english_post
+
+# 现代心理困境观察领域
+uv run python -m ptsm.bootstrap run-playbook \
+  --scene "下班后还在反复复盘白天一句话" \
+  --account-id acct-psychology-local \
+  --playbook-id modern_psychology_post
 ```
 
 账号的 `domain` 决定了自动选哪个 playbook。`publish_mode: dry-run` 默认只生成不发布。改为 `mcp-real` 后走真实发布链路。

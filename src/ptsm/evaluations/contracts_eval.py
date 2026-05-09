@@ -226,7 +226,68 @@ def _constraint_failures(
                     "observation": f"hashtags_max_count violated: {len(hashtags)} > {max_count}",
                 }
             )
+        required_any = _string_list(constraints.get("hashtags_must_include_any"))
+        if required_any and not any(tag in hashtags for tag in required_any):
+            failures.append(
+                {
+                    "path": _field_path(target, "hashtags"),
+                    "value_preview": str(hashtags),
+                    "observation": (
+                        "hashtags_must_include_any violated: "
+                        f"missing one of {required_any}"
+                    ),
+                }
+            )
+
+    body = payload.get("body")
+    if isinstance(body, str):
+        include_any = _string_list(constraints.get("body_must_include_any"))
+        if include_any and not any(term in body for term in include_any):
+            failures.append(
+                {
+                    "path": _field_path(target, "body"),
+                    "value_preview": body[:120],
+                    "observation": (
+                        "body_must_include_any violated: "
+                        f"missing one of {include_any}"
+                    ),
+                }
+            )
+
+        include_all = _string_list(constraints.get("body_must_include_all"))
+        missing_all = [term for term in include_all if term not in body]
+        if missing_all:
+            failures.append(
+                {
+                    "path": _field_path(target, "body"),
+                    "value_preview": body[:120],
+                    "observation": (
+                        "body_must_include_all violated: "
+                        f"missing {missing_all}"
+                    ),
+                }
+            )
+
+        forbidden = _string_list(constraints.get("body_must_not_include_any"))
+        present = [term for term in forbidden if term in body]
+        if present:
+            failures.append(
+                {
+                    "path": _field_path(target, "body"),
+                    "value_preview": body[:120],
+                    "observation": (
+                        "body_must_not_include_any violated: "
+                        f"found {present}"
+                    ),
+                }
+            )
     return failures
+
+
+def _string_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value if str(item)]
 
 
 ALL_CONTRACT_EVALUATORS: list[EvaluatorSpec] = [

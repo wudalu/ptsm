@@ -12,6 +12,7 @@ from langchain_core.exceptions import OutputParserException
 from langchain_core.utils.json import parse_and_check_json_markdown, parse_json_markdown
 
 from ptsm.config.settings import Settings
+from ptsm.infrastructure.llm.contextual_drafts import build_contextual_deterministic_draft
 
 XHS_DRAFT_SYSTEM_PROMPT = (
     "你是一个负责小红书中文内容草稿的文案助手。"
@@ -228,6 +229,15 @@ def _build_deterministic_draft(
     extra_context: str = "",
     runtime_context: str = "",
 ) -> dict[str, Any]:
+    contextual = build_contextual_deterministic_draft(
+        scene=scene,
+        feedback=feedback,
+        extra_context=extra_context,
+        runtime_context=runtime_context,
+    )
+    if contextual is not None:
+        return contextual
+
     if _is_sushi_poetry_context(scene=scene, extra_context=extra_context):
         title = "读苏轼时突然读懂了今天"
         image_text = "把风雨读慢一点"

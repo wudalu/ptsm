@@ -113,3 +113,41 @@ def test_registry_selects_daily_english_by_account() -> None:
     playbook = registry.select_for_account(account=account)
 
     assert playbook.playbook_id == "daily_english_post"
+
+
+def test_registry_loads_modern_psychology_playbook() -> None:
+    registry = PlaybookRegistry(
+        playbook_root=Path("src/ptsm/playbooks/definitions"),
+    )
+
+    playbook = registry.get("modern_psychology_post")
+
+    assert playbook.domain == "现代心理困境观察"
+    assert "xiaohongshu" in playbook.platforms
+    assert playbook.required_skills == [
+        "xhs_trend_scan",
+        "topic_research",
+        "psychology_style",
+        "psychology_safety",
+        "xhs_psychology_hashtagging",
+    ]
+    assert playbook.trend_keywords == [
+        "职场焦虑",
+        "情绪内耗",
+        "关系边界",
+        "孤独感",
+        "短视频焦虑",
+        "睡眠恢复",
+    ]
+    assert playbook.max_attempts == 3
+
+
+def test_registry_selects_modern_psychology_by_account() -> None:
+    registry = PlaybookRegistry(
+        playbook_root=Path("src/ptsm/playbooks/definitions"),
+    )
+    account = AccountRegistry().get("acct-psychology-local")
+
+    playbook = registry.select_for_account(account=account)
+
+    assert playbook.playbook_id == "modern_psychology_post"
