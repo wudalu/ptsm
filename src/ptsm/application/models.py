@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 class PlaybookRequest(BaseModel):
     """Generic input contract for a playbook run."""
 
-    scene: str = Field(min_length=1)
+    scene: str = Field(default="")
     account_id: str = Field(min_length=1)
     platform: str | None = None
     playbook_id: str | None = None

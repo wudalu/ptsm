@@ -46,7 +46,7 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     fengkuang = subparsers.add_parser("run-fengkuang")
-    fengkuang.add_argument("--scene", required=True)
+    fengkuang.add_argument("--scene", default="")
     fengkuang.add_argument("--platform", default="xiaohongshu")
     fengkuang.add_argument("--account-id", default="acct-fk-local")
     fengkuang.add_argument("--thread-id")
@@ -79,7 +79,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     run_playbook_cli = subparsers.add_parser("run-playbook")
-    run_playbook_cli.add_argument("--scene", required=True)
+    run_playbook_cli.add_argument("--scene", default="")
     run_playbook_cli.add_argument("--platform")
     run_playbook_cli.add_argument("--account-id", required=True)
     run_playbook_cli.add_argument("--playbook-id")
@@ -316,6 +316,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.command == "run-fengkuang":
+        if not args.scene and not args.fresh_topic_research:
+            parser.error("run-fengkuang requires --scene or --fresh-topic-research")
         result = run_fengkuang_playbook(
             FengkuangRequest(
                 scene=args.scene,
@@ -337,6 +339,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     if args.command == "run-playbook":
+        if not args.scene and not args.fresh_topic_research:
+            parser.error("run-playbook requires --scene or --fresh-topic-research")
         result = run_playbook(
             PlaybookRequest(
                 scene=args.scene,

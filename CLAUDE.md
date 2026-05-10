@@ -103,6 +103,16 @@ uv run python -m ptsm.bootstrap run-playbook \
   --scene "下班后还在复盘会议上说错的那句话" \
   --account-id acct-psychology-local \
   --playbook-id modern_psychology_post
+
+# 选题驱动发帖（topic-radar 扫描热点 → 交互选题 → 自动生成）
+uv run python -m ptsm.bootstrap run-fengkuang \
+  --fresh-topic-research \
+  --account-id acct-fk-local
+
+uv run python -m ptsm.bootstrap run-playbook \
+  --fresh-topic-research \
+  --account-id acct-psychology-local \
+  --playbook-id modern_psychology_post
 ```
 
 开发完成后用 dry-run 测试端到端效果，操作细节见 `docs/operations/local-runbook.md`。

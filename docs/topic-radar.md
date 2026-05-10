@@ -2,7 +2,7 @@
 title: Topic Radar
 status: active
 owner: ptsm
-last_verified: 2026-05-03
+last_verified: 2026-05-10
 source_of_truth: true
 related_paths:
   - src/topic_radar
@@ -78,8 +78,38 @@ artifact 中 `analysis_method` 字段标记实际使用的路径（`"llm"` 或 `
 - `outputs/artifacts/topic-scan-{date}.json` — 结构化 JSON
 - `outputs/artifacts/topic-brief-{date}.md` — 可读 Markdown 报告
 
+## Programmatic API
+
+`topic_radar.run_scan()` 提供异步 programmatic 接口，返回 `TopicScanResult`：
+
+```python
+from topic_radar import run_scan
+
+result = await run_scan(platforms="xiaohongshu", keywords="打工人,治愈")
+# result.discovered_verticals  — 发现的垂类
+# result.recommended_angles    — 推荐角度
+# result.scan_summary          — 扫描摘要
+```
+
 ## 与 PTSM 协作
 
-topic_radar 不依赖 PTSM。PTSM 可以：
-- 通过 future skill 读取 artifact JSON 注入 planner context
+PTSM 通过 `--fresh-topic-research` 将 topic-radar 集成到发帖流程：
+
+```bash
+# 选题驱动发帖（topic-radar 扫描 → 交互选题 → 自动生成内容）
+ptsm run-fengkuang --fresh-topic-research --account-id acct-fk-local
+ptsm run-playbook --fresh-topic-research --account-id acct-psychology-local --playbook-id modern_psychology_post
+
+# 结合图片生成和发布
+ptsm run-fengkuang --fresh-topic-research --account-id acct-fk-local --auto-generate-image --publish-mode mcp-real --publish-visibility "仅自己可见"
+```
+
+流程：
+1. topic-radar 扫描当前平台热点
+2. 终端交互：展示发现的垂类和推荐角度，用户选择
+3. 基于用户选择的垂类+角度构建 enriched scene
+4. 继续正常的 playbook 发帖流程
+
+topic_radar 不依赖 PTSM。PTSM 还可以：
 - 通过 CLI 命令独立运行，人工参考结果
+- 通过 programmatic API 在其他场景中消费分析结果

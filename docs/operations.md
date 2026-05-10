@@ -2,7 +2,7 @@
 title: PTSM Operations
 status: active
 owner: ptsm
-last_verified: 2026-05-09
+last_verified: 2026-05-10
 source_of_truth: true
 related_paths:
   - docs/operations/cloud-bootstrap.md
@@ -23,6 +23,20 @@ related_paths:
 # Operations
 
 这个页面只做操作索引，不重复复制 runbook 内容。
+
+## Prerequisites: Start MCP Server
+
+topic-radar 扫描和真实发布都需要 `xiaohongshu-mcp` 服务。在另一个终端启动：
+
+```bash
+# 默认启动（全局 cookie）
+.ptsm/bin/xhs-mcp/xiaohongshu-mcp-darwin-amd64
+
+# 指定账号 cookie
+COOKIES_PATH=cookies/fk-local.json .ptsm/bin/xhs-mcp/xiaohongshu-mcp-darwin-amd64
+```
+
+监听 `localhost:18060`，对应 `XHS_MCP_SERVER_URL=http://localhost:18060/mcp`。PTSM 不会自动拉起它。
 
 ## Primary Runbooks
 
@@ -65,6 +79,9 @@ related_paths:
 - `uv run python -m ptsm.bootstrap run-playbook --scene "Google发布Gemini 3模型" --account-id acct-ai-tech-local --playbook-id ai_tech_daily_post`
 - `uv run python -m ptsm.bootstrap run-playbook --scene "学一个表示坚持的高级词汇" --account-id acct-daily-english-local --playbook-id daily_english_post`
 - `uv run python -m ptsm.bootstrap run-playbook --scene "下班后还在复盘会议上说错的那句话" --account-id acct-psychology-local --playbook-id modern_psychology_post`
+- `uv run python -m ptsm.bootstrap run-fengkuang --fresh-topic-research --account-id acct-fk-local`
+- `uv run python -m ptsm.bootstrap run-playbook --fresh-topic-research --account-id acct-psychology-local --playbook-id modern_psychology_post`
+- `uv run python -m ptsm.bootstrap run-fengkuang --fresh-topic-research --account-id acct-fk-local --auto-generate-image --publish-mode mcp-real --publish-visibility "仅自己可见"`
 - `uv run python -m ptsm.bootstrap run-playbook --scene "..." --account-id acct-wuxia-local --playbook-id wuxia_character_post --publish-mode mcp-real --auto-generate-image --publish-visibility "公开" --wait-for-publish-status`
 - `uv run python -m ptsm.bootstrap xhs-check-publish --artifact outputs/artifacts/<artifact>.json`
 
@@ -82,6 +99,7 @@ related_paths:
 - `eval` 默认关闭，每次运行时加 `--eval` 开启。eval 只运行确定性 rule/contract evaluator，LLM judge 需显式启用且仅 warning 不阻塞。
 - `eval-artifact` 可对已有 artifact 独立跑 eval，不依赖运行时。
 - `diagnose-publish` 是对单次发布问题的只读诊断入口，适合排查 “为什么没法自动确认已发布” 或 “为什么发布后状态不明确”。
+- `--fresh-topic-research` 通过 topic-radar 先扫描平台热点，交互式让用户选题后再生成内容，此时 `--scene` 可选。
 - `run-playbook` 是多 playbook 的通用入口；`run-fengkuang` 只保留给已有发疯文学兼容脚本和习惯命令。
 - `run-fengkuang --auto-generate-image` 会在缺少 `--publish-image-path` 时尝试调用已配置的图片后端生成封面；即梦配置优先于百炼配置，真实发布模式下默认也会尝试自动补图。
 - 小红书真实发布前，需要先单独启动外部 `xiaohongshu-mcp` 服务；PTSM 默认不会自动拉起 `.ptsm/bin/xhs-mcp/xiaohongshu-mcp-darwin-amd64`。

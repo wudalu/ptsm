@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 import re
+import sys
 from typing import Any
 
 from ptsm.accounts.registry import AccountRegistry
@@ -36,6 +38,150 @@ DEFAULT_SIDE_EFFECT_LEDGER_PATH = Path(".ptsm") / "agent_runtime" / "side-effect
 DEFAULT_GENERATED_IMAGES_DIR = Path("outputs") / "generated_images"
 WAIT_FOR_PUBLISH_STATUS_SEARCH_RETRY_ATTEMPTS = 4
 WAIT_FOR_PUBLISH_STATUS_SEARCH_RETRY_INTERVAL_SECONDS = 2.0
+
+
+def _run_topic_radar_scan(platform: str) -> dict[str, Any]:
+    """Run topic-radar scan across all platforms and return structured results for user selection."""
+    from topic_radar.cli import run_scan
+
+    print(f"\n{'='*60}")
+    print(f"Topic Radar: scanning hot topics across platforms...")
+    print(f"{'='*60}\n")
+
+    try:
+        result = asyncio.run(run_scan())
+    except RuntimeError as e:
+        print(f"Topic radar scan failed: {e}")
+        sys.exit(2)
+
+    verticals = [
+        {
+            "name": v.name,
+            "keywords": v.keywords,
+            "confidence": v.confidence,
+            "discussion_density": v.discussion_density,
+            "sample_topics": v.sample_topics,
+            "suggested_angles": v.suggested_angles,
+            "comment_themes": v.comment_themes,
+        }
+        for v in result.discovered_verticals
+    ]
+
+    angles = result.recommended_angles
+
+    return {
+        "scan_summary": result.scan_summary,
+        "scan_date": result.scan_date,
+        "platforms": result.platforms,
+        "verticals": verticals,
+        "recommended_angles": angles,
+        "noise_topics": result.noise_topics,
+    }
+
+
+def _interactive_topic_selection(scan_result: dict[str, Any]) -> dict[str, Any]:
+    """Present topic radar results interactively and return user selection."""
+    verticals = scan_result.get("verticals", [])
+    angles = scan_result.get("recommended_angles", [])
+
+    if not verticals:
+        print("No verticals discovered. Cannot proceed with topic selection.")
+        sys.exit(1)
+
+    print(f"\n{'='*60}")
+    print("Discovered Content Verticals & Recommended Angles")
+    print(f"{'='*60}\n")
+
+    # Show scan summary
+    summary = scan_result.get("scan_summary", "")
+    if summary:
+        print(f"Scan Summary: {summary}\n")
+
+    # Show verticals
+    for i, v in enumerate(verticals, 1):
+        density_bar = {"high": "🔥🔥🔥", "medium": "🔥🔥", "low": "🔥"}.get(
+            v.get("discussion_density", "medium"), "🔥🔥"
+        )
+        print(f"  [{i}] {v['name']}  {density_bar}  confidence: {v['confidence']:.0%}")
+        if v.get("keywords"):
+            print(f"      Keywords: {', '.join(v['keywords'])}")
+        if v.get("sample_topics"):
+            print(f"      Sample topics: {'; '.join(v['sample_topics'][:3])}")
+        if v.get("suggested_angles"):
+            print(f"      Suggested angles:")
+            for angle in v["suggested_angles"]:
+                print(f"        - {angle}")
+        print()
+
+    # Show recommended angles as a flat list
+    if angles:
+        offset = len(verticals)
+        print(f"{'─'*60}")
+        print("Additional recommended angles:\n")
+        for j, a in enumerate(angles, 1):
+            idx = offset + j
+            print(f"  [{idx}] {a.get('angle', '')}")
+            print(f"      Vertical: {a.get('vertical', '')}  |  Why: {a.get('why_discussion_likely', '')}")
+            print()
+
+    # User selection
+    total_options = len(verticals) + len(angles)
+    while True:
+        try:
+            choice = input(f"Select a topic [1-{total_options}] (or 'q' to quit): ").strip()
+            if choice.lower() == "q":
+                print("Cancelled.")
+                sys.exit(0)
+            idx = int(choice)
+            if 1 <= idx <= total_options:
+                break
+            print(f"Please enter a number between 1 and {total_options}.")
+        except ValueError:
+            print(f"Please enter a valid number or 'q'.")
+        except (EOFError, KeyboardInterrupt):
+            print("\nCancelled.")
+            sys.exit(0)
+
+    # Build selection result
+    if idx <= len(verticals):
+        vertical = verticals[idx - 1]
+        selected_angle = (
+            vertical["suggested_angles"][0] if vertical.get("suggested_angles") else vertical["name"]
+        )
+        return {
+            "vertical": vertical["name"],
+            "angle": selected_angle,
+            "keywords": vertical.get("keywords", []),
+            "discussion_density": vertical.get("discussion_density", ""),
+            "comment_themes": vertical.get("comment_themes", []),
+            "scan_summary": summary,
+        }
+    else:
+        angle = angles[idx - len(verticals) - 1]
+        return {
+            "vertical": angle.get("vertical", ""),
+            "angle": angle.get("angle", ""),
+            "keywords": [],
+            "discussion_density": "",
+            "comment_themes": [],
+            "scan_summary": summary,
+        }
+
+
+def _build_enriched_scene(selection: dict[str, Any]) -> str:
+    """Build an enriched scene string from the user's topic selection."""
+    parts = [
+        f"选题方向：{selection['vertical']}",
+    ]
+    if selection.get("angle"):
+        parts.append(f"切入角度：{selection['angle']}")
+    if selection.get("keywords"):
+        parts.append(f"关键标签：{'、'.join(selection['keywords'])}")
+    if selection.get("comment_themes"):
+        parts.append(f"预期讨论方向：{'、'.join(selection['comment_themes'])}")
+    if selection.get("scan_summary"):
+        parts.append(f"热点背景：{selection['scan_summary']}")
+    return "\n".join(parts)
 
 
 def run_playbook(
@@ -78,6 +224,19 @@ def run_playbook(
         platform=resolved_platform,
         playbook_id=request.playbook_id,
     )
+
+    # Topic-radar integration: scan hot topics, let user pick, enrich scene
+    topic_selection: dict[str, Any] | None = None
+    if request.fresh_topic_research:
+        scan_result = _run_topic_radar_scan(platform=resolved_platform)
+        topic_selection = _interactive_topic_selection(scan_result)
+        enriched_scene = _build_enriched_scene(topic_selection)
+        request.scene = enriched_scene
+        print(f"\n{'='*60}")
+        print(f"Scene built from topic selection:")
+        print(f"{enriched_scene}")
+        print(f"{'='*60}\n")
+
     run = run_store.start(
         command=command_name,
         account_id=request.account_id,
@@ -368,7 +527,7 @@ def run_playbook(
             run_id=run.run_id,
         )
 
-    return {
+    response: dict[str, Any] = {
         **result,
         "account": account.to_dict(),
         "publish_mode": publish_mode,
@@ -379,6 +538,9 @@ def run_playbook(
         "run": run_summary,
         "eval": eval_result,
     }
+    if topic_selection is not None:
+        response["topic_selection"] = topic_selection
+    return response
 
 
 def run_fengkuang_playbook(

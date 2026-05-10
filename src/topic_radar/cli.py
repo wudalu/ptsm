@@ -98,6 +98,168 @@ def _compute_heat(
     return heat
 
 
+async def run_scan(
+    platforms: str | None = None,
+    keywords: str | None = None,
+    output_dir: str | None = None,
+) -> TopicScanResult:
+    """Programmatic entry point: scan and return TopicScanResult.
+
+    This is the reusable core used by both the CLI and PTSM integration.
+    """
+    config = get_config()
+    platforms_str = platforms or config.default_platforms
+    platform_list = [p.strip() for p in platforms_str.split(",") if p.strip()]
+    output_dir = output_dir or config.output_dir
+    errors: dict[str, str] = {}
+    all_trending: dict[str, list[TrendingItem]] = {}
+
+    client = McpClient(
+        xhs_server_url=config.xhs_mcp_server_url,
+        enable_trends_hub=any(
+            p in {"weibo", "douyin", "zhihu", "bilibili", "toutiao", "douban", "sspai"}
+            for p in platform_list
+        ),
+    )
+
+    # Scan each platform
+    if "xiaohongshu" in platform_list:
+        await _scan_xiaohongshu(client, config, keywords, all_trending, errors)
+
+    if "weibo" in platform_list:
+        await _scan_weibo(client, config, all_trending, errors)
+
+    if "douyin" in platform_list:
+        await _scan_douyin(client, config, all_trending, errors)
+
+    for platform_name, platform_cls, display_name in [
+        ("zhihu", ZhihuPlatform, "zhihu"),
+        ("bilibili", BilibiliPlatform, "bilibili"),
+        ("toutiao", ToutiaoPlatform, "toutiao"),
+        ("douban", DoubanPlatform, "douban"),
+        ("sspai", SspaiPlatform, "sspai"),
+    ]:
+        if platform_name not in platform_list:
+            continue
+        await _scan_trends_hub_platform(
+            client, config, platform_cls, platform_name, display_name, all_trending, errors
+        )
+
+    if not all_trending:
+        raise RuntimeError(
+            f"No data collected from any platform. Errors: {errors}"
+        )
+
+    # Analyze: LLM first, rules fallback
+    scan_date = date.today().isoformat()
+    analyzer = LLMAnalyzer(
+        model=config.llm_model,
+        api_key=config.llm_api_key,
+        base_url=config.llm_base_url,
+    )
+    llm_output, method = analyzer.analyze(all_trending, scan_date)
+
+    if llm_output is not None:
+        result = _convert_llm_output(llm_output, all_trending, scan_date)
+    else:
+        flat_items = [item for items in all_trending.values() for item in items]
+        verticals = discover_verticals(flat_items)
+        cross_signals = discover_cross_platform(all_trending)
+        result = build_scan_result(
+            trending_items=all_trending,
+            verticals=verticals,
+            cross_signals=cross_signals,
+            errors=errors,
+        )
+
+    # Write artifacts
+    result.write(output_dir)
+    generate_report(result, output_dir)
+
+    return result
+
+
+async def _scan_xiaohongshu(
+    client: McpClient,
+    config,
+    keywords: str | None,
+    all_trending: dict[str, list[TrendingItem]],
+    errors: dict[str, str],
+) -> None:
+    try:
+        xhs = XiaohongshuPlatform(client)
+        is_logged_in, qr_data = await xhs.check_login()
+        if not is_logged_in:
+            all_trending["xiaohongshu"] = []
+        else:
+            keywords_list = (keywords or "").split(",") if keywords else None
+            kws = (
+                [kw.strip() for kw in keywords_list if kw.strip()]
+                if keywords_list
+                else ["打工人", "治愈"]
+            )
+            xhs_items: list[TrendingItem] = []
+            for kw in kws[:3]:
+                feeds = await xhs.search_feeds(kw, limit=config.scan_sample_limit // len(kws))
+                for feed in feeds:
+                    xhs_items.append(
+                        TrendingItem(
+                            rank=0,
+                            title=feed.title,
+                            hot_score=feed.engagement_score,
+                            platform="xiaohongshu",
+                        )
+                    )
+            all_trending["xiaohongshu"] = xhs_items
+    except PlatformUnavailable as e:
+        errors["xiaohongshu"] = str(e)
+
+
+async def _scan_weibo(
+    client: McpClient,
+    config,
+    all_trending: dict[str, list[TrendingItem]],
+    errors: dict[str, str],
+) -> None:
+    try:
+        weibo = WeiboPlatform(client)
+        items = await weibo.get_trending(limit=config.scan_sample_limit)
+        all_trending["weibo"] = items
+    except PlatformUnavailable as e:
+        errors["weibo"] = str(e)
+
+
+async def _scan_douyin(
+    client: McpClient,
+    config,
+    all_trending: dict[str, list[TrendingItem]],
+    errors: dict[str, str],
+) -> None:
+    try:
+        douyin = DouyinPlatform(client)
+        items = await douyin.get_trending(limit=config.scan_sample_limit)
+        all_trending["douyin"] = items
+    except PlatformUnavailable as e:
+        errors["douyin"] = str(e)
+
+
+async def _scan_trends_hub_platform(
+    client: McpClient,
+    config,
+    platform_cls,
+    platform_name: str,
+    display_name: str,
+    all_trending: dict[str, list[TrendingItem]],
+    errors: dict[str, str],
+) -> None:
+    try:
+        p = platform_cls(client)
+        items = await p.get_trending(limit=config.scan_sample_limit)
+        all_trending[display_name] = items
+    except PlatformUnavailable as e:
+        errors[display_name] = str(e)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="topic-radar")
     sub = parser.add_subparsers(dest="command")
@@ -125,16 +287,13 @@ def main() -> None:
 async def _scan(args: argparse.Namespace) -> None:
     config = get_config()
     platforms_str = args.platforms or config.default_platforms
-    platforms = [p.strip() for p in platforms_str.split(",") if p.strip()]
-    output_dir = args.output_dir or config.output_dir
-    errors: dict[str, str] = {}
-    all_trending: dict[str, list[TrendingItem]] = {}
+    platform_list = [p.strip() for p in platforms_str.split(",") if p.strip()]
 
     client = McpClient(
         xhs_server_url=config.xhs_mcp_server_url,
         enable_trends_hub=any(
             p in {"weibo", "douyin", "zhihu", "bilibili", "toutiao", "douban", "sspai"}
-            for p in platforms
+            for p in platform_list
         ),
     )
 
@@ -145,115 +304,28 @@ async def _scan(args: argparse.Namespace) -> None:
             print(f"{status} {name}: {h.tool_count} tools" + (f" ({h.error})" if h.error else ""))
         return
 
-    # Scan each platform
-    if "xiaohongshu" in platforms:
-        try:
-            xhs = XiaohongshuPlatform(client)
-
-            is_logged_in, qr_data = await xhs.check_login()
-            if not is_logged_in:
-                print("xiaohongshu: not logged in")
-                print("  To log in, run: python -m ptsm.bootstrap xhs-login-qrcode")
-                if qr_data:
-                    print(f"  QR code data available — scan with XHS app to log in")
-                all_trending["xiaohongshu"] = []
-            else:
-                keywords = (args.keywords or "").split(",") if args.keywords else None
-                kws = [kw.strip() for kw in keywords if kw.strip()] if keywords else ["打工人", "治愈"]
-                xhs_items: list[TrendingItem] = []
-                for kw in kws[:3]:
-                    feeds = await xhs.search_feeds(kw, limit=config.scan_sample_limit // len(kws))
-                    for feed in feeds:
-                        xhs_items.append(TrendingItem(
-                            rank=0, title=feed.title,
-                            hot_score=feed.engagement_score,
-                            platform="xiaohongshu",
-                        ))
-                all_trending["xiaohongshu"] = xhs_items
-                print(f"xiaohongshu: {len(xhs_items)} feeds")
-        except PlatformUnavailable as e:
-            errors["xiaohongshu"] = str(e)
-            print(f"xiaohongshu: unavailable — {e.reason}")
-
-    if "weibo" in platforms:
-        try:
-            weibo = WeiboPlatform(client)
-            items = await weibo.get_trending(limit=config.scan_sample_limit)
-            all_trending["weibo"] = items
-            print(f"weibo: {len(items)} trending items")
-        except PlatformUnavailable as e:
-            errors["weibo"] = str(e)
-            print(f"weibo: unavailable ({e.reason})")
-
-    if "douyin" in platforms:
-        try:
-            douyin = DouyinPlatform(client)
-            items = await douyin.get_trending(limit=config.scan_sample_limit)
-            all_trending["douyin"] = items
-            print(f"douyin: {len(items)} trending items")
-        except PlatformUnavailable as e:
-            errors["douyin"] = str(e)
-            print(f"douyin: unavailable ({e.reason})")
-
-    for platform_name, platform_cls, display_name in [
-        ("zhihu", ZhihuPlatform, "zhihu"),
-        ("bilibili", BilibiliPlatform, "bilibili"),
-        ("toutiao", ToutiaoPlatform, "toutiao"),
-        ("douban", DoubanPlatform, "douban"),
-        ("sspai", SspaiPlatform, "sspai"),
-    ]:
-        if platform_name not in platforms:
-            continue
-        try:
-            p = platform_cls(client)
-            items = await p.get_trending(limit=config.scan_sample_limit)
-            all_trending[display_name] = items
-            print(f"{display_name}: {len(items)} trending items")
-        except PlatformUnavailable as e:
-            errors[display_name] = str(e)
-            print(f"{display_name}: unavailable ({e.reason})")
-
-    if not all_trending:
-        print("No data collected from any platform.")
-        if errors:
-            for p, e in errors.items():
-                print(f"  {p}: {e}")
+    try:
+        result = await run_scan(
+            platforms=args.platforms,
+            keywords=args.keywords,
+            output_dir=args.output_dir,
+        )
+    except RuntimeError as e:
+        print(str(e))
         sys.exit(2)
 
-    # Analyze: LLM first, rules fallback
-    scan_date = date.today().isoformat()
-    analyzer = LLMAnalyzer(
-        model=config.llm_model,
-        api_key=config.llm_api_key,
-        base_url=config.llm_base_url,
-    )
-    llm_output, method = analyzer.analyze(all_trending, scan_date)
-
-    if llm_output is not None:
-        result = _convert_llm_output(llm_output, all_trending, scan_date)
-        print(f"\nAnalysis: LLM ({len(llm_output.discovered_verticals)} verticals, {len(llm_output.recommended_angles)} angles)")
+    method = result.analysis_method
+    if method == "llm":
+        print(f"\nAnalysis: LLM ({len(result.discovered_verticals)} verticals, {len(result.recommended_angles)} angles)")
     else:
-        flat_items = [item for items in all_trending.values() for item in items]
-        verticals = discover_verticals(flat_items)
-        cross_signals = discover_cross_platform(all_trending)
-        result = build_scan_result(
-            trending_items=all_trending,
-            verticals=verticals,
-            cross_signals=cross_signals,
-            errors=errors,
-        )
-        print(f"\nAnalysis: rules (LLM unavailable, {len(verticals)} verticals)")
-
-    # Output
-    json_path = result.write(output_dir)
-    md_path = generate_report(result, output_dir)
+        print(f"\nAnalysis: rules (LLM unavailable, {len(result.discovered_verticals)} verticals)")
 
     print(f"\nArtifacts written:")
-    print(f"  JSON: {json_path}")
-    print(f"  Report: {md_path}")
+    print(f"  JSON: outputs/artifacts/topic-scan-{result.scan_date}.json")
+    print(f"  Report: outputs/artifacts/topic-brief-{result.scan_date}.md")
 
-    if errors:
-        print(f"\nPartial scan — {len(errors)} platform(s) unavailable")
+    if result.platform_errors:
+        print(f"\nPartial scan — {len(result.platform_errors)} platform(s) unavailable")
         sys.exit(1)
     sys.exit(0)
 
