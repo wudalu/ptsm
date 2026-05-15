@@ -114,7 +114,7 @@ topic-radar scan --platforms xiaohongshu --keywords "情绪疗愈,修复系手�
 
 ```bash
 # 从 scan 产物的 raw_trending 中找 feed_id
-topic-radar teardown <feed_id> --xsec-token <token>
+topic-radar teardown <feed_id> --xsec-token <token> --timeout-seconds 20
 ```
 
 输出：
@@ -129,6 +129,16 @@ Question density: 0.35
 Sentiment ratio: 0.82
 Top terms: [('治愈', 24), ('教程', 18), ('求教程', 12), ('试试', 10), ('好看', 8)]
 ```
+
+### XHS Detail Behavior
+
+2026-05-15 登录后复测时，`search_feeds` 可以稳定返回候选笔记和互动指标。当前实现需要注意：
+
+- LLM scan 路径会继续保留 `raw_trending`，不要只看 LLM 分析摘要来判断采样是否成功。
+- `get_feed_detail` 兼容顶层 `note`、顶层详情对象和嵌套 `data.note` 结构；评论也会读取嵌套 `data.comments.list`。
+- 部分笔记仍可能因为不可访问、timeout 或 MCP 500 失败；`topic-radar teardown` 会对单篇详情请求使用 `--timeout-seconds`，失败时输出紧凑错误，不应阻塞整批采样。
+
+遇到详情失败时，先保留 `search_feeds` 的 `feed_id`、`xsec_token`、标题和互动指标，形成搜索级样本集；详情级评论拆解可以稍后重试，不要让单篇失败中断整体研究。
 
 ## Platform Availability Matrix
 

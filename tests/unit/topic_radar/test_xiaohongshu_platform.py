@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from topic_radar.platforms.xiaohongshu import (
     FeedItem,
     FeedDetail,
     Comment,
+    XiaohongshuPlatform,
     PlatformUnavailable,
     _to_int,
     _find_first_string,
@@ -86,3 +89,50 @@ class TestPlatformUnavailable:
         assert "xiaohongshu" in str(exc)
         assert "connection refused" in str(exc)
         assert exc.platform == "xiaohongshu"
+
+
+def test_get_feed_detail_parses_nested_data_note_payload():
+    class FakeClient:
+        async def invoke_tool(self, server, tool_name, payload, timeout=20.0):
+            return {
+                "feed_id": "note-1",
+                "data": {
+                    "note": {
+                        "noteId": "note-1",
+                        "title": "情绪自由才是更高级的情绪管理",
+                        "desc": "正文里有一个事实/猜测/下一步三栏。",
+                        "user": {"nickname": "作者"},
+                        "interactInfo": {
+                            "likedCount": "13",
+                            "commentCount": "5",
+                            "collectedCount": "16",
+                        },
+                        "tagList": [{"name": "情绪管理"}, {"name": "#心理学"}],
+                    },
+                    "comments": {
+                        "list": [
+                            {
+                                "content": "这个三栏怎么写？",
+                                "userName": "读者",
+                                "likeCount": "7",
+                                "subCommentCount": "2",
+                            }
+                        ]
+                    },
+                },
+            }
+
+    detail = asyncio.run(
+        XiaohongshuPlatform(FakeClient()).get_feed_detail("note-1", "token")
+    )
+
+    assert detail is not None
+    assert detail.feed_id == "note-1"
+    assert detail.title == "情绪自由才是更高级的情绪管理"
+    assert detail.body == "正文里有一个事实/猜测/下一步三栏。"
+    assert detail.author == "作者"
+    assert detail.likes == 13
+    assert detail.comments_count == 5
+    assert detail.tags == ["情绪管理", "心理学"]
+    assert len(detail.comments) == 1
+    assert detail.comments[0].content == "这个三栏怎么写？"

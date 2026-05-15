@@ -18,7 +18,11 @@ from topic_radar.analysis.cross_platform import (
     discover_verticals,
 )
 from topic_radar.analysis.llm_analyzer import LLMAnalyzer
-from topic_radar.output.artifacts import build_scan_result, TopicScanResult
+from topic_radar.output.artifacts import (
+    TopicScanResult,
+    _flatten_trending,
+    build_scan_result,
+)
 from topic_radar.output.report import generate_report
 from datetime import date
 
@@ -79,6 +83,7 @@ def _convert_llm_output(
         cross_platform_signals=cross_signals,
         high_engagement_patterns=patterns,
         recommended_angles=angles,
+        raw_trending=_flatten_trending(trending_items),
         analysis_method="llm",
         scan_summary=llm_output.scan_summary,
         noise_topics=llm_output.noise_topics,
@@ -273,6 +278,12 @@ def main() -> None:
     teardown_p = sub.add_parser("teardown", help="Deconstruct a single post")
     teardown_p.add_argument("feed_id", help="XHS feed ID")
     teardown_p.add_argument("--xsec-token", default="", help="XHS xsec_token")
+    teardown_p.add_argument(
+        "--timeout-seconds",
+        type=float,
+        default=20.0,
+        help="Maximum seconds to wait for one XHS detail request",
+    )
 
     args = parser.parse_args()
 
@@ -335,9 +346,20 @@ async def _teardown(args: argparse.Namespace) -> None:
     client = McpClient(xhs_server_url=config.xhs_mcp_server_url, enable_trends_hub=False)
     xhs = XiaohongshuPlatform(client)
 
-    detail = await xhs.get_feed_detail(args.feed_id, args.xsec_token)
+    try:
+        detail = await xhs.get_feed_detail(
+            args.feed_id,
+            args.xsec_token,
+            timeout=float(getattr(args, "timeout_seconds", 20.0)),
+        )
+    except PlatformUnavailable as exc:
+        print(f"Failed to fetch detail for feed {args.feed_id}: {exc.reason}")
+        sys.exit(1)
     if detail is None:
-        print(f"Failed to fetch detail for feed {args.feed_id}")
+        print(
+            f"Failed to fetch detail for feed {args.feed_id}: "
+            "note inaccessible or timed out"
+        )
         sys.exit(1)
 
     result = teardown(detail)
