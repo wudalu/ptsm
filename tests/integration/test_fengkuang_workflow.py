@@ -209,6 +209,35 @@ def test_fengkuang_workflow_persists_lessons_with_file_backed_memory(
     assert lessons[0]["playbook_id"] == "fengkuang_daily_post"
 
 
+def test_fengkuang_workflow_reads_recent_account_memory_before_drafting() -> None:
+    memory = InMemoryExecutionMemory()
+    memory.record(
+        namespace=("accounts", "acct-fk-memory", "lessons"),
+        item={
+            "playbook_id": "fengkuang_daily_post",
+            "scene": "昨天领导18:57发在吗",
+            "title": "领导18:57发在吗，我的工牌先疯了",
+            "final_body": "评论区接一句工牌背面的疯话。至少先让工牌替我发言。",
+        },
+    )
+    workflow = build_fengkuang_workflow(memory=memory, settings=_deterministic_settings())
+
+    result = workflow.invoke(
+        FengkuangRequest(
+            scene="今天领导18:59又发在吗",
+            platform="xiaohongshu",
+            account_id="acct-fk-memory",
+        ).model_dump(mode="python"),
+        config={"configurable": {"thread_id": "thread-fk-memory"}},
+    )
+
+    assert result["status"] == "completed"
+    assert result["memory_hits"]
+    runtime_context = "\n".join(result["runtime_skill_contents"])
+    assert "Avoid repeating recent account posts" in runtime_context
+    assert "领导18:57发在吗，我的工牌先疯了" in runtime_context
+
+
 class NeverImprovingDraftingAgent:
     def generate(
         self,

@@ -304,6 +304,13 @@ def _build_deterministic_draft(
         )
         hashtags = ["#发疯文学", "#社畜日常", "#打工人情绪实录"]
 
+    title, image_text = _avoid_recent_memory_title(
+        title=title,
+        image_text=image_text,
+        scene=scene,
+        runtime_context=runtime_context,
+    )
+
     if feedback != "无":
         body += "\n不过换个角度想，能把这口气慢慢喘匀、还能给自己留点电，也算今天没白扛。"
 
@@ -313,6 +320,20 @@ def _build_deterministic_draft(
         "body": body,
         "hashtags": hashtags,
     }
+
+
+def _avoid_recent_memory_title(
+    *, title: str, image_text: str, scene: str, runtime_context: str
+) -> tuple[str, str]:
+    if "# Recent Account Memory" not in runtime_context or title not in runtime_context:
+        return title, image_text
+    if _is_commute_scene(scene):
+        return "地铁门关上那秒我先下线", "灵魂请下一站下车"
+    if _is_meeting_scene(scene):
+        return "会议室把我循环播放到没电", "点头模式已开启"
+    if _is_weekend_rest_scene(scene):
+        return "周末回血失败现场", "躺着也在耗电"
+    return "今天换个地方发疯", image_text
 
 
 def _is_sushi_poetry_context(*, scene: str, extra_context: str) -> bool:

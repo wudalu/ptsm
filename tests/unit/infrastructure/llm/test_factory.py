@@ -229,6 +229,24 @@ def test_deterministic_backend_uses_runtime_trend_context_for_title_hook() -> No
     assert "新需求" in draft["body"]
 
 
+def test_deterministic_backend_avoids_recent_memory_title() -> None:
+    backend = DeterministicDraftBackend()
+
+    draft = backend.generate(
+        scene="周一早高峰地铁通勤",
+        runtime_skill_contents=[
+            "# Recent Account Memory\n"
+            "Avoid repeating recent account posts:\n"
+            "- recent_1_scene: 上周一早高峰地铁通勤\n"
+            "  title: 打工人地铁生存实录\n"
+            "  body_preview: 今日份发疯现场：上周一早高峰地铁通勤"
+        ],
+    )
+
+    assert draft["title"] != "打工人地铁生存实录"
+    assert "地铁" in draft["title"]
+
+
 def test_factory_puts_runtime_trend_context_in_dedicated_prompt_section() -> None:
     settings = Settings.model_construct(
         default_model_provider="deepseek",

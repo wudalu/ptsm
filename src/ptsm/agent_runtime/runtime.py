@@ -8,6 +8,7 @@ from ptsm.agent_runtime.agents import FengkuangDraftingAgent
 from ptsm.agent_runtime.graph.builder import build_execution_graph
 from ptsm.agent_runtime.nodes.executor import build_executor_node
 from ptsm.agent_runtime.nodes.ingest import build_ingest_node
+from ptsm.agent_runtime.nodes.memory import build_memory_node
 from ptsm.agent_runtime.nodes.planner import build_planner_node
 from ptsm.agent_runtime.nodes.reflector import build_reflector_node
 from ptsm.agent_runtime.state import ExecutionState
@@ -74,6 +75,7 @@ def build_playbook_workflow(
             skill_loader=skill_loader,
             skill_context_resolver=skill_context_resolver,
         ),
+        memory=build_memory_node(execution_memory=execution_memory),
         executor=build_executor_node(drafting_agent=drafting_agent),
         reflector=build_reflector_node(max_attempts=max_attempts),
         finalize=build_finalize_node(
@@ -144,13 +146,17 @@ def build_finalize_node(
             run_key=f"{state['account_id']}-{state['playbook_id']}-{state['attempt_count']}",
         )
 
+        final_content = state["final_content"]
         execution_memory.record(
             namespace=("accounts", state["account_id"], "lessons"),
             item={
                 "playbook_id": state["playbook_id"],
                 "scene": state["scene"],
                 "attempt_count": state["attempt_count"],
-                "final_body": state["final_content"]["body"],
+                "title": final_content.get("title", ""),
+                "image_text": final_content.get("image_text", ""),
+                "hashtags": list(final_content.get("hashtags", [])),
+                "final_body": final_content.get("body", ""),
             },
         )
         return {"status": "completed", "artifact_path": str(artifact_path)}

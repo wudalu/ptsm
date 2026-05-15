@@ -13,6 +13,7 @@ def build_execution_graph(
     *,
     ingest: ExecutionNode,
     planner: ExecutionNode,
+    memory: ExecutionNode | None = None,
     executor: ExecutionNode,
     reflector: ExecutionNode,
     finalize: ExecutionNode,
@@ -21,12 +22,18 @@ def build_execution_graph(
     graph = StateGraph(ExecutionState)
     graph.add_node("ingest", ingest)
     graph.add_node("planner", planner)
+    if memory is not None:
+        graph.add_node("memory", memory)
     graph.add_node("executor", executor)
     graph.add_node("reflector", reflector)
     graph.add_node("finalize", finalize)
     graph.add_edge(START, "ingest")
     graph.add_edge("ingest", "planner")
-    graph.add_edge("planner", "executor")
+    if memory is None:
+        graph.add_edge("planner", "executor")
+    else:
+        graph.add_edge("planner", "memory")
+        graph.add_edge("memory", "executor")
     graph.add_edge("executor", "reflector")
     graph.add_conditional_edges(
         "reflector",
