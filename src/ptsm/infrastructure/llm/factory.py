@@ -392,8 +392,6 @@ def _build_deepseek_hard_requirements(*, extra_context: str, runtime_context: st
     for hashtag in ("#发疯文学", "#苏轼"):
         if hashtag in extra_context:
             requirements.append(f"hashtags 数组必须包含 '{hashtag}'。")
-    if "也算" in extra_context:
-        requirements.append("正文必须包含“也算”，并把它放在结尾的轻量正向收束句里。")
     if "苏轼" in extra_context:
         requirements.append("正文必须包含“苏轼”。")
     return " ".join(requirements)

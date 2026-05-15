@@ -89,7 +89,7 @@ def test_build_fengkuang_workflow_delegates_to_build_playbook_workflow(
     assert captured["domain"] == runtime_module.DOMAIN_FENGKUANG
 
 
-def test_fengkuang_workflow_revises_once_and_persists_memory() -> None:
+def test_fengkuang_workflow_finalizes_without_required_ye_suan_and_persists_memory() -> None:
     memory = InMemoryExecutionMemory()
     workflow = build_fengkuang_workflow(memory=memory, settings=_deterministic_settings())
 
@@ -104,9 +104,11 @@ def test_fengkuang_workflow_revises_once_and_persists_memory() -> None:
 
     assert result["status"] == "completed"
     assert result["playbook_id"] == "fengkuang_daily_post"
-    assert result["attempt_count"] == 2
+    assert result["attempt_count"] == 1
     assert "周一早高峰地铁通勤" in result["final_content"]["body"]
-    assert "也算" in result["final_content"]["body"]
+    assert "#发疯文学" in result["final_content"]["hashtags"]
+    assert "精神病" not in result["final_content"]["body"]
+    assert "心理医生" not in result["final_content"]["body"]
 
     lessons = memory.search(namespace=("accounts", "acct-fk-001", "lessons"))
     assert len(lessons) == 1
@@ -222,7 +224,7 @@ class NeverImprovingDraftingAgent:
             "title": "一直在疯",
             "image_text": "还在疯",
             "body": f"{scene}，今天只有崩溃，没有缓冲。",
-            "hashtags": ["#发疯文学"],
+            "hashtags": ["#打工人"],
         }
 
 

@@ -60,7 +60,7 @@ def test_factory_builds_deepseek_backend_when_key_present() -> None:
 
     assert backend.provider_name == "deepseek"
     assert draft["title"] == "LLM发疯实录"
-    assert "也算" in draft["body"]
+    assert "会议连开三场" in draft["body"]
 
 
 def test_deterministic_backend_sanitizes_meta_scene_and_adapts_weekend_theme() -> None:
@@ -152,7 +152,7 @@ def test_factory_sanitizes_scene_before_deepseek_prompt() -> None:
     assert "周六社畜躺平" in user_prompt
 
 
-def test_factory_deepseek_prompt_hardens_required_phrase_and_hashtag() -> None:
+def test_factory_deepseek_prompt_hardens_required_hashtag_without_mandating_recommended_phrase() -> None:
     settings = Settings.model_construct(
         default_model_provider="deepseek",
         default_model="deepseek-chat",
@@ -174,7 +174,7 @@ def test_factory_deepseek_prompt_hardens_required_phrase_and_hashtag() -> None:
     )
 
     user_prompt = CapturingChatDeepSeek.last_messages[1].content
-    assert "正文必须包含“也算”" in user_prompt
+    assert "正文必须包含“也算”" not in user_prompt
     assert "hashtags 数组必须包含 '#发疯文学'" in user_prompt
 
 

@@ -28,7 +28,7 @@ class ExecutionState(TypedDict, total=False):
     planner_prompt: str
     persona_prompt: str
     reflection_prompt: str
-    reflection_rules: dict[str, str]
+    reflection_rules: dict[str, Any]
     loaded_skill_contents: list[str]
     runtime_skill_contents: list[str]
     runtime_skill_details: list[dict[str, Any]]

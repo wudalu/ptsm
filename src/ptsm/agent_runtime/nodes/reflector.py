@@ -8,9 +8,8 @@ def build_reflector_node(*, max_attempts: int):
         rules = state["reflection_rules"]
         draft = state["draft_content"]
         body = str(draft["body"])
-        required_hashtag = rules["required_hashtag"]
-        required_phrase = rules["must_include_phrase"]
-        passed = required_hashtag in draft["hashtags"] and required_phrase in body
+        missing = _missing_requirements(rules=rules, draft=draft, body=body)
+        passed = not missing
 
         if passed:
             return {
@@ -24,13 +23,41 @@ def build_reflector_node(*, max_attempts: int):
             return {
                 "required_revision": True,
                 "reflection_decision": "retry",
-                "reflection_feedback": state["reflection_prompt"],
+                "reflection_feedback": _build_feedback(state.get("reflection_prompt", ""), missing),
             }
 
         return {
             "required_revision": True,
             "reflection_decision": "fail",
-            "reflection_feedback": state["reflection_prompt"],
+            "reflection_feedback": _build_feedback(state.get("reflection_prompt", ""), missing),
         }
 
     return reflector
+
+
+def _missing_requirements(
+    *, rules: dict[str, object], draft: dict[str, object], body: str
+) -> list[str]:
+    missing: list[str] = []
+    hashtags = draft.get("hashtags", [])
+    if not isinstance(hashtags, list):
+        hashtags = []
+
+    required_hashtag = str(rules.get("required_hashtag", "")).strip()
+    if required_hashtag and required_hashtag not in hashtags:
+        missing.append(f"missing required hashtag {required_hashtag}")
+
+    required_phrase = str(rules.get("must_include_phrase", "")).strip()
+    if required_phrase and required_phrase not in body:
+        missing.append(f"missing required phrase {required_phrase}")
+
+    return missing
+
+
+def _build_feedback(reflection_prompt: str, missing: list[str]) -> str:
+    if not missing:
+        return reflection_prompt
+    summary = "Required reflection checks failed: " + "; ".join(missing)
+    if not reflection_prompt:
+        return summary
+    return f"{summary}\n\n{reflection_prompt}"

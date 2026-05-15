@@ -52,7 +52,7 @@ This exercises:
 - **Planner**: selects playbook (fengkuang_daily_post) and skills (xhs_trend_scan, fengkuang_style, positive_reframe, xhs_hashtagging)
 - **xhs_trend_scan**: calls MCP `search_feeds` with keywords derived from the scene to find real-time hot posts on Xiaohongshu. The live trend context (top posts by engagement score, recommended angle, tension) is injected into both the content drafting prompt and the image generation prompt. If MCP is unreachable, it falls back to the static SKILL.md guidance.
 - **Executor**: DeepSeek LLM generates title, image_text, body, hashtags from scene + persona + planner + static skills + live trend context
-- **Reflector**: hard-checks that `#发疯文学` tag and `也算` phrase are present. Passes to finalize, or retries up to max_attempts.
+- **Reflector**: enforces required rules such as `#发疯文学`. Light positive closings like `也算` are recommended style, not a mandatory phrase gate. Passes to finalize, or retries up to max_attempts.
 
 Review the output. If content quality is good, proceed to real publish.
 

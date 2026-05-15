@@ -11,5 +11,8 @@ required_skills:
   - xhs_hashtagging
 optional_skills: []
 reflection:
-  must_include_phrase: 也算
   required_hashtag: "#发疯文学"
+  recommended_phrases:
+    - 也算
+    - 至少
+    - 还能
