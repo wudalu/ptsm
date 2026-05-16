@@ -100,6 +100,25 @@ def test_deterministic_backend_can_follow_sushi_poetry_context() -> None:
     assert "发疯文学" not in draft["body"]
 
 
+def test_deterministic_backend_can_follow_wuxia_context() -> None:
+    backend = DeterministicDraftBackend()
+
+    draft = backend.generate(
+        scene="分析令狐冲的自由人格与当代职场人不愿被体制化的挣扎",
+        planner_prompt="# 武侠人物评述 Planner\n目标：写一篇适合小红书的武侠人物评述。",
+        skill_contents=[
+            "# Wuxia Commentary Style\n必须引用原文并点出金庸人物。",
+            "# XHS Wuxia Hashtagging\n必须包含 `#金庸`。",
+        ],
+    )
+
+    assert "令狐冲" in draft["body"]
+    assert "笑傲江湖" in draft["body"]
+    assert "#金庸" in draft["hashtags"]
+    assert len(draft["body"]) >= 400
+    assert "发疯文学" not in draft["body"]
+
+
 def test_deterministic_backend_can_follow_modern_psychology_context() -> None:
     backend = DeterministicDraftBackend()
 
