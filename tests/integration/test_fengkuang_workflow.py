@@ -89,7 +89,7 @@ def test_build_fengkuang_workflow_delegates_to_build_playbook_workflow(
     assert captured["domain"] == runtime_module.DOMAIN_FENGKUANG
 
 
-def test_fengkuang_workflow_revises_once_and_persists_memory() -> None:
+def test_fengkuang_workflow_finalizes_without_required_ye_suan_and_persists_memory() -> None:
     memory = InMemoryExecutionMemory()
     workflow = build_fengkuang_workflow(memory=memory, settings=_deterministic_settings())
 
@@ -104,9 +104,11 @@ def test_fengkuang_workflow_revises_once_and_persists_memory() -> None:
 
     assert result["status"] == "completed"
     assert result["playbook_id"] == "fengkuang_daily_post"
-    assert result["attempt_count"] == 2
+    assert result["attempt_count"] == 1
     assert "周一早高峰地铁通勤" in result["final_content"]["body"]
-    assert "也算" in result["final_content"]["body"]
+    assert "#发疯文学" in result["final_content"]["hashtags"]
+    assert "精神病" not in result["final_content"]["body"]
+    assert "心理医生" not in result["final_content"]["body"]
 
     lessons = memory.search(namespace=("accounts", "acct-fk-001", "lessons"))
     assert len(lessons) == 1
@@ -207,6 +209,35 @@ def test_fengkuang_workflow_persists_lessons_with_file_backed_memory(
     assert lessons[0]["playbook_id"] == "fengkuang_daily_post"
 
 
+def test_fengkuang_workflow_reads_recent_account_memory_before_drafting() -> None:
+    memory = InMemoryExecutionMemory()
+    memory.record(
+        namespace=("accounts", "acct-fk-memory", "lessons"),
+        item={
+            "playbook_id": "fengkuang_daily_post",
+            "scene": "昨天领导18:57发在吗",
+            "title": "领导18:57发在吗，我的工牌先疯了",
+            "final_body": "评论区接一句工牌背面的疯话。至少先让工牌替我发言。",
+        },
+    )
+    workflow = build_fengkuang_workflow(memory=memory, settings=_deterministic_settings())
+
+    result = workflow.invoke(
+        FengkuangRequest(
+            scene="今天领导18:59又发在吗",
+            platform="xiaohongshu",
+            account_id="acct-fk-memory",
+        ).model_dump(mode="python"),
+        config={"configurable": {"thread_id": "thread-fk-memory"}},
+    )
+
+    assert result["status"] == "completed"
+    assert result["memory_hits"]
+    runtime_context = "\n".join(result["runtime_skill_contents"])
+    assert "Avoid repeating recent account posts" in runtime_context
+    assert "领导18:57发在吗，我的工牌先疯了" in runtime_context
+
+
 class NeverImprovingDraftingAgent:
     def generate(
         self,
@@ -222,7 +253,55 @@ class NeverImprovingDraftingAgent:
             "title": "一直在疯",
             "image_text": "还在疯",
             "body": f"{scene}，今天只有崩溃，没有缓冲。",
-            "hashtags": ["#发疯文学"],
+            "hashtags": ["#打工人"],
+        }
+
+
+class SequenceJudgeBackend:
+    def __init__(self, responses: list[dict[str, object]]) -> None:
+        self.responses = responses
+        self.calls = 0
+
+    def judge(self, *, prompt: str) -> str:
+        response = self.responses[min(self.calls, len(self.responses) - 1)]
+        self.calls += 1
+        return json.dumps(response, ensure_ascii=False)
+
+
+class FeedbackAwareDraftingAgent:
+    def __init__(self) -> None:
+        self.feedback_seen: list[str | None] = []
+
+    def generate(
+        self,
+        *,
+        scene: str,
+        reflection_feedback: str | None = None,
+        persona_prompt: str | None = None,
+        planner_prompt: str | None = None,
+        skill_contents: list[str] | None = None,
+        runtime_skill_contents: list[str] | None = None,
+    ) -> dict[str, object]:
+        self.feedback_seen.append(reflection_feedback)
+        if reflection_feedback:
+            return {
+                "title": "领导18:57发「在吗」那一秒",
+                "image_text": "我的工牌先替我发疯",
+                "body": (
+                    f"{scene}，群聊弹出来那一秒，工牌先替我深呼吸。"
+                    "可复制疯话：收到，但我的电量不支持热更新。"
+                    "评论区接一句你最想写在工牌背面的疯话。"
+                ),
+                "hashtags": ["#发疯文学", "#打工人日常"],
+            }
+        return {
+            "title": "领导18:57发「在吗」那一秒",
+            "image_text": "我的工牌先替我发疯",
+            "body": (
+                f"{scene}，群聊弹出来那一秒，工牌先替我深呼吸。"
+                "评论区接一句你最想写在工牌背面的疯话。"
+            ),
+            "hashtags": ["#发疯文学", "#打工人日常"],
         }
 
 
@@ -244,3 +323,60 @@ def test_fengkuang_workflow_stops_after_max_attempts() -> None:
 
     assert result["status"] == "failed"
     assert result["attempt_count"] == 3
+
+
+def test_fengkuang_workflow_regenerates_when_content_quality_judge_fails() -> None:
+    drafting_agent = FeedbackAwareDraftingAgent()
+    judge_backend = SequenceJudgeBackend(
+        [
+            {
+                "score": 0.45,
+                "labels": {
+                    "hook_specificity": "pass",
+                    "save_trigger": "fail",
+                    "comment_trigger": "pass",
+                    "platform_native_format": "warn",
+                    "persona_fit": "pass",
+                    "safety": "pass",
+                },
+                "reason": "missing saveable line",
+                "rewrite_hint": "Add one reusable copyable line.",
+            },
+            {
+                "score": 0.86,
+                "labels": {
+                    "hook_specificity": "pass",
+                    "save_trigger": "pass",
+                    "comment_trigger": "pass",
+                    "platform_native_format": "pass",
+                    "persona_fit": "pass",
+                    "safety": "pass",
+                },
+                "reason": "ready for human review",
+                "rewrite_hint": "",
+            },
+        ]
+    )
+    workflow = build_fengkuang_workflow(
+        drafting_agent=drafting_agent,
+        content_quality_judge_backend=judge_backend,
+        max_attempts=3,
+        settings=_deterministic_settings(),
+    )
+
+    result = workflow.invoke(
+        FengkuangRequest(
+            scene="领导18:57突然发来一句在吗，明天早会还要我补材料",
+            platform="xiaohongshu",
+            account_id="acct-fk-judge",
+        ).model_dump(mode="python"),
+        config={"configurable": {"thread_id": "thread-fk-judge"}},
+    )
+
+    assert result["status"] == "completed"
+    assert result["attempt_count"] == 2
+    assert judge_backend.calls == 2
+    assert "Add one reusable copyable line." in str(drafting_agent.feedback_seen[1])
+    assert "可复制疯话" in result["final_content"]["body"]
+    assert result["content_quality_eval"]["status"] == "passed"
+    assert result["content_quality_eval"]["gate_level"] == "required"

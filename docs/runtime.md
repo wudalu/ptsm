@@ -2,7 +2,7 @@
 title: PTSM Runtime
 status: active
 owner: ptsm
-last_verified: 2026-05-09
+last_verified: 2026-05-16
 source_of_truth: true
 related_paths:
   - src/ptsm/agent_runtime/runtime.py
@@ -27,29 +27,36 @@ related_paths:
 
 1. `run_playbook()` 接收 `PlaybookRequest`，解析账号和 playbook。
 2. `build_playbook_workflow()` 按所选 playbook/domain 组装 LangGraph 图。
-3. graph 依次运行 ingest、planner、executor、reflector、finalize。
-4. finalize 写入 artifact 和执行 lessons memory。
-5. 应用层根据结果决定是否生成发布图片、发布、查状态、开浏览器。
+3. graph 依次运行 ingest、planner、memory、executor、reflector、finalize。
+4. memory 节点读取当前账号最近同 playbook lessons，并把避免重复的 compact context 注入 `runtime_skill_contents`。
+5. reflector 先跑 deterministic reflection rules；如果当前 playbook 配置了 LLM judge backend，还会把 executor draft 交给 content-quality judge。judge 失败或输出无效时会把 `rewrite_hint` 写入 `reflection_feedback` 并回到 executor 重写，直到通过或达到 `max_attempts`。
+6. finalize 写入 artifact、执行 lessons memory，并生成 `content_review` 供人工确认。
+7. 应用层根据结果决定是否生成发布图片、发布、查状态、开浏览器。
 
 ## Current Runtime Facts
 
 - 当前通用运行时入口是 `build_playbook_workflow()`，`build_fengkuang_workflow()` 只是兼容 wrapper。
 - 运行结果会落到 artifact，并写入本地 run store。
 - `run_playbook()` 默认会在 `.ptsm/agent_runtime/` 下创建持久 execution memory 和 checkpoint。
+- workflow 会在 drafting 前读取最近 3 条同账号、同 playbook 的 lessons，形成 `# Recent Account Memory` runtime context，提示 drafting backend 避免重复标题形状、开头、热词和收尾。
 - `run_playbook()` 现在也会在 `.ptsm/agent_runtime/side-effects.json` 下记录成功副作用结果，用于同一 `thread_id` 的安全重放。
 - `run_playbook()` 现在可以在真实发布缺图时调用 provider-backed image backend，默认把生成图写到 `outputs/generated_images/`；即梦配置优先于百炼配置。
 - deterministic / deepseek drafting backend 现在会读取 playbook prompt、playbook persona prompt、静态 scoped skills，以及 planner 注入的 runtime skill contexts，不再只面向发疯文学。
-- deterministic drafting backend 可以通过小型 contextual draft helper 为特定 playbook 提供离线 dry-run 草稿，供 harness 和 e2e 测试在没有真实 LLM 调用时验证领域硬约束；当前用于 `modern_psychology_post` 的心理安全边界验证。
+- deterministic drafting backend 可以通过小型 contextual draft helper 为特定 playbook 提供离线 dry-run 草稿，供 harness 和 e2e 测试在没有真实 LLM 调用时验证领域硬约束；当前覆盖 `modern_psychology_post` 的心理安全/工具边界，以及 `wuxia_character_post` 的金庸人物评述基础结构。
 - 显式注入依赖时，运行时仍兼容 `InMemoryExecutionMemory` 和 `InMemorySaver`。
 - 持久 checkpoint 以 `thread_id` 为键保存；复用同一个 `thread_id` 才能跨进程读取同一条执行线程。
 - 当前 side-effect ledger 只复用成功 publish 结果，不缓存失败 publish 或只读状态检查。
 - planner 现在会把每个激活 skill 的元信息（`activated_skill_details`）和 runtime context 元信息（`runtime_skill_details`）注入 state，供 finalize 写入 artifact 和 harness evals 消费。
 - LLM JSON 解析现在对模型把 hashtags 内嵌在 body 中的情况有容错：缺失 `hashtags` key 时从 body 尾部提取并剥离，避免因输出格式微小偏差导致整个 run 失败。
 - finalize 现在会把 planner / executor / reflector 的 bounded step evidence 写入 artifact 的 `step_outputs`，包括 selected playbook、prompt refs、attempt count、draft content、reflection decision 和 feedback，供 online evaluation 抽取 phase targets。
+- finalize 写入 lessons memory 时会记录 title、image_text、hashtags 和 final_body，供后续 memory 节点做跨帖去重参考。
+- deterministic drafting fallback 会消费 recent account memory 做轻量去重；发疯文学和现代心理困境观察都会在近期标题/封面撞车时切换到备用表达，而不是只证明 memory 被读到。
+- finalize 现在还会写入 `content_review`，包含生成逻辑、互动/收藏/安全信号、LLM 内容质量门状态和人工确认建议。这个 review 不等于自动发布批准；当前人工调整流程是 operator 基于该说明继续对话修改，而不是进入独立审核队列。
 
 ## Practical Implications
 
 - lessons memory 现在可以跨 CLI 调用保留，不再只活在单进程里。
+- lessons memory 不只是写入；后续同账号同 playbook 运行会在 executor 前回读，并以 runtime context 进入 drafting backend。
 - graph checkpoint 现在可跨进程保留，用于后续调试、回读和 thread 续跑。
 - publish side effects 现在可按 `thread_id` 去重，避免 resume 或重复调用时再次执行成功 publish。
 - planner 现在会把 playbook 的 persona prompt 一起送入 executor，让不同领域的账号口吻保留在版本化资产里，而不是硬编码在 runtime。
@@ -57,8 +64,8 @@ related_paths:
 - 图片生成现在是发布前的一段显式步骤，会把 prompt、模型和生成路径写回 artifact，便于后续验收和排障。
 - 图片生成 prompt 现在也会读取 `runtime_skill_contents` 里的实时切口和场景张力，让封面图和正文共享同一层热点上下文。
 - 图片生成后可选去水印后处理（`WATERMARK_REMOVAL_ENABLED=true`），使用 OpenCV inpainting 检测并移除底角残留水印，处理结果写入 artifact 的 `watermark_removal` 字段。
-- online evaluation 不在 LangGraph 节点内运行；`run_playbook()` 完成 artifact/image/publish/post-publish 后再调用 eval use case，因此 evaluator 失败不会改变原始 runtime graph 的控制流。
-- 当前仍没有更高阶的 cross-thread lookup、状态压缩或远端 state backend。
+- artifact evaluation 不在 LangGraph 节点内运行；`run_playbook()` 完成 artifact/image/publish/post-publish 后再调用 eval use case，因此 rule/contract evaluator 失败不会改变原始 runtime graph 的控制流。内容质量 LLM judge 是生成链路例外：它在 reflector 内作为重写门使用。
+- 当前仍没有远端 state backend；cross-thread lookup 只限本地 execution memory 中最近同账号同 playbook lessons 的轻量回读。
 
 ## Operator Entry Points
 

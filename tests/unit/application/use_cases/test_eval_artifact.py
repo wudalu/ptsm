@@ -10,7 +10,7 @@ from ptsm.evaluations.contracts import EvalResult
 
 SAMPLE_ARTIFACT = {
     "playbook_id": "fengkuang_daily_post",
-    "scene": "test scene",
+    "scene": "周一早高峰地铁通勤",
     "account": {"account_id": "acct-fk-local", "platform": "xiaohongshu"},
     "publish_mode": "dry-run",
     "activated_skills": ["fengkuang_style"],
@@ -33,10 +33,13 @@ SAMPLE_ARTIFACT = {
         },
     },
     "final_content": {
-        "title": "test title",
-        "body": "test body",
-        "image_text": "image",
-        "hashtags": ["#fakelit", "#test"],
+        "title": "地铁门关上那秒我把灵魂留站台",
+        "body": (
+            "周一早高峰地铁通勤，人在车厢，心已请假。"
+            "评论区接一句你最想写在闸机口的打工人暗号。"
+        ),
+        "image_text": "灵魂请下一站下车",
+        "hashtags": ["#发疯文学", "#通勤崩溃实录"],
     },
     "publish_result": {"status": "dry_run"},
 }
@@ -214,6 +217,62 @@ class TestRunEvalArtifact:
                 for row in result_rows
             )
 
+    def test_eval_artifact_fails_deliberately_weak_content_quality_fixture(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            definitions_root = root / "playbooks"
+            _write_eval_contract(
+                definitions_root,
+                playbook_id="fengkuang_daily_post",
+                title_max_chars=30,
+                extra_constraints={
+                    "title_must_not_equal_any": ["打工人地铁生存实录"],
+                    "image_text_must_not_equal_any": ["今日已疯"],
+                    "body_must_include_comment_prompt_any": ["评论区", "你最"],
+                    "body_must_include_save_trigger_any": ["可复制", "模板"],
+                    "body_must_not_include_any": ["精神病"],
+                },
+            )
+            artifact_path = root / "weak-quality.json"
+            artifact_path.write_text(
+                json.dumps(
+                    {
+                        **SAMPLE_ARTIFACT,
+                        "final_content": {
+                            "title": "打工人地铁生存实录",
+                            "image_text": "今日已疯",
+                            "body": "周一早高峰地铁通勤，我像个精神病一样累。",
+                            "hashtags": ["#发疯文学"],
+                        },
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            result = run_eval_artifact(
+                artifact_path=artifact_path,
+                evals_base_dir=root / "evals",
+                playbook_definitions_root=definitions_root,
+            )
+
+            assert result["status"] == "failed"
+            assert result["gate"]["required_failed"] > 0
+            results_path = root / "evals" / result["eval_run_id"] / "results.jsonl"
+            result_rows = [
+                json.loads(line)
+                for line in results_path.read_text(encoding="utf-8").splitlines()
+            ]
+            assert any("title_must_not_equal_any" in row["reason"] for row in result_rows)
+            assert any(
+                "body_must_include_comment_prompt_any" in row["reason"]
+                for row in result_rows
+            )
+            assert any(
+                "body_must_include_save_trigger_any" in row["reason"]
+                for row in result_rows
+            )
+
     def test_missing_playbook_local_contract_is_non_fatal(self):
         with tempfile.TemporaryDirectory() as tmp:
             artifact_path = Path(tmp) / "artifact.json"
@@ -253,7 +312,7 @@ class TestRunEvalArtifact:
             assert backend.calls == 0
             assert all(not row["evaluator_id"].startswith("llm.") for row in rows)
 
-    def test_llm_judges_run_when_explicitly_enabled_as_warning_only(self):
+    def test_llm_judges_run_when_explicitly_enabled_as_required_gate(self):
         with tempfile.TemporaryDirectory() as tmp:
             artifact_path = Path(tmp) / "artifact.json"
             artifact_path.write_text(
@@ -263,9 +322,16 @@ class TestRunEvalArtifact:
                 json.dumps(
                     {
                         "score": 0.2,
-                        "label": "weak",
+                        "labels": {
+                            "hook_specificity": "warn",
+                            "save_trigger": "fail",
+                            "comment_trigger": "pass",
+                            "platform_native_format": "warn",
+                            "persona_fit": "pass",
+                            "safety": "pass",
+                        },
                         "reason": "semantic quality is weak",
-                        "confidence": 0.8,
+                        "rewrite_hint": "Add a reusable template line.",
                     }
                 )
             )
@@ -277,17 +343,18 @@ class TestRunEvalArtifact:
                 llm_judge_backend=backend,
             )
 
-            assert result["status"] == "warning"
-            assert result["gate"]["required_failed"] == 0
-            assert result["gate"]["warning_failed"] == 1
+            assert result["status"] == "failed"
+            assert result["gate"]["required_failed"] == 1
+            assert result["gate"]["warning_failed"] == 0
             results_path = Path(tmp) / "evals" / result["eval_run_id"] / "results.jsonl"
             rows = [
                 json.loads(line)
                 for line in results_path.read_text(encoding="utf-8").splitlines()
             ]
             assert any(
-                row["evaluator_id"] == "llm.executor.semantic_quality"
-                and row["gate_level"] == "warning"
+                row["evaluator_id"] == "llm.executor.content_quality"
+                and row["gate_level"] == "required"
+                and row["evidence"][0]["labels"]["save_trigger"] == "fail"
                 for row in rows
             )
 
@@ -297,24 +364,32 @@ def _write_eval_contract(
     *,
     playbook_id: str,
     title_max_chars: int,
+    extra_constraints: dict | None = None,
 ) -> None:
     playbook_dir = definitions_root / playbook_id
     playbook_dir.mkdir(parents=True, exist_ok=True)
+    constraints = {
+        "title_max_chars": title_max_chars,
+        "hashtags_min_count": 1,
+        "hashtags_max_count": 8,
+    }
+    constraints.update(extra_constraints or {})
+    import yaml
+
     (playbook_dir / "evaluation.yaml").write_text(
-        (
-            "version: 1\n"
-            f"suite_id: {playbook_id}.default\n"
-            "node_contracts:\n"
-            "  executor:\n"
-            "    required_fields:\n"
-            "      - title\n"
-            "      - body\n"
-            "      - image_text\n"
-            "      - hashtags\n"
-            "    constraints:\n"
-            f"      title_max_chars: {title_max_chars}\n"
-            "      hashtags_min_count: 1\n"
-            "      hashtags_max_count: 8\n"
+        yaml.safe_dump(
+            {
+                "version": 1,
+                "suite_id": f"{playbook_id}.default",
+                "node_contracts": {
+                    "executor": {
+                        "required_fields": ["title", "body", "image_text", "hashtags"],
+                        "constraints": constraints,
+                    }
+                },
+            },
+            allow_unicode=True,
+            sort_keys=False,
         ),
         encoding="utf-8",
     )

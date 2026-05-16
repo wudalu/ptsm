@@ -37,6 +37,38 @@ class ExplodingMcpRunner:
         raise AssertionError("invoke_tool should not be reached")
 
 
+class QrcodeFailingMcpRunner:
+    async def list_tool_names(self) -> list[str]:
+        return ["check_login_status", "get_login_qrcode"]
+
+    async def invoke_tool(self, tool_name: str, payload: dict[str, object]) -> object:
+        if tool_name == "check_login_status":
+            return [{"type": "text", "text": "❌ 未登录"}]
+        raise RuntimeError("MCP server internal error (500) while getting QR code")
+
+
+class QrcodeHttp500McpRunner:
+    async def list_tool_names(self) -> list[str]:
+        return ["check_login_status", "get_login_qrcode"]
+
+    async def invoke_tool(self, tool_name: str, payload: dict[str, object]) -> object:
+        if tool_name == "check_login_status":
+            return [{"type": "text", "text": "❌ 未登录"}]
+        request = httpx.Request("POST", "http://localhost:18060/mcp")
+        response = httpx.Response(500, request=request)
+        raise ExceptionGroup(
+            "unhandled errors in a TaskGroup",
+            [
+                httpx.HTTPStatusError(
+                    "Server error '500 Internal Server Error' for url "
+                    "'http://localhost:18060/mcp'",
+                    request=request,
+                    response=response,
+                )
+            ],
+        )
+
+
 def build_account() -> AccountProfile:
     return AccountProfile(
         account_id="acct-fk-local",
@@ -137,6 +169,44 @@ def test_xiaohongshu_mcp_publisher_preflight_returns_qrcode_metadata() -> None:
     assert preflight["qrcode"]["timeout"] == "4m0s"
     assert preflight["qrcode"]["is_logged_in"] is False
     assert preflight["qrcode"]["img"] == "data:image/png;base64,abc"
+
+
+def test_xiaohongshu_mcp_publisher_preflight_keeps_login_required_when_qrcode_fails() -> None:
+    publisher = XiaohongshuMcpPublisher(
+        server_url="http://localhost:18060/mcp",
+        tool_runner=QrcodeFailingMcpRunner(),
+    )
+
+    preflight = publisher.preflight()
+
+    assert preflight["status"] == "login_required"
+    assert preflight["login_status"] == "❌ 未登录"
+    assert "qrcode" not in preflight
+    assert preflight["qrcode_error"] == (
+        "Failed to fetch XiaoHongShu login QR code: "
+        "MCP server internal error (500) while getting QR code"
+    )
+    assert preflight["next_actions"] == [
+        "Restart xiaohongshu-mcp or its browser session.",
+        "Run `ptsm xhs-login-qrcode` again.",
+        "If QR login still fails, run `COOKIES_PATH=<cookie-file> .ptsm/bin/xhs-mcp/xiaohongshu-login-darwin-amd64` and restart MCP with the same `COOKIES_PATH`.",
+    ]
+
+
+def test_xiaohongshu_mcp_publisher_preflight_reports_nested_qrcode_http_error() -> None:
+    publisher = XiaohongshuMcpPublisher(
+        server_url="http://localhost:18060/mcp",
+        tool_runner=QrcodeHttp500McpRunner(),
+    )
+
+    preflight = publisher.preflight()
+
+    assert preflight["status"] == "login_required"
+    assert preflight["qrcode_error"] == (
+        "Failed to fetch XiaoHongShu login QR code: "
+        "Server error '500 Internal Server Error' for url "
+        "'http://localhost:18060/mcp'"
+    )
 
 
 def test_xiaohongshu_mcp_publisher_preflight_surfaces_connection_errors() -> None:

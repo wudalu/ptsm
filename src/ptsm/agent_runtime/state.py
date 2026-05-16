@@ -28,9 +28,11 @@ class ExecutionState(TypedDict, total=False):
     planner_prompt: str
     persona_prompt: str
     reflection_prompt: str
-    reflection_rules: dict[str, str]
+    reflection_rules: dict[str, Any]
     loaded_skill_contents: list[str]
     runtime_skill_contents: list[str]
     runtime_skill_details: list[dict[str, Any]]
     artifact_path: str
     memory_hits: list[dict[str, Any]]
+    content_quality_eval: dict[str, Any]
+    content_review: dict[str, Any]

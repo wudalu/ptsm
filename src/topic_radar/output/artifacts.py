@@ -126,14 +126,16 @@ def _flatten_trending(trending_items: dict[str, list[TrendingItem]]) -> list[dic
     flat: list[dict] = []
     for platform, items in trending_items.items():
         for item in items[:30]:
-            flat.append({
+            row = {
                 "platform": item.platform,
                 "rank": item.rank,
                 "title": item.title,
                 "hot_score": item.hot_score,
                 "label": item.label,
                 "url": item.url,
-            })
+            }
+            row.update(item.metadata)
+            flat.append(row)
     return flat
 
 

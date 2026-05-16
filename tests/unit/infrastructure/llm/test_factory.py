@@ -60,7 +60,7 @@ def test_factory_builds_deepseek_backend_when_key_present() -> None:
 
     assert backend.provider_name == "deepseek"
     assert draft["title"] == "LLM发疯实录"
-    assert "也算" in draft["body"]
+    assert "会议连开三场" in draft["body"]
 
 
 def test_deterministic_backend_sanitizes_meta_scene_and_adapts_weekend_theme() -> None:
@@ -100,6 +100,25 @@ def test_deterministic_backend_can_follow_sushi_poetry_context() -> None:
     assert "发疯文学" not in draft["body"]
 
 
+def test_deterministic_backend_can_follow_wuxia_context() -> None:
+    backend = DeterministicDraftBackend()
+
+    draft = backend.generate(
+        scene="分析令狐冲的自由人格与当代职场人不愿被体制化的挣扎",
+        planner_prompt="# 武侠人物评述 Planner\n目标：写一篇适合小红书的武侠人物评述。",
+        skill_contents=[
+            "# Wuxia Commentary Style\n必须引用原文并点出金庸人物。",
+            "# XHS Wuxia Hashtagging\n必须包含 `#金庸`。",
+        ],
+    )
+
+    assert "令狐冲" in draft["body"]
+    assert "笑傲江湖" in draft["body"]
+    assert "#金庸" in draft["hashtags"]
+    assert len(draft["body"]) >= 400
+    assert "发疯文学" not in draft["body"]
+
+
 def test_deterministic_backend_can_follow_modern_psychology_context() -> None:
     backend = DeterministicDraftBackend()
 
@@ -119,6 +138,179 @@ def test_deterministic_backend_can_follow_modern_psychology_context() -> None:
     assert "#心理学" in draft["hashtags"]
     assert "#情绪管理" in draft["hashtags"]
     assert "发疯文学" not in draft["body"]
+
+
+def test_deterministic_modern_psychology_draft_has_mini_tool_and_example_prompt() -> None:
+    backend = DeterministicDraftBackend()
+
+    draft = backend.generate(
+        scene="下班路上还在反复复盘会议里一句话，越想越尴尬",
+        planner_prompt="# 现代心理困境观察 Planner\n目标：解释一个心理机制，给低风险行动和专业边界。",
+        persona_prompt="# Modern Psychology Persona\n有心理学素养但不做诊断。",
+        skill_contents=[
+            "# Psychology Style\n需要三栏工具和例子型评论提示。",
+            "# Psychology Safety\n禁止诊断化表达，必须提示专业帮助边界。",
+            "# XHS Psychology Hashtagging\n标签必须包含 `#心理学` 或 `#情绪管理`。",
+        ],
+    )
+
+    combined = f"{draft['title']}\n{draft['image_text']}\n{draft['body']}"
+    assert draft["title"] != "下班后还在复盘那句话"
+    assert draft["image_text"] != "脑子还没下班"
+    assert "下班路上还在反复复盘会议里一句话" in draft["body"]
+    assert draft["body"].index("下班路上还在反复复盘会议里一句话") < draft[
+        "body"
+    ].index("反刍思维")
+    assert any(term in combined for term in ("不是你太敏感", "不是你想太多"))
+    assert any(tool in draft["body"] for tool in ("事实 / 猜测 / 下一步", "三栏"))
+    assert "专业帮助" in draft["body"]
+    assert "评论区" in draft["body"]
+    assert any(prompt in draft["body"] for prompt in ("你最容易", "哪类瞬间"))
+    assert any(tag in draft["hashtags"] for tag in ("#心理学", "#情绪管理"))
+    assert not any(term in combined for term in ("诊断", "治好焦虑", "治愈抑郁", "用药"))
+
+
+def test_deterministic_modern_psychology_draft_avoids_recent_memory_title() -> None:
+    backend = DeterministicDraftBackend()
+
+    draft = backend.generate(
+        scene="下班路上还在反复复盘会议里一句话，越想越尴尬",
+        planner_prompt="# 现代心理困境观察 Planner\n目标：解释一个心理机制，给低风险行动和专业边界。",
+        persona_prompt="# Modern Psychology Persona\n有心理学素养但不做诊断。",
+        skill_contents=[
+            "# Psychology Style\n需要三栏工具和例子型评论提示。",
+            "# Psychology Safety\n禁止诊断化表达，必须提示专业帮助边界。",
+        ],
+        runtime_skill_contents=[
+            "# Recent Account Memory\n"
+            "Avoid repeating recent account posts:\n"
+            "- recent_1_scene: 下班路上还在反复复盘会议里一句话，越想越尴尬\n"
+            "  title: 下班路上复盘会议，不是你在小题大做\n"
+            "  image_text: 先分清原话和脑补\n"
+            "  body_preview: 下班路上还在反复复盘会议里一句话，越想越尴尬，路灯都亮了，脑子还在把会议那一秒拖回进度条。\n"
+            "- recent_1_scene: 下班路上还在反复复盘会议里一句话，越想越尴尬\n"
+            "  title: 会议那句话反复倒带，不是你太敏感\n"
+            "  image_text: 把猜测放回事实栏\n"
+            "  body_preview: 下班路上还在反复复盘会议里一句话，越想越尴尬，身体已经离开会议室，脑子还在给那句话反复加字幕。"
+        ],
+    )
+
+    assert draft["title"] != "会议那句话反复倒带，不是你太敏感"
+    assert draft["title"] != "下班路上复盘会议，不是你在小题大做"
+    assert draft["image_text"] != "把猜测放回事实栏"
+    assert draft["image_text"] != "先分清原话和脑补"
+    assert "给那句话反复加字幕" not in draft["body"]
+    assert "反刍思维" in draft["body"]
+    assert "事实 / 猜测 / 下一步" in draft["body"]
+    assert "评论区" in draft["body"]
+
+
+def test_deterministic_modern_psychology_draft_varies_by_scene_mechanic() -> None:
+    backend = DeterministicDraftBackend()
+    skill_contents = [
+        "# Psychology Style\n需要三栏工具、5分钟练习、边界句模板或消息草稿。",
+        "# Psychology Safety\n禁止诊断化表达，必须提示专业帮助边界。",
+    ]
+
+    sunday = backend.generate(
+        scene="周日晚上开始焦虑周一消息",
+        planner_prompt="# 现代心理困境观察 Planner",
+        persona_prompt="# Modern Psychology Persona",
+        skill_contents=skill_contents,
+    )
+    boundary = backend.generate(
+        scene="别人一句你想太多了之后，晚上一直睡不着",
+        planner_prompt="# 现代心理困境观察 Planner",
+        persona_prompt="# Modern Psychology Persona",
+        skill_contents=skill_contents,
+    )
+    pulled_back = backend.generate(
+        scene="工作上看起来很稳定，但一收到临时消息就像被拉回工位",
+        planner_prompt="# 现代心理困境观察 Planner",
+        persona_prompt="# Modern Psychology Persona",
+        skill_contents=skill_contents,
+    )
+    meeting = backend.generate(
+        scene="下班路上反复复盘会议里一句话，越想越尴尬",
+        planner_prompt="# 现代心理困境观察 Planner",
+        persona_prompt="# Modern Psychology Persona",
+        skill_contents=skill_contents,
+    )
+    after_work = backend.generate(
+        scene="明明已经下班，却还在脑内给白天的自己开复盘会",
+        planner_prompt="# 现代心理困境观察 Planner",
+        persona_prompt="# Modern Psychology Persona",
+        skill_contents=skill_contents,
+    )
+    ordinary_reply = backend.generate(
+        scene="最近总因为一句普通回复反复复盘，想收集大家最常复盘的瞬间",
+        planner_prompt="# 现代心理困境观察 Planner",
+        persona_prompt="# Modern Psychology Persona",
+        skill_contents=skill_contents,
+    )
+
+    drafts = [
+        sunday,
+        boundary,
+        pulled_back,
+        meeting,
+        after_work,
+        ordinary_reply,
+    ]
+    assert len({draft["title"] for draft in drafts}) == 6
+    assert len(
+        {
+            draft["image_text"]
+            for draft in drafts
+        }
+    ) == 6
+    assert "5分钟" in sunday["body"]
+    assert "边界句" in boundary["body"]
+    assert any(term in pulled_back["body"] for term in ("低控制感", "边界压力"))
+    assert "事实 / 猜测 / 下一步" in meeting["body"]
+    assert "散会" in after_work["body"]
+    assert any(
+        tool in after_work["body"]
+        for tool in ("事实 / 猜测 / 下一步", "三栏", "5分钟", "边界句", "消息草稿", "模板")
+    )
+    assert "评论区" in ordinary_reply["body"]
+
+
+def test_deterministic_drafts_strip_experiment_variant_instructions() -> None:
+    backend = DeterministicDraftBackend()
+
+    fengkuang = backend.generate(
+        scene=(
+            "领导18:57发来一句在吗，明天早会要我补材料。"
+            "变体要求：comment_chain，评论区接一句工牌背面的疯话。"
+        ),
+        planner_prompt="# 发疯文学 Planner",
+        persona_prompt="# 发疯文学 Persona",
+        skill_contents=["# Fengkuang Style\n必须有评论区接龙和可复制句。"],
+    )
+    psychology = backend.generate(
+        scene=(
+            "周日晚上开始焦虑周一消息。"
+            "变体要求：save_tool，给一个5分钟落地练习。"
+        ),
+        planner_prompt="# 现代心理困境观察 Planner",
+        persona_prompt="# Modern Psychology Persona",
+        skill_contents=[
+            "# Psychology Style\n需要三栏工具和例子型评论提示。",
+            "# Psychology Safety\n必须提示专业帮助边界。",
+        ],
+    )
+
+    combined = "\n".join(
+        [
+            fengkuang["body"],
+            psychology["body"],
+        ]
+    )
+    assert "变体要求" not in combined
+    assert "comment_chain" not in combined
+    assert "save_tool" not in combined
+    assert "identity_conflict" not in combined
 
 
 class CapturingChatDeepSeek(FakeChatDeepSeek):
@@ -152,7 +344,7 @@ def test_factory_sanitizes_scene_before_deepseek_prompt() -> None:
     assert "周六社畜躺平" in user_prompt
 
 
-def test_factory_deepseek_prompt_hardens_required_phrase_and_hashtag() -> None:
+def test_factory_deepseek_prompt_hardens_required_hashtag_without_mandating_recommended_phrase() -> None:
     settings = Settings.model_construct(
         default_model_provider="deepseek",
         default_model="deepseek-chat",
@@ -174,7 +366,7 @@ def test_factory_deepseek_prompt_hardens_required_phrase_and_hashtag() -> None:
     )
 
     user_prompt = CapturingChatDeepSeek.last_messages[1].content
-    assert "正文必须包含“也算”" in user_prompt
+    assert "正文必须包含“也算”" not in user_prompt
     assert "hashtags 数组必须包含 '#发疯文学'" in user_prompt
 
 
@@ -227,6 +419,92 @@ def test_deterministic_backend_uses_runtime_trend_context_for_title_hook() -> No
 
     assert "怎么才周四" in draft["title"]
     assert "新需求" in draft["body"]
+
+
+def test_deterministic_backend_avoids_recent_memory_title() -> None:
+    backend = DeterministicDraftBackend()
+
+    draft = backend.generate(
+        scene="周一早高峰地铁通勤",
+        runtime_skill_contents=[
+            "# Recent Account Memory\n"
+            "Avoid repeating recent account posts:\n"
+            "- recent_1_scene: 上周一早高峰地铁通勤\n"
+            "  title: 打工人地铁生存实录\n"
+            "  body_preview: 今日份发疯现场：上周一早高峰地铁通勤"
+        ],
+    )
+
+    assert draft["title"] != "打工人地铁生存实录"
+    assert "地铁" in draft["title"]
+
+
+def test_deterministic_backend_keeps_concrete_title_when_avoiding_recent_leader_memory() -> None:
+    backend = DeterministicDraftBackend()
+
+    draft = backend.generate(
+        scene="领导18:57发来一句在吗，明天早会要我补材料",
+        runtime_skill_contents=[
+            "# Recent Account Memory\n"
+            "Avoid repeating recent account posts:\n"
+            "- recent_1_scene: 昨天领导18:57发在吗\n"
+            "  title: 领导18:57发「在吗」那一秒\n"
+            "  body_preview: 我的工牌先替我发疯"
+        ],
+    )
+
+    assert draft["title"] != "领导18:57发「在吗」那一秒"
+    assert draft["title"] != "今天换个地方发疯"
+    assert any(term in draft["title"] for term in ("18:57", "工牌", "早会", "在吗"))
+
+
+def test_deterministic_fengkuang_draft_has_comment_and_copyable_mechanics() -> None:
+    backend = DeterministicDraftBackend()
+
+    draft = backend.generate(
+        scene="领导18:57突然发来一句在吗，明天早会还要我补材料",
+        skill_contents=[
+            "# XHS Hashtagging\n发疯文学方向优先包含 `#发疯文学`。",
+        ],
+    )
+
+    assert draft["title"] not in {
+        "打工人地铁生存实录",
+        "会议连环暴击实录",
+        "社畜崩溃边缘实录",
+    }
+    combined = f"{draft['title']}\n{draft['image_text']}\n{draft['body']}"
+    assert any(obj in combined for obj in ("工牌", "群聊", "周报", "材料", "早会"))
+    assert "评论区" in draft["body"]
+    assert any(cue in combined for cue in ("接一句", "疯话", "写在", "可复制"))
+    assert "#发疯文学" in draft["hashtags"]
+    assert not any(term in combined for term in ("精神病", "心理医生", "医院", "治疗", "用药"))
+
+
+def test_factory_deepseek_prompt_requires_fengkuang_mechanics_and_safety() -> None:
+    settings = Settings.model_construct(
+        default_model_provider="deepseek",
+        default_model="deepseek-chat",
+        deepseek_api_key="sk-test",
+        deepseek_model="deepseek-chat",
+        deepseek_base_url="https://api.deepseek.com/v1",
+        deepseek_temperature=0.3,
+        deepseek_max_tokens=1024,
+    )
+
+    backend = build_drafting_backend(settings, chat_model_cls=CapturingChatDeepSeek)
+    backend.generate(
+        scene="领导18:57突然发来一句在吗，明天早会还要我补材料",
+        skill_contents=[
+            "# XHS Hashtagging\n发疯文学方向优先包含 `#发疯文学`。",
+            "# Fengkuang Style\n需要评论区接龙和可复制疯话。",
+        ],
+    )
+
+    user_prompt = CapturingChatDeepSeek.last_messages[1].content
+    assert "具体职场物件或社交对象" in user_prompt
+    assert "评论区接龙" in user_prompt
+    assert "心理疾病、治疗、医院、用药" in user_prompt
 
 
 def test_factory_puts_runtime_trend_context_in_dedicated_prompt_section() -> None:

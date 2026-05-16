@@ -18,7 +18,7 @@ class PlaybookDefinition:
     platforms: list[str]
     required_skills: list[str]
     optional_skills: list[str] = field(default_factory=list)
-    reflection: dict[str, str] = field(default_factory=dict)
+    reflection: dict[str, object] = field(default_factory=dict)
     trend_keywords: list[str] = field(default_factory=list)
     max_attempts: int = 2
     drafting_model: str = ""

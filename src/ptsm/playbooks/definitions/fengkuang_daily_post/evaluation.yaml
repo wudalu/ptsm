@@ -5,6 +5,13 @@ uses:
   artifact: artifact.v1
   skill_activation: skill_activation.v1
 
+quality_judges:
+  executor_content_quality:
+    evaluator_id: llm.executor.content_quality
+    gate_level: required
+    enabled_when_requested: true
+    note: Required generation gate; failures feed rewrite hints into the next draft before human review.
+
 node_contracts:
   planner:
     output_contract: skill_activation.v1
@@ -30,8 +37,46 @@ node_contracts:
       - hashtags
     constraints:
       title_max_chars: 30
+      title_must_not_equal_any:
+        - 打工人日常
+        - 打工人地铁生存实录
+        - 会议连环暴击实录
+        - 社畜崩溃边缘实录
+        - 职场崩溃实录
+      image_text_must_not_equal_any:
+        - 今日已疯
+        - 脑子已掉线
+        - 先别找我
       hashtags_min_count: 1
       hashtags_max_count: 8
+      hashtags_must_include_any:
+        - "#发疯文学"
+      body_must_include_any:
+        - 评论区
+        - 接一句
+        - 可复制
+        - 模板
+        - 写在
+      body_must_include_comment_prompt_any:
+        - 评论区
+        - 接一句
+        - 你最
+      body_must_include_save_trigger_any:
+        - 可复制
+        - 模板
+        - 写在
+        - 金句
+        - 话术
+      body_must_not_include_any:
+        - 精神病
+        - 心理医生
+        - 医院
+        - 治疗
+        - 用药
+        - 变体要求
+        - comment_chain
+        - save_tool
+        - identity_conflict
       body_must_include_scene_signal: true
 
   reflector:

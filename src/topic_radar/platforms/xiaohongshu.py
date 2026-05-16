@@ -134,11 +134,14 @@ class XiaohongshuPlatform:
             )
         return items
 
-    async def get_feed_detail(self, feed_id: str, xsec_token: str) -> FeedDetail | None:
+    async def get_feed_detail(
+        self, feed_id: str, xsec_token: str, timeout: float = 20.0
+    ) -> FeedDetail | None:
         try:
             payload = await self._client.invoke_tool(
                 "xiaohongshu", "get_feed_detail",
                 {"feed_id": feed_id, "xsec_token": xsec_token},
+                timeout=timeout,
             )
         except (KeyError, ConnectionError, OSError, asyncio.TimeoutError, ExceptionGroup) as exc:
             raise PlatformUnavailable(self.platform_name, str(exc)) from exc
@@ -147,7 +150,10 @@ class XiaohongshuPlatform:
         if not isinstance(data, dict):
             return None
 
-        note = data.get("note") or data
+        nested_data = data.get("data")
+        if not isinstance(nested_data, dict):
+            nested_data = {}
+        note = data.get("note") or nested_data.get("note") or data
         if not isinstance(note, dict):
             return None
 
@@ -165,10 +171,12 @@ class XiaohongshuPlatform:
             likes = 0
             comment_count = 0
 
-        tags = [str(t).strip("#") for t in (note.get("tagList") or note.get("tags") or [])]
+        tags = _normalize_tags(note.get("tagList") or note.get("tags") or [])
 
         comments: list[Comment] = []
-        raw_comments = data.get("comments") or note.get("comments") or []
+        raw_comments = data.get("comments") or nested_data.get("comments") or note.get("comments") or []
+        if isinstance(raw_comments, dict):
+            raw_comments = raw_comments.get("list") or raw_comments.get("comments") or []
         if isinstance(raw_comments, list):
             for c in raw_comments:
                 if isinstance(c, dict):
@@ -184,7 +192,7 @@ class XiaohongshuPlatform:
                         )
 
         return FeedDetail(
-            feed_id=feed_id,
+            feed_id=str(note.get("noteId") or note.get("note_id") or feed_id),
             title=title,
             body=desc,
             author=str(user.get("nickname", "")).strip() if isinstance(user, dict) else "",
@@ -266,3 +274,18 @@ def _find_first_string(payload: object, *keys: str) -> str | None:
             if found is not None:
                 return found
     return None
+
+
+def _normalize_tags(raw_tags: object) -> list[str]:
+    if not isinstance(raw_tags, list):
+        return []
+    tags: list[str] = []
+    for tag in raw_tags:
+        if isinstance(tag, dict):
+            value = tag.get("name") or tag.get("tagName") or tag.get("title")
+        else:
+            value = tag
+        text = str(value or "").strip().strip("#")
+        if text:
+            tags.append(text)
+    return tags

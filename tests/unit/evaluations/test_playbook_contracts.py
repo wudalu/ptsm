@@ -16,7 +16,17 @@ class TestPlaybookEvalContract:
         assert "planner" in contract.node_contracts
         assert "executor" in contract.node_contracts
         assert "finalize" in contract.node_contracts
-        assert contract.node_contracts["executor"].get("constraints", {}).get("title_max_chars") == 30
+        constraints = contract.node_contracts["executor"].get("constraints", {})
+        assert constraints.get("title_max_chars") == 30
+        assert "打工人地铁生存实录" in constraints["title_must_not_equal_any"]
+        assert "今日已疯" in constraints["image_text_must_not_equal_any"]
+        assert "评论区" in constraints["body_must_include_comment_prompt_any"]
+        assert "可复制" in constraints["body_must_include_save_trigger_any"]
+        assert "变体要求" in constraints["body_must_not_include_any"]
+        assert "comment_chain" in constraints["body_must_not_include_any"]
+        quality_judge = contract.quality_judges["executor_content_quality"]
+        assert quality_judge["evaluator_id"] == "llm.executor.content_quality"
+        assert quality_judge["gate_level"] == "required"
 
     def test_missing_optional_contract_returns_none(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -62,4 +72,12 @@ class TestPlaybookEvalContract:
         executor_constraints = contract.node_contracts["executor"]["constraints"]
         assert "#心理学" in executor_constraints["hashtags_must_include_any"]
         assert "诊断" in executor_constraints["body_must_not_include_any"]
-        assert "专业帮助" in executor_constraints["body_must_include_any"]
+        assert "变体要求" in executor_constraints["body_must_not_include_any"]
+        assert "save_tool" in executor_constraints["body_must_not_include_any"]
+        assert "专业帮助" in executor_constraints["body_must_include_all"]
+        assert "评论区" in executor_constraints["body_must_include_comment_prompt_any"]
+        assert "三栏" in executor_constraints["body_must_include_save_trigger_any"]
+        assert (
+            contract.quality_judges["executor_content_quality"]["evaluator_id"]
+            == "llm.executor.content_quality"
+        )

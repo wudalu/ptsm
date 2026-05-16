@@ -49,11 +49,13 @@ class FakeMcpRunner:
             )
         if keyword == "发疯文学 打工人":
             return _search_payload(
+                ("评论区交出你的工牌疯话文案", 32000, 8900, 8600, 6400),
                 ("又来坐牢了", 18492, 2290, 32270, 4487),
                 ("面对领导时我的精神状态", 26888, 1453, 15999, 4531),
             )
         if keyword == "隐形加班":
             return _search_payload(
+                ("打工人下班后自救清单Tips", 8800, 320, 1100, 9200),
                 ("职场人必看！下班后线上工作也算加班", 1023, 103, 711, 208),
                 ("今天你隐性加班了吗", 458, 312, 167, 115),
             )
@@ -80,6 +82,12 @@ def test_xhs_trend_scan_context_builder_summarizes_live_search_results() -> None
     assert "面对领导时我的精神状态" in context
     assert "隐形加班" in context
     assert "下班前被新需求拽回工位" in context
+    assert "可借鉴内容机制" in context
+    assert "comment_chain" in context
+    assert "save_tool" in context
+    assert "copyable_line" in context
+    assert "评论区交出你的工牌疯话文案" in context
+    assert "打工人下班后自救清单Tips" in context
 
 
 def test_xhs_trend_scan_context_builder_returns_none_when_login_required() -> None:

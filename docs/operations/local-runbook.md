@@ -38,6 +38,15 @@ If not logged in, materialize the QR code and scan it with the XHS app:
 uv run python -m ptsm.bootstrap xhs-login-qrcode --output /tmp/xhs-login-qrcode.png
 ```
 
+If the upstream MCP browser session cannot generate a QR code, the command still returns JSON with `status: login_required`, `qrcode_error`, and `next_actions`. `xhs-login-qrcode` first tries the MCP `get_login_qrcode` tool and then the REST `/api/v1/login/qrcode` fallback when the MCP tool fails or omits image data. Treat HTTP 500 or timeout QR errors as an MCP/browser-session issue: restart `xiaohongshu-mcp` or its browser session, then rerun the QR command before scanning or publishing. If QR login still fails, use the upstream login helper to write cookies first:
+
+```bash
+COOKIES_PATH=cookies/fk-local.json .ptsm/bin/xhs-mcp/xiaohongshu-login-darwin-amd64
+COOKIES_PATH=cookies/fk-local.json .ptsm/bin/xhs-mcp/xiaohongshu-mcp-darwin-amd64
+```
+
+The login helper opens a browser and may require QR scan plus second-factor confirmation. After it exits, verify with `uv run python -m ptsm.bootstrap xhs-login-status` before scanning or publishing.
+
 ### Step 2 — Dry-run (Content Generation Only)
 
 Always dry-run first. This runs the full plan → execute → reflect pipeline without publishing or generating images:
@@ -51,8 +60,9 @@ uv run python -m ptsm.bootstrap run-fengkuang \
 This exercises:
 - **Planner**: selects playbook (fengkuang_daily_post) and skills (xhs_trend_scan, fengkuang_style, positive_reframe, xhs_hashtagging)
 - **xhs_trend_scan**: calls MCP `search_feeds` with keywords derived from the scene to find real-time hot posts on Xiaohongshu. The live trend context (top posts by engagement score, recommended angle, tension) is injected into both the content drafting prompt and the image generation prompt. If MCP is unreachable, it falls back to the static SKILL.md guidance.
-- **Executor**: DeepSeek LLM generates title, image_text, body, hashtags from scene + persona + planner + static skills + live trend context
-- **Reflector**: hard-checks that `#发疯文学` tag and `也算` phrase are present. Passes to finalize, or retries up to max_attempts.
+- **Memory**: reads recent same-account, same-playbook lessons and injects a compact anti-repetition context before drafting.
+- **Executor**: DeepSeek LLM generates title, image_text, body, hashtags from scene + persona + planner + static skills + live trend context + recent memory context.
+- **Reflector**: enforces required rules such as `#发疯文学`, configured deterministic quality rules such as rejecting generic fengkuang titles, requiring a comment/copyable mechanic, and blocking mental-health/medical jokes. Light positive closings like `也算` are recommended style, not a mandatory phrase gate. Passes to finalize, or retries up to max_attempts.
 
 Review the output. If content quality is good, proceed to real publish.
 
@@ -261,7 +271,7 @@ uv run python -m ptsm.bootstrap harness-evals --playbook-id fengkuang_daily_post
 uv run python -m ptsm.bootstrap harness-report --max-required-eval-failures 0
 ```
 
-`harness-check` 会阻塞 `required_failed > 0` 的 eval 失败（确定性 rule/contract 失败），LLM judge 失败仅 warning。
+`harness-check` 会阻塞 `required_failed > 0` 的 eval 失败。默认 harness 不调用 LLM judge；当 `eval-artifact` 显式启用 LLM judge 或运行时配置了 XHS 内容质量 judge backend 时，XHS executor content-quality judge 使用 required gate，失败会触发重写或计入 `required_failed`。最终发布仍需人工确认 `content_review`。
 
 ## Logs
 
@@ -460,6 +470,18 @@ uv run python -m ptsm.bootstrap xhs-login-qrcode --output /tmp/xhs-login-qrcode.
 uv run python -m ptsm.bootstrap xhs-open-browser --target login
 uv run python -m ptsm.bootstrap xhs-open-browser --target creator
 ```
+
+`xhs-login-status` and `xhs-login-qrcode` should return bounded JSON even when QR generation fails. Look for `qrcode_error` and `next_actions`; do not continue with `topic-radar scan` or real publish until status becomes `ready`.
+
+If the QR route returns MCP 500 or `TimeoutError`, run the upstream login helper with the same cookie target that the MCP server will later use:
+
+```bash
+COOKIES_PATH=cookies/fk-local.json .ptsm/bin/xhs-mcp/xiaohongshu-login-darwin-amd64
+COOKIES_PATH=cookies/fk-local.json .ptsm/bin/xhs-mcp/xiaohongshu-mcp-darwin-amd64
+uv run python -m ptsm.bootstrap xhs-login-status
+```
+
+Do not start MCP without `COOKIES_PATH` if the account is supposed to reuse an existing cookie file; otherwise `check_login_status` will report `login_required` even when a cookie file exists elsewhere.
 
 ## Current Limits
 

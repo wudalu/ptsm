@@ -205,6 +205,33 @@ def _constraint_failures(
                     "observation": f"title_max_chars exceeded: {len(title)} > {title_max_chars}",
                 }
             )
+    if isinstance(title, str):
+        forbidden_titles = _string_list(constraints.get("title_must_not_equal_any"))
+        if title in forbidden_titles:
+            failures.append(
+                {
+                    "path": _field_path(target, "title"),
+                    "value_preview": title,
+                    "observation": f"title_must_not_equal_any violated: {title}",
+                }
+            )
+
+    image_text = payload.get("image_text")
+    if isinstance(image_text, str):
+        forbidden_image_texts = _string_list(
+            constraints.get("image_text_must_not_equal_any")
+        )
+        if image_text in forbidden_image_texts:
+            failures.append(
+                {
+                    "path": _field_path(target, "image_text"),
+                    "value_preview": image_text,
+                    "observation": (
+                        "image_text_must_not_equal_any violated: "
+                        f"{image_text}"
+                    ),
+                }
+            )
 
     hashtags = payload.get("hashtags")
     if isinstance(hashtags, list):
@@ -264,6 +291,36 @@ def _constraint_failures(
                     "observation": (
                         "body_must_include_all violated: "
                         f"missing {missing_all}"
+                    ),
+                }
+            )
+
+        comment_prompt_any = _string_list(
+            constraints.get("body_must_include_comment_prompt_any")
+        )
+        if comment_prompt_any and not any(term in body for term in comment_prompt_any):
+            failures.append(
+                {
+                    "path": _field_path(target, "body"),
+                    "value_preview": body[:120],
+                    "observation": (
+                        "body_must_include_comment_prompt_any violated: "
+                        f"missing one of {comment_prompt_any}"
+                    ),
+                }
+            )
+
+        save_trigger_any = _string_list(
+            constraints.get("body_must_include_save_trigger_any")
+        )
+        if save_trigger_any and not any(term in body for term in save_trigger_any):
+            failures.append(
+                {
+                    "path": _field_path(target, "body"),
+                    "value_preview": body[:120],
+                    "observation": (
+                        "body_must_include_save_trigger_any violated: "
+                        f"missing one of {save_trigger_any}"
                     ),
                 }
             )

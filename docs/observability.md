@@ -2,7 +2,7 @@
 title: PTSM Observability
 status: active
 owner: ptsm
-last_verified: 2026-05-09
+last_verified: 2026-05-16
 source_of_truth: true
 related_paths:
   - src/ptsm/infrastructure/observability/run_store.py
@@ -44,6 +44,7 @@ PTSM 当前的观测性核心是本地文件系统里的 run store 和 artifacts
 - `RunStore.finish()` 结束并写回 summary。
 - workflow artifact 现在会持久化 `activated_skill_details` 和 `runtime_skill_details`，与已有的 `runtime_skill_contents` 一起回答本次运行读了哪些静态 skills 和哪些动态上下文资源。
 - workflow artifact 现在还会持久化 `step_outputs`，把 planner、executor、reflector 的关键产物保存成 bounded evidence，供 rule/contract/LLM evaluator 对 step outcome 做评价。
+- artifact 写入会保留同一个 `run_key` 下的多次 dry-run；当目标文件已存在时追加数字后缀，避免内容实验批量生成时覆盖前一个候选。
 - finished run summary 现在也会写入 `activated_skills`、`activated_skill_details` 和 `runtime_skill_details`，便于先查 `.ptsm/runs/*/summary.json`，只有需要全文时再回读 artifact。
 - `run_logs()` 支持按 `run_id` 或 artifact 反查运行记录。
 - `RunStore.list_runs()` 和 `ptsm runs` 支持按账号、平台、playbook、状态筛选最近运行。
@@ -61,8 +62,9 @@ PTSM 当前的观测性核心是本地文件系统里的 run store 和 artifacts
 - `ptsm diagnose-publish` 会把 `doctor`、run logs、artifact metadata 和 `xhs-check-publish` 的结果组合成一次只读诊断，给出 `likely_cause`、`evidence` 和 `next_actions`。
 - real publish 或显式 `--auto-generate-image` 运行现在会把 `image_generation` metadata 落进 artifact，包含 provider、model、prompt、source_url、`generated_image_paths`，以及从 `runtime_skill_contents` 提炼出的 `runtime_context_summary`；当前 provider 可为 `jimeng` 或 `bailian`。
 - `ptsm eval-artifact --artifact <path>` 对单个 artifact 运行所有确定性 rule/contract evaluator，将结构化 EvalResult 写入 `.ptsm/evals/<eval_run_id>/results.jsonl`，并返回 eval run summary（status、counts、gate）。
-- `eval-artifact` 现在会读取 playbook-local `evaluation.yaml`，对已有 `node_contracts` 做确定性 contract enforcement；缺失 playbook evaluation contract 时仍保持非 fatal，便于迁移。
-- LLM judge adapter 已有 warning-only scaffold，但默认 `eval-artifact` 和 `harness-check` 不会调用 LLM，也不需要网络或模型凭据。
+- `eval-artifact` 现在会读取 playbook-local `evaluation.yaml`，对已有 `node_contracts` 做确定性 contract enforcement；缺失 playbook evaluation contract 时仍保持非 fatal，便于迁移。当前 executor 约束支持 anti-generic `title_must_not_equal_any` / `image_text_must_not_equal_any`、`body_must_include_comment_prompt_any`、`body_must_include_save_trigger_any`、必需/禁用正文词和必需标签，也会把 `变体要求`、`comment_chain`、`save_tool`、`identity_conflict` 这类实验操作指令当作正文泄漏来拦截。
+- LLM judge adapter 默认不会被 `eval-artifact` 和 `harness-check` 调用，因此默认 harness 不需要网络或模型凭据。显式启用后，executor content-quality judge 会输出 `hook_specificity`、`save_trigger`、`comment_trigger`、`platform_native_format`、`persona_fit`、`safety` 六个标签和 `rewrite_hint`；当前 XHS 内容质量 playbook 将该 judge 配置为 `required`，失败会进入 `required_failed`。
+- 运行时 artifact 现在会持久化 `content_review`，记录生成逻辑、质量信号、LLM 内容质量门状态和人工确认建议；它是发布前人工确认材料，不是自动发布授权。
 - `EvalStore` 持久化 eval runs：`.ptsm/evals/<eval_run_id>/summary.json` + `results.jsonl`，支持 `list_eval_runs()` 和 `read_results()` 查询。
 - `EvalStore` 的 summary source 现在记录 run/account/platform/playbook scope metadata，便于 scoped harness views 只聚合相关 eval runs。
 - `harness-evals` 现在聚合并报告 eval results：eval run 总数、按 status 和 suite 分布、按 passed/failed/warnings/errors 汇总，并区分 `required_failed` 和 `warning_failed`。
@@ -77,7 +79,7 @@ PTSM 当前的观测性核心是本地文件系统里的 run store 和 artifacts
 - 现在的 cleanup 仍是人工触发 CLI，不是后台定时回收。
 - 现在的 eval surface 仍然是本地只读 JSON 汇总，不是持续回归系统或外部 dashboard。
 - skill-level eval 目前只按 run summary 聚合，不会解析 draft 质量、人工评分或更细颗粒度 step outcome。
-- LLM judge 目前只是可测试 adapter 和显式启用路径，还没有接入真实 provider、离线校准集或人工 review 队列。
+- LLM judge 目前支持 DeepSeek-backed backend 和 fake-backend tests；默认 harness 仍不主动调用 LLM。尚未完成离线校准集；当前人审方式是读取 artifact/CLI 响应里的 `content_review`，再通过 operator 对话提出调整，不计划单独建设人工 review 队列或操作台。
 - 现在的 report surface 仍是本地单次 snapshot，不是长期历史报表或外部告警系统。
 - 现在的 publish diagnostic 仍然是单次 case diagnosis，不是自动批量归因或跨运行统计。
 - `仅自己可见` 的帖子如果上游仍未回传 `post_id/post_url`，当前工具链仍然无法自动核验，只能人工确认或等待上游补齐标识。

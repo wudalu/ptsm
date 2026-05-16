@@ -108,3 +108,36 @@ class TestBuildScanResult:
         assert len(result.cross_platform_signals) == 1
         assert result.platform_errors["xiaohongshu"] == "not logged in"
         assert len(result.raw_trending) == 1
+
+    def test_raw_trending_includes_xhs_teardown_identifiers(self):
+        trending = {
+            "xiaohongshu": [
+                TrendingItem(
+                    rank=1,
+                    title="领导18:57发在吗",
+                    hot_score=4096,
+                    platform="xiaohongshu",
+                    metadata={
+                        "feed_id": "note-1",
+                        "xsec_token": "token-1",
+                        "likes": 120,
+                        "comments": 9,
+                        "collects": 30,
+                        "shares": 4,
+                    },
+                )
+            ],
+        }
+
+        result = build_scan_result(
+            trending_items=trending,
+            verticals=[],
+            cross_signals=[],
+        )
+
+        assert result.raw_trending[0]["feed_id"] == "note-1"
+        assert result.raw_trending[0]["xsec_token"] == "token-1"
+        assert result.raw_trending[0]["likes"] == 120
+        assert result.raw_trending[0]["comments"] == 9
+        assert result.raw_trending[0]["collects"] == 30
+        assert result.raw_trending[0]["shares"] == 4

@@ -5,6 +5,13 @@ uses:
   artifact: artifact.v1
   skill_activation: skill_activation.v1
 
+quality_judges:
+  executor_content_quality:
+    evaluator_id: llm.executor.content_quality
+    gate_level: required
+    enabled_when_requested: true
+    note: Required generation gate; failures feed rewrite hints into the next draft before human review.
+
 node_contracts:
   planner:
     output_contract: skill_activation.v1
@@ -31,6 +38,10 @@ node_contracts:
       - hashtags
     constraints:
       title_max_chars: 30
+      title_must_not_equal_any:
+        - "下班后还在复盘那句话"
+      image_text_must_not_equal_any:
+        - "脑子还没下班"
       hashtags_min_count: 3
       hashtags_max_count: 7
       hashtags_must_include_any:
@@ -41,9 +52,19 @@ node_contracts:
         - "低控制感"
         - "边界"
         - "情绪调节"
-        - "专业帮助"
       body_must_include_all:
-        - "专业"
+        - "专业帮助"
+      body_must_include_comment_prompt_any:
+        - "评论区"
+        - "你最"
+        - "哪类瞬间"
+      body_must_include_save_trigger_any:
+        - "事实 / 猜测 / 下一步"
+        - "三栏"
+        - "5分钟"
+        - "边界句"
+        - "消息草稿"
+        - "模板"
       body_must_not_include_any:
         - "诊断"
         - "你就是抑郁症"
@@ -54,6 +75,10 @@ node_contracts:
         - "治愈抑郁"
         - "用药"
         - "停药"
+        - "变体要求"
+        - "comment_chain"
+        - "save_tool"
+        - "identity_conflict"
 
   reflector:
     allowed_decisions:
