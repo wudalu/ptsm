@@ -2,13 +2,15 @@
 title: PTSM Operations
 status: active
 owner: ptsm
-last_verified: 2026-05-10
+last_verified: 2026-05-16
 source_of_truth: true
 related_paths:
   - docs/operations/cloud-bootstrap.md
   - docs/operations/local-runbook.md
+  - docs/operations/content-experiment-runbook.md
   - docs/operations/topic-radar-runbook.md
   - docs/operations/task-completion-automation.md
+  - docs/research/2026-05-15-xhs-content-experiment-log.md
   - src/ptsm/interfaces/cli/main.py
   - src/ptsm/application/use_cases/run_playbook.py
   - src/ptsm/application/use_cases/docs_sync.py
@@ -42,6 +44,7 @@ COOKIES_PATH=cookies/fk-local.json .ptsm/bin/xhs-mcp/xiaohongshu-mcp-darwin-amd6
 
 - 云上 clone 与启动: [`docs/operations/cloud-bootstrap.md`](operations/cloud-bootstrap.md)
 - 本地运行与排障: [`docs/operations/local-runbook.md`](operations/local-runbook.md)
+- 内容实验与指标回收: [`docs/operations/content-experiment-runbook.md`](operations/content-experiment-runbook.md)
 - 任务完成后的自动校验: [`docs/operations/task-completion-automation.md`](operations/task-completion-automation.md)
 
 ## Stable Operator Commands
