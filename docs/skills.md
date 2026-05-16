@@ -42,7 +42,7 @@ Skill 层负责让运行时按请求范围暴露合适的 builtin skills，而�
 当前真实例子：
 
 - `xhs_trend_scan` 服务当前所有 `xiaohongshu` playbook，负责热点扫描、选题切口判断和内容机制提取；当本地 `xiaohongshu-mcp` 可用时，planner 会把实时站内趋势上下文作为独立 `runtime_skill_contents` 注入 drafting backend
-- `fengkuang_style` / `positive_reframe` / `xhs_hashtagging` 只服务 `fengkuang_daily_post`
+- `fengkuang_style` / `positive_reframe` / `xhs_hashtagging` 只服务 `fengkuang_daily_post`。这些 skills 现在把“具体职场物件或社交对象 + 可复制疯话/模板 + 评论区接龙 + 非医疗化安全边界”作为生成要求；`也算`、`至少`、`还能` 只作为轻量缓冲词库，不再是固定结尾。
 - `sushi_poetry_style` / `xhs_poetry_hashtagging` 只服务 `sushi_poetry_daily_post`
 - `wuxia_commentary_style` / `xhs_wuxia_hashtagging` 只服务 `wuxia_character_post`
 - `ai_tech_style` / `ai_tech_hashtagging` 只服务 `ai_tech_daily_post`

@@ -32,6 +32,36 @@ def test_run_fengkuang_cli_outputs_publish_receipt(capsys) -> None:
     assert "cookie_profile_id" in payload["account"] or True  # may not always be present
 
 
+def test_run_fengkuang_cli_outputs_platform_native_mechanics(capsys) -> None:
+    exit_code = main(
+        [
+            "run-fengkuang",
+            "--scene",
+            "领导18:57突然发来一句在吗，明天早会还要我补材料",
+            "--account-id",
+            "acct-fk-local",
+            "--thread-id",
+            "thread-fk-quality",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    content = payload["final_content"]
+    combined = f"{content['title']}\n{content['image_text']}\n{content['body']}"
+
+    assert exit_code == 0
+    assert content["title"] not in {
+        "打工人地铁生存实录",
+        "会议连环暴击实录",
+        "社畜崩溃边缘实录",
+    }
+    assert any(obj in combined for obj in ("工牌", "群聊", "早会", "材料"))
+    assert "评论区" in content["body"]
+    assert any(cue in combined for cue in ("接一句", "疯话", "写在", "可复制"))
+    assert "#发疯文学" in content["hashtags"]
+    assert not any(term in combined for term in ("精神病", "心理医生", "医院", "治疗", "用药"))
+
+
 def test_run_fengkuang_cli_outputs_image_generation_receipt(
     monkeypatch,
     tmp_path: Path,

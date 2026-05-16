@@ -30,7 +30,7 @@ def test_skill_registry_parses_scope_tags_from_front_matter() -> None:
     assert spec.domain_tags == ["发疯文学"]
     assert spec.platform_tags == ["xiaohongshu"]
     assert "fengkuang_daily_post" in spec.playbook_tags
-    assert spec.token_budget_hint == 200
+    assert spec.token_budget_hint == 360
     assert spec.assets_present is False
 
 

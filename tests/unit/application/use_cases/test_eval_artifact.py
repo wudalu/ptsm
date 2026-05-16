@@ -10,7 +10,7 @@ from ptsm.evaluations.contracts import EvalResult
 
 SAMPLE_ARTIFACT = {
     "playbook_id": "fengkuang_daily_post",
-    "scene": "test scene",
+    "scene": "周一早高峰地铁通勤",
     "account": {"account_id": "acct-fk-local", "platform": "xiaohongshu"},
     "publish_mode": "dry-run",
     "activated_skills": ["fengkuang_style"],
@@ -33,10 +33,13 @@ SAMPLE_ARTIFACT = {
         },
     },
     "final_content": {
-        "title": "test title",
-        "body": "test body",
-        "image_text": "image",
-        "hashtags": ["#fakelit", "#test"],
+        "title": "地铁门关上那秒我把灵魂留站台",
+        "body": (
+            "周一早高峰地铁通勤，人在车厢，心已请假。"
+            "评论区接一句你最想写在闸机口的打工人暗号。"
+        ),
+        "image_text": "灵魂请下一站下车",
+        "hashtags": ["#发疯文学", "#通勤崩溃实录"],
     },
     "publish_result": {"status": "dry_run"},
 }

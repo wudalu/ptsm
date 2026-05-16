@@ -46,7 +46,8 @@ def test_surface_activates_full_skill_content_on_demand() -> None:
     loaded = surface.activate("fengkuang_style")
 
     assert loaded.skill.skill_name == "fengkuang_style"
-    assert "放大具体日常崩溃场景" in loaded.content
+    assert "评论区接一句" in loaded.content
+    assert "具体日常崩溃瞬间" in loaded.content
 
 
 def test_selector_returns_sushi_poetry_scoped_surface() -> None:

@@ -51,7 +51,35 @@ def _missing_requirements(
     if required_phrase and required_phrase not in body:
         missing.append(f"missing required phrase {required_phrase}")
 
+    title = str(draft.get("title", "")).strip()
+    forbidden_titles = _string_list(rules.get("title_must_not_equal_any"))
+    if title and title in forbidden_titles:
+        missing.append(f"title_must_not_equal_any violated: {title}")
+
+    body_required_any = _string_list(rules.get("body_must_include_any"))
+    if body_required_any and not any(term in body for term in body_required_any):
+        missing.append(
+            "body_must_include_any violated: "
+            + ", ".join(body_required_any)
+        )
+
+    body_forbidden = _string_list(rules.get("body_must_not_include_any"))
+    present_forbidden = [term for term in body_forbidden if term in body]
+    if present_forbidden:
+        missing.append(
+            "body_must_not_include_any violated: "
+            + ", ".join(present_forbidden)
+        )
+
     return missing
+
+
+def _string_list(value: object) -> list[str]:
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if isinstance(value, str) and value.strip():
+        return [value.strip()]
+    return []
 
 
 def _build_feedback(reflection_prompt: str, missing: list[str]) -> str:

@@ -247,6 +247,55 @@ def test_deterministic_backend_avoids_recent_memory_title() -> None:
     assert "地铁" in draft["title"]
 
 
+def test_deterministic_fengkuang_draft_has_comment_and_copyable_mechanics() -> None:
+    backend = DeterministicDraftBackend()
+
+    draft = backend.generate(
+        scene="领导18:57突然发来一句在吗，明天早会还要我补材料",
+        skill_contents=[
+            "# XHS Hashtagging\n发疯文学方向优先包含 `#发疯文学`。",
+        ],
+    )
+
+    assert draft["title"] not in {
+        "打工人地铁生存实录",
+        "会议连环暴击实录",
+        "社畜崩溃边缘实录",
+    }
+    combined = f"{draft['title']}\n{draft['image_text']}\n{draft['body']}"
+    assert any(obj in combined for obj in ("工牌", "群聊", "周报", "材料", "早会"))
+    assert "评论区" in draft["body"]
+    assert any(cue in combined for cue in ("接一句", "疯话", "写在", "可复制"))
+    assert "#发疯文学" in draft["hashtags"]
+    assert not any(term in combined for term in ("精神病", "心理医生", "医院", "治疗", "用药"))
+
+
+def test_factory_deepseek_prompt_requires_fengkuang_mechanics_and_safety() -> None:
+    settings = Settings.model_construct(
+        default_model_provider="deepseek",
+        default_model="deepseek-chat",
+        deepseek_api_key="sk-test",
+        deepseek_model="deepseek-chat",
+        deepseek_base_url="https://api.deepseek.com/v1",
+        deepseek_temperature=0.3,
+        deepseek_max_tokens=1024,
+    )
+
+    backend = build_drafting_backend(settings, chat_model_cls=CapturingChatDeepSeek)
+    backend.generate(
+        scene="领导18:57突然发来一句在吗，明天早会还要我补材料",
+        skill_contents=[
+            "# XHS Hashtagging\n发疯文学方向优先包含 `#发疯文学`。",
+            "# Fengkuang Style\n需要评论区接龙和可复制疯话。",
+        ],
+    )
+
+    user_prompt = CapturingChatDeepSeek.last_messages[1].content
+    assert "具体职场物件或社交对象" in user_prompt
+    assert "评论区接龙" in user_prompt
+    assert "心理疾病、治疗、医院、用药" in user_prompt
+
+
 def test_factory_puts_runtime_trend_context_in_dedicated_prompt_section() -> None:
     settings = Settings.model_construct(
         default_model_provider="deepseek",

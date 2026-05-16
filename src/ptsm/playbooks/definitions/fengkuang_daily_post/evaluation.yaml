@@ -32,6 +32,20 @@ node_contracts:
       title_max_chars: 30
       hashtags_min_count: 1
       hashtags_max_count: 8
+      hashtags_must_include_any:
+        - "#发疯文学"
+      body_must_include_any:
+        - 评论区
+        - 接一句
+        - 可复制
+        - 模板
+        - 写在
+      body_must_not_include_any:
+        - 精神病
+        - 心理医生
+        - 医院
+        - 治疗
+        - 用药
       body_must_include_scene_signal: true
 
   reflector:

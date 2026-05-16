@@ -25,7 +25,7 @@ Playbook 是 PTSM 的业务编排单元。它把领域、平台、技能需求�
 - `daily_english_post` 是每日英语单词学习内容，陪伴式教育风格。默认绑定 `acct-daily-english-local`。
 - `modern_psychology_post` 专门输出现代心理困境观察内容，用具体生活场景解释心理机制，并通过 `psychology_safety` 约束诊断、治疗承诺、药物建议和危机处理边界。默认绑定 `acct-psychology-local`。
 - `PlaybookRegistry` 支持列出定义、按 id 查询，以及按账号选择。
-- `PlaybookDefinition.reflection` 是结构化规则字典，支持必需规则（如 `required_hashtag`、非空 `must_include_phrase`）和推荐规则（如 `recommended_phrases`）。推荐词只作为风格提示，不应被 runtime 当成硬门槛。
+- `PlaybookDefinition.reflection` 是结构化规则字典，支持必需规则（如 `required_hashtag`、非空 `must_include_phrase`）、可选内容质量规则（如 `title_must_not_equal_any`、`body_must_include_any`、`body_must_not_include_any`）和推荐规则（如 `recommended_phrases`）。推荐词只作为风格提示，不应被 runtime 当成硬门槛。
 - `PlaybookLoader` 负责把 markdown 资产读出来供运行时使用，包括 planner、persona 和 reflection 三类文本输入。
 
 ## Definition Layout
@@ -48,7 +48,9 @@ Playbook 是 PTSM 的业务编排单元。它把领域、平台、技能需求�
 - `reflection.md` 定义 revise / finalize 阶段的检查标准
 - `evaluation.yaml` 引用 shared contract ID 并对每个 node 补充业务约束
 
-`playbook.yaml` 的 `reflection` 字段可以包含非字符串值，例如 `recommended_phrases` 列表。runtime reflector 只强制非空必需项；如果某个 playbook 只是建议使用某类收束词，应该放在推荐字段或 markdown 标准里，避免把所有输出锁成同一个句式。
+`playbook.yaml` 的 `reflection` 字段可以包含非字符串值，例如 `recommended_phrases`、`title_must_not_equal_any`、`body_must_include_any`、`body_must_not_include_any` 列表。runtime reflector 会强制必需项和明确配置的 deterministic quality rules；如果某个 playbook 只是建议使用某类收束词，应该放在推荐字段或 markdown 标准里，避免把所有输出锁成同一个句式。
+
+`fengkuang_daily_post` 的当前 reflection 规则要求 `#发疯文学`，拒绝 `打工人地铁生存实录`、`会议连环暴击实录`、`社畜崩溃边缘实录` 这类泛标题，并要求正文至少出现评论区/接一句/可复制/模板/写在等平台原生机制之一，同时禁止把心理疾病、医院、治疗、用药当笑点。
 
 当前定义目录位于 [`src/ptsm/playbooks/definitions/`](../src/ptsm/playbooks/definitions/)。
 

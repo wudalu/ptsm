@@ -261,25 +261,37 @@ def _build_deterministic_draft(
         image_text = "今天先躺"
         body = (
             f"谁懂，周六本来想靠{scene}给自己回口血，结果人是躺下了，脑子还在加班续命。\n"
-            "床和沙发都同意我休息了，只有打工人的后劲还在体内偷偷加钟，评论区要是有人也这样我就不装镇定了。"
+            "今日可复制疯话：床批了我的假，工位别越权。"
+            "评论区接一句你最想贴在床头的周末保命宣言。"
         )
         hashtags = ["#发疯文学", "#周末躺平日记", "#社畜回血现场"]
     elif _is_commute_scene(scene):
-        title = "打工人地铁生存实录"
-        image_text = "今日已疯"
+        title = "地铁门关上那秒我把灵魂留站台"
+        image_text = "灵魂请下一站下车"
         body = (
             f"今日份发疯现场：{scene}，我差点当场把灵魂寄存给下一站。\n"
-            "打工和通勤联手把人折叠成了地铁门缝里的表情包。"
+            "可复制通勤疯话：人在车厢，心已请假。"
+            "评论区接一句你最想写在闸机口的打工人暗号。"
         )
         hashtags = ["#发疯文学", "#打工人日常", "#通勤崩溃实录"]
     elif _is_meeting_scene(scene):
-        title = "会议连环暴击实录"
-        image_text = "脑子已掉线"
+        title = "周报翻开那秒脑子先离席"
+        image_text = "点头模式已开启"
         body = (
             f"今日份崩溃瞬间：{scene}，我感觉自己像被会议室循环播放到只剩下点头功能。\n"
-            "嘴上在复盘，灵魂已经先一步把工牌摘了。"
+            "我想把这句写在周报封面：收到，但大脑正在加载失败。"
+            "评论区接一句你开会时最想打在共享屏上的疯话。"
         )
         hashtags = ["#发疯文学", "#会议崩溃实录", "#打工人日常"]
+    elif _is_after_hours_leader_scene(scene):
+        title = "领导18:57发「在吗」那一秒"
+        image_text = "我的工牌先替我发疯"
+        body = (
+            f"{scene}，群聊弹出来那一秒，我的工牌已经在桌上替我原地离职。\n"
+            "可复制疯话：收到，但灵魂已下班。"
+            "评论区接一句你最想写在工牌背面的疯话，明天早会前我先替大家默背。"
+        )
+        hashtags = ["#发疯文学", "#打工人日常", "#职场发疯实录"]
     elif _should_apply_runtime_trend(scene=scene, runtime_context=runtime_context):
         primary_hook = _extract_runtime_signal(runtime_context, label="主切口")
         tension = _extract_runtime_signal(runtime_context, label="场景张力")
@@ -288,19 +300,22 @@ def _build_deterministic_draft(
             if primary_hook
             else "下班前又被新需求拽回工位"
         )
-        image_text = primary_hook or "又被拽回工位"
+        image_text = primary_hook or "收到，但灵魂已下班"
         body = (
             f"{scene}，本来都快在心里打卡下班了，结果又被新需求一下子拽回工位。\n"
             f"{tension or '这种临门一脚的回拉感'}真的很会精准挑人快要松口气的时候下手，"
-            "嘴上说着收到，心里已经在演离职倒计时。"
+            "嘴上说着收到，心里已经在工牌背面写好：收到，但灵魂已下班。"
+            "评论区接一句你最想发在群里但不敢发的下班疯话。"
         )
         hashtags = ["#发疯文学", "#打工人日常", "#职场情绪实录"]
     else:
-        title = "社畜崩溃边缘实录"
-        image_text = "先别找我"
+        title = "今天这口气先写在工牌背面"
+        image_text = "收到，但灵魂已下班"
         body = (
             f"今日份发疯现场：{scene}。\n"
             "人看起来还坐得住，情绪其实已经提前一步申请下班了。"
+            "可复制疯话：收到，但工牌只负责出勤，不负责续命。"
+            "评论区接一句你今天最想写进群聊草稿箱的话。"
         )
         hashtags = ["#发疯文学", "#社畜日常", "#打工人情绪实录"]
 
@@ -365,6 +380,12 @@ def _is_meeting_scene(scene: str) -> bool:
     )
 
 
+def _is_after_hours_leader_scene(scene: str) -> bool:
+    return any(keyword in scene for keyword in ("领导", "老板")) and any(
+        keyword in scene for keyword in ("在吗", "早会", "材料", "下班", "18:")
+    )
+
+
 def _parse_json_payload(content: str) -> dict[str, Any]:
     cleaned = _repair_json_payload_text(content.strip())
     try:
@@ -413,13 +434,25 @@ def _build_deepseek_hard_requirements(*, extra_context: str, runtime_context: st
     for hashtag in ("#发疯文学", "#苏轼"):
         if hashtag in extra_context:
             requirements.append(f"hashtags 数组必须包含 '{hashtag}'。")
+    if _is_fengkuang_context(extra_context):
+        requirements.append(
+            "必须包含一个具体职场物件或社交对象；必须包含评论区接龙/补充提示；"
+            "必须包含可复制句或可保存模板；不得用心理疾病、治疗、医院、用药作为笑点。"
+        )
     if "苏轼" in extra_context:
         requirements.append("正文必须包含“苏轼”。")
     return " ".join(requirements)
 
 
+def _is_fengkuang_context(extra_context: str) -> bool:
+    return any(
+        marker in extra_context
+        for marker in ("#发疯文学", "发疯文学", "Fengkuang Style", "fengkuang_daily_post")
+    )
+
+
 def _should_apply_runtime_trend(*, scene: str, runtime_context: str) -> bool:
-    if not runtime_context.strip():
+    if not runtime_context.strip() or runtime_context.strip() == "无":
         return False
     return any(cue in scene for cue in ("老板", "领导", "群里", "需求", "下班", "工位"))
 

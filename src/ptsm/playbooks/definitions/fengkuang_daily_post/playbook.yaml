@@ -12,6 +12,24 @@ required_skills:
 optional_skills: []
 reflection:
   required_hashtag: "#发疯文学"
+  title_must_not_equal_any:
+    - 打工人日常
+    - 打工人地铁生存实录
+    - 会议连环暴击实录
+    - 社畜崩溃边缘实录
+    - 职场崩溃实录
+  body_must_include_any:
+    - 评论区
+    - 接一句
+    - 可复制
+    - 模板
+    - 写在
+  body_must_not_include_any:
+    - 精神病
+    - 心理医生
+    - 医院
+    - 治疗
+    - 用药
   recommended_phrases:
     - 也算
     - 至少

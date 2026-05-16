@@ -14,5 +14,6 @@ def test_skill_loader_reads_full_skill_markdown() -> None:
 
     assert loaded.skill.skill_name == "fengkuang_style"
     assert loaded.skill.platform_tags == ["xiaohongshu"]
-    assert "放大具体日常崩溃场景" in loaded.content
+    assert "评论区接一句" in loaded.content
+    assert "具体日常崩溃瞬间" in loaded.content
     assert loaded.source_path.name == "SKILL.md"
