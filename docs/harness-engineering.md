@@ -2,7 +2,7 @@
 title: Harness Engineering In PTSM
 status: active
 owner: ptsm
-last_verified: 2026-05-16
+last_verified: 2026-05-17
 source_of_truth: true
 related_paths:
   - README.md
@@ -59,8 +59,9 @@ repository.
 - scoped eval aggregation by run/account/platform/playbook metadata, so filtered harness views do not mix unrelated eval runs
 - gate-aware eval accounting: `required_failed` can block local harness, while `warning_failed` remains a reporting signal
 - an LLM judge adapter that requires explicit enablement in evals and fake-backend tests, keeping default harness deterministic
-- a required content quality judge for XHS executor output when enabled/configured; it returns calibrated dimensions (`hook_specificity`, `save_trigger`, `comment_trigger`, `platform_native_format`, `persona_fit`, `safety`) plus a rewrite hint, and generation uses failed judge output as a retry signal before human review
-- generic playbook node-contract constraints for final-content text and hashtag checks, so high-risk domains can gate required tags, required safety language, forbidden claims, anti-generic titles/covers, comment prompts, save/tool triggers, and experiment-instruction leakage without adding runtime branches
+- a required content quality judge for XHS executor output when enabled/configured; it returns calibrated dimensions (`hook_specificity`, `save_trigger`, `comment_trigger`, `platform_native_format`, `persona_fit`, `safety`) plus a rewrite hint, and generation uses failed judge output as a retry signal before human review. Runtime judge activation is now driven by each playbook's `evaluation.yaml`, not a hard-coded playbook list.
+- generic playbook node-contract constraints for final-content text and hashtag checks, so high-risk domains can gate required tags, required safety language, forbidden claims, anti-generic titles/covers, body length, comment prompts, save/tool triggers, and experiment-instruction leakage without adding runtime branches
+- local code-rendered note-card image generation for XHS covers when auto image generation is requested and external image providers are not configured
 
 ## What We Should Build Next
 

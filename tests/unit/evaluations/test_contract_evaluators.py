@@ -324,6 +324,60 @@ class TestPlaybookNodeContract:
 
         assert result.status == "passed"
 
+    def test_fails_when_body_shorter_than_min_chars(self):
+        contract = PlaybookEvalContract(
+            suite_id="length.default",
+            node_contracts={
+                "executor": {
+                    "required_fields": ["title", "body", "hashtags"],
+                    "constraints": {"body_min_chars": 10},
+                }
+            },
+        )
+        target = _target(
+            phase="executor",
+            target_type="artifact_slice",
+            output_ref={
+                "final_content": {
+                    "title": "短正文",
+                    "body": "太短",
+                    "hashtags": ["#测试"],
+                }
+            },
+        )
+
+        result = contract_playbook_node_contract(target, contract)
+
+        assert result.status == "failed"
+        assert "body_min_chars" in result.reason
+
+    def test_fails_when_body_longer_than_max_chars(self):
+        contract = PlaybookEvalContract(
+            suite_id="length.default",
+            node_contracts={
+                "executor": {
+                    "required_fields": ["title", "body", "hashtags"],
+                    "constraints": {"body_max_chars": 5},
+                }
+            },
+        )
+        target = _target(
+            phase="executor",
+            target_type="artifact_slice",
+            output_ref={
+                "final_content": {
+                    "title": "长正文",
+                    "body": "这段正文超过五个字",
+                    "hashtags": ["#测试"],
+                }
+            },
+        )
+
+        result = contract_playbook_node_contract(target, contract)
+
+        assert result.status == "failed"
+        assert "body_max_chars" in result.reason
+
 
 class TestAllContractEvaluators:
     def test_all_registered(self):
