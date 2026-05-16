@@ -38,6 +38,8 @@ If not logged in, materialize the QR code and scan it with the XHS app:
 uv run python -m ptsm.bootstrap xhs-login-qrcode --output /tmp/xhs-login-qrcode.png
 ```
 
+If the upstream MCP browser session cannot generate a QR code, the command still returns JSON with `status: login_required`, `qrcode_error`, and `next_actions`. Treat HTTP 500 QR errors as an MCP/browser-session issue: restart `xiaohongshu-mcp` or its browser session, then rerun the QR command before scanning or publishing.
+
 ### Step 2 — Dry-run (Content Generation Only)
 
 Always dry-run first. This runs the full plan → execute → reflect pipeline without publishing or generating images:
@@ -461,6 +463,8 @@ uv run python -m ptsm.bootstrap xhs-login-qrcode --output /tmp/xhs-login-qrcode.
 uv run python -m ptsm.bootstrap xhs-open-browser --target login
 uv run python -m ptsm.bootstrap xhs-open-browser --target creator
 ```
+
+`xhs-login-status` and `xhs-login-qrcode` should return bounded JSON even when QR generation fails. Look for `qrcode_error` and `next_actions`; do not continue with `topic-radar scan` or real publish until status becomes `ready`.
 
 ## Current Limits
 

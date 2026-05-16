@@ -185,8 +185,21 @@ class XiaohongshuMcpPublisher:
 
         preflight["status"] = "login_required"
         if "get_login_qrcode" in tool_names:
-            qrcode_response = await self._invoke_tool("get_login_qrcode", {})
-            preflight["qrcode"] = self._extract_json_payload(qrcode_response)
+            try:
+                qrcode_response = await asyncio.wait_for(
+                    self._invoke_tool("get_login_qrcode", {}),
+                    timeout=45.0,
+                )
+                preflight["qrcode"] = self._extract_json_payload(qrcode_response)
+            except Exception as exc:
+                preflight["qrcode_error"] = (
+                    "Failed to fetch XiaoHongShu login QR code: "
+                    f"{self._format_exception_message(exc)}"
+                )
+                preflight["next_actions"] = [
+                    "Restart xiaohongshu-mcp or its browser session.",
+                    "Run `ptsm xhs-login-qrcode` again.",
+                ]
         return preflight
 
     async def _check_publish_status_async(
@@ -303,6 +316,20 @@ class XiaohongshuMcpPublisher:
             f"Unable to connect to xiaohongshu-mcp server at {self.server_url}. "
             "Ensure the HTTP MCP server is running and reachable."
         ) from exc
+
+    def _format_exception_message(self, exc: BaseException) -> str:
+        messages: list[str] = []
+        candidates = self._iter_nested_exceptions(exc)
+        leaf_candidates = [
+            candidate
+            for candidate in candidates
+            if not isinstance(candidate, BaseExceptionGroup)
+        ]
+        for candidate in leaf_candidates or candidates:
+            message = str(candidate).strip()
+            if message and message not in messages:
+                messages.append(message)
+        return messages[0] if messages else type(exc).__name__
 
     def _contains_connection_error(self, exc: BaseException) -> bool:
         for candidate in self._iter_nested_exceptions(exc):
