@@ -876,6 +876,8 @@ rg -n "comment_chain|save_tool|identity_conflict|2h|24h|72h" \
   - 2 identity_conflict
   - 1 comment_chain
 
+**2026-05-16 pre-publish status:** The 12 dry-run candidates for this batch shape are recorded in `docs/research/2026-05-15-xhs-content-experiment-log.md` with `not_published` status and artifact paths. No real publish or metric collection has happened yet; Task 10 remains open until the rows have 24h and 72h metrics and a weekly review converts winners into prompt/eval updates.
+
 **Review questions:**
 
 - Did high views come from topic heat or from click-through title/cover?

@@ -170,6 +170,73 @@ def test_deterministic_modern_psychology_draft_has_mini_tool_and_example_prompt(
     assert not any(term in combined for term in ("诊断", "治好焦虑", "治愈抑郁", "用药"))
 
 
+def test_deterministic_modern_psychology_draft_varies_by_scene_mechanic() -> None:
+    backend = DeterministicDraftBackend()
+    skill_contents = [
+        "# Psychology Style\n需要三栏工具、5分钟练习、边界句模板或消息草稿。",
+        "# Psychology Safety\n禁止诊断化表达，必须提示专业帮助边界。",
+    ]
+
+    sunday = backend.generate(
+        scene="周日晚上开始焦虑周一消息",
+        planner_prompt="# 现代心理困境观察 Planner",
+        persona_prompt="# Modern Psychology Persona",
+        skill_contents=skill_contents,
+    )
+    boundary = backend.generate(
+        scene="别人一句你想太多了之后，晚上一直睡不着",
+        planner_prompt="# 现代心理困境观察 Planner",
+        persona_prompt="# Modern Psychology Persona",
+        skill_contents=skill_contents,
+    )
+    pulled_back = backend.generate(
+        scene="工作上看起来很稳定，但一收到临时消息就像被拉回工位",
+        planner_prompt="# 现代心理困境观察 Planner",
+        persona_prompt="# Modern Psychology Persona",
+        skill_contents=skill_contents,
+    )
+    meeting = backend.generate(
+        scene="下班路上反复复盘会议里一句话，越想越尴尬",
+        planner_prompt="# 现代心理困境观察 Planner",
+        persona_prompt="# Modern Psychology Persona",
+        skill_contents=skill_contents,
+    )
+    after_work = backend.generate(
+        scene="明明已经下班，却还在脑内给白天的自己开复盘会",
+        planner_prompt="# 现代心理困境观察 Planner",
+        persona_prompt="# Modern Psychology Persona",
+        skill_contents=skill_contents,
+    )
+    ordinary_reply = backend.generate(
+        scene="最近总因为一句普通回复反复复盘，想收集大家最常复盘的瞬间",
+        planner_prompt="# 现代心理困境观察 Planner",
+        persona_prompt="# Modern Psychology Persona",
+        skill_contents=skill_contents,
+    )
+
+    drafts = [
+        sunday,
+        boundary,
+        pulled_back,
+        meeting,
+        after_work,
+        ordinary_reply,
+    ]
+    assert len({draft["title"] for draft in drafts}) == 6
+    assert len(
+        {
+            draft["image_text"]
+            for draft in drafts
+        }
+    ) == 6
+    assert "5分钟" in sunday["body"]
+    assert "边界句" in boundary["body"]
+    assert any(term in pulled_back["body"] for term in ("低控制感", "边界压力"))
+    assert "事实 / 猜测 / 下一步" in meeting["body"]
+    assert "散会" in after_work["body"]
+    assert "评论区" in ordinary_reply["body"]
+
+
 def test_deterministic_drafts_strip_experiment_variant_instructions() -> None:
     backend = DeterministicDraftBackend()
 
