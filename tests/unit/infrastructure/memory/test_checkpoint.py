@@ -40,3 +40,29 @@ def test_file_checkpoint_saver_persists_checkpoints_and_writes(
     assert saved.pending_writes == [
         ("task-1", "draft", {"body": "今天开会开到灵魂出窍。"}),
     ]
+
+
+def test_file_checkpoint_saver_treats_empty_file_as_no_checkpoint(
+    tmp_path: Path,
+) -> None:
+    checkpoint_path = tmp_path / "checkpoints.pkl"
+    checkpoint_path.write_bytes(b"")
+
+    saver = FileCheckpointSaver(path=checkpoint_path)
+
+    assert saver.storage == {}
+    assert saver.writes == {}
+    assert saver.blobs == {}
+
+
+def test_file_checkpoint_saver_treats_corrupt_file_as_no_checkpoint(
+    tmp_path: Path,
+) -> None:
+    checkpoint_path = tmp_path / "checkpoints.pkl"
+    checkpoint_path.write_bytes(b"not a pickle")
+
+    saver = FileCheckpointSaver(path=checkpoint_path)
+
+    assert saver.storage == {}
+    assert saver.writes == {}
+    assert saver.blobs == {}
