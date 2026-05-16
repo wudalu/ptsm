@@ -225,3 +225,32 @@ def test_scan_xiaohongshu_searches_all_requested_keywords(monkeypatch):
     ]
     assert {limit for _keyword, limit in calls} == {2}
     assert len(all_trending["xiaohongshu"]) == 4
+
+
+def test_scan_xiaohongshu_records_empty_search_as_platform_error(monkeypatch):
+    class EmptySearchXiaohongshu:
+        def __init__(self, client):
+            pass
+
+        async def check_login(self):
+            return True, None
+
+        async def search_feeds(self, keyword: str, limit: int = 20):
+            return []
+
+    monkeypatch.setattr("topic_radar.cli.XiaohongshuPlatform", EmptySearchXiaohongshu)
+    all_trending = {}
+    errors = {}
+
+    asyncio.run(
+        _scan_xiaohongshu(
+            client=object(),
+            config=SimpleNamespace(scan_sample_limit=30),
+            keywords="发疯文学,心理学",
+            all_trending=all_trending,
+            errors=errors,
+        )
+    )
+
+    assert "xiaohongshu" not in all_trending
+    assert errors["xiaohongshu"] == "no search results returned for requested keywords"

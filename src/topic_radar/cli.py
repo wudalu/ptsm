@@ -233,7 +233,10 @@ async def _scan_xiaohongshu(
                             },
                         )
                     )
-            all_trending["xiaohongshu"] = xhs_items
+            if xhs_items:
+                all_trending["xiaohongshu"] = xhs_items
+            else:
+                errors["xiaohongshu"] = "no search results returned for requested keywords"
     except PlatformUnavailable as e:
         errors["xiaohongshu"] = str(e)
 

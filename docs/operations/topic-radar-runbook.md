@@ -181,6 +181,7 @@ Top terms: [('治愈', 24), ('教程', 18), ('求教程', 12), ('试试', 10), (
 |------|------|------|
 | `xiaohongshu: unavailable (connection refused)` | xhs-mcp 未启动 | 启动 `xiaohongshu-mcp-darwin-amd64` |
 | `xiaohongshu: unavailable (login required)` | 未登录 | `ptsm xhs-login-qrcode` 扫码登录 |
+| `xiaohongshu: no search results returned for requested keywords` | 已登录但关键词搜索无结果，不能形成有效样本 | 更换关键词或确认 xhs-mcp 搜索接口状态 |
 | `weibo: unavailable (mcp-trends-hub not installed)` | npx 不可用 | 安装 Node.js 20+ 和 npm |
 | `douyin: unavailable (...)` | 同上 | 同上 |
 | scan 产出 0 条数据 | 无平台可用 | 检查 `--mcp-check` 输出 |
