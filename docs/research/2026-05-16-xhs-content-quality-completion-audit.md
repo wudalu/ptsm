@@ -27,7 +27,7 @@ dry-run generation, artifact `content_review`, and follow-up conversation edits.
 
 | requirement | concrete evidence | status |
 | --- | --- | --- |
-| Use isolated worktree/branch | `.worktrees/xhs-content-quality` on `feat/xhs-content-quality`; latest audited commit `a39053f` before this document | done |
+| Use isolated worktree/branch | `.worktrees/xhs-content-quality` on `feat/xhs-content-quality`; latest audited implementation commit `98f8ec0` before this audit refresh | done |
 | Read and update implementation plan | `docs/plans/2026-05-15-xhs-content-quality-improvement.md` contains the diagnosis, task list, required judge behavior, and no-review-queue scope clarification | done |
 | Fix XHS evidence pipeline | `src/topic_radar/cli.py`, `src/topic_radar/output/artifacts.py`, `src/topic_radar/platforms/xiaohongshu.py`, and topic-radar tests changed in this branch; sample set recorded in `docs/research/2026-05-15-xhs-content-quality-sample-set.md` | done |
 | Remove mandatory `也算` lock | `fengkuang_daily_post/playbook.yaml` uses `recommended_phrases`; reflector only enforces non-empty `must_include_phrase`; tests cover optional phrase behavior | done |
@@ -40,7 +40,7 @@ dry-run generation, artifact `content_review`, and follow-up conversation edits.
 | Keep final human confirmation conversational, not a review UI | `docs/operations.md`, `docs/runtime.md`, `docs/observability.md`, and the plan state that `content_review` plus operator conversation is the review path | done |
 | Add publish experiment runbook/log | `docs/operations/content-experiment-runbook.md` and `docs/research/2026-05-15-xhs-content-experiment-log.md` exist with variant and metric schema | done |
 | Run two-week calibration batch | 12 dry-run candidate rows exist, but they are `not_published`; no 24h/72h metrics or weekly review exist | blocked by no-publish scope |
-| Final harness/source-of-truth sync | `uv run pytest -q`, `docs-sync --base-ref origin/main`, and `harness-check --strict` passed in the worktree after the latest code change; docs-sync also passed after the latest review-sample doc update | done for engineering branch |
+| Final harness/source-of-truth sync | `uv run pytest -q`, `docs-sync --base-ref origin/main`, `harness-check --strict`, and representative `eval-artifact` checks passed in the worktree on 2026-05-16 | done for engineering branch |
 | Merge back to `main` | blocked: main worktree contains modified/untracked files, including untracked paths that overlap this branch's tracked plan/research docs | blocked by dirty main |
 
 ## Latest Dry-Run Evidence
@@ -75,11 +75,13 @@ professional-help boundary, and asks for reader examples instead of broad opinio
 
 ## Verification Evidence
 
-Fresh verification performed in the worktree after the latest code change:
+Fresh verification performed in the worktree on 2026-05-16:
 
-- `uv run pytest -q`
-- `uv run python -m ptsm.bootstrap docs-sync --base-ref origin/main`
-- `uv run python -m ptsm.bootstrap harness-check --strict`
+- `uv run pytest -q` exited 0.
+- `uv run python -m ptsm.bootstrap docs-sync --base-ref origin/main` returned `status=ok`, with no `missing_updates` and no `unmapped_changes`.
+- `uv run python -m ptsm.bootstrap harness-check --strict` returned `status=ok`; its internal pytest command was `uv run pytest -q --ignore=tests/e2e` and exited 0.
+- `uv run python -m ptsm.bootstrap eval-artifact --artifact outputs/artifacts/acct-fk-local-fengkuang_daily_post-1-96.json` returned `status=passed`, `required_failed=0`, `warning_failed=0`.
+- `uv run python -m ptsm.bootstrap eval-artifact --artifact outputs/artifacts/acct-psychology-local-modern_psychology_post-1-95.json` returned `status=passed`, `required_failed=0`, `warning_failed=0`.
 
 Additional verification after the latest docs-only review-sample update:
 
@@ -97,5 +99,9 @@ before publishing. Completion requires:
 - winning mechanics converted back into prompt/eval updates.
 
 Local merge is also blocked until the main worktree's unrelated modified and
-untracked files are resolved. The branch is preserved at
-`.worktrees/xhs-content-quality`.
+untracked files are resolved. The overlapping paths checked on 2026-05-16 were
+`docs/operations/topic-radar-runbook.md`,
+`docs/plans/2026-05-15-xhs-content-quality-improvement.md`, and
+`docs/research/2026-05-15-xhs-content-quality-sample-set.md`; their main
+worktree hashes differ from the feature branch versions. The branch is preserved
+at `.worktrees/xhs-content-quality`.
