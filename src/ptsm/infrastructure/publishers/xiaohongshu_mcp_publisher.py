@@ -199,6 +199,7 @@ class XiaohongshuMcpPublisher:
                 preflight["next_actions"] = [
                     "Restart xiaohongshu-mcp or its browser session.",
                     "Run `ptsm xhs-login-qrcode` again.",
+                    "If QR login still fails, run `COOKIES_PATH=<cookie-file> .ptsm/bin/xhs-mcp/xiaohongshu-login-darwin-amd64` and restart MCP with the same `COOKIES_PATH`.",
                 ]
         return preflight
 
