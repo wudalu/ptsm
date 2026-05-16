@@ -38,7 +38,7 @@ If not logged in, materialize the QR code and scan it with the XHS app:
 uv run python -m ptsm.bootstrap xhs-login-qrcode --output /tmp/xhs-login-qrcode.png
 ```
 
-If the upstream MCP browser session cannot generate a QR code, the command still returns JSON with `status: login_required`, `qrcode_error`, and `next_actions`. Treat HTTP 500 or timeout QR errors as an MCP/browser-session issue: restart `xiaohongshu-mcp` or its browser session, then rerun the QR command before scanning or publishing. If QR login still fails, use the upstream login helper to write cookies first:
+If the upstream MCP browser session cannot generate a QR code, the command still returns JSON with `status: login_required`, `qrcode_error`, and `next_actions`. `xhs-login-qrcode` first tries the MCP `get_login_qrcode` tool and then the REST `/api/v1/login/qrcode` fallback when the MCP tool fails or omits image data. Treat HTTP 500 or timeout QR errors as an MCP/browser-session issue: restart `xiaohongshu-mcp` or its browser session, then rerun the QR command before scanning or publishing. If QR login still fails, use the upstream login helper to write cookies first:
 
 ```bash
 COOKIES_PATH=cookies/fk-local.json .ptsm/bin/xhs-mcp/xiaohongshu-login-darwin-amd64

@@ -40,9 +40,18 @@ def materialize_xhs_login_qrcode(
     output_path: Path = DEFAULT_XHS_LOGIN_QRCODE_PATH,
 ) -> dict[str, Any]:
     qrcode = preflight.get("qrcode")
+    server_url = preflight.get("server_url")
+    if (
+        not isinstance(qrcode, dict)
+        and preflight.get("status") == "login_required"
+        and isinstance(server_url, str)
+    ):
+        fallback_qrcode = fetch_xhs_login_qrcode_via_api(server_url)
+        if isinstance(fallback_qrcode, dict):
+            qrcode = fallback_qrcode
+            preflight = {**preflight, "qrcode": qrcode}
     if isinstance(qrcode, dict):
         if not isinstance(qrcode.get("img"), str):
-            server_url = preflight.get("server_url")
             if isinstance(server_url, str):
                 fallback_qrcode = fetch_xhs_login_qrcode_via_api(server_url)
                 if isinstance(fallback_qrcode, dict):
