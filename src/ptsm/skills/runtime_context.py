@@ -52,6 +52,13 @@ class TrendHit:
         return self.likes + (self.comments * 4) + (self.shares * 6) + (self.collects * 2)
 
 
+@dataclass(frozen=True)
+class ContentMechanic:
+    label: str
+    description: str
+    signal_title: str
+
+
 class SkillContextResolver:
     """Resolve dynamic context blocks for activated skills."""
 
@@ -471,6 +478,7 @@ def _to_int(value: object) -> int:
 
 def _render_trend_context(*, scene: str, keywords: Sequence[str], hits: Sequence[TrendHit]) -> str:
     top_hits = _top_unique_hits(hits=hits, limit=4)
+    mechanics = _infer_content_mechanics(hits)
     persona_titles = [
         hit.title for hit in top_hits if hit.keyword == "发疯文学 打工人" or "打工人" in hit.title
     ]
@@ -492,6 +500,14 @@ def _render_trend_context(*, scene: str, keywords: Sequence[str], hits: Sequence
             f"（{hit.likes}赞/{hit.comments}评/{hit.shares}分享/{hit.collects}藏）"
         )
 
+    if mechanics:
+        lines.extend(["", "可借鉴内容机制："])
+        for mechanic in mechanics:
+            lines.append(
+                f"- {mechanic.label}: {mechanic.description}"
+                f"（样本信号：`{mechanic.signal_title}`）"
+            )
+
     lines.extend(
         [
             "",
@@ -503,6 +519,51 @@ def _render_trend_context(*, scene: str, keywords: Sequence[str], hits: Sequence
         ]
     )
     return "\n".join(lines)
+
+
+def _infer_content_mechanics(hits: Sequence[TrendHit]) -> list[ContentMechanic]:
+    candidates: dict[str, tuple[str, TrendHit]] = {}
+    descriptions = {
+        "comment_chain": "用一句可接龙的话触发评论补充",
+        "save_tool": "给一个可收藏清单/三栏/话术模板",
+        "copyable_line": "生成一句用户想截图或转发的封面句",
+        "identity_conflict": "点名具体身份或冲突，强化转发给同类人的理由",
+    }
+    for hit in sorted(hits, key=lambda item: item.score, reverse=True):
+        for label in _mechanic_labels(hit):
+            candidates.setdefault(label, (descriptions[label], hit))
+
+    preferred_order = ["comment_chain", "save_tool", "copyable_line", "identity_conflict"]
+    return [
+        ContentMechanic(
+            label=label,
+            description=candidates[label][0],
+            signal_title=candidates[label][1].title,
+        )
+        for label in preferred_order
+        if label in candidates
+    ]
+
+
+def _mechanic_labels(hit: TrendHit) -> list[str]:
+    title = hit.title
+    labels: list[str] = []
+    if (
+        hit.comments >= 500
+        or any(cue in title for cue in ("评论", "评论区", "接一句", "交出", "补充", "哈哈", "笑"))
+    ):
+        labels.append("comment_chain")
+    if (
+        hit.collects >= 1000
+        or hit.collects >= max(hit.likes // 2, 1)
+        or any(cue in title for cue in ("Tips", "法则", "判断", "反复观看", "方法", "清单", "必看", "教程"))
+    ):
+        labels.append("save_tool")
+    if any(cue in title for cue in ("文案", "个签", "话术", "请假条", "模板", "金句", "一句")):
+        labels.append("copyable_line")
+    if any(cue in title for cue in ("打工人", "工资", "优秀员工", "躺平", "优等生", "领导", "职场")):
+        labels.append("identity_conflict")
+    return labels
 
 
 def _top_unique_hits(*, hits: Sequence[TrendHit], limit: int) -> list[TrendHit]:
