@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import math
 import sys
 
 from topic_radar.config import get_config
@@ -204,15 +205,32 @@ async def _scan_xiaohongshu(
                 else ["打工人", "治愈"]
             )
             xhs_items: list[TrendingItem] = []
-            for kw in kws[:3]:
-                feeds = await xhs.search_feeds(kw, limit=config.scan_sample_limit // len(kws))
+            per_keyword_limit = max(1, math.ceil(config.scan_sample_limit / len(kws)))
+            for kw in kws:
+                feeds = await xhs.search_feeds(kw, limit=per_keyword_limit)
                 for feed in feeds:
+                    url = (
+                        f"https://www.xiaohongshu.com/explore/{feed.feed_id}"
+                        if feed.feed_id
+                        else ""
+                    )
                     xhs_items.append(
                         TrendingItem(
-                            rank=0,
+                            rank=len(xhs_items) + 1,
                             title=feed.title,
                             hot_score=feed.engagement_score,
+                            url=url,
                             platform="xiaohongshu",
+                            metadata={
+                                "feed_id": feed.feed_id,
+                                "xsec_token": feed.xsec_token,
+                                "author": feed.author,
+                                "likes": feed.likes,
+                                "comments": feed.comments,
+                                "collects": feed.collects,
+                                "shares": feed.shares,
+                                "keyword": kw,
+                            },
                         )
                     )
             all_trending["xiaohongshu"] = xhs_items

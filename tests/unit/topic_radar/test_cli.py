@@ -9,6 +9,7 @@ import pytest
 
 from topic_radar.analysis.schemas import LLMAngle, LLMScanOutput, LLMVertical
 from topic_radar.cli import _convert_llm_output, _scan_xiaohongshu, _teardown, main
+from topic_radar.platforms.xiaohongshu import FeedItem
 from topic_radar.platforms.weibo import TrendingItem
 
 
@@ -129,3 +130,98 @@ def test_scan_xiaohongshu_records_not_logged_in_as_platform_error(monkeypatch):
 
     assert "xiaohongshu" not in all_trending
     assert errors["xiaohongshu"] == "login required; run ptsm xhs-login-qrcode"
+
+
+def test_scan_xiaohongshu_preserves_feed_metadata_for_teardown(monkeypatch):
+    class LoggedInXiaohongshu:
+        def __init__(self, client):
+            pass
+
+        async def check_login(self):
+            return True, None
+
+        async def search_feeds(self, keyword: str, limit: int = 20):
+            return [
+                FeedItem(
+                    feed_id="note-1",
+                    title=f"{keyword} 工牌疯话",
+                    author="作者A",
+                    likes=120,
+                    comments=9,
+                    shares=4,
+                    collects=30,
+                    xsec_token="token-1",
+                )
+            ]
+
+    monkeypatch.setattr("topic_radar.cli.XiaohongshuPlatform", LoggedInXiaohongshu)
+    all_trending = {}
+    errors = {}
+
+    asyncio.run(
+        _scan_xiaohongshu(
+            client=object(),
+            config=SimpleNamespace(scan_sample_limit=30),
+            keywords="发疯文学",
+            all_trending=all_trending,
+            errors=errors,
+        )
+    )
+
+    item = all_trending["xiaohongshu"][0]
+    assert errors == {}
+    assert item.title == "发疯文学 工牌疯话"
+    assert item.url == "https://www.xiaohongshu.com/explore/note-1"
+    assert item.metadata["feed_id"] == "note-1"
+    assert item.metadata["xsec_token"] == "token-1"
+    assert item.metadata["author"] == "作者A"
+    assert item.metadata["likes"] == 120
+    assert item.metadata["comments"] == 9
+    assert item.metadata["collects"] == 30
+    assert item.metadata["shares"] == 4
+    assert item.metadata["keyword"] == "发疯文学"
+
+
+def test_scan_xiaohongshu_searches_all_requested_keywords(monkeypatch):
+    calls: list[tuple[str, int]] = []
+
+    class LoggedInXiaohongshu:
+        def __init__(self, client):
+            pass
+
+        async def check_login(self):
+            return True, None
+
+        async def search_feeds(self, keyword: str, limit: int = 20):
+            calls.append((keyword, limit))
+            return [
+                FeedItem(
+                    feed_id=f"note-{keyword}",
+                    title=f"{keyword} 样本",
+                    author="作者A",
+                    xsec_token=f"token-{keyword}",
+                )
+            ]
+
+    monkeypatch.setattr("topic_radar.cli.XiaohongshuPlatform", LoggedInXiaohongshu)
+    all_trending = {}
+    errors = {}
+
+    asyncio.run(
+        _scan_xiaohongshu(
+            client=object(),
+            config=SimpleNamespace(scan_sample_limit=8),
+            keywords="发疯文学,心理学,反刍思维,职场焦虑",
+            all_trending=all_trending,
+            errors=errors,
+        )
+    )
+
+    assert [keyword for keyword, _limit in calls] == [
+        "发疯文学",
+        "心理学",
+        "反刍思维",
+        "职场焦虑",
+    ]
+    assert {limit for _keyword, limit in calls} == {2}
+    assert len(all_trending["xiaohongshu"]) == 4

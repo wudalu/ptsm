@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from topic_radar.mcp_client import McpClient, extract_text
 from topic_radar.platforms.xiaohongshu import PlatformUnavailable
@@ -15,6 +15,7 @@ class TrendingItem:
     label: str = ""
     url: str = ""
     platform: str = ""
+    metadata: dict[str, object] = field(default_factory=dict)
 
 
 class WeiboPlatform:

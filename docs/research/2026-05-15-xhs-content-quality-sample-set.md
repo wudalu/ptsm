@@ -219,7 +219,7 @@ Add warning-only quality checks for:
 
 Fix or work around `get_feed_detail` before the next sample round:
 
-1. Preserve raw XHS rows in `TopicScanResult` even when LLM analysis succeeds.
+1. Preserve raw XHS rows in `TopicScanResult` even when LLM analysis succeeds. Done in code on 2026-05-16; XHS rows now keep `feed_id`, `xsec_token`, interaction counts, author, and source keyword for teardown.
 2. Update XHS detail parser to read `data.note`.
 3. Add bounded teardown retry: one note should fail fast instead of blocking the whole batch.
 4. Re-run detail teardown on the 13 rows above and add comment-theme evidence.

@@ -108,7 +108,7 @@ topic-radar scan
 topic-radar scan --platforms xiaohongshu --keywords "情绪疗愈,修复系手作,AI效率"
 ```
 
-用指定关键词替换默认关键词搜索，每个关键词搜一次，结果合并。
+用指定关键词替换默认关键词搜索，每个关键词都会搜索一次，结果合并。XHS `raw_trending` 会保留 `feed_id`、`xsec_token`、作者和互动数，后续可以直接拿来跑 `topic-radar teardown`。
 
 ### Step 5 — Post Teardown
 
@@ -185,6 +185,8 @@ Top terms: [('治愈', 24), ('教程', 18), ('求教程', 12), ('试试', 10), (
 | `douyin: unavailable (...)` | 同上 | 同上 |
 | scan 产出 0 条数据 | 无平台可用 | 检查 `--mcp-check` 输出 |
 | teardown 返回 None | feed_id 无效或帖子已下架 | 换一个有效的 feed_id |
+
+XHS `raw_trending` rows should include `feed_id`, `xsec_token`, `author`, `likes`, `comments`, `collects`, `shares`, and the source `keyword` when returned by `search_feeds`. If those fields are missing, do not start detail teardown; first rerun scan after login recovery.
 
 ## Exit Codes
 
