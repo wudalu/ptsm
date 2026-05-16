@@ -67,6 +67,8 @@ topic-radar scan --mcp-check
 
 表示两个数据源都可达。`✗` 标记的平台会在后续 scan 中被跳过，不阻塞其他平台。
 
+注意：`--mcp-check` 只验证 MCP 工具可达，不代表小红书账号已登录。XHS 未登录时，`topic-radar scan --platforms xiaohongshu` 应直接失败并返回退出码 `2`，错误里会提示 `login required; run ptsm xhs-login-qrcode`，不要把 0 条 `raw_trending` 当作有效采样。
+
 ### Step 2 — Basic Scan (XHS Only)
 
 先只扫小红书，验证端到端链路：

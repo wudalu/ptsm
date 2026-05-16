@@ -195,7 +195,7 @@ async def _scan_xiaohongshu(
         xhs = XiaohongshuPlatform(client)
         is_logged_in, qr_data = await xhs.check_login()
         if not is_logged_in:
-            all_trending["xiaohongshu"] = []
+            errors["xiaohongshu"] = "login required; run ptsm xhs-login-qrcode"
         else:
             keywords_list = (keywords or "").split(",") if keywords else None
             kws = (

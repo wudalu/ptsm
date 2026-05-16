@@ -224,3 +224,13 @@ Fix or work around `get_feed_detail` before the next sample round:
 3. Add bounded teardown retry: one note should fail fast instead of blocking the whole batch.
 4. Re-run detail teardown on the 13 rows above and add comment-theme evidence.
 
+### 2026-05-16 Rescan Status
+
+Follow-up MCP health check returned 13 XHS tools, but `check_login_status` returned `❌ 未登录`.
+The scan path now treats this as a platform error instead of a valid empty sample:
+
+```text
+No data collected from any platform. Errors: {'xiaohongshu': 'login required; run ptsm xhs-login-qrcode'}
+```
+
+Next step is to scan the QR code again, then re-run the keyword scan and detail teardown.

@@ -3,11 +3,12 @@ from __future__ import annotations
 import sys
 import asyncio
 from argparse import Namespace
+from types import SimpleNamespace
 
 import pytest
 
 from topic_radar.analysis.schemas import LLMAngle, LLMScanOutput, LLMVertical
-from topic_radar.cli import _convert_llm_output, _teardown, main
+from topic_radar.cli import _convert_llm_output, _scan_xiaohongshu, _teardown, main
 from topic_radar.platforms.weibo import TrendingItem
 
 
@@ -102,3 +103,29 @@ def test_teardown_reports_compact_error_for_inaccessible_feed(monkeypatch, capsy
     assert exc_info.value.code == 1
     captured = capsys.readouterr()
     assert "Failed to fetch detail for feed note-404: note inaccessible or timed out" in captured.out
+
+
+def test_scan_xiaohongshu_records_not_logged_in_as_platform_error(monkeypatch):
+    class LoggedOutXiaohongshu:
+        def __init__(self, client):
+            pass
+
+        async def check_login(self):
+            return False, "qr-code"
+
+    monkeypatch.setattr("topic_radar.cli.XiaohongshuPlatform", LoggedOutXiaohongshu)
+    all_trending = {}
+    errors = {}
+
+    asyncio.run(
+        _scan_xiaohongshu(
+            client=object(),
+            config=SimpleNamespace(scan_sample_limit=30),
+            keywords="发疯文学",
+            all_trending=all_trending,
+            errors=errors,
+        )
+    )
+
+    assert "xiaohongshu" not in all_trending
+    assert errors["xiaohongshu"] == "login required; run ptsm xhs-login-qrcode"
