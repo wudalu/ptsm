@@ -50,6 +50,7 @@ related_paths:
 - LLM JSON 解析现在对模型把 hashtags 内嵌在 body 中的情况有容错：缺失 `hashtags` key 时从 body 尾部提取并剥离，避免因输出格式微小偏差导致整个 run 失败。
 - finalize 现在会把 planner / executor / reflector 的 bounded step evidence 写入 artifact 的 `step_outputs`，包括 selected playbook、prompt refs、attempt count、draft content、reflection decision 和 feedback，供 online evaluation 抽取 phase targets。
 - finalize 写入 lessons memory 时会记录 title、image_text、hashtags 和 final_body，供后续 memory 节点做跨帖去重参考。
+- deterministic drafting fallback 会消费 recent account memory 做轻量去重；发疯文学和现代心理困境观察都会在近期标题/封面撞车时切换到备用表达，而不是只证明 memory 被读到。
 - finalize 现在还会写入 `content_review`，包含生成逻辑、互动/收藏/安全信号、LLM 内容质量门状态和人工确认建议。这个 review 不等于自动发布批准；当前人工调整流程是 operator 基于该说明继续对话修改，而不是进入独立审核队列。
 
 ## Practical Implications

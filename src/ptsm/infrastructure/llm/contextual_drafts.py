@@ -14,7 +14,11 @@ def build_contextual_deterministic_draft(
     if _is_wuxia_context(scene=scene, extra_context=extra_context):
         return _build_wuxia_draft(scene=scene, feedback=feedback)
     if _is_modern_psychology_context(scene=scene, extra_context=extra_context):
-        return _build_modern_psychology_draft(scene=scene, feedback=feedback)
+        return _build_modern_psychology_draft(
+            scene=scene,
+            feedback=feedback,
+            runtime_context=runtime_context,
+        )
     return None
 
 
@@ -72,7 +76,9 @@ def _build_wuxia_draft(*, scene: str, feedback: str) -> dict[str, Any]:
     }
 
 
-def _build_modern_psychology_draft(*, scene: str, feedback: str) -> dict[str, Any]:
+def _build_modern_psychology_draft(
+    *, scene: str, feedback: str, runtime_context: str
+) -> dict[str, Any]:
     if any(keyword in scene for keyword in ("周日", "周一消息", "周一", "预焦虑")):
         body = (
             f"{scene}，人还在周日晚上，脑子已经把明天的消息提示音预演了三遍。\n"
@@ -165,6 +171,14 @@ def _build_modern_psychology_draft(*, scene: str, feedback: str) -> dict[str, An
         title = "下班后还在复盘一句话，不是你太敏感"
         image_text = "脑子在替尴尬加班"
         hashtags = ["#心理学", "#情绪管理", "#自我成长", "#职场焦虑", "#反刍思维"]
+    title, image_text, body = _avoid_recent_modern_psychology_memory(
+        title=title,
+        image_text=image_text,
+        body=body,
+        scene=scene,
+        runtime_context=runtime_context,
+    )
+
     if feedback != "无" and "专业帮助" not in body:
         body += "\n如果这些感受持续影响生活，请优先寻求专业帮助。"
     return {
@@ -173,3 +187,65 @@ def _build_modern_psychology_draft(*, scene: str, feedback: str) -> dict[str, An
         "body": body,
         "hashtags": hashtags,
     }
+
+
+def _avoid_recent_modern_psychology_memory(
+    *,
+    title: str,
+    image_text: str,
+    body: str,
+    scene: str,
+    runtime_context: str,
+) -> tuple[str, str, str]:
+    if "# Recent Account Memory" not in runtime_context:
+        return title, image_text, body
+    if title not in runtime_context and image_text not in runtime_context:
+        return title, image_text, body
+    if any(keyword in scene for keyword in ("会议", "尴尬")):
+        candidates = [
+            (
+                "下班路上复盘会议，不是你在小题大做",
+                "先分清原话和脑补",
+                (
+                    f"{scene}，路灯都亮了，脑子还在把会议那一秒拖回进度条。\n"
+                    "这更像是反刍思维在找安全感：大脑想确认自己有没有被误解、有没有漏掉信号。"
+                    "不是你想太多，也不是你必须马上想明白。\n"
+                    "可以先存一个事实 / 猜测 / 下一步三栏：事实=对方实际说了什么；猜测=我补出的评价；"
+                    "下一步=明天是否用一句轻确认收尾。\n"
+                    "如果痛苦持续、影响工作学习生活，或出现自伤想法，请尽快寻求专业帮助。"
+                    "评论区可以留一个你最容易在会议后反复回想的瞬间，我们只收集例子，不给自己贴标签。"
+                ),
+            ),
+            (
+                "会议后的回放键，可以先暂停一下",
+                "事实先坐前排",
+                (
+                    f"{scene}，人已经在回家路上，脑子却把会议室重新开了一遍灯。\n"
+                    "这更像是反刍思维在找确定感：它想确认那句话到底是事实，还是你临时补出来的评价。"
+                    "不是你想太多，也不是你需要立刻审判自己。\n"
+                    "可以先存一个事实 / 猜测 / 下一步三栏：事实=我听见了哪句话；猜测=我给它加了什么含义；"
+                    "下一步=明天是否需要轻轻确认一次。\n"
+                    "如果痛苦持续、影响工作学习生活，或出现自伤想法，请尽快寻求专业帮助。"
+                    "评论区可以留一个你最容易会议后反复回看的瞬间，我们只收集例子，不给自己贴标签。"
+                ),
+            ),
+            (
+                "一句会议回音，不用想成判决书",
+                "把脑补写到猜测栏",
+                (
+                    f"{scene}，那句话像在脑子里开了循环播放，但它不一定就是对你的判决。\n"
+                    "这更像是反刍思维在帮你排雷：大脑想降低不确定感，所以反复检查同一个片段。"
+                    "不是你想太多，也不是你必须马上找到标准答案。\n"
+                    "可以先存一个事实 / 猜测 / 下一步三栏：事实=原话；猜测=我担心的评价；"
+                    "下一步=要不要用一句具体问题确认。\n"
+                    "如果痛苦持续、影响工作学习生活，或出现自伤想法，请尽快寻求专业帮助。"
+                    "评论区可以留一个你最容易在会后反复检查的片段，我们只收集例子，不给自己贴标签。"
+                ),
+            ),
+        ]
+        for candidate in candidates:
+            candidate_title, candidate_image, _candidate_body = candidate
+            if candidate_title not in runtime_context and candidate_image not in runtime_context:
+                return candidate
+        return candidates[-1]
+    return title, f"{image_text}，换个角度存", body

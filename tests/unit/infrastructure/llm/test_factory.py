@@ -170,6 +170,41 @@ def test_deterministic_modern_psychology_draft_has_mini_tool_and_example_prompt(
     assert not any(term in combined for term in ("诊断", "治好焦虑", "治愈抑郁", "用药"))
 
 
+def test_deterministic_modern_psychology_draft_avoids_recent_memory_title() -> None:
+    backend = DeterministicDraftBackend()
+
+    draft = backend.generate(
+        scene="下班路上还在反复复盘会议里一句话，越想越尴尬",
+        planner_prompt="# 现代心理困境观察 Planner\n目标：解释一个心理机制，给低风险行动和专业边界。",
+        persona_prompt="# Modern Psychology Persona\n有心理学素养但不做诊断。",
+        skill_contents=[
+            "# Psychology Style\n需要三栏工具和例子型评论提示。",
+            "# Psychology Safety\n禁止诊断化表达，必须提示专业帮助边界。",
+        ],
+        runtime_skill_contents=[
+            "# Recent Account Memory\n"
+            "Avoid repeating recent account posts:\n"
+            "- recent_1_scene: 下班路上还在反复复盘会议里一句话，越想越尴尬\n"
+            "  title: 下班路上复盘会议，不是你在小题大做\n"
+            "  image_text: 先分清原话和脑补\n"
+            "  body_preview: 下班路上还在反复复盘会议里一句话，越想越尴尬，路灯都亮了，脑子还在把会议那一秒拖回进度条。\n"
+            "- recent_1_scene: 下班路上还在反复复盘会议里一句话，越想越尴尬\n"
+            "  title: 会议那句话反复倒带，不是你太敏感\n"
+            "  image_text: 把猜测放回事实栏\n"
+            "  body_preview: 下班路上还在反复复盘会议里一句话，越想越尴尬，身体已经离开会议室，脑子还在给那句话反复加字幕。"
+        ],
+    )
+
+    assert draft["title"] != "会议那句话反复倒带，不是你太敏感"
+    assert draft["title"] != "下班路上复盘会议，不是你在小题大做"
+    assert draft["image_text"] != "把猜测放回事实栏"
+    assert draft["image_text"] != "先分清原话和脑补"
+    assert "给那句话反复加字幕" not in draft["body"]
+    assert "反刍思维" in draft["body"]
+    assert "事实 / 猜测 / 下一步" in draft["body"]
+    assert "评论区" in draft["body"]
+
+
 def test_deterministic_modern_psychology_draft_varies_by_scene_mechanic() -> None:
     backend = DeterministicDraftBackend()
     skill_contents = [
