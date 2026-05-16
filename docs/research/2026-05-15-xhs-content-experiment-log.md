@@ -44,6 +44,7 @@ This log records whether borrowed mechanics improve real account outcomes. Fill 
 - Follow-up fix: artifact storage now preserves repeated dry-runs with numeric suffixes; playbook contracts forbid experiment-instruction leakage; deterministic scene cleanup strips those labels before drafting.
 - Post-fix smoke artifact: `outputs/artifacts/acct-fk-local-fengkuang_daily_post-1-6.json` has `required_failed = 0` and no experiment-instruction leakage. It is a candidate for manual review, not evidence of online performance.
 - 2026-05-16: Re-ran the full 12-candidate dry-run after fixing deterministic psychology scene branching. All rows above are pre-publish candidates with `leaks = false`; they still need explicit publish approval and 2h/24h/72h metrics before Task 10 can be considered complete.
+- 2026-05-16: Rechecked the publish prerequisite. The default `:18060` MCP process still reports `login_required`, and it was started without `COOKIES_PATH`, so it cannot reuse the existing `/Users/wudalu/llm-app/ptsm/cookies.json`. Temporary MCP probes with `COOKIES_PATH` on `:18063` and with `XHS_PROXY` on `:18064`/`:18065` still failed to generate QR codes (`TimeoutError` / upstream `context canceled` at `login.go:74`). The upstream login helper was started with `COOKIES_PATH=/Users/wudalu/llm-app/ptsm/cookies.json`, but no cookie write-back occurred during the wait window. Real publish remains blocked until the operator completes the login helper flow and restarts MCP with the same `COOKIES_PATH`.
 
 ## Score Formula
 
