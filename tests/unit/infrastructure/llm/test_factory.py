@@ -234,6 +234,10 @@ def test_deterministic_modern_psychology_draft_varies_by_scene_mechanic() -> Non
     assert any(term in pulled_back["body"] for term in ("低控制感", "边界压力"))
     assert "事实 / 猜测 / 下一步" in meeting["body"]
     assert "散会" in after_work["body"]
+    assert any(
+        tool in after_work["body"]
+        for tool in ("事实 / 猜测 / 下一步", "三栏", "5分钟", "边界句", "消息草稿", "模板")
+    )
     assert "评论区" in ordinary_reply["body"]
 
 
