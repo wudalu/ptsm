@@ -65,7 +65,7 @@ repository.
 ## What We Should Build Next
 
 - traces and metrics if local file observability stops being enough
-- calibrated LLM judge suites and a dedicated human review queue after enough dry-run and publish examples exist
+- calibrated LLM judge suites after enough dry-run and publish examples exist; current human review stays lightweight through each artifact's `content_review` plus operator conversation, not a separate review queue or approval UI
 - richer skill quality evals if completion-rate aggregation stops being enough
 
 ## What We Should Not Copy Blindly

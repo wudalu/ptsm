@@ -80,6 +80,8 @@ The latest review feedback is mostly supported by code evidence:
 
 Latest adjustment: LLM quality scoring should not be warning-only in the generation path. The required behavior is evaluator-optimizer style: judge the draft, feed concrete `rewrite_hint` back into the next draft when quality fails, stop after `max_attempts`, and still require human confirmation before publish.
 
+Latest scope clarification: human confirmation does not require a separate review queue or dashboard. Each generated artifact/CLI response should expose `content_review` with generation logic and review notes; the operator can then ask for changes in normal conversation.
+
 ## External Signals
 
 - Xiaohongshu/Kotler reporting frames the platform around people and life scenes; active user behaviors include search, deep reading, saving, sharing, screenshots, and comments. It also reports strong UGC influence and high daily search volume. Source: <https://www.kotler.com.cn/pdf/2023kmg-xhs.pdf>
@@ -175,6 +177,7 @@ In scope:
 - topic-radar teardown/reporting docs
 - required content quality evals and generation retry feedback
 - an operator experiment loop for 2h/24h/72h publish metrics
+- lightweight human review through generated `content_review` plus follow-up operator conversation
 
 Out of scope:
 
@@ -184,6 +187,7 @@ Out of scope:
 - Broad platform algorithm reverse engineering
 - Medical or clinical psychology products
 - Automatic publish based on LLM judge output without human confirmation
+- A separate human review queue, approval dashboard, or review operations UI
 
 ---
 

@@ -79,7 +79,7 @@ PTSM 当前的观测性核心是本地文件系统里的 run store 和 artifacts
 - 现在的 cleanup 仍是人工触发 CLI，不是后台定时回收。
 - 现在的 eval surface 仍然是本地只读 JSON 汇总，不是持续回归系统或外部 dashboard。
 - skill-level eval 目前只按 run summary 聚合，不会解析 draft 质量、人工评分或更细颗粒度 step outcome。
-- LLM judge 目前支持 DeepSeek-backed backend 和 fake-backend tests；默认 harness 仍不主动调用 LLM。尚未完成离线校准集或独立人工 review 队列。
+- LLM judge 目前支持 DeepSeek-backed backend 和 fake-backend tests；默认 harness 仍不主动调用 LLM。尚未完成离线校准集；当前人审方式是读取 artifact/CLI 响应里的 `content_review`，再通过 operator 对话提出调整，不计划单独建设人工 review 队列或操作台。
 - 现在的 report surface 仍是本地单次 snapshot，不是长期历史报表或外部告警系统。
 - 现在的 publish diagnostic 仍然是单次 case diagnosis，不是自动批量归因或跨运行统计。
 - `仅自己可见` 的帖子如果上游仍未回传 `post_id/post_url`，当前工具链仍然无法自动核验，只能人工确认或等待上游补齐标识。
