@@ -11,8 +11,14 @@ def build_contextual_deterministic_draft(
     runtime_context: str,
 ) -> dict[str, Any] | None:
     """Return a domain-specific deterministic draft when context is explicit."""
+    if _is_sushi_poetry_context(scene=scene, extra_context=extra_context):
+        return _build_sushi_poetry_draft(scene=scene, feedback=feedback)
     if _is_wuxia_context(scene=scene, extra_context=extra_context):
         return _build_wuxia_draft(scene=scene, feedback=feedback)
+    if _is_ai_tech_context(scene=scene, extra_context=extra_context):
+        return _build_ai_tech_draft(scene=scene, feedback=feedback)
+    if _is_daily_english_context(scene=scene, extra_context=extra_context):
+        return _build_daily_english_draft(scene=scene, feedback=feedback)
     if _is_modern_psychology_context(scene=scene, extra_context=extra_context):
         return _build_modern_psychology_draft(
             scene=scene,
@@ -20,6 +26,24 @@ def build_contextual_deterministic_draft(
             runtime_context=runtime_context,
         )
     return None
+
+
+def _is_sushi_poetry_context(*, scene: str, extra_context: str) -> bool:
+    combined = f"{scene}\n{extra_context}"
+    return any(
+        keyword in combined
+        for keyword in (
+            "苏轼",
+            "诗词赏析",
+            "Sushi Poetry Style",
+            "Su Shi Poetry Style",
+            "XHS Poetry Hashtagging",
+            "#苏轼",
+            "定风波",
+            "赤壁赋",
+            "水调歌头",
+        )
+    )
 
 
 def _is_wuxia_context(*, scene: str, extra_context: str) -> bool:
@@ -34,6 +58,36 @@ def _is_wuxia_context(*, scene: str, extra_context: str) -> bool:
             "#古龙",
             "令狐冲",
             "笑傲江湖",
+        )
+    )
+
+
+def _is_ai_tech_context(*, scene: str, extra_context: str) -> bool:
+    combined = f"{scene}\n{extra_context}"
+    return any(
+        keyword in combined
+        for keyword in (
+            "AI科技资讯",
+            "AI Tech Style",
+            "AI Tech Hashtagging",
+            "#AI资讯",
+            "OpenAI",
+            "多模态",
+        )
+    )
+
+
+def _is_daily_english_context(*, scene: str, extra_context: str) -> bool:
+    combined = f"{scene}\n{extra_context}"
+    return any(
+        keyword in combined
+        for keyword in (
+            "每日英语学习",
+            "Daily English Style",
+            "Daily English Hashtagging",
+            "#每日英语",
+            "英语表达",
+            "音标",
         )
     )
 
@@ -53,18 +107,47 @@ def _is_modern_psychology_context(*, scene: str, extra_context: str) -> bool:
     )
 
 
+def _build_sushi_poetry_draft(*, scene: str, feedback: str) -> dict[str, Any]:
+    body = (
+        f"{scene}，我会想到苏轼《定风波》里那种把狼狈放慢一点看的劲儿。\n"
+        "他不是把风雨写成胜利宣言，而是先承认：人走在雨里，衣角会湿，心也会乱。"
+        "但只要还能往前走，很多难堪就不会永远停在原地。\n"
+        "这一句可以存下来：别急着把今天解释成失败，先把它当成一段正在过去的风雨。"
+        "它不是鸡血，更像给自己留一点缓冲。\n"
+        "评论区可以留一句你最近读到会想到自己的苏轼词，我也想顺着大家的句子再读一遍。"
+    )
+    if feedback != "无" and "苏轼" not in body:
+        body += "\n顺着苏轼再读一遍，情绪也会慢一点落下来。"
+    return {
+        "title": "读苏轼，突然不急着赢过今天了",
+        "image_text": "风雨可以先慢一点",
+        "body": body,
+        "hashtags": ["#苏轼", "#诗词赏析", "#读书笔记", "#小红书读书"],
+    }
+
+
 def _build_wuxia_draft(*, scene: str, feedback: str) -> dict[str, Any]:
     body = (
         f"{scene}，最适合拿令狐冲来讲。金庸在《笑傲江湖》里写他，不是写一个简单的浪子，"
-        "而是写一个明明有能力进入体系、却始终无法把自己交给体系的人。\n"
-        "原文里那句“行事但求无愧于心”，其实就是令狐冲的底层算法。他可以敬重师门，"
-        "也可以珍惜朋友，但一旦规则要求他把人的鲜活感磨成标准答案，他就开始本能地后退。"
-        "这也是为什么他在华山派里显得“不够上进”，在江湖里却反而更像一个完整的人。\n"
-        "放到今天看，令狐冲像很多不愿被体制化的职场人：不是不想负责，也不是没有专业能力，"
+        "而是写一个明明有能力进入体系、却始终无法把自己完全交给体系的人。\n"
+        "原文里写他“行事但求无愧于心”，这句话常被读成潇洒，其实更像令狐冲的底层规则。"
+        "他可以敬重师门，也可以珍惜朋友，但一旦规则要求他把人的鲜活感磨成标准答案，他就开始本能地后退。"
+        "所以他在华山派里显得不够上进，在江湖里却反而更像一个完整的人。\n"
+        "放到今天看，令狐冲像很多不愿被体制化的职场人。不是不想负责，也不是没有专业能力，"
         "而是害怕自己有一天只剩流程、汇报和绩效表，连喜欢什么、讨厌什么都要先看组织脸色。"
-        "他真正珍贵的地方，不是潇洒喝酒，而是能在关系、人情和权力夹缝里，还保留一点不被驯化的判断。\n"
-        "所以令狐冲的自由不是逃班式自由，而是一种更难的自由：知道代价，也知道自己不适合成为某种标准答案。"
-        "这类人未必适合所有单位，但他们提醒我们，成长不只有被规训成“正确的人”这一条路。"
+        "他真正珍贵的地方，不是喝酒，不是逃跑，而是能在关系、人情和权力夹缝里，还保留一点不被驯化的判断。\n"
+        "这也是《笑傲江湖》最狠的地方：它写的不是“自由的人多快乐”，而是自由的人常常先被误解。"
+        "岳不群需要他成为门派资产，江湖需要他选择阵营，旁观者需要他给出标准答案。"
+        "可令狐冲偏偏最怕的就是把自己交给某种标准答案。\n"
+        "适合截图的那一句是：令狐冲的自由不是不负责，而是不愿把良心外包给任何体系。"
+        "这句话放在今天依然有刺。很多人不是不努力，而是不想用一生证明自己适合某套并不适合自己的考核表。"
+        "他们可能会慢一点、别扭一点、显得不够合群一点，但那一点别扭，恰恰是自我还没被磨平的证据。\n"
+        "更有意思的是，令狐冲并不是没有关系。他有师门、有朋友、有爱人，也会被人情拖住。"
+        "所以他的自由不是把所有关系都切断，而是在关系里保留判断：谁值得信，哪条路不能走，"
+        "什么评价听一听就好，什么底线不能交出去。这个层次，比单纯说他潇洒要复杂得多。\n"
+        "所以我更愿意把令狐冲看成一种提醒：成长不只有被规训成“正确的人”这一条路。"
+        "有些人最终要学会的，不是如何让所有人满意，而是如何承担“不被所有人理解”的代价。"
+        "评论区想问问，你还想用今天的处境重读哪个金庸人物？我下一篇想写黄蓉或郭靖。"
     )
     if feedback != "无" and "#金庸" not in body:
         body += "\n重读金庸时，这个角度会更清楚。"
@@ -73,6 +156,53 @@ def _build_wuxia_draft(*, scene: str, feedback: str) -> dict[str, Any]:
         "image_text": "自由不是不负责",
         "body": body,
         "hashtags": ["#金庸", "#令狐冲", "#笑傲江湖", "#武侠", "#读书笔记"],
+    }
+
+
+def _build_ai_tech_draft(*, scene: str, feedback: str) -> dict[str, Any]:
+    body = (
+        f"3秒核心信息：{scene}。这类更新值得看，不是因为它又喊了一句“AI改变世界”，"
+        "而是它开始把多模态能力放进更日常的使用入口里。\n"
+        "是什么：简单说，就是助手不只处理文字，还能把图片、语音、文件和上下文放在一起理解。"
+        "你问一个问题，它不再只像搜索框，而更像能看材料、听需求、给步骤的工作搭子。\n"
+        "为什么重要：过去很多 AI 产品卡在“演示很强，落地很窄”。多模态如果稳定下来，"
+        "最先变化的会是学习整理、会议纪要、内容初稿、客服排查这类高频但重复的工作。\n"
+        "普通人影响：暂时不用焦虑被替代，更现实的是先学会把任务说清楚。"
+        "你给它的材料越具体，它越可能帮你省掉整理、改写和对照的时间。\n"
+        "可以先收藏清单：1. 看它能不能读懂你的真实文件；2. 看输出能不能追问修正；"
+        "3. 看隐私和权限设置是否清楚。非投资建议，只是我对工具使用价值的观察。\n"
+        "评论区想问问，你会先拿这种助手处理工作、学习，还是生活里的杂事？"
+    )
+    if feedback != "无" and "#AI资讯" not in body:
+        body += "\n这条更适合放在 #AI资讯 方向里做工具观察。"
+    return {
+        "title": "这次AI更新，普通人先看这三点",
+        "image_text": "别只看热闹，先看能不能真省事",
+        "body": body,
+        "hashtags": ["#AI资讯", "#人工智能", "#效率工具", "#科技观察"],
+    }
+
+
+def _build_daily_english_draft(*, scene: str, feedback: str) -> dict[str, Any]:
+    body = (
+        f"{scene}，今天可以学一个很实用的表达：follow up。\n"
+        "音标：/ˈfɑːloʊ ʌp/\n"
+        "词性：动词短语，也可以作名词。\n"
+        "中文意思：继续跟进、补充确认，不是催命式追问，而是把事情往前推一步。\n"
+        "真实场景例句：I’ll follow up with you after the meeting.\n"
+        "翻译：会后我再跟你确认一下。\n"
+        "可收藏句型：I’ll follow up with you after + 时间 / 事件。"
+        "比如 after the call, after I check the file, after lunch，都能替换。\n"
+        "小提醒：它比 ask again 更自然，也比 push you 更礼貌，适合开会、私聊、邮件都想显得稳一点的时候。\n"
+        "评论区可以用 follow up 造句，我帮你看看哪一句更像真实英文。"
+    )
+    if feedback != "无" and "#每日英语" not in body:
+        body += "\n这条适合放进 #每日英语 系列里慢慢积累。"
+    return {
+        "title": "follow up 不是催，是礼貌跟进",
+        "image_text": "一句开会私聊都能用",
+        "body": body,
+        "hashtags": ["#每日英语", "#英语学习", "#实用英语", "#职场英语"],
     }
 
 

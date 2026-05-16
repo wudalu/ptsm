@@ -78,3 +78,50 @@ def test_finalize_persists_step_outputs_for_evaluation(tmp_path: Path) -> None:
             "final_body": "场景正文",
         }
     ]
+
+
+def test_finalize_content_review_detects_domain_save_mechanics(tmp_path: Path) -> None:
+    finalize = build_finalize_node(
+        execution_memory=InMemoryExecutionMemory(),
+        artifact_store=FileArtifactStore(base_dir=tmp_path / "artifacts"),
+    )
+
+    result = finalize(
+        {
+            "account_id": "acct-ai-tech-local",
+            "playbook_id": "ai_tech_daily_post",
+            "drafting_provider": "deterministic",
+            "selected_playbook": "ai_tech_daily_post",
+            "candidate_skills": ["ai_tech_style"],
+            "activated_skills": ["ai_tech_style"],
+            "activated_skill_details": [{"skill_name": "ai_tech_style"}],
+            "runtime_skill_details": [],
+            "runtime_skill_contents": [],
+            "planner_prompt": "# planner",
+            "persona_prompt": "# persona",
+            "reflection_prompt": "# reflection",
+            "reflection_rules": {"required_hashtag": "#AI资讯"},
+            "attempt_count": 1,
+            "draft_content": {
+                "title": "这次AI更新，普通人先看这三点",
+                "image_text": "先看能不能真省事",
+                "body": "可以先收藏清单：1. 看它能不能读懂文件。评论区聊聊你会怎么用。",
+                "hashtags": ["#AI资讯"],
+            },
+            "required_revision": False,
+            "reflection_decision": "finalize",
+            "reflection_feedback": "",
+            "scene": "AI工具更新",
+            "final_content": {
+                "title": "这次AI更新，普通人先看这三点",
+                "image_text": "先看能不能真省事",
+                "body": "可以先收藏清单：1. 看它能不能读懂文件。评论区聊聊你会怎么用。",
+                "hashtags": ["#AI资讯"],
+            },
+        }
+    )
+
+    review = result["content_review"]
+    assert review["quality_signals"]["save_trigger"] is True
+    assert review["generation_logic"]["save_strategy"] == "已包含可复制或可保存元素"
+    assert "建议补充可复制句、模板、三栏工具或可截图清单。" not in review["review_notes"]

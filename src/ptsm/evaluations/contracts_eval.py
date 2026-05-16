@@ -268,6 +268,32 @@ def _constraint_failures(
 
     body = payload.get("body")
     if isinstance(body, str):
+        body_min_chars = constraints.get("body_min_chars")
+        if isinstance(body_min_chars, int) and len(body) < body_min_chars:
+            failures.append(
+                {
+                    "path": _field_path(target, "body"),
+                    "value_preview": body[:120],
+                    "observation": (
+                        "body_min_chars violated: "
+                        f"{len(body)} < {body_min_chars}"
+                    ),
+                }
+            )
+
+        body_max_chars = constraints.get("body_max_chars")
+        if isinstance(body_max_chars, int) and len(body) > body_max_chars:
+            failures.append(
+                {
+                    "path": _field_path(target, "body"),
+                    "value_preview": body[:120],
+                    "observation": (
+                        "body_max_chars violated: "
+                        f"{len(body)} > {body_max_chars}"
+                    ),
+                }
+            )
+
         include_any = _string_list(constraints.get("body_must_include_any"))
         if include_any and not any(term in body for term in include_any):
             failures.append(

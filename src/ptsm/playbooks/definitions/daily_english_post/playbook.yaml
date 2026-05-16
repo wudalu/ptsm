@@ -12,3 +12,18 @@ optional_skills: []
 reflection:
   must_include_phrase: ""
   required_hashtag: "#每日英语"
+  body_must_include_any:
+    - 音标
+    - 词性
+    - 例句
+    - 翻译
+    - 造句
+  body_must_not_include_any:
+    - 词典释义
+    - 老师讲
+    - 课堂作业
+    - 变体要求
+    - 模板要求
+    - comment_chain
+    - save_tool
+    - identity_conflict

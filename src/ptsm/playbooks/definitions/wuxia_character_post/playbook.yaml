@@ -11,6 +11,19 @@ optional_skills: []
 reflection:
   must_include_phrase: ""
   required_hashtag: "#金庸"
+  body_must_include_any:
+    - 原文
+    - 截图
+    - 评论区
+    - 这一句
+  body_must_not_include_any:
+    - 课堂讲义
+    - 百科
+    - 变体要求
+    - 模板要求
+    - comment_chain
+    - save_tool
+    - identity_conflict
 max_attempts: 4
 drafting_model: deepseek-v4-pro
 trend_keywords:
