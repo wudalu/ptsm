@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from ptsm.evaluations.contracts import EvalResult
-from ptsm.evaluations.llm_judge import LLMJudgeBackend, run_llm_judge
+from ptsm.evaluations.llm_judge import LLMJudgeBackend, run_content_quality_judge
 from ptsm.evaluations.targets import extract_targets_from_artifact
 from ptsm.evaluations.rules import (
     rule_final_content_fields,
@@ -118,11 +118,14 @@ def run_eval_artifact(
             all_results.append(result)
             store.append_result(handle.eval_run_id, result)
 
-        if enable_llm_judges and llm_judge_backend is not None and target.phase == "executor":
-            result = run_llm_judge(
+        if (
+            enable_llm_judges
+            and llm_judge_backend is not None
+            and target.phase == "executor"
+            and _content_quality_judge_enabled(playbook_contract)
+        ):
+            result = run_content_quality_judge(
                 target,
-                evaluator_id="llm.executor.semantic_quality",
-                rubric="Evaluate whether the final content fits the scene, playbook persona, platform, and available runtime context.",
                 backend=llm_judge_backend,
             )
             result.eval_run_id = handle.eval_run_id
@@ -182,6 +185,18 @@ def _apply_spec_metadata(result: EvalResult, spec: object | None) -> None:
     gate_level = getattr(spec, "gate_level", None)
     if isinstance(gate_level, str) and gate_level:
         result.gate_level = gate_level
+
+
+def _content_quality_judge_enabled(playbook_contract: object | None) -> bool:
+    if playbook_contract is None:
+        return True
+    warning_judges = getattr(playbook_contract, "warning_judges", {})
+    if not isinstance(warning_judges, dict):
+        return True
+    config = warning_judges.get("executor_content_quality")
+    if not isinstance(config, dict):
+        return True
+    return bool(config.get("enabled_when_requested", True))
 
 
 def _source_metadata(artifact: dict[str, Any], *, run_id: str) -> dict[str, str]:

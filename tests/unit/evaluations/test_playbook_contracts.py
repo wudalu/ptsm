@@ -22,6 +22,9 @@ class TestPlaybookEvalContract:
         assert "今日已疯" in constraints["image_text_must_not_equal_any"]
         assert "评论区" in constraints["body_must_include_comment_prompt_any"]
         assert "可复制" in constraints["body_must_include_save_trigger_any"]
+        warning_judge = contract.warning_judges["executor_content_quality"]
+        assert warning_judge["evaluator_id"] == "llm.executor.content_quality"
+        assert warning_judge["gate_level"] == "warning"
 
     def test_missing_optional_contract_returns_none(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -70,3 +73,7 @@ class TestPlaybookEvalContract:
         assert "专业帮助" in executor_constraints["body_must_include_all"]
         assert "评论区" in executor_constraints["body_must_include_comment_prompt_any"]
         assert "三栏" in executor_constraints["body_must_include_save_trigger_any"]
+        assert (
+            contract.warning_judges["executor_content_quality"]["evaluator_id"]
+            == "llm.executor.content_quality"
+        )

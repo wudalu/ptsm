@@ -5,6 +5,13 @@ uses:
   artifact: artifact.v1
   skill_activation: skill_activation.v1
 
+warning_judges:
+  executor_content_quality:
+    evaluator_id: llm.executor.content_quality
+    gate_level: warning
+    enabled_when_requested: true
+    note: Requires human calibration before it can become a required gate.
+
 node_contracts:
   planner:
     output_contract: skill_activation.v1

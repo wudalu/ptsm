@@ -322,9 +322,16 @@ class TestRunEvalArtifact:
                 json.dumps(
                     {
                         "score": 0.2,
-                        "label": "weak",
+                        "labels": {
+                            "hook_specificity": "warn",
+                            "save_trigger": "fail",
+                            "comment_trigger": "pass",
+                            "platform_native_format": "warn",
+                            "persona_fit": "pass",
+                            "safety": "pass",
+                        },
                         "reason": "semantic quality is weak",
-                        "confidence": 0.8,
+                        "rewrite_hint": "Add a reusable template line.",
                     }
                 )
             )
@@ -345,8 +352,9 @@ class TestRunEvalArtifact:
                 for line in results_path.read_text(encoding="utf-8").splitlines()
             ]
             assert any(
-                row["evaluator_id"] == "llm.executor.semantic_quality"
+                row["evaluator_id"] == "llm.executor.content_quality"
                 and row["gate_level"] == "warning"
+                and row["evidence"][0]["labels"]["save_trigger"] == "fail"
                 for row in rows
             )
 
