@@ -155,3 +155,80 @@ Both artifacts include `content_review.status=needs_human_review`.
 `content_quality_judge_status=not_run` in this local check because no LLM judge
 backend was configured; when a DeepSeek judge backend is available, judge failure is
 a required retry signal before this human review step.
+
+## Conversation Review Samples
+
+Generated on 2026-05-16 after narrowing human review scope to artifact
+`content_review` plus follow-up operator conversation. These are still dry-runs;
+no XiaoHongShu post was published.
+
+### 发疯文学 Sample
+
+- artifact: `outputs/artifacts/acct-fk-local-fengkuang_daily_post-1-96.json`
+- title: `领导18:57发「在吗」那一秒`
+- cover: `我的工牌先替我发疯`
+- eval: passed, `required_failed=0`, `warning_failed=0`
+- review status: `content_review.status=needs_human_review`
+
+Draft:
+
+```text
+领导18:57突然发来一句在吗，明天早会还要我补材料，群聊弹出来那一秒，我的工牌已经在桌上替我原地离职。
+可复制疯话：收到，但灵魂已下班。评论区接一句你最想写在工牌背面的疯话，明天早会前我先替大家默背。
+```
+
+Generation logic:
+
+- hook: specific after-hours leader-message moment, not a generic `打工人日常`
+- object: `工牌` plus `群聊`
+- participation: `评论区接一句`
+- save/share trigger: `可复制疯话`
+- safety: no mental-health, treatment, hospital, medication, or diagnosis joke terms
+- memory: used `recent_account_memory`
+
+Human adjustment suggestions:
+
+- Keep the title/cover pair; it is concrete and first-screen readable.
+- Consider replacing `收到，但灵魂已下班` if nearby posts already used it, because it is a reusable line but can become account-level repetition.
+- If asking for a sharper version, ask for a new copyable line while preserving `工牌` and the comment-chain mechanism.
+
+### Psychology Sample
+
+- artifact: `outputs/artifacts/acct-psychology-local-modern_psychology_post-1-95.json`
+- title: `会议那句话反复倒带，不是你太敏感`
+- cover: `把猜测放回事实栏`
+- eval: passed, `required_failed=0`, `warning_failed=0`
+- review status: `content_review.status=needs_human_review`
+
+Draft:
+
+```text
+下班路上还在反复复盘会议里一句话，越想越尴尬，身体已经离开会议室，脑子还在给那句话反复加字幕。
+这更像是反刍思维在补安全感：大脑想确认自己有没有说错、有没有被误解。不是你太敏感，也不是你想太多。
+可以先存一个事实 / 猜测 / 下一步三栏：事实=对方原话；猜测=我脑补的评价；下一步=明天要不要用一句轻确认收尾。
+如果痛苦持续、影响工作学习生活，或出现自伤想法，请尽快寻求专业帮助。评论区可以留一个你最容易在会议后反复回放的瞬间，我们只收集例子，不给自己贴标签。
+```
+
+Generation logic:
+
+- hook: first-person meeting replay scene
+- mechanism: `反刍思维`
+- save trigger: `事实 / 猜测 / 下一步` mini-tool
+- comment trigger: asks for user examples instead of broad opinions
+- safety: includes professional-help boundary and avoids diagnosis bait
+- memory: used `recent_account_memory`
+
+Human adjustment suggestions:
+
+- This version is structurally strong but close to prior psychology cadence: scene -> mechanism -> mini-tool -> professional boundary -> comment prompt.
+- If adjusting by conversation, ask for a less instructional first line or a more lived-in cover while keeping the `事实 / 猜测 / 下一步` tool.
+- Because local DeepSeek judge credentials were not configured, `content_quality_judge_status=not_run`; deterministic eval passed, and a configured judge backend would still run as a required retry gate before this human review step.
+
+### Memory Follow-Up
+
+The fresh dry-run surfaced a deterministic fallback gap: modern psychology drafts
+could read `recent_account_memory` but still reuse recent titles. The follow-up fix
+adds regression coverage so when both the base title and a first fallback title
+are present in recent memory, the deterministic draft chooses another unused
+title/cover/body variant while preserving the mechanism, mini-tool, safety boundary,
+and comment prompt.
