@@ -217,6 +217,62 @@ class TestRunEvalArtifact:
                 for row in result_rows
             )
 
+    def test_eval_artifact_fails_deliberately_weak_content_quality_fixture(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            definitions_root = root / "playbooks"
+            _write_eval_contract(
+                definitions_root,
+                playbook_id="fengkuang_daily_post",
+                title_max_chars=30,
+                extra_constraints={
+                    "title_must_not_equal_any": ["打工人地铁生存实录"],
+                    "image_text_must_not_equal_any": ["今日已疯"],
+                    "body_must_include_comment_prompt_any": ["评论区", "你最"],
+                    "body_must_include_save_trigger_any": ["可复制", "模板"],
+                    "body_must_not_include_any": ["精神病"],
+                },
+            )
+            artifact_path = root / "weak-quality.json"
+            artifact_path.write_text(
+                json.dumps(
+                    {
+                        **SAMPLE_ARTIFACT,
+                        "final_content": {
+                            "title": "打工人地铁生存实录",
+                            "image_text": "今日已疯",
+                            "body": "周一早高峰地铁通勤，我像个精神病一样累。",
+                            "hashtags": ["#发疯文学"],
+                        },
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            result = run_eval_artifact(
+                artifact_path=artifact_path,
+                evals_base_dir=root / "evals",
+                playbook_definitions_root=definitions_root,
+            )
+
+            assert result["status"] == "failed"
+            assert result["gate"]["required_failed"] > 0
+            results_path = root / "evals" / result["eval_run_id"] / "results.jsonl"
+            result_rows = [
+                json.loads(line)
+                for line in results_path.read_text(encoding="utf-8").splitlines()
+            ]
+            assert any("title_must_not_equal_any" in row["reason"] for row in result_rows)
+            assert any(
+                "body_must_include_comment_prompt_any" in row["reason"]
+                for row in result_rows
+            )
+            assert any(
+                "body_must_include_save_trigger_any" in row["reason"]
+                for row in result_rows
+            )
+
     def test_missing_playbook_local_contract_is_non_fatal(self):
         with tempfile.TemporaryDirectory() as tmp:
             artifact_path = Path(tmp) / "artifact.json"
@@ -300,24 +356,32 @@ def _write_eval_contract(
     *,
     playbook_id: str,
     title_max_chars: int,
+    extra_constraints: dict | None = None,
 ) -> None:
     playbook_dir = definitions_root / playbook_id
     playbook_dir.mkdir(parents=True, exist_ok=True)
+    constraints = {
+        "title_max_chars": title_max_chars,
+        "hashtags_min_count": 1,
+        "hashtags_max_count": 8,
+    }
+    constraints.update(extra_constraints or {})
+    import yaml
+
     (playbook_dir / "evaluation.yaml").write_text(
-        (
-            "version: 1\n"
-            f"suite_id: {playbook_id}.default\n"
-            "node_contracts:\n"
-            "  executor:\n"
-            "    required_fields:\n"
-            "      - title\n"
-            "      - body\n"
-            "      - image_text\n"
-            "      - hashtags\n"
-            "    constraints:\n"
-            f"      title_max_chars: {title_max_chars}\n"
-            "      hashtags_min_count: 1\n"
-            "      hashtags_max_count: 8\n"
+        yaml.safe_dump(
+            {
+                "version": 1,
+                "suite_id": f"{playbook_id}.default",
+                "node_contracts": {
+                    "executor": {
+                        "required_fields": ["title", "body", "image_text", "hashtags"],
+                        "constraints": constraints,
+                    }
+                },
+            },
+            allow_unicode=True,
+            sort_keys=False,
         ),
         encoding="utf-8",
     )

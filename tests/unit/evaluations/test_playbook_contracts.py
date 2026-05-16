@@ -16,7 +16,12 @@ class TestPlaybookEvalContract:
         assert "planner" in contract.node_contracts
         assert "executor" in contract.node_contracts
         assert "finalize" in contract.node_contracts
-        assert contract.node_contracts["executor"].get("constraints", {}).get("title_max_chars") == 30
+        constraints = contract.node_contracts["executor"].get("constraints", {})
+        assert constraints.get("title_max_chars") == 30
+        assert "打工人地铁生存实录" in constraints["title_must_not_equal_any"]
+        assert "今日已疯" in constraints["image_text_must_not_equal_any"]
+        assert "评论区" in constraints["body_must_include_comment_prompt_any"]
+        assert "可复制" in constraints["body_must_include_save_trigger_any"]
 
     def test_missing_optional_contract_returns_none(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -63,4 +68,5 @@ class TestPlaybookEvalContract:
         assert "#心理学" in executor_constraints["hashtags_must_include_any"]
         assert "诊断" in executor_constraints["body_must_not_include_any"]
         assert "专业帮助" in executor_constraints["body_must_include_all"]
-        assert "评论区" in executor_constraints["body_must_include_all"]
+        assert "评论区" in executor_constraints["body_must_include_comment_prompt_any"]
+        assert "三栏" in executor_constraints["body_must_include_save_trigger_any"]

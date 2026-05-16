@@ -2,7 +2,7 @@
 title: Harness Engineering In PTSM
 status: active
 owner: ptsm
-last_verified: 2026-05-10
+last_verified: 2026-05-16
 source_of_truth: true
 related_paths:
   - README.md
@@ -59,7 +59,7 @@ repository.
 - scoped eval aggregation by run/account/platform/playbook metadata, so filtered harness views do not mix unrelated eval runs
 - gate-aware eval accounting: `required_failed` can block local harness, while warning-only judge failures remain reporting signals
 - a warning-only LLM judge adapter scaffold that requires explicit enablement and fake-backend tests, keeping default harness deterministic
-- generic playbook node-contract constraints for final-content text and hashtag checks, so high-risk domains can gate required tags, required safety language, and forbidden claims without adding runtime branches
+- generic playbook node-contract constraints for final-content text and hashtag checks, so high-risk domains can gate required tags, required safety language, forbidden claims, anti-generic titles/covers, comment prompts, and save/tool triggers without adding runtime branches
 
 ## What We Should Build Next
 

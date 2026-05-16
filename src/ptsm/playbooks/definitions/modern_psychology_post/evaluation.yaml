@@ -31,6 +31,10 @@ node_contracts:
       - hashtags
     constraints:
       title_max_chars: 30
+      title_must_not_equal_any:
+        - "下班后还在复盘那句话"
+      image_text_must_not_equal_any:
+        - "脑子还没下班"
       hashtags_min_count: 3
       hashtags_max_count: 7
       hashtags_must_include_any:
@@ -43,7 +47,17 @@ node_contracts:
         - "情绪调节"
       body_must_include_all:
         - "专业帮助"
+      body_must_include_comment_prompt_any:
         - "评论区"
+        - "你最"
+        - "哪类瞬间"
+      body_must_include_save_trigger_any:
+        - "事实 / 猜测 / 下一步"
+        - "三栏"
+        - "5分钟"
+        - "边界句"
+        - "消息草稿"
+        - "模板"
       body_must_not_include_any:
         - "诊断"
         - "你就是抑郁症"

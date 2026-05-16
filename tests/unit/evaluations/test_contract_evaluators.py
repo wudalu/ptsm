@@ -230,6 +230,70 @@ class TestPlaybookNodeContract:
         assert result.status == "failed"
         assert "body_must_not_include_any" in result.reason
 
+    def test_fails_when_title_or_image_text_matches_forbidden_quality_values(self):
+        contract = PlaybookEvalContract(
+            suite_id="fengkuang.default",
+            node_contracts={
+                "executor": {
+                    "required_fields": ["title", "body", "image_text", "hashtags"],
+                    "constraints": {
+                        "title_must_not_equal_any": ["打工人地铁生存实录"],
+                        "image_text_must_not_equal_any": ["今日已疯"],
+                    },
+                }
+            },
+        )
+        target = _target(
+            phase="executor",
+            target_type="artifact_slice",
+            output_ref={
+                "final_content": {
+                    "title": "打工人地铁生存实录",
+                    "image_text": "今日已疯",
+                    "body": "周一早高峰地铁通勤。评论区接一句你的通勤疯话。",
+                    "hashtags": ["#发疯文学"],
+                }
+            },
+        )
+
+        result = contract_playbook_node_contract(target, contract)
+
+        assert result.status == "failed"
+        assert "title_must_not_equal_any" in result.reason
+        assert "image_text_must_not_equal_any" in result.reason
+
+    def test_fails_when_comment_prompt_or_save_trigger_is_missing(self):
+        contract = PlaybookEvalContract(
+            suite_id="quality.default",
+            node_contracts={
+                "executor": {
+                    "required_fields": ["title", "body", "image_text", "hashtags"],
+                    "constraints": {
+                        "body_must_include_comment_prompt_any": ["评论区", "你最"],
+                        "body_must_include_save_trigger_any": ["三栏", "模板", "可复制"],
+                    },
+                }
+            },
+        )
+        target = _target(
+            phase="executor",
+            target_type="artifact_slice",
+            output_ref={
+                "final_content": {
+                    "title": "领导18:57发在吗那一秒",
+                    "image_text": "我的工牌先替我发疯",
+                    "body": "领导下班前发来一句在吗，我的工牌已经想先下班。",
+                    "hashtags": ["#发疯文学"],
+                }
+            },
+        )
+
+        result = contract_playbook_node_contract(target, contract)
+
+        assert result.status == "failed"
+        assert "body_must_include_comment_prompt_any" in result.reason
+        assert "body_must_include_save_trigger_any" in result.reason
+
     def test_passes_when_body_contains_required_psychology_safety_signals(self):
         contract = PlaybookEvalContract(
             suite_id="psych.default",
