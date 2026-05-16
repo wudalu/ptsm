@@ -24,6 +24,8 @@ SCENE_META_PATTERNS = (
     r"\bPTSM\b",
     r"自动发布(?:连通性)?验证",
     r"连通性验证",
+    r"(?:变体要求|实验变体|variant(?: type)?)[：:][^。.!！?？；;]*",
+    r"\b(?:comment_chain|save_tool|identity_conflict)\b",
     r"\bsmoke(?:\s*test)?\b",
     r"\bdry[- ]?run\b",
     r"\bpublish\b",
@@ -348,6 +350,8 @@ def _avoid_recent_memory_title(
         return "会议室把我循环播放到没电", "点头模式已开启"
     if _is_weekend_rest_scene(scene):
         return "周末回血失败现场", "躺着也在耗电"
+    if _is_after_hours_leader_scene(scene):
+        return "18:57那句在吗把工牌点燃了", "我的工牌先替我发疯"
     return "今天换个地方发疯", image_text
 
 

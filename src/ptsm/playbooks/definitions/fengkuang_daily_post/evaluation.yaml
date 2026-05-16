@@ -73,6 +73,10 @@ node_contracts:
         - 医院
         - 治疗
         - 用药
+        - 变体要求
+        - comment_chain
+        - save_tool
+        - identity_conflict
       body_must_include_scene_signal: true
 
   reflector:

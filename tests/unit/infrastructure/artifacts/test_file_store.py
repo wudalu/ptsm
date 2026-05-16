@@ -33,3 +33,14 @@ def test_file_artifact_store_merge_updates_existing_artifact(tmp_path: Path) -> 
     assert artifact["publish_result"]["status"] == "published"
     assert artifact["account"]["account_id"] == "acct-fk-local"
     assert artifact["publish_mode"] == "mcp-real"
+
+
+def test_file_artifact_store_preserves_existing_run_key_writes(tmp_path: Path) -> None:
+    store = FileArtifactStore(base_dir=tmp_path)
+
+    first_path = store.write({"title": "first"}, run_key="acct-fk-local-demo-1")
+    second_path = store.write({"title": "second"}, run_key="acct-fk-local-demo-1")
+
+    assert first_path != second_path
+    assert json.loads(first_path.read_text(encoding="utf-8"))["title"] == "first"
+    assert json.loads(second_path.read_text(encoding="utf-8"))["title"] == "second"

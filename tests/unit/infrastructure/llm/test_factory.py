@@ -170,6 +170,43 @@ def test_deterministic_modern_psychology_draft_has_mini_tool_and_example_prompt(
     assert not any(term in combined for term in ("诊断", "治好焦虑", "治愈抑郁", "用药"))
 
 
+def test_deterministic_drafts_strip_experiment_variant_instructions() -> None:
+    backend = DeterministicDraftBackend()
+
+    fengkuang = backend.generate(
+        scene=(
+            "领导18:57发来一句在吗，明天早会要我补材料。"
+            "变体要求：comment_chain，评论区接一句工牌背面的疯话。"
+        ),
+        planner_prompt="# 发疯文学 Planner",
+        persona_prompt="# 发疯文学 Persona",
+        skill_contents=["# Fengkuang Style\n必须有评论区接龙和可复制句。"],
+    )
+    psychology = backend.generate(
+        scene=(
+            "周日晚上开始焦虑周一消息。"
+            "变体要求：save_tool，给一个5分钟落地练习。"
+        ),
+        planner_prompt="# 现代心理困境观察 Planner",
+        persona_prompt="# Modern Psychology Persona",
+        skill_contents=[
+            "# Psychology Style\n需要三栏工具和例子型评论提示。",
+            "# Psychology Safety\n必须提示专业帮助边界。",
+        ],
+    )
+
+    combined = "\n".join(
+        [
+            fengkuang["body"],
+            psychology["body"],
+        ]
+    )
+    assert "变体要求" not in combined
+    assert "comment_chain" not in combined
+    assert "save_tool" not in combined
+    assert "identity_conflict" not in combined
+
+
 class CapturingChatDeepSeek(FakeChatDeepSeek):
     last_messages = None
 
@@ -294,6 +331,25 @@ def test_deterministic_backend_avoids_recent_memory_title() -> None:
 
     assert draft["title"] != "打工人地铁生存实录"
     assert "地铁" in draft["title"]
+
+
+def test_deterministic_backend_keeps_concrete_title_when_avoiding_recent_leader_memory() -> None:
+    backend = DeterministicDraftBackend()
+
+    draft = backend.generate(
+        scene="领导18:57发来一句在吗，明天早会要我补材料",
+        runtime_skill_contents=[
+            "# Recent Account Memory\n"
+            "Avoid repeating recent account posts:\n"
+            "- recent_1_scene: 昨天领导18:57发在吗\n"
+            "  title: 领导18:57发「在吗」那一秒\n"
+            "  body_preview: 我的工牌先替我发疯"
+        ],
+    )
+
+    assert draft["title"] != "领导18:57发「在吗」那一秒"
+    assert draft["title"] != "今天换个地方发疯"
+    assert any(term in draft["title"] for term in ("18:57", "工牌", "早会", "在吗"))
 
 
 def test_deterministic_fengkuang_draft_has_comment_and_copyable_mechanics() -> None:

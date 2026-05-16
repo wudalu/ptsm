@@ -22,6 +22,8 @@ class TestPlaybookEvalContract:
         assert "今日已疯" in constraints["image_text_must_not_equal_any"]
         assert "评论区" in constraints["body_must_include_comment_prompt_any"]
         assert "可复制" in constraints["body_must_include_save_trigger_any"]
+        assert "变体要求" in constraints["body_must_not_include_any"]
+        assert "comment_chain" in constraints["body_must_not_include_any"]
         warning_judge = contract.warning_judges["executor_content_quality"]
         assert warning_judge["evaluator_id"] == "llm.executor.content_quality"
         assert warning_judge["gate_level"] == "warning"
@@ -70,6 +72,8 @@ class TestPlaybookEvalContract:
         executor_constraints = contract.node_contracts["executor"]["constraints"]
         assert "#心理学" in executor_constraints["hashtags_must_include_any"]
         assert "诊断" in executor_constraints["body_must_not_include_any"]
+        assert "变体要求" in executor_constraints["body_must_not_include_any"]
+        assert "save_tool" in executor_constraints["body_must_not_include_any"]
         assert "专业帮助" in executor_constraints["body_must_include_all"]
         assert "评论区" in executor_constraints["body_must_include_comment_prompt_any"]
         assert "三栏" in executor_constraints["body_must_include_save_trigger_any"]

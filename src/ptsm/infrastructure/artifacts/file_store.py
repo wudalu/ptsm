@@ -14,7 +14,7 @@ class FileArtifactStore:
     def write(self, payload: dict[str, object], *, run_key: str | None = None) -> Path:
         self.base_dir.mkdir(parents=True, exist_ok=True)
         slug = run_key or str(uuid4())
-        path = self.base_dir / f"{slug}.json"
+        path = self._available_path(slug)
         path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         return path
 
@@ -31,3 +31,14 @@ class FileArtifactStore:
             encoding="utf-8",
         )
         return artifact_path
+
+    def _available_path(self, slug: str) -> Path:
+        path = self.base_dir / f"{slug}.json"
+        if not path.exists():
+            return path
+        suffix = 2
+        while True:
+            candidate = self.base_dir / f"{slug}-{suffix}.json"
+            if not candidate.exists():
+                return candidate
+            suffix += 1

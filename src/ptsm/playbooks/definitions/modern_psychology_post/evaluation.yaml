@@ -75,6 +75,10 @@ node_contracts:
         - "治愈抑郁"
         - "用药"
         - "停药"
+        - "变体要求"
+        - "comment_chain"
+        - "save_tool"
+        - "identity_conflict"
 
   reflector:
     allowed_decisions:

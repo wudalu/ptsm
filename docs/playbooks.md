@@ -52,6 +52,8 @@ Playbook 是 PTSM 的业务编排单元。它把领域、平台、技能需求�
 
 `fengkuang_daily_post` 的当前 reflection 规则要求 `#发疯文学`，拒绝 `打工人地铁生存实录`、`会议连环暴击实录`、`社畜崩溃边缘实录` 这类泛标题，并要求正文至少出现评论区/接一句/可复制/模板/写在等平台原生机制之一，同时禁止把心理疾病、医院、治疗、用药当笑点。
 
+发疯文学和现代心理学 playbook 的 `evaluation.yaml` 还会拦截内容实验操作词泄漏，例如 `变体要求`、`comment_chain`、`save_tool`、`identity_conflict`。这些词可以出现在 operator 选题记录或实验日志里，但不能进入最终正文。
+
 当前定义目录位于 [`src/ptsm/playbooks/definitions/`](../src/ptsm/playbooks/definitions/)。
 
 ## Routing Rules

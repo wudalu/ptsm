@@ -32,6 +32,10 @@ Run each topic as one of three variants:
 4. Confirm deterministic eval has `required_failed = 0`.
 5. Record the planned variant in `docs/research/2026-05-15-xhs-content-experiment-log.md`.
 
+Variant labels are operator metadata. They can be written in the experiment log or used while planning, but final正文 must not contain `变体要求`, `comment_chain`, `save_tool`, or `identity_conflict`; the playbook eval contracts treat those as instruction leakage.
+
+When generating several variants for the same account and playbook, keep each returned `artifact_path`. Artifact storage appends a numeric suffix when a run key already exists, so repeated dry-runs should produce separate files instead of overwriting earlier candidates.
+
 Example:
 
 ```bash

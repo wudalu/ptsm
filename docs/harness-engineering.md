@@ -60,7 +60,7 @@ repository.
 - gate-aware eval accounting: `required_failed` can block local harness, while warning-only judge failures remain reporting signals
 - a warning-only LLM judge adapter scaffold that requires explicit enablement and fake-backend tests, keeping default harness deterministic
 - a warning-only content quality judge for executor output that returns calibrated dimensions (`hook_specificity`, `save_trigger`, `comment_trigger`, `platform_native_format`, `persona_fit`, `safety`) plus a rewrite hint; it is reporting-only until human calibration data justifies a stronger gate
-- generic playbook node-contract constraints for final-content text and hashtag checks, so high-risk domains can gate required tags, required safety language, forbidden claims, anti-generic titles/covers, comment prompts, and save/tool triggers without adding runtime branches
+- generic playbook node-contract constraints for final-content text and hashtag checks, so high-risk domains can gate required tags, required safety language, forbidden claims, anti-generic titles/covers, comment prompts, save/tool triggers, and experiment-instruction leakage without adding runtime branches
 
 ## What We Should Build Next
 
