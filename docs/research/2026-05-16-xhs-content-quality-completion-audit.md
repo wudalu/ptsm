@@ -105,3 +105,12 @@ untracked files are resolved. The overlapping paths checked on 2026-05-16 were
 `docs/research/2026-05-15-xhs-content-quality-sample-set.md`; their main
 worktree hashes differ from the feature branch versions. The branch is preserved
 at `.worktrees/xhs-content-quality`.
+
+Read-only merge preflight on 2026-05-16:
+
+- `git merge-base feat/xhs-content-quality main` returned `28d3c7a`, the current
+  `main` commit.
+- `git merge-tree --write-tree main feat/xhs-content-quality` returned a tree OID
+  without conflict output.
+- The branch changes 75 paths relative to `main`; three of those paths overlap
+  the dirty/untracked main worktree state listed above.
