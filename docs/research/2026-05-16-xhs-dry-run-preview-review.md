@@ -138,5 +138,20 @@ review.
 
 - Do not publish the raw deterministic 发疯文学 batch as-is.
 - Psychology candidates can move to human review sooner, but should still be checked for cadence sameness across consecutive posts.
-- The next engineering improvement candidate is a warning-only meta-intent detector for phrases such as "想让评论区", "想存一组", "变体要求", and "模板要求" when they appear in final user-facing copy.
+- Engineering follow-up: meta-intent wording such as "想让评论区", "想存一组", "变体要求", and "模板要求" is now treated as hard reflection/contract failure for the two XHS quality playbooks. LLM content-quality judge failures are also required rewrite signals when a judge backend is configured.
 - Real publish remains blocked by login state and should wait until the operator explicitly approves publishing.
+
+## Post-Change Dry-Run Sanity Check
+
+Generated on 2026-05-16 with explicit `--publish-mode dry-run`; no XiaoHongShu post
+was published.
+
+| playbook | artifact | title | cover | eval | review note |
+| --- | --- | --- | --- | --- | --- |
+| `fengkuang_daily_post` | `outputs/artifacts/acct-fk-local-fengkuang_daily_post-1-72.json` | `18:57那句在吗把工牌点燃了` | `我的工牌先替我发疯` | passed, `required_failed=0` | Has concrete object, copyable line, comment prompt, and no obvious safety terms. Needs human check for repeated `收到，但灵魂已下班`. |
+| `modern_psychology_post` | `outputs/artifacts/acct-psychology-local-modern_psychology_post-1-68.json` | `会议那句话反复倒带，不是你太敏感` | `把猜测放回事实栏` | passed, `required_failed=0` | Has micro-scene, mechanism, `事实 / 猜测 / 下一步` tool, professional-help boundary, and example prompt. Needs human check for cadence repetition across psychology posts. |
+
+Both artifacts include `content_review.status=needs_human_review`.
+`content_quality_judge_status=not_run` in this local check because no LLM judge
+backend was configured; when a DeepSeek judge backend is available, judge failure is
+a required retry signal before this human review step.

@@ -58,7 +58,7 @@ def test_content_quality_judge_parses_labels_and_rewrite_hint() -> None:
     result = run_content_quality_judge(_target(), backend=backend)
 
     assert result.status == "failed"
-    assert result.gate_level == "warning"
+    assert result.gate_level == "required"
     assert result.evaluator_id == "llm.executor.content_quality"
     assert result.score == 0.42
     assert result.reason == "save trigger is too thin"
@@ -88,5 +88,5 @@ def test_content_quality_judge_rejects_missing_labels() -> None:
     )
 
     assert result.status == "error"
-    assert result.gate_level == "warning"
+    assert result.gate_level == "required"
     assert "labels" in result.reason

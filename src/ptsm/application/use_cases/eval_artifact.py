@@ -127,6 +127,7 @@ def run_eval_artifact(
             result = run_content_quality_judge(
                 target,
                 backend=llm_judge_backend,
+                gate_level=_content_quality_judge_gate_level(playbook_contract),
             )
             result.eval_run_id = handle.eval_run_id
             all_results.append(result)
@@ -188,15 +189,35 @@ def _apply_spec_metadata(result: EvalResult, spec: object | None) -> None:
 
 
 def _content_quality_judge_enabled(playbook_contract: object | None) -> bool:
-    if playbook_contract is None:
-        return True
-    warning_judges = getattr(playbook_contract, "warning_judges", {})
-    if not isinstance(warning_judges, dict):
-        return True
-    config = warning_judges.get("executor_content_quality")
-    if not isinstance(config, dict):
+    config = _content_quality_judge_config(playbook_contract)
+    if config is None:
         return True
     return bool(config.get("enabled_when_requested", True))
+
+
+def _content_quality_judge_gate_level(playbook_contract: object | None) -> str:
+    config = _content_quality_judge_config(playbook_contract)
+    if config is None:
+        return "required"
+    gate_level = config.get("gate_level", "required")
+    return str(gate_level or "required")
+
+
+def _content_quality_judge_config(playbook_contract: object | None) -> dict[str, object] | None:
+    if playbook_contract is None:
+        return None
+    quality_judges = getattr(playbook_contract, "quality_judges", {})
+    if isinstance(quality_judges, dict):
+        config = quality_judges.get("executor_content_quality")
+        if isinstance(config, dict):
+            return config
+    warning_judges = getattr(playbook_contract, "warning_judges", {})
+    if not isinstance(warning_judges, dict):
+        return None
+    config = warning_judges.get("executor_content_quality")
+    if not isinstance(config, dict):
+        return None
+    return config
 
 
 def _source_metadata(artifact: dict[str, Any], *, run_id: str) -> dict[str, str]:

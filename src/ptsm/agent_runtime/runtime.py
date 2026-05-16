@@ -14,7 +14,8 @@ from ptsm.agent_runtime.nodes.reflector import build_reflector_node
 from ptsm.agent_runtime.state import ExecutionState
 from ptsm.config.settings import Settings, get_settings
 from ptsm.infrastructure.artifacts.file_store import FileArtifactStore
-from ptsm.infrastructure.llm.factory import build_drafting_backend
+from ptsm.infrastructure.llm.factory import build_drafting_backend, build_llm_judge_backend
+from ptsm.evaluations.llm_judge import LLMJudgeBackend
 from ptsm.infrastructure.memory.checkpoint import FileCheckpointSaver
 from ptsm.infrastructure.memory.store import (
     ExecutionMemoryStore,
@@ -45,6 +46,7 @@ def build_playbook_workflow(
     artifact_store: FileArtifactStore | None = None,
     checkpointer: object | None = None,
     skill_context_resolver: SkillContextResolver | None = None,
+    content_quality_judge_backend: LLMJudgeBackend | None = None,
 ):
     """Build a workflow for a specific playbook/domain pair."""
     execution_memory = memory or InMemoryExecutionMemory()
@@ -62,6 +64,11 @@ def build_playbook_workflow(
     drafting_agent = drafting_agent or FengkuangDraftingAgent(
         backend=build_drafting_backend(settings, model=drafting_model)
     )
+    if content_quality_judge_backend is None and playbook_id in {
+        "fengkuang_daily_post",
+        "modern_psychology_post",
+    }:
+        content_quality_judge_backend = build_llm_judge_backend(settings)
     drafting_provider = getattr(drafting_agent, "provider_name", "custom")
     artifact_store = artifact_store or FileArtifactStore()
     return build_execution_graph(
@@ -77,7 +84,10 @@ def build_playbook_workflow(
         ),
         memory=build_memory_node(execution_memory=execution_memory),
         executor=build_executor_node(drafting_agent=drafting_agent),
-        reflector=build_reflector_node(max_attempts=max_attempts),
+        reflector=build_reflector_node(
+            max_attempts=max_attempts,
+            content_quality_backend=content_quality_judge_backend,
+        ),
         finalize=build_finalize_node(
             execution_memory=execution_memory,
             artifact_store=artifact_store,
@@ -94,6 +104,7 @@ def build_fengkuang_workflow(
     artifact_store: FileArtifactStore | None = None,
     checkpointer: object | None = None,
     skill_context_resolver: SkillContextResolver | None = None,
+    content_quality_judge_backend: LLMJudgeBackend | None = None,
 ):
     """Build a dry-run fengkuang workflow with one revision loop."""
     return build_playbook_workflow(
@@ -106,6 +117,7 @@ def build_fengkuang_workflow(
         artifact_store=artifact_store,
         checkpointer=checkpointer,
         skill_context_resolver=skill_context_resolver,
+        content_quality_judge_backend=content_quality_judge_backend,
     )
 
 
@@ -128,6 +140,7 @@ def build_finalize_node(
         if state.get("reflection_decision") == "fail" or not state.get("final_content"):
             return {"status": "failed"}
 
+        content_review = _build_content_review(state)
         activated_skills = list(state.get("activated_skills", []))
         activated_skill_details = list(state.get("activated_skill_details", []))
         runtime_skill_details = list(state.get("runtime_skill_details", []))
@@ -142,6 +155,7 @@ def build_finalize_node(
                 "runtime_skill_details": runtime_skill_details,
                 "step_outputs": _build_step_outputs(state),
                 "final_content": state["final_content"],
+                "content_review": content_review,
             },
             run_key=f"{state['account_id']}-{state['playbook_id']}-{state['attempt_count']}",
         )
@@ -159,7 +173,11 @@ def build_finalize_node(
                 "final_body": final_content.get("body", ""),
             },
         )
-        return {"status": "completed", "artifact_path": str(artifact_path)}
+        return {
+            "status": "completed",
+            "artifact_path": str(artifact_path),
+            "content_review": content_review,
+        }
 
     return finalize
 
@@ -184,5 +202,106 @@ def _build_step_outputs(state: ExecutionState) -> dict[str, object]:
             "required_revision": state.get("required_revision"),
             "reflection_decision": state.get("reflection_decision"),
             "reflection_feedback": state.get("reflection_feedback"),
+            "content_quality_eval": state.get("content_quality_eval"),
         },
+    }
+
+
+def _build_content_review(state: ExecutionState) -> dict[str, object]:
+    final_content = state["final_content"]
+    title = str(final_content.get("title", "")).strip()
+    image_text = str(final_content.get("image_text", "")).strip()
+    body = str(final_content.get("body", "")).strip()
+    combined = f"{title}\n{image_text}\n{body}"
+    comment_trigger = any(term in body for term in ("评论区", "接一句", "你最", "哪类瞬间"))
+    save_trigger = any(
+        term in combined
+        for term in (
+            "可复制",
+            "模板",
+            "写在",
+            "金句",
+            "话术",
+            "事实 / 猜测 / 下一步",
+            "三栏",
+            "5分钟",
+            "边界句",
+            "消息草稿",
+        )
+    )
+    safety_risks = [
+        term
+        for term in (
+            "精神病",
+            "心理医生",
+            "医院",
+            "治疗",
+            "用药",
+            "诊断",
+            "治好焦虑",
+            "治愈抑郁",
+        )
+        if term in combined
+    ]
+    quality_eval = state.get("content_quality_eval")
+    notes = [
+        "人工确认：发布前请检查标题/封面是否像真实小红书首屏，而不是内部模板说明。",
+    ]
+    if isinstance(quality_eval, dict):
+        notes.append(
+            "LLM 内容质量门结果："
+            f"{quality_eval.get('status', 'unknown')}，"
+            f"{quality_eval.get('reason', 'no reason')}"
+        )
+    else:
+        notes.append("本次未配置 LLM 内容质量门，只使用确定性规则和人工 review。")
+    if not comment_trigger:
+        notes.append("建议补充评论区接龙或例子收集问题。")
+    if not save_trigger:
+        notes.append("建议补充可复制句、模板、三栏工具或可截图清单。")
+    if safety_risks:
+        notes.append("发布前必须移除安全风险词：" + "、".join(safety_risks))
+
+    runtime_skills = [
+        str(item.get("skill_name"))
+        for item in state.get("runtime_skill_details", [])
+        if isinstance(item, dict) and item.get("skill_name")
+    ]
+    return {
+        "status": "needs_human_review",
+        "publish_recommendation": "hold_for_human_confirmation",
+        "generation_logic": {
+            "playbook_id": state.get("playbook_id", ""),
+            "account_id": state.get("account_id", ""),
+            "scene": state.get("scene", ""),
+            "title_cover_strategy": (
+                "标题负责点出点击冲突，封面文案负责给用户一眼能截图/转发的句子"
+            ),
+            "interaction_strategy": (
+                "已包含评论区例子/接龙提示"
+                if comment_trigger
+                else "缺少评论区例子/接龙提示"
+            ),
+            "save_strategy": (
+                "已包含可复制或可保存元素"
+                if save_trigger
+                else "缺少可复制或可保存元素"
+            ),
+            "safety_strategy": (
+                "未发现明显安全风险词"
+                if not safety_risks
+                else "发现安全风险词，发布前必须处理"
+            ),
+            "runtime_context_used": runtime_skills,
+        },
+        "quality_signals": {
+            "hook_specificity": bool(title and image_text),
+            "comment_trigger": comment_trigger,
+            "save_trigger": save_trigger,
+            "safety_risk_terms": safety_risks,
+            "content_quality_judge_status": (
+                quality_eval.get("status") if isinstance(quality_eval, dict) else "not_run"
+            ),
+        },
+        "review_notes": notes,
     }

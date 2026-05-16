@@ -29,6 +29,13 @@ reflection:
     - 治愈抑郁
     - 用药
     - 停药
+    - 想让评论区
+    - 想存一组
+    - 变体要求
+    - 模板要求
+    - comment_chain
+    - save_tool
+    - identity_conflict
 max_attempts: 3
 drafting_model: deepseek-v4-pro
 trend_keywords:

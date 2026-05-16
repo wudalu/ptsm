@@ -30,6 +30,13 @@ reflection:
     - 医院
     - 治疗
     - 用药
+    - 想让评论区
+    - 想存一组
+    - 变体要求
+    - 模板要求
+    - comment_chain
+    - save_tool
+    - identity_conflict
   recommended_phrases:
     - 也算
     - 至少

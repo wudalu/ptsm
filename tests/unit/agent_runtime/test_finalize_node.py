@@ -58,6 +58,13 @@ def test_finalize_persists_step_outputs_for_evaluation(tmp_path: Path) -> None:
     assert artifact["step_outputs"]["executor"]["attempt_count"] == 1
     assert artifact["step_outputs"]["reflector"]["reflection_decision"] == "finalize"
     assert artifact["step_outputs"]["reflector"]["reflection_feedback"] == ""
+    assert artifact["content_review"]["status"] == "needs_human_review"
+    assert artifact["content_review"]["generation_logic"]["playbook_id"] == (
+        "fengkuang_daily_post"
+    )
+    assert artifact["content_review"]["quality_signals"]["comment_trigger"] is False
+    assert "人工确认" in artifact["content_review"]["review_notes"][0]
+    assert result["content_review"] == artifact["content_review"]
 
     lessons = memory.search(namespace=("accounts", "acct-fk-local", "lessons"))
     assert lessons == [

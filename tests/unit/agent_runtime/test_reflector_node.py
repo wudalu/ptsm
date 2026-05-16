@@ -1,6 +1,18 @@
 from __future__ import annotations
 
+import json
+
 from ptsm.agent_runtime.nodes.reflector import build_reflector_node
+
+
+class FakeJudgeBackend:
+    def __init__(self, response: str) -> None:
+        self.response = response
+        self.prompts: list[str] = []
+
+    def judge(self, *, prompt: str) -> str:
+        self.prompts.append(prompt)
+        return self.response
 
 
 def test_reflector_accepts_required_hashtag_without_optional_phrase() -> None:
@@ -88,3 +100,49 @@ def test_reflector_enforces_explicit_must_include_phrase_for_compatibility() -> 
     assert result["reflection_decision"] == "retry"
     assert result["required_revision"] is True
     assert "苏轼" in result["reflection_feedback"]
+
+
+def test_reflector_retries_when_content_quality_judge_fails() -> None:
+    backend = FakeJudgeBackend(
+        json.dumps(
+            {
+                "score": 0.31,
+                "labels": {
+                    "hook_specificity": "pass",
+                    "save_trigger": "fail",
+                    "comment_trigger": "pass",
+                    "platform_native_format": "warn",
+                    "persona_fit": "pass",
+                    "safety": "pass",
+                },
+                "reason": "save trigger is too thin",
+                "rewrite_hint": "Add a reusable line users would save.",
+            }
+        )
+    )
+    node = build_reflector_node(max_attempts=2, content_quality_backend=backend)
+
+    result = node(
+        {
+            "attempt_count": 1,
+            "account_id": "acct-fk-local",
+            "platform": "xiaohongshu",
+            "playbook_id": "fengkuang_daily_post",
+            "reflection_rules": {"required_hashtag": "#发疯文学"},
+            "reflection_prompt": "检查互动质量",
+            "draft_content": {
+                "title": "领导18:57发「在吗」那一秒",
+                "image_text": "我的工牌先替我发疯",
+                "body": "可复制疯话：收到，但灵魂已下班。评论区接一句工牌背面的疯话。",
+                "hashtags": ["#发疯文学"],
+            },
+        }
+    )
+
+    assert result["reflection_decision"] == "retry"
+    assert result["required_revision"] is True
+    assert "content quality judge failed" in result["reflection_feedback"]
+    assert "Add a reusable line users would save." in result["reflection_feedback"]
+    assert result["content_quality_eval"]["status"] == "failed"
+    assert result["content_quality_eval"]["gate_level"] == "required"
+    assert backend.prompts

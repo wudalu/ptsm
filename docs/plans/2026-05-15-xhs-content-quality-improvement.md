@@ -4,9 +4,9 @@
 
 **Goal:** Improve Xiaohongshu post views and interaction by upgrading PTSM from "topic-aligned drafting" to "topic + participation + save/comment trigger" content generation for `fengkuang_daily_post` and `modern_psychology_post`.
 
-**Architecture:** Keep the current playbook/skill/runtime boundaries. First build a small evidence set from Xiaohongshu high-engagement samples, then encode the reusable findings into playbook prompts, builtin skills, reflection checks, account memory reuse, and warning-only quality evals. Treat real publish metrics as experiment feedback, not as deterministic harness gates.
+**Architecture:** Keep the current playbook/skill/runtime boundaries. First build a small evidence set from Xiaohongshu high-engagement samples, then encode the reusable findings into playbook prompts, builtin skills, reflection checks, account memory reuse, and required content-quality gates. Treat real publish metrics as experiment feedback, not as deterministic harness gates.
 
-**Tech Stack:** Markdown docs, topic-radar, xiaohongshu-mcp, YAML playbook evaluation contracts, builtin `SKILL.md` prompts, pytest, existing `eval-artifact` / `harness-evals` / `harness-check`, optional LLM judge warning path.
+**Tech Stack:** Markdown docs, topic-radar, xiaohongshu-mcp, YAML playbook evaluation contracts, builtin `SKILL.md` prompts, pytest, existing `eval-artifact` / `harness-evals` / `harness-check`, optional LLM-backed hard quality gate inside the generation loop.
 
 ## Current Docs Summary
 
@@ -54,7 +54,7 @@ The sample changes the plan from "make posts more emotional" to "make posts more
 | account memory | `finalize` records lessons under `("accounts", account_id, "lessons")`; `planner` and `executor` never read them. | The system cannot avoid repeated structures, endings, hotwords, or near-duplicate posts across runs. | Retrieve recent lessons before drafting and pass compact anti-repetition guidance into runtime context/prompts. |
 | builtin skills | Style skills are short and generic. | They do not encode learned high-interaction formats. | Add concrete format recipes and anti-patterns to `fengkuang_style`, `psychology_style`, hashtagging, and safety skills. |
 | drafting backend | DeepSeek hard requirements only enforce JSON, runtime hook, hashtags, and a few phrases. Deterministic fengkuang fallback still emits weak titles like `打工人地铁生存实录`. | Prompt compliance can drift; offline tests preserve generic output. | Add hard requirements for comment/save mechanics; upgrade deterministic drafts so tests can assert the new quality bar. |
-| eval contracts | Playbook eval checks fields, tags, title length, required/forbidden body terms. | No deterministic check catches generic titles, missing comment prompt, missing save trigger, or mental-health jokes in 发疯文学. | Extend `playbook.node_contract` constraints with title/image/body quality predicates and add warning-only content quality judge later. |
+| eval contracts | Playbook eval checks fields, tags, title length, required/forbidden body terms. | No deterministic check catches generic titles, missing comment prompt, missing save trigger, or mental-health jokes in 发疯文学. | Extend `playbook.node_contract` constraints with title/image/body quality predicates and add a required content quality judge for generation retries when an LLM judge backend is configured. |
 | e2e tests | Existing e2e tests check status, tags, and safety basics. | Tests do not fail when output is boring but valid. | Add dry-run assertions for concrete object, comment trigger, save/tool trigger, and anti-generic titles. |
 | experiment loop | Metrics are manually observed. | No plan links post variants to 2h/24h/72h outcomes. | Add an experiment runbook and log schema; use metrics to update prompts/evals. |
 
@@ -66,7 +66,7 @@ Do not start with prompt edits alone. The correct order is:
 2. **Remove structural locks** so `也算` is no longer required and reflection can reject boring but formally compliant drafts.
 3. **Read account memory before drafting** so the next post can avoid yesterday's title shape, hotwords, and ending.
 4. **Encode borrowed mechanics into skills and prompts** so generation knows what to do with the evidence.
-5. **Add deterministic quality checks** for obvious misses, keeping nuanced style as warning-only judge/manual review.
+5. **Add deterministic quality checks** for obvious misses, then use the LLM content-quality judge as a required rewrite signal when configured; final publish remains manual.
 6. **Run dry-run tests and real publish experiments** to calibrate whether the mechanics actually improve account-level medians.
 
 ## Review Feedback Verification
@@ -78,7 +78,7 @@ The latest review feedback is mostly supported by code evidence:
 - `src/ptsm/skills/builtin/fengkuang_style/SKILL.md` is too thin to carry the learned patterns from high-interaction samples.
 - `src/ptsm/agent_runtime/runtime.py::build_finalize_node()` records execution lessons, but `planner.py` and `executor.py` do not search memory or expose `memory_hits` to drafting.
 
-One adjustment: do not make LLM quality scoring the first hard gate. The plan keeps LLM judging as warning-only until the deterministic mechanics checks and real publish metrics are calibrated.
+Latest adjustment: LLM quality scoring should not be warning-only in the generation path. The required behavior is evaluator-optimizer style: judge the draft, feed concrete `rewrite_hint` back into the next draft when quality fails, stop after `max_attempts`, and still require human confirmation before publish.
 
 ## External Signals
 
@@ -161,7 +161,7 @@ Use three layers instead of trying to "write better" generally:
 
 1. **Research layer:** rebuild the high-engagement sample path after XHS login, and make topic-radar capture not only topics but post mechanics.
 2. **Generation layer:** update playbook and skill prompts so every draft must declare its hook mechanism, save trigger, comment trigger, and safety guard.
-3. **Evaluation layer:** add deterministic checks for obvious misses and warning-only quality judges for nuanced style/engagement issues.
+3. **Evaluation layer:** add deterministic checks for obvious misses and required content-quality judges for nuanced style/engagement issues when the judge backend is configured.
 
 ## Scope
 
@@ -173,7 +173,7 @@ In scope:
 - `topic_research`
 - playbook-local `evaluation.yaml`
 - topic-radar teardown/reporting docs
-- warning-only content quality evals
+- required content quality evals and generation retry feedback
 - an operator experiment loop for 2h/24h/72h publish metrics
 
 Out of scope:
@@ -183,7 +183,7 @@ Out of scope:
 - Paid ads or commercial amplification
 - Broad platform algorithm reverse engineering
 - Medical or clinical psychology products
-- Making LLM quality judges required gates before human calibration
+- Automatic publish based on LLM judge output without human confirmation
 
 ---
 
@@ -755,14 +755,18 @@ uv run python -m ptsm.bootstrap harness-check
 
 ---
 
-### Task 8: Add Warning-Only Content Quality Judge
+### Task 8: Add Required Content Quality Judge And Human Review
 
 **Files:**
 - Modify: `src/ptsm/evaluations/llm_judge.py`
 - Modify: `src/ptsm/application/use_cases/eval_artifact.py`
+- Modify: `src/ptsm/agent_runtime/nodes/reflector.py`
+- Modify: `src/ptsm/agent_runtime/runtime.py`
 - Modify: `src/ptsm/playbooks/definitions/fengkuang_daily_post/evaluation.yaml`
 - Modify: `src/ptsm/playbooks/definitions/modern_psychology_post/evaluation.yaml`
 - Create: `tests/unit/evaluations/test_content_quality_judge.py`
+- Modify: `tests/unit/agent_runtime/test_reflector_node.py`
+- Modify: `tests/integration/test_fengkuang_workflow.py`
 - Modify: `docs/observability.md`
 - Modify: `docs/harness-engineering.md`
 
@@ -788,7 +792,11 @@ Return structured JSON with:
 
 Rules:
 
-- Gate level must be `warning`.
+- Gate level must be `required` when the judge runs.
+- In the generation loop, failed or invalid judge output must route to `retry` while attempts remain.
+- The next executor call must receive the judge `rewrite_hint` through `reflection_feedback`.
+- After `max_attempts`, unresolved judge failure stops the workflow as `failed`.
+- Successful generation still returns a `content_review` block for human confirmation before publish.
 - Default harness must remain deterministic-only unless the judge is explicitly enabled.
 - Use fake backend tests; no network required in default test suite.
 
@@ -796,14 +804,16 @@ Rules:
 
 ```bash
 uv run pytest -q tests/unit/evaluations/test_content_quality_judge.py tests/unit/application/use_cases/test_eval_artifact.py
+uv run pytest -q tests/unit/agent_runtime/test_reflector_node.py tests/integration/test_fengkuang_workflow.py
 uv run python -m ptsm.bootstrap harness-check
 ```
 
 **done_when:**
 
 - Judge results are stored in `.ptsm/evals` when enabled.
-- Harness report shows warning counts but does not block merge on content-quality judge output.
-- Docs explain that judge scores require human calibration before becoming gates.
+- A failed content-quality judge result increments `required_failed` when explicitly enabled in evals.
+- Generation retries when the judge fails and the second draft receives the judge rewrite hint.
+- Artifacts include `content_review` with generation logic, quality signals, and human review notes.
 
 ---
 

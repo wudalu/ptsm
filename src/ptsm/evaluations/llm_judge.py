@@ -36,6 +36,7 @@ def run_content_quality_judge(
     backend: LLMJudgeBackend,
     evaluator_id: str = "llm.executor.content_quality",
     threshold: float = 0.7,
+    gate_level: str = "required",
 ) -> EvalResult:
     prompt = _build_prompt(target=target, rubric=CONTENT_QUALITY_RUBRIC)
     raw_response = backend.judge(prompt=prompt)
@@ -46,6 +47,7 @@ def run_content_quality_judge(
             target=target,
             evaluator_id=evaluator_id,
             reason=f"invalid JSON from content quality judge: {exc.msg}",
+            gate_level=gate_level,
         )
 
     if not isinstance(payload, dict):
@@ -53,6 +55,7 @@ def run_content_quality_judge(
             target=target,
             evaluator_id=evaluator_id,
             reason="invalid JSON from content quality judge: expected object",
+            gate_level=gate_level,
         )
 
     labels = _content_quality_labels(payload.get("labels"))
@@ -61,6 +64,7 @@ def run_content_quality_judge(
             target=target,
             evaluator_id=evaluator_id,
             reason="invalid JSON from content quality judge: labels missing or invalid",
+            gate_level=gate_level,
         )
 
     score = _coerce_score(payload.get("score"))
@@ -83,7 +87,7 @@ def run_content_quality_judge(
         score=score,
         label="content_quality",
         evidence=[{"labels": labels, "rewrite_hint": rewrite_hint}],
-        gate_level="warning",
+        gate_level=gate_level,
     )
 
 
@@ -173,7 +177,7 @@ def _content_quality_labels(value: object) -> dict[str, str] | None:
 
 
 def _warning_error_result(
-    *, target: EvalTarget, evaluator_id: str, reason: str
+    *, target: EvalTarget, evaluator_id: str, reason: str, gate_level: str
 ) -> EvalResult:
     return EvalResult(
         eval_result_id=f"{target.target_id}:{evaluator_id}",
@@ -183,7 +187,7 @@ def _warning_error_result(
         evaluator_version="1",
         status="error",
         reason=reason,
-        gate_level="warning",
+        gate_level=gate_level,
     )
 
 

@@ -24,9 +24,9 @@ class TestPlaybookEvalContract:
         assert "可复制" in constraints["body_must_include_save_trigger_any"]
         assert "变体要求" in constraints["body_must_not_include_any"]
         assert "comment_chain" in constraints["body_must_not_include_any"]
-        warning_judge = contract.warning_judges["executor_content_quality"]
-        assert warning_judge["evaluator_id"] == "llm.executor.content_quality"
-        assert warning_judge["gate_level"] == "warning"
+        quality_judge = contract.quality_judges["executor_content_quality"]
+        assert quality_judge["evaluator_id"] == "llm.executor.content_quality"
+        assert quality_judge["gate_level"] == "required"
 
     def test_missing_optional_contract_returns_none(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -78,6 +78,6 @@ class TestPlaybookEvalContract:
         assert "评论区" in executor_constraints["body_must_include_comment_prompt_any"]
         assert "三栏" in executor_constraints["body_must_include_save_trigger_any"]
         assert (
-            contract.warning_judges["executor_content_quality"]["evaluator_id"]
+            contract.quality_judges["executor_content_quality"]["evaluator_id"]
             == "llm.executor.content_quality"
         )

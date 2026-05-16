@@ -12,6 +12,7 @@ class PlaybookEvalContract:
     version: int = 1
     uses: dict[str, str] = field(default_factory=dict)
     node_contracts: dict[str, dict[str, Any]] = field(default_factory=dict)
+    quality_judges: dict[str, dict[str, Any]] = field(default_factory=dict)
     warning_judges: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -20,6 +21,7 @@ class PlaybookEvalContract:
             "version": self.version,
             "uses": self.uses,
             "node_contracts": self.node_contracts,
+            "quality_judges": self.quality_judges,
             "warning_judges": self.warning_judges,
         }
 
@@ -44,5 +46,6 @@ def load_playbook_eval_contract(
         version=raw.get("version", 1),
         uses=raw.get("uses", {}) or {},
         node_contracts=raw.get("node_contracts", {}) or {},
+        quality_judges=raw.get("quality_judges", {}) or raw.get("warning_judges", {}) or {},
         warning_judges=raw.get("warning_judges", {}) or {},
     )

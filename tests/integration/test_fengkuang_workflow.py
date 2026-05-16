@@ -257,6 +257,54 @@ class NeverImprovingDraftingAgent:
         }
 
 
+class SequenceJudgeBackend:
+    def __init__(self, responses: list[dict[str, object]]) -> None:
+        self.responses = responses
+        self.calls = 0
+
+    def judge(self, *, prompt: str) -> str:
+        response = self.responses[min(self.calls, len(self.responses) - 1)]
+        self.calls += 1
+        return json.dumps(response, ensure_ascii=False)
+
+
+class FeedbackAwareDraftingAgent:
+    def __init__(self) -> None:
+        self.feedback_seen: list[str | None] = []
+
+    def generate(
+        self,
+        *,
+        scene: str,
+        reflection_feedback: str | None = None,
+        persona_prompt: str | None = None,
+        planner_prompt: str | None = None,
+        skill_contents: list[str] | None = None,
+        runtime_skill_contents: list[str] | None = None,
+    ) -> dict[str, object]:
+        self.feedback_seen.append(reflection_feedback)
+        if reflection_feedback:
+            return {
+                "title": "领导18:57发「在吗」那一秒",
+                "image_text": "我的工牌先替我发疯",
+                "body": (
+                    f"{scene}，群聊弹出来那一秒，工牌先替我深呼吸。"
+                    "可复制疯话：收到，但我的电量不支持热更新。"
+                    "评论区接一句你最想写在工牌背面的疯话。"
+                ),
+                "hashtags": ["#发疯文学", "#打工人日常"],
+            }
+        return {
+            "title": "领导18:57发「在吗」那一秒",
+            "image_text": "我的工牌先替我发疯",
+            "body": (
+                f"{scene}，群聊弹出来那一秒，工牌先替我深呼吸。"
+                "评论区接一句你最想写在工牌背面的疯话。"
+            ),
+            "hashtags": ["#发疯文学", "#打工人日常"],
+        }
+
+
 def test_fengkuang_workflow_stops_after_max_attempts() -> None:
     workflow = build_fengkuang_workflow(
         drafting_agent=NeverImprovingDraftingAgent(),
@@ -275,3 +323,60 @@ def test_fengkuang_workflow_stops_after_max_attempts() -> None:
 
     assert result["status"] == "failed"
     assert result["attempt_count"] == 3
+
+
+def test_fengkuang_workflow_regenerates_when_content_quality_judge_fails() -> None:
+    drafting_agent = FeedbackAwareDraftingAgent()
+    judge_backend = SequenceJudgeBackend(
+        [
+            {
+                "score": 0.45,
+                "labels": {
+                    "hook_specificity": "pass",
+                    "save_trigger": "fail",
+                    "comment_trigger": "pass",
+                    "platform_native_format": "warn",
+                    "persona_fit": "pass",
+                    "safety": "pass",
+                },
+                "reason": "missing saveable line",
+                "rewrite_hint": "Add one reusable copyable line.",
+            },
+            {
+                "score": 0.86,
+                "labels": {
+                    "hook_specificity": "pass",
+                    "save_trigger": "pass",
+                    "comment_trigger": "pass",
+                    "platform_native_format": "pass",
+                    "persona_fit": "pass",
+                    "safety": "pass",
+                },
+                "reason": "ready for human review",
+                "rewrite_hint": "",
+            },
+        ]
+    )
+    workflow = build_fengkuang_workflow(
+        drafting_agent=drafting_agent,
+        content_quality_judge_backend=judge_backend,
+        max_attempts=3,
+        settings=_deterministic_settings(),
+    )
+
+    result = workflow.invoke(
+        FengkuangRequest(
+            scene="领导18:57突然发来一句在吗，明天早会还要我补材料",
+            platform="xiaohongshu",
+            account_id="acct-fk-judge",
+        ).model_dump(mode="python"),
+        config={"configurable": {"thread_id": "thread-fk-judge"}},
+    )
+
+    assert result["status"] == "completed"
+    assert result["attempt_count"] == 2
+    assert judge_backend.calls == 2
+    assert "Add one reusable copyable line." in str(drafting_agent.feedback_seen[1])
+    assert "可复制疯话" in result["final_content"]["body"]
+    assert result["content_quality_eval"]["status"] == "passed"
+    assert result["content_quality_eval"]["gate_level"] == "required"

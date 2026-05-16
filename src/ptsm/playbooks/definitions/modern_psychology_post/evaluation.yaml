@@ -5,12 +5,12 @@ uses:
   artifact: artifact.v1
   skill_activation: skill_activation.v1
 
-warning_judges:
+quality_judges:
   executor_content_quality:
     evaluator_id: llm.executor.content_quality
-    gate_level: warning
+    gate_level: required
     enabled_when_requested: true
-    note: Requires human calibration before it can become a required gate.
+    note: Required generation gate; failures feed rewrite hints into the next draft before human review.
 
 node_contracts:
   planner:

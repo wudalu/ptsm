@@ -312,7 +312,7 @@ class TestRunEvalArtifact:
             assert backend.calls == 0
             assert all(not row["evaluator_id"].startswith("llm.") for row in rows)
 
-    def test_llm_judges_run_when_explicitly_enabled_as_warning_only(self):
+    def test_llm_judges_run_when_explicitly_enabled_as_required_gate(self):
         with tempfile.TemporaryDirectory() as tmp:
             artifact_path = Path(tmp) / "artifact.json"
             artifact_path.write_text(
@@ -343,9 +343,9 @@ class TestRunEvalArtifact:
                 llm_judge_backend=backend,
             )
 
-            assert result["status"] == "warning"
-            assert result["gate"]["required_failed"] == 0
-            assert result["gate"]["warning_failed"] == 1
+            assert result["status"] == "failed"
+            assert result["gate"]["required_failed"] == 1
+            assert result["gate"]["warning_failed"] == 0
             results_path = Path(tmp) / "evals" / result["eval_run_id"] / "results.jsonl"
             rows = [
                 json.loads(line)
@@ -353,7 +353,7 @@ class TestRunEvalArtifact:
             ]
             assert any(
                 row["evaluator_id"] == "llm.executor.content_quality"
-                and row["gate_level"] == "warning"
+                and row["gate_level"] == "required"
                 and row["evidence"][0]["labels"]["save_trigger"] == "fail"
                 for row in rows
             )

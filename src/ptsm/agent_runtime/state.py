@@ -34,3 +34,5 @@ class ExecutionState(TypedDict, total=False):
     runtime_skill_details: list[dict[str, Any]]
     artifact_path: str
     memory_hits: list[dict[str, Any]]
+    content_quality_eval: dict[str, Any]
+    content_review: dict[str, Any]

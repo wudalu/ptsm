@@ -147,6 +147,29 @@ class DeepSeekDraftBackend:
         return _parse_json_payload(response.content)
 
 
+class DeepSeekJudgeBackend:
+    """DeepSeek-backed LLM judge for hard content-quality gates."""
+
+    provider_name = "deepseek"
+
+    def __init__(self, llm: Any):
+        self._llm = llm
+
+    def judge(self, *, prompt: str) -> str:
+        response = self._llm.invoke(
+            [
+                SystemMessage(
+                    content=(
+                        "你是小红书内容质量审稿员。只返回调用方要求的严格 JSON，"
+                        "不要输出 Markdown，不要额外解释。"
+                    )
+                ),
+                HumanMessage(content=prompt),
+            ]
+        )
+        return str(response.content)
+
+
 def build_drafting_backend(
     settings: Settings,
     *,
@@ -168,6 +191,26 @@ def build_drafting_backend(
         return DeepSeekDraftBackend(llm)
 
     return DeterministicDraftBackend()
+
+
+def build_llm_judge_backend(
+    settings: Settings,
+    *,
+    chat_model_cls: type[Any] | None = None,
+) -> DeepSeekJudgeBackend | None:
+    """Build a judge backend when a real LLM provider is configured."""
+    provider = settings.default_model_provider.lower().strip()
+    if provider != "deepseek" or not settings.deepseek_api_key:
+        return None
+    chat_model_cls = chat_model_cls or _load_chat_deepseek()
+    llm = chat_model_cls(
+        model=settings.deepseek_model or settings.default_model,
+        api_key=settings.deepseek_api_key,
+        api_base=settings.deepseek_base_url,
+        temperature=0.1,
+        max_tokens=min(settings.deepseek_max_tokens, 1024),
+    )
+    return DeepSeekJudgeBackend(llm)
 
 
 def _load_chat_deepseek() -> type[Any]:
