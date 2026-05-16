@@ -13,6 +13,22 @@ optional_skills: []
 reflection:
   must_include_phrase: "专业"
   required_hashtag: "#心理学"
+  body_must_include_any:
+    - 评论区
+    - 事实 / 猜测 / 下一步
+    - 三栏
+    - 5分钟
+    - 边界句
+    - 消息草稿
+  body_must_not_include_any:
+    - 你就是抑郁症
+    - 你就是双相
+    - 你就是ADHD
+    - 人格障碍
+    - 治好焦虑
+    - 治愈抑郁
+    - 用药
+    - 停药
 max_attempts: 3
 drafting_model: deepseek-v4-pro
 trend_keywords:

@@ -62,4 +62,5 @@ class TestPlaybookEvalContract:
         executor_constraints = contract.node_contracts["executor"]["constraints"]
         assert "#心理学" in executor_constraints["hashtags_must_include_any"]
         assert "诊断" in executor_constraints["body_must_not_include_any"]
-        assert "专业帮助" in executor_constraints["body_must_include_any"]
+        assert "专业帮助" in executor_constraints["body_must_include_all"]
+        assert "评论区" in executor_constraints["body_must_include_all"]

@@ -41,9 +41,9 @@ node_contracts:
         - "低控制感"
         - "边界"
         - "情绪调节"
-        - "专业帮助"
       body_must_include_all:
-        - "专业"
+        - "专业帮助"
+        - "评论区"
       body_must_not_include_any:
         - "诊断"
         - "你就是抑郁症"

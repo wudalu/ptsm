@@ -47,7 +47,7 @@ Skill 层负责让运行时按请求范围暴露合适的 builtin skills，而�
 - `wuxia_commentary_style` / `xhs_wuxia_hashtagging` 只服务 `wuxia_character_post`
 - `ai_tech_style` / `ai_tech_hashtagging` 只服务 `ai_tech_daily_post`
 - `daily_english_style` / `daily_english_hashtagging` 只服务 `daily_english_post`
-- `psychology_style` / `psychology_safety` / `xhs_psychology_hashtagging` 只服务 `modern_psychology_post`，其中 `psychology_safety` 约束不诊断、不治疗承诺、不提供药物建议，并在严重风险场景引导专业帮助
+- `psychology_style` / `psychology_safety` / `xhs_psychology_hashtagging` 只服务 `modern_psychology_post`，其中 `psychology_style` 要求“第一人称微场景 -> 心理机制 -> 非诊断化重构 -> 可保存小工具 -> 例子型评论 -> 专业边界”，`psychology_safety` 约束不诊断、不治疗承诺、不提供药物建议，并在严重风险场景引导专业帮助
 
 ## Strategy Layer
 

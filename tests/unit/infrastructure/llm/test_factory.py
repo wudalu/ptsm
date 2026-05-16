@@ -121,6 +121,36 @@ def test_deterministic_backend_can_follow_modern_psychology_context() -> None:
     assert "发疯文学" not in draft["body"]
 
 
+def test_deterministic_modern_psychology_draft_has_mini_tool_and_example_prompt() -> None:
+    backend = DeterministicDraftBackend()
+
+    draft = backend.generate(
+        scene="下班路上还在反复复盘会议里一句话，越想越尴尬",
+        planner_prompt="# 现代心理困境观察 Planner\n目标：解释一个心理机制，给低风险行动和专业边界。",
+        persona_prompt="# Modern Psychology Persona\n有心理学素养但不做诊断。",
+        skill_contents=[
+            "# Psychology Style\n需要三栏工具和例子型评论提示。",
+            "# Psychology Safety\n禁止诊断化表达，必须提示专业帮助边界。",
+            "# XHS Psychology Hashtagging\n标签必须包含 `#心理学` 或 `#情绪管理`。",
+        ],
+    )
+
+    combined = f"{draft['title']}\n{draft['image_text']}\n{draft['body']}"
+    assert draft["title"] != "下班后还在复盘那句话"
+    assert draft["image_text"] != "脑子还没下班"
+    assert "下班路上还在反复复盘会议里一句话" in draft["body"]
+    assert draft["body"].index("下班路上还在反复复盘会议里一句话") < draft[
+        "body"
+    ].index("反刍思维")
+    assert any(term in combined for term in ("不是你太敏感", "不是你想太多"))
+    assert any(tool in draft["body"] for tool in ("事实 / 猜测 / 下一步", "三栏"))
+    assert "专业帮助" in draft["body"]
+    assert "评论区" in draft["body"]
+    assert any(prompt in draft["body"] for prompt in ("你最容易", "哪类瞬间"))
+    assert any(tag in draft["hashtags"] for tag in ("#心理学", "#情绪管理"))
+    assert not any(term in combined for term in ("诊断", "治好焦虑", "治愈抑郁", "用药"))
+
+
 class CapturingChatDeepSeek(FakeChatDeepSeek):
     last_messages = None
 
