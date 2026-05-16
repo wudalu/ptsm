@@ -29,8 +29,9 @@ related_paths:
 2. `build_playbook_workflow()` 按所选 playbook/domain 组装 LangGraph 图。
 3. graph 依次运行 ingest、planner、memory、executor、reflector、finalize。
 4. memory 节点读取当前账号最近同 playbook lessons，并把避免重复的 compact context 注入 `runtime_skill_contents`。
-5. finalize 写入 artifact 和执行 lessons memory。
-6. 应用层根据结果决定是否生成发布图片、发布、查状态、开浏览器。
+5. reflector 先跑 deterministic reflection rules；如果当前 playbook 配置了 LLM judge backend，还会把 executor draft 交给 content-quality judge。judge 失败或输出无效时会把 `rewrite_hint` 写入 `reflection_feedback` 并回到 executor 重写，直到通过或达到 `max_attempts`。
+6. finalize 写入 artifact、执行 lessons memory，并生成 `content_review` 供人工确认。
+7. 应用层根据结果决定是否生成发布图片、发布、查状态、开浏览器。
 
 ## Current Runtime Facts
 
@@ -49,6 +50,7 @@ related_paths:
 - LLM JSON 解析现在对模型把 hashtags 内嵌在 body 中的情况有容错：缺失 `hashtags` key 时从 body 尾部提取并剥离，避免因输出格式微小偏差导致整个 run 失败。
 - finalize 现在会把 planner / executor / reflector 的 bounded step evidence 写入 artifact 的 `step_outputs`，包括 selected playbook、prompt refs、attempt count、draft content、reflection decision 和 feedback，供 online evaluation 抽取 phase targets。
 - finalize 写入 lessons memory 时会记录 title、image_text、hashtags 和 final_body，供后续 memory 节点做跨帖去重参考。
+- finalize 现在还会写入 `content_review`，包含生成逻辑、互动/收藏/安全信号、LLM 内容质量门状态和人工确认建议。这个 review 不等于自动发布批准。
 
 ## Practical Implications
 
@@ -61,7 +63,7 @@ related_paths:
 - 图片生成现在是发布前的一段显式步骤，会把 prompt、模型和生成路径写回 artifact，便于后续验收和排障。
 - 图片生成 prompt 现在也会读取 `runtime_skill_contents` 里的实时切口和场景张力，让封面图和正文共享同一层热点上下文。
 - 图片生成后可选去水印后处理（`WATERMARK_REMOVAL_ENABLED=true`），使用 OpenCV inpainting 检测并移除底角残留水印，处理结果写入 artifact 的 `watermark_removal` 字段。
-- online evaluation 不在 LangGraph 节点内运行；`run_playbook()` 完成 artifact/image/publish/post-publish 后再调用 eval use case，因此 evaluator 失败不会改变原始 runtime graph 的控制流。
+- artifact evaluation 不在 LangGraph 节点内运行；`run_playbook()` 完成 artifact/image/publish/post-publish 后再调用 eval use case，因此 rule/contract evaluator 失败不会改变原始 runtime graph 的控制流。内容质量 LLM judge 是生成链路例外：它在 reflector 内作为重写门使用。
 - 当前仍没有远端 state backend；cross-thread lookup 只限本地 execution memory 中最近同账号同 playbook lessons 的轻量回读。
 
 ## Operator Entry Points

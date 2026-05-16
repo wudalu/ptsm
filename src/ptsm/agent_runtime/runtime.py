@@ -14,8 +14,10 @@ from ptsm.agent_runtime.nodes.reflector import build_reflector_node
 from ptsm.agent_runtime.state import ExecutionState
 from ptsm.config.settings import Settings, get_settings
 from ptsm.infrastructure.artifacts.file_store import FileArtifactStore
+from ptsm.infrastructure.evaluations.content_quality_gate import (
+    build_content_quality_judge_gate,
+)
 from ptsm.infrastructure.llm.factory import build_drafting_backend, build_llm_judge_backend
-from ptsm.evaluations.llm_judge import LLMJudgeBackend
 from ptsm.infrastructure.memory.checkpoint import FileCheckpointSaver
 from ptsm.infrastructure.memory.store import (
     ExecutionMemoryStore,
@@ -46,7 +48,7 @@ def build_playbook_workflow(
     artifact_store: FileArtifactStore | None = None,
     checkpointer: object | None = None,
     skill_context_resolver: SkillContextResolver | None = None,
-    content_quality_judge_backend: LLMJudgeBackend | None = None,
+    content_quality_judge_backend: object | None = None,
 ):
     """Build a workflow for a specific playbook/domain pair."""
     execution_memory = memory or InMemoryExecutionMemory()
@@ -69,6 +71,11 @@ def build_playbook_workflow(
         "modern_psychology_post",
     }:
         content_quality_judge_backend = build_llm_judge_backend(settings)
+    content_quality_judge = (
+        build_content_quality_judge_gate(content_quality_judge_backend)
+        if content_quality_judge_backend is not None
+        else None
+    )
     drafting_provider = getattr(drafting_agent, "provider_name", "custom")
     artifact_store = artifact_store or FileArtifactStore()
     return build_execution_graph(
@@ -86,7 +93,7 @@ def build_playbook_workflow(
         executor=build_executor_node(drafting_agent=drafting_agent),
         reflector=build_reflector_node(
             max_attempts=max_attempts,
-            content_quality_backend=content_quality_judge_backend,
+            content_quality_judge=content_quality_judge,
         ),
         finalize=build_finalize_node(
             execution_memory=execution_memory,
@@ -104,7 +111,7 @@ def build_fengkuang_workflow(
     artifact_store: FileArtifactStore | None = None,
     checkpointer: object | None = None,
     skill_context_resolver: SkillContextResolver | None = None,
-    content_quality_judge_backend: LLMJudgeBackend | None = None,
+    content_quality_judge_backend: object | None = None,
 ):
     """Build a dry-run fengkuang workflow with one revision loop."""
     return build_playbook_workflow(

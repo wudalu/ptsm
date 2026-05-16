@@ -1,26 +1,24 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from ptsm.agent_runtime.state import ExecutionState
-from ptsm.evaluations.contracts import EvalResult, EvalTarget
-from ptsm.evaluations.llm_judge import LLMJudgeBackend, run_content_quality_judge
+
+ContentQualityJudge = Callable[[ExecutionState, dict[str, object]], dict[str, object]]
 
 
 def build_reflector_node(
-    *, max_attempts: int, content_quality_backend: LLMJudgeBackend | None = None
+    *, max_attempts: int, content_quality_judge: ContentQualityJudge | None = None
 ):
     def reflector(state: ExecutionState) -> ExecutionState:
         rules = state["reflection_rules"]
         draft = state["draft_content"]
         body = str(draft["body"])
         missing = _missing_requirements(rules=rules, draft=draft, body=body)
-        quality_eval: EvalResult | None = None
-        if not missing and content_quality_backend is not None:
-            quality_eval = run_content_quality_judge(
-                _build_content_quality_target(state=state, draft=draft),
-                backend=content_quality_backend,
-                gate_level="required",
-            )
-            if quality_eval.status != "passed":
+        quality_eval: dict[str, object] | None = None
+        if not missing and content_quality_judge is not None:
+            quality_eval = content_quality_judge(state, draft)
+            if quality_eval.get("status") != "passed":
                 missing.append(_quality_feedback(quality_eval))
 
         passed = not missing
@@ -108,41 +106,28 @@ def _build_feedback(reflection_prompt: str, missing: list[str]) -> str:
     return f"{summary}\n\n{reflection_prompt}"
 
 
-def _build_content_quality_target(
-    *, state: ExecutionState, draft: dict[str, object]
-) -> EvalTarget:
-    attempt_count = int(state.get("attempt_count", 0))
-    playbook_id = str(state.get("playbook_id", ""))
-    account_id = str(state.get("account_id", ""))
-    return EvalTarget(
-        target_id=f"{account_id}:{playbook_id}:executor:attempt-{attempt_count}",
-        run_id=str(state.get("thread_id", "")),
-        playbook_id=playbook_id,
-        account_id=account_id,
-        platform=str(state.get("platform", "")),
-        phase="executor",
-        target_type="artifact_slice",
-        output_ref={"final_content": draft},
-    )
-
-
-def _quality_feedback(result: EvalResult) -> str:
-    parts = [f"content quality judge failed: {result.reason}"]
+def _quality_feedback(result: dict[str, object]) -> str:
+    parts = [f"content quality judge failed: {result.get('reason', 'unknown')}"]
     rewrite_hint = _rewrite_hint(result)
     if rewrite_hint:
         parts.append(f"rewrite_hint: {rewrite_hint}")
     return " ".join(parts)
 
 
-def _rewrite_hint(result: EvalResult) -> str:
-    for item in result.evidence or []:
+def _rewrite_hint(result: dict[str, object]) -> str:
+    evidence = result.get("evidence")
+    if not isinstance(evidence, list):
+        return ""
+    for item in evidence:
+        if not isinstance(item, dict):
+            continue
         hint = item.get("rewrite_hint")
         if isinstance(hint, str) and hint.strip():
             return hint.strip()
     return ""
 
 
-def _quality_eval_state(result: EvalResult | None) -> dict[str, object]:
+def _quality_eval_state(result: dict[str, object] | None) -> dict[str, object]:
     if result is None:
         return {}
-    return {"content_quality_eval": result.to_dict()}
+    return {"content_quality_eval": result}

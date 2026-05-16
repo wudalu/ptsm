@@ -39,9 +39,9 @@ PTSM 当前已支持六个垂直领域（发疯文学、苏轼诗词赏析、武
 - `src/ptsm/accounts/`
   本地账号定义和注册表。
 - `src/ptsm/evaluations/`
-  evaluation 领域层：EvalTarget 提取、rule/contract evaluator、playbook-local evaluation contract 加载和 warning-only LLM judge adapter。
+  evaluation 领域层：EvalTarget 提取、rule/contract evaluator、playbook-local evaluation contract 加载和内容质量 LLM judge adapter。
 - `src/ptsm/infrastructure/evaluations/`
-  eval run 和 eval result 的文件存储（EvalStore）。
+  eval run / result 文件存储（EvalStore），以及把 evaluation 领域 judge 封装成运行时可调用 gate 的适配器。
 
 ## Stable Architectural Facts
 
@@ -51,7 +51,7 @@ PTSM 当前已支持六个垂直领域（发疯文学、苏轼诗词赏析、武
 - playbook 目录现在不仅承载 planner / reflection，还可以承载 persona 这类账号口吻资产；`agent_runtime` 负责把这些资产作为显式状态传给 drafting backend，而不是把风格写死在 agent 类里。
 - 运行时还会把 `xhs_trend_scan` 这类 research skill 的动态结果单独放进 `runtime_skill_contents`，与静态 `SKILL.md` 文本分离，避免 prompt 组装时丢失实时上下文边界。
 - reporting / eval / inspection surface 优先放在 `application/use_cases` 上，并复用本地 artifact stores，而不是引入独立服务层。
-- evaluation runtime 现在保持在 runtime graph 之外：`agent_runtime` 只写 step evidence，`application/use_cases/eval_artifact.py` 负责抽 target、跑 evaluator、写 `.ptsm/evals`。
+- deterministic artifact evaluation 仍保持在 runtime graph 之外：`agent_runtime` 写 step evidence，`application/use_cases/eval_artifact.py` 负责抽 target、跑 rule/contract evaluator、写 `.ptsm/evals`。例外是 XHS 内容质量 judge：当 LLM judge backend 可用时，`reflector` 会把它作为生成链路里的 required retry gate 使用。
 - composed operator snapshots such as `harness-report` 也留在 `application/use_cases`，只读复用现有 harness surfaces，而不是新增 orchestration service。
 - single-case diagnostics such as `diagnose-publish` 同样留在 `application/use_cases`，通过组合 `doctor`、logs 和 artifact readers 来输出归因，而不是把诊断逻辑塞进 publisher 或 CLI。
 - side-effect replay control 也放在 `application/services + application/use_cases`，避免让 `agent_runtime` 直接承担发布副作用策略。
@@ -61,7 +61,7 @@ PTSM 当前已支持六个垂直领域（发疯文学、苏轼诗词赏析、武
 - `application/services/account_publisher_context.py` 提供 `PublisherContext` 解析：按 account cookie profile > settings defaults > CLI overrides 的优先级决定发布服务器、可见性和 cookie 路径。
 - `side_effect_ledger` 现在支持 `scope_id` 参数，通过 `thread_id/scope_id` 组合键实现多维度的副作用去重，而不仅限于 thread 级别。
 - `harness_evals` 新增 `_aggregate_skill_stats`，按 skill 维度聚合 runs/completed/runtime_context_runs/completion_rate，输出到 harness-report 的 `skills` 字段。
-- evaluation gates 区分 `required` 和 `warning`：deterministic required failures 可以阻塞 local harness，LLM judge 结果默认只能进入 warning/manual-review 语义。
+- evaluation gates 区分 `required` 和 `warning`：deterministic required failures 可以阻塞 local harness；XHS executor content-quality judge 在显式启用 eval 或生成链路配置 judge backend 时使用 `required` gate，但最终发布仍需人工确认。
 
 ## Current Design Pressure
 

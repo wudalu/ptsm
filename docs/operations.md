@@ -99,7 +99,8 @@ COOKIES_PATH=cookies/fk-local.json .ptsm/bin/xhs-mcp/xiaohongshu-mcp-darwin-amd6
 - `gc` 默认只报告候选项；只有 `--apply` 才会删除本地 harness artifacts。
 - `harness-evals` 只输出本地 JSON 汇总，不负责修改 artifact 或触发修复动作；现在也聚合 `.ptsm/evals` 中的 eval results。
 - `harness-report` 是对 `doctor`、`gc`、`harness-evals` 的只读组合入口；需要把 warning 当成 gate 时，再显式加 `--fail-on-warning`。支持 `--max-required-eval-failures N` 对确定性 eval 失败做阈值控制。
-- `eval` 默认关闭，每次运行时加 `--eval` 开启。eval 只运行确定性 rule/contract evaluator，LLM judge 需显式启用且仅 warning 不阻塞。
+- `eval` 默认关闭，每次运行时加 `--eval` 开启。CLI eval 只运行确定性 rule/contract evaluator；`eval-artifact` 显式启用 LLM judge 时会按 playbook `evaluation.yaml` 的 gate level 计入 `required_failed` 或 `warning_failed`。生成链路里的 XHS 内容质量 judge 由运行时 judge backend 配置决定，失败会触发重写而不是直接发布。
+- 每个完成的 playbook artifact 都会包含 `content_review`，用于人工确认生成逻辑、质量信号和发布前风险；review 不是自动发布批准。
 - `eval-artifact` 可对已有 artifact 独立跑 eval，不依赖运行时。
 - `diagnose-publish` 是对单次发布问题的只读诊断入口，适合排查 “为什么没法自动确认已发布” 或 “为什么发布后状态不明确”。
 - `--fresh-topic-research` 通过 topic-radar 先扫描平台热点，交互式让用户选题后再生成内容，此时 `--scene` 可选。

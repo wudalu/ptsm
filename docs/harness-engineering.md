@@ -57,15 +57,15 @@ repository.
 - `eval-artifact` CLI command to run deterministic evaluators against any PTSM artifact
 - eval result aggregation in `harness-evals` and `harness-report` with configurable failure thresholds
 - scoped eval aggregation by run/account/platform/playbook metadata, so filtered harness views do not mix unrelated eval runs
-- gate-aware eval accounting: `required_failed` can block local harness, while warning-only judge failures remain reporting signals
-- a warning-only LLM judge adapter scaffold that requires explicit enablement and fake-backend tests, keeping default harness deterministic
-- a warning-only content quality judge for executor output that returns calibrated dimensions (`hook_specificity`, `save_trigger`, `comment_trigger`, `platform_native_format`, `persona_fit`, `safety`) plus a rewrite hint; it is reporting-only until human calibration data justifies a stronger gate
+- gate-aware eval accounting: `required_failed` can block local harness, while `warning_failed` remains a reporting signal
+- an LLM judge adapter that requires explicit enablement in evals and fake-backend tests, keeping default harness deterministic
+- a required content quality judge for XHS executor output when enabled/configured; it returns calibrated dimensions (`hook_specificity`, `save_trigger`, `comment_trigger`, `platform_native_format`, `persona_fit`, `safety`) plus a rewrite hint, and generation uses failed judge output as a retry signal before human review
 - generic playbook node-contract constraints for final-content text and hashtag checks, so high-risk domains can gate required tags, required safety language, forbidden claims, anti-generic titles/covers, comment prompts, save/tool triggers, and experiment-instruction leakage without adding runtime branches
 
 ## What We Should Build Next
 
 - traces and metrics if local file observability stops being enough
-- calibrated LLM judge suites and human review queues after warning-only online signals have enough examples
+- calibrated LLM judge suites and a dedicated human review queue after enough dry-run and publish examples exist
 - richer skill quality evals if completion-rate aggregation stops being enough
 
 ## What We Should Not Copy Blindly

@@ -271,7 +271,7 @@ uv run python -m ptsm.bootstrap harness-evals --playbook-id fengkuang_daily_post
 uv run python -m ptsm.bootstrap harness-report --max-required-eval-failures 0
 ```
 
-`harness-check` 会阻塞 `required_failed > 0` 的 eval 失败（确定性 rule/contract 失败），LLM judge 失败仅 warning。
+`harness-check` 会阻塞 `required_failed > 0` 的 eval 失败。默认 harness 不调用 LLM judge；当 `eval-artifact` 显式启用 LLM judge 或运行时配置了 XHS 内容质量 judge backend 时，XHS executor content-quality judge 使用 required gate，失败会触发重写或计入 `required_failed`。最终发布仍需人工确认 `content_review`。
 
 ## Logs
 

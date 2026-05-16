@@ -3,6 +3,9 @@ from __future__ import annotations
 import json
 
 from ptsm.agent_runtime.nodes.reflector import build_reflector_node
+from ptsm.infrastructure.evaluations.content_quality_gate import (
+    build_content_quality_judge_gate,
+)
 
 
 class FakeJudgeBackend:
@@ -120,7 +123,10 @@ def test_reflector_retries_when_content_quality_judge_fails() -> None:
             }
         )
     )
-    node = build_reflector_node(max_attempts=2, content_quality_backend=backend)
+    node = build_reflector_node(
+        max_attempts=2,
+        content_quality_judge=build_content_quality_judge_gate(backend),
+    )
 
     result = node(
         {
