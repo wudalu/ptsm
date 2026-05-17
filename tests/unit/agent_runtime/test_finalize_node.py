@@ -175,6 +175,10 @@ def test_finalize_adds_image_plan_review_when_final_content_contains_plan(
                 "image_plan": {
                     "backend": "local_social_screenshot",
                     "style": "wechat_chat",
+                    "role": "comment_prompt",
+                    "text_density": "low",
+                    "max_text_units": "2",
+                    "cover_text_strategy": "只保留一条触发消息和一句可复制回复",
                     "reason": "聊天记录更符合正文的群聊形态",
                 },
             },
@@ -190,6 +194,10 @@ def test_finalize_adds_image_plan_review_when_final_content_contains_plan(
                 "image_plan": {
                     "backend": "local_social_screenshot",
                     "style": "wechat_chat",
+                    "role": "comment_prompt",
+                    "text_density": "low",
+                    "max_text_units": "2",
+                    "cover_text_strategy": "只保留一条触发消息和一句可复制回复",
                     "reason": "聊天记录更符合正文的群聊形态",
                 },
             },
@@ -201,6 +209,10 @@ def test_finalize_adds_image_plan_review_when_final_content_contains_plan(
 
     assert image_plan["backend"] == "local_social_screenshot"
     assert image_plan["style"] == "wechat_chat"
+    assert image_plan["role"] == "comment_prompt"
+    assert image_plan["text_density"] == "low"
+    assert image_plan["max_text_units"] == "2"
+    assert image_plan["cover_text_strategy"] == "只保留一条触发消息和一句可复制回复"
     assert image_plan["reason"] == "聊天记录更符合正文的群聊形态"
     assert artifact["content_review"]["image_plan"] == image_plan
 

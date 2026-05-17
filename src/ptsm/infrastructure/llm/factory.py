@@ -17,7 +17,7 @@ from ptsm.infrastructure.llm.contextual_drafts import build_contextual_determini
 XHS_DRAFT_SYSTEM_PROMPT = (
     "你是一个负责小红书中文内容草稿的文案助手。"
     "请输出严格 JSON，对象字段必须是 title, image_text, body, hashtags。"
-    "如果上下文要求图片策略，可额外输出 image_plan 对象。"
+    "如果上下文要求图片策略，可额外输出 image_plan 对象，说明图片角色和文字密度。"
     "语气要自然、可读、贴近社交媒体发布。"
 )
 
@@ -503,6 +503,9 @@ def _build_deepseek_hard_requirements(*, extra_context: str, runtime_context: st
         requirements.append(
             "额外输出 image_plan 对象：backend 只能选 local_social_screenshot 或 "
             "provider_image；本地样式 style 只能选 wechat_chat、iphone_notes 或 note_card；"
+            "role 必须说明图片承担的任务，如 cover_hook、save_tool、comment_prompt、"
+            "evidence_or_scene；text_density 优先 low，max_text_units 写 1、2 或 3；"
+            "cover_text_strategy 用一句话说明封面只放哪些短文字；"
             "reason 用一句话解释为什么这个图片形式适合当前主题。"
         )
     if "苏轼" in extra_context:
@@ -537,40 +540,55 @@ def _build_deterministic_image_plan(
     runtime_context: str,
     draft: dict[str, Any],
 ) -> dict[str, str]:
-    combined = "\n".join(
+    content_signal = "\n".join(
         [
             scene,
-            extra_context,
             runtime_context,
             str(draft.get("title", "")),
             str(draft.get("image_text", "")),
             str(draft.get("body", "")),
         ]
     )
-    if _looks_like_chat_screenshot(combined):
+    if _looks_like_chat_screenshot(content_signal):
         return {
             "backend": "local_social_screenshot",
             "style": "wechat_chat",
+            "role": "comment_prompt",
+            "text_density": "low",
+            "max_text_units": "2",
+            "cover_text_strategy": "只保留一条触发消息和一句可复制回复。",
             "reason": "正文像聊天或群聊记录，本地微信聊天截图更贴近真实小红书首屏。",
             "prompt_focus": "把可复制回复做成聊天气泡，不放话题标签。",
         }
-    if _looks_like_real_visual(combined):
+    if _looks_like_real_visual(content_signal):
         return {
             "backend": "provider_image",
             "style": "photo_reference",
+            "role": "evidence_or_scene",
+            "text_density": "low",
+            "max_text_units": "1",
+            "cover_text_strategy": "真实场景画面优先，只允许一个短标题感文字。",
             "reason": "主题依赖真实物件、空间或过程画面，外部图片模型更适合做生活化氛围参考。",
             "prompt_focus": "生成真实生活角落或材料过程感，避免伪装事实证据。",
         }
-    if _looks_like_note_screenshot(combined):
+    if _looks_like_note_screenshot(content_signal):
         return {
             "backend": "local_social_screenshot",
             "style": "iphone_notes",
+            "role": "save_tool",
+            "text_density": "low",
+            "max_text_units": "3",
+            "cover_text_strategy": "只放一个问题和三条可保存短句，不把正文搬进图里。",
             "reason": "内容以清单、句型或可保存工具为主，本地记事本截图更适合截图收藏。",
-            "prompt_focus": "保留标题和一句封面语，正文摘要像手机备忘录。",
+            "prompt_focus": "做成低密度工具卡，保留标题、封面语和最多三条短句。",
         }
     return {
         "backend": "local_social_screenshot",
         "style": "note_card",
+        "role": "cover_hook",
+        "text_density": "low",
+        "max_text_units": "2",
+        "cover_text_strategy": "突出标题和一句封面语，正文只留一个短钩子。",
         "reason": "主题以文字表达和封面句为主，本地笔记卡片足够承载首屏信息。",
         "prompt_focus": "突出标题和封面语，画面干净留白。",
     }
@@ -668,7 +686,16 @@ def _normalize_hashtags(raw_hashtags: object) -> list[str]:
 
 
 def _normalize_image_plan_payload(raw_plan: dict[str, Any]) -> dict[str, str]:
-    allowed_fields = ("backend", "style", "reason", "prompt_focus")
+    allowed_fields = (
+        "backend",
+        "style",
+        "reason",
+        "prompt_focus",
+        "role",
+        "text_density",
+        "max_text_units",
+        "cover_text_strategy",
+    )
     return {
         field: str(raw_plan[field]).strip()
         for field in allowed_fields

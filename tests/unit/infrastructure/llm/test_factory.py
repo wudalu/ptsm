@@ -75,6 +75,25 @@ def test_parse_json_payload_preserves_optional_image_plan() -> None:
     assert payload["image_plan"]["reason"] == "聊天截图更像真实发帖"
 
 
+def test_parse_json_payload_preserves_image_role_and_density() -> None:
+    payload = _parse_json_payload(
+        '{"title":"t","image_text":"i","body":"b","hashtags":["#x"],'
+        '"image_plan":{"backend":"local_social_screenshot","style":"iphone_notes",'
+        '"role":"save_tool","text_density":"low","max_text_units":3,'
+        '"cover_text_strategy":"封面只放一个问题和三条短句",'
+        '"prompt_focus":"会议复盘急救卡"}}'
+    )
+
+    image_plan = payload["image_plan"]
+    assert image_plan["backend"] == "local_social_screenshot"
+    assert image_plan["style"] == "iphone_notes"
+    assert image_plan["role"] == "save_tool"
+    assert image_plan["text_density"] == "low"
+    assert image_plan["max_text_units"] == "3"
+    assert image_plan["cover_text_strategy"] == "封面只放一个问题和三条短句"
+    assert image_plan["prompt_focus"] == "会议复盘急救卡"
+
+
 def test_deterministic_backend_emits_local_chat_image_plan_when_strategy_skill_loaded() -> None:
     draft = DeterministicDraftBackend().generate(
         scene="领导18:57发在吗让我补材料",
@@ -87,6 +106,47 @@ def test_deterministic_backend_emits_local_chat_image_plan_when_strategy_skill_l
     assert draft["image_plan"]["backend"] == "local_social_screenshot"
     assert draft["image_plan"]["style"] == "wechat_chat"
     assert "聊天" in draft["image_plan"]["reason"] or "群聊" in draft["image_plan"]["reason"]
+
+
+def test_deterministic_backend_emits_low_density_save_tool_for_note_screenshot() -> None:
+    draft = DeterministicDraftBackend().generate(
+        scene="下班路上反复复盘会议上说错的那句话，想要一个5分钟心理练习",
+        planner_prompt="# Modern Psychology Planner\n目标：输出可收藏的心理学小工具。",
+        skill_contents=[
+            "# XHS Image Strategy\n"
+            "输出 image_plan。可收藏工具、5分钟练习、清单优先 iPhone 记事本截图，"
+            "但封面必须低文字密度。",
+            "# Modern Psychology Style\n必须包含一个可保存的3步练习。",
+        ],
+    )
+
+    image_plan = draft["image_plan"]
+    assert image_plan["backend"] == "local_social_screenshot"
+    assert image_plan["style"] == "iphone_notes"
+    assert image_plan["role"] == "save_tool"
+    assert image_plan["text_density"] == "low"
+    assert image_plan["max_text_units"] == "3"
+    assert image_plan["cover_text_strategy"]
+
+
+def test_deterministic_image_plan_ignores_strategy_catalog_when_choosing_style() -> None:
+    draft = DeterministicDraftBackend().generate(
+        scene="下班路上反复复盘会议上说错的那句话",
+        planner_prompt="# Modern Psychology Planner\n目标：输出可收藏的心理学小工具。",
+        persona_prompt="# Modern Psychology Persona\n有心理学素养但不做诊断。",
+        skill_contents=[
+            "# XHS Image Strategy\n"
+            "微信聊天记录适合群聊和消息草稿；iPhone 记事本适合三栏工具和5分钟练习；"
+            "外部图片模型适合真实物件。必须输出 image_plan。",
+            "# Psychology Style\n需要三栏工具和例子型评论提示。",
+            "# XHS Psychology Hashtagging\n标签必须包含 `#心理学`。",
+        ],
+    )
+
+    image_plan = draft["image_plan"]
+    assert image_plan["style"] == "iphone_notes"
+    assert image_plan["role"] == "save_tool"
+    assert image_plan["text_density"] == "low"
 
 
 def test_deterministic_backend_prefers_provider_image_for_real_object_visuals() -> None:

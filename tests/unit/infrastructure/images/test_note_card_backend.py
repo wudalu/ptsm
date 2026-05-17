@@ -5,7 +5,10 @@ from pathlib import Path
 
 import cv2
 
-from ptsm.infrastructure.images.note_card_backend import NoteCardImageBackend
+from ptsm.infrastructure.images.note_card_backend import (
+    NoteCardImageBackend,
+    _select_display_body,
+)
 
 
 def _count_wechat_green_pixels(image) -> int:
@@ -90,6 +93,58 @@ def test_note_card_backend_renders_iphone_notes_style(tmp_path: Path) -> None:
     assert int(image.min()) < int(image.max())
     sampled_pixels = image[80:1320:160, 80:1000:160].reshape(-1, 3)
     assert len({tuple(pixel) for pixel in sampled_pixels}) >= 5
+
+
+def test_select_display_body_clamps_low_density_iphone_notes_copy() -> None:
+    display_body = _select_display_body(
+        {
+            "style": "iphone_notes_v1",
+            "title": "会议后反复复盘，不是你太玻璃心",
+            "image_text": "先把脑内回放按暂停",
+            "body": (
+                "下班地铁里，我又一次点开公司群聊，反复确认自己在会议上说错的"
+                "那句话有没有被所有人记住。越想越觉得脸发烫，甚至开始脑补明天"
+                "大家看我的眼神。\n"
+                "1. 给这件事起名：复盘漩涡\n"
+                "2. 分开事实和脑补\n"
+                "3. 给明天留一句可执行动作"
+            ),
+            "image_plan": {
+                "role": "save_tool",
+                "text_density": "low",
+                "max_text_units": "3",
+            },
+        }
+    )
+
+    assert "下班地铁里" not in display_body
+    assert "复盘漩涡" in display_body
+    assert len([line for line in display_body.splitlines() if line.strip()]) <= 3
+
+
+def test_select_display_body_extracts_inline_tool_lines_without_prompt_focus() -> None:
+    display_body = _select_display_body(
+        {
+            "style": "iphone_notes_v1",
+            "body": (
+                "下班路上反复复盘会议上说错的那句话，脑子还在把会议那一秒拖回进度条。\n"
+                "可以先存一个事实 / 猜测 / 下一步三栏：事实=对方实际说了什么；"
+                "猜测=我补出的评价；下一步=明天是否用一句轻确认收尾。"
+            ),
+            "image_plan": {
+                "role": "save_tool",
+                "text_density": "low",
+                "max_text_units": "3",
+                "prompt_focus": "做成低密度工具卡，保留标题、封面语和最多三条短句。",
+            },
+        }
+    )
+
+    assert "事实=对方实际说了什么" in display_body
+    assert "猜测=我补出的评价" in display_body
+    assert "下一步=明天是否用一句轻确认收尾" in display_body
+    assert "低密度工具卡" not in display_body
+    assert len([line for line in display_body.splitlines() if line.strip()]) == 3
 
 
 def test_note_card_backend_renders_wechat_chat_style(tmp_path: Path) -> None:

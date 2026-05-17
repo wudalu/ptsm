@@ -99,16 +99,24 @@ def _is_daily_english_context(*, scene: str, extra_context: str) -> bool:
 
 
 def _is_human_enrichment_context(*, scene: str, extra_context: str) -> bool:
-    combined = f"{scene}\n{extra_context}"
+    strong_context = any(
+        keyword in extra_context
+        for keyword in (
+            "Human Enrichment Style",
+            "human_enrichment_style",
+            "human_enrichment_daily_post",
+            "#人类丰容计划",
+            "#家的丰容计划",
+        )
+    )
+    if strong_context:
+        return True
     return any(
-        keyword in combined
+        keyword in scene
         for keyword in (
             "人类丰容实验",
             "人类丰容",
-            "Human Enrichment",
             "日常变量",
-            "#人类丰容计划",
-            "#家的丰容计划",
         )
     )
 

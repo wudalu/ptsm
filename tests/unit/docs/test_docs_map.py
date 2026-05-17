@@ -115,12 +115,24 @@ def test_docs_cover_image_generation_provider_paths() -> None:
 def test_docs_cover_xhs_image_strategy_skill_and_active_local_selection() -> None:
     skills_text = (DOCS_ROOT / "skills.md").read_text(encoding="utf-8")
     runtime_text = (DOCS_ROOT / "runtime.md").read_text(encoding="utf-8")
+    observability_text = (DOCS_ROOT / "observability.md").read_text(encoding="utf-8")
+    xhs_image_skill_text = (
+        PROJECT_ROOT / "src" / "ptsm" / "skills" / "builtin" / "xhs_image_strategy" / "SKILL.md"
+    ).read_text(encoding="utf-8")
+    xhs_index_text = (DOCS_ROOT / "xhs-topics" / "index.md").read_text(encoding="utf-8")
     runbook_text = (DOCS_ROOT / "operations" / "local-runbook.md").read_text(
         encoding="utf-8"
     )
 
     assert "xhs_image_strategy" in skills_text
     assert "final_content.image_plan" in runtime_text
+    assert "role" in xhs_image_skill_text
+    assert "text_density" in xhs_image_skill_text
+    assert "max_text_units" in xhs_image_skill_text
+    assert "role" in runtime_text
+    assert "text_density" in runtime_text
+    assert "max_text_units" in observability_text
+    assert "image-forms-by-domain.md" in xhs_index_text
     assert "--local-image-style" in runbook_text
     assert "explicit local override" in runbook_text
 
