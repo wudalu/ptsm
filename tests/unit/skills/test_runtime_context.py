@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import json
 
-from ptsm.skills.runtime_context import XhsTrendScanContextBuilder
+from ptsm.skills import runtime_context
+from ptsm.skills.runtime_context import TopicResearchContextBuilder, XhsTrendScanContextBuilder
 
 
 def _search_payload(*titles: tuple[str, int, int, int, int]) -> list[dict[str, str]]:
@@ -62,6 +64,16 @@ class FakeMcpRunner:
         return _search_payload(("普通周四流水账", 12, 3, 1, 0))
 
 
+class HangingMcpRunner:
+    async def list_tool_names(self) -> list[str]:
+        await asyncio.sleep(10)
+        return ["check_login_status", "search_feeds"]
+
+    async def invoke_tool(self, tool_name: str, payload: dict[str, object]) -> object:
+        await asyncio.sleep(10)
+        return []
+
+
 def test_xhs_trend_scan_context_builder_summarizes_live_search_results() -> None:
     builder = XhsTrendScanContextBuilder(
         server_url="http://localhost:18060/mcp",
@@ -103,3 +115,43 @@ def test_xhs_trend_scan_context_builder_returns_none_when_login_required() -> No
     )
 
     assert context is None
+
+
+def test_xhs_trend_scan_context_builder_times_out_when_mcp_hangs() -> None:
+    builder = XhsTrendScanContextBuilder(
+        server_url="http://localhost:18060/mcp",
+        tool_runner=HangingMcpRunner(),
+        timeout_seconds=0.01,
+    )
+
+    context = builder.build(
+        scene="周四下午老板临时加需求",
+        domain="发疯文学",
+        playbook_id="fengkuang_daily_post",
+    )
+
+    assert context is None
+
+
+def test_topic_research_skips_scan_when_artifact_missing_and_not_fresh(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    calls = 0
+
+    def fake_scan(_artifact_dir: str) -> None:
+        nonlocal calls
+        calls += 1
+
+    monkeypatch.setattr(runtime_context, "_run_topic_radar_scan", fake_scan)
+    builder = TopicResearchContextBuilder(artifact_dir=str(tmp_path))
+
+    context = builder.build(
+        scene="OpenAI 新多模态助手更新",
+        domain="AI科技资讯",
+        playbook_id="ai_tech_daily_post",
+        fresh_topic_research=False,
+    )
+
+    assert context is None
+    assert calls == 0

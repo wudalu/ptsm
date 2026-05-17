@@ -94,3 +94,48 @@ class TestPlaybookEvalContract:
         assert "清单" in executor_constraints["body_must_include_save_trigger_any"]
         assert "治好" in executor_constraints["body_must_not_include_any"]
         assert "image_brief" in executor_constraints["body_must_not_include_any"]
+        quality_judge = contract.quality_judges["executor_content_quality"]
+        assert quality_judge["evaluator_id"] == "llm.executor.content_quality"
+        assert quality_judge["gate_level"] == "required"
+
+    @pytest.mark.parametrize(
+        ("playbook_id", "required_tags", "required_body_terms"),
+        [
+            ("sushi_poetry_daily_post", ["#苏轼"], ["苏轼"]),
+            ("wuxia_character_post", ["#金庸", "#古龙"], ["《笑傲江湖》", "《射雕英雄传》"]),
+            ("ai_tech_daily_post", ["#AI资讯"], ["是什么", "为什么重要", "普通人"]),
+            ("daily_english_post", ["#每日英语"], ["音标", "词性", "例句", "翻译"]),
+        ],
+    )
+    def test_remaining_xhs_playbooks_have_required_quality_contracts(
+        self,
+        playbook_id,
+        required_tags,
+        required_body_terms,
+    ):
+        root = Path(__file__).parent.parent.parent.parent / "src" / "ptsm" / "playbooks" / "definitions"
+        contract = load_playbook_eval_contract(root, playbook_id)
+
+        assert contract is not None
+        assert contract.suite_id == f"{playbook_id}.default"
+        executor = contract.node_contracts["executor"]
+        assert set(["title", "image_text", "body", "hashtags"]).issubset(
+            set(executor["required_fields"])
+        )
+        constraints = executor["constraints"]
+        assert constraints["hashtags_must_include_any"] == required_tags
+        for term in required_body_terms:
+            assert term in constraints["body_must_include_any"]
+        assert constraints["body_must_include_comment_prompt_any"]
+        assert constraints["body_must_include_save_trigger_any"]
+        for leaked_token in [
+            "变体要求",
+            "模板要求",
+            "comment_chain",
+            "save_tool",
+            "identity_conflict",
+        ]:
+            assert leaked_token in constraints["body_must_not_include_any"]
+        quality_judge = contract.quality_judges["executor_content_quality"]
+        assert quality_judge["evaluator_id"] == "llm.executor.content_quality"
+        assert quality_judge["gate_level"] == "required"

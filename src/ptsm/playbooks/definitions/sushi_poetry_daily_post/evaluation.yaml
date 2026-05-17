@@ -1,0 +1,57 @@
+suite_id: sushi_poetry_daily_post.default
+version: 1
+uses:
+  artifact: artifact.v1
+node_contracts:
+  planner:
+    required_fields:
+      - selected_playbook
+      - activated_skills
+  executor:
+    required_fields:
+      - title
+      - image_text
+      - body
+      - hashtags
+    constraints:
+      title_max_chars: 30
+      title_must_not_equal_any:
+        - 读苏轼时突然读懂了今天
+        - 苏轼诗词赏析
+      image_text_must_not_equal_any:
+        - 把风雨读慢一点
+      hashtags_min_count: 2
+      hashtags_max_count: 6
+      hashtags_must_include_any:
+        - "#苏轼"
+      body_min_chars: 160
+      body_max_chars: 650
+      body_must_include_any:
+        - 苏轼
+      body_must_include_comment_prompt_any:
+        - 评论区
+        - 你读到哪句
+        - 你会想到哪句
+      body_must_include_save_trigger_any:
+        - 存
+        - 记下来
+        - 这一句
+        - 可收藏
+      body_must_not_include_any:
+        - 课堂讲义
+        - 百科
+        - 知识点
+        - 变体要求
+        - 模板要求
+        - comment_chain
+        - save_tool
+        - identity_conflict
+  finalize:
+    required_fields:
+      - playbook_id
+      - final_content
+quality_judges:
+  executor_content_quality:
+    evaluator_id: llm.executor.content_quality
+    gate_level: required
+    threshold: 0.7

@@ -4,6 +4,7 @@ from collections import defaultdict
 from pathlib import Path
 import pickle
 from typing import Any
+from uuid import uuid4
 
 from langgraph.checkpoint.memory import InMemorySaver
 
@@ -39,7 +40,13 @@ class FileCheckpointSaver(InMemorySaver):
     def _load(self) -> None:
         if not self.path.exists():
             return
-        payload = pickle.loads(self.path.read_bytes())
+        raw_payload = self.path.read_bytes()
+        if not raw_payload:
+            return
+        try:
+            payload = pickle.loads(raw_payload)
+        except (EOFError, pickle.UnpicklingError):
+            return
         self.storage = defaultdict(_checkpoint_namespace_factory)
         for thread_id, namespaces in payload.get("storage", {}).items():
             self.storage[thread_id] = defaultdict(dict, namespaces)
@@ -59,4 +66,6 @@ class FileCheckpointSaver(InMemorySaver):
             "writes": dict(self.writes),
             "blobs": dict(self.blobs),
         }
-        self.path.write_bytes(pickle.dumps(payload))
+        temp_path = self.path.with_name(f"{self.path.name}.{uuid4().hex}.tmp")
+        temp_path.write_bytes(pickle.dumps(payload))
+        temp_path.replace(self.path)

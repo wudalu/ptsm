@@ -29,3 +29,9 @@ def test_run_playbook_cli_outputs_sushi_poetry_publish_receipt(capsys) -> None:
     assert payload["account"]["account_id"] == "acct-sushi-local"
     assert payload["publish_result"]["status"] == "dry_run"
     assert "#苏轼" in payload["final_content"]["hashtags"]
+    assert "苏轼" in payload["final_content"]["body"]
+    assert "评论区" in payload["final_content"]["body"]
+    assert any(
+        cue in payload["final_content"]["body"]
+        for cue in ("存", "记下来", "可收藏", "这一句")
+    )

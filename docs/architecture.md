@@ -2,7 +2,7 @@
 title: PTSM Architecture
 status: active
 owner: ptsm
-last_verified: 2026-05-16
+last_verified: 2026-05-17
 source_of_truth: true
 related_paths:
   - src/ptsm
@@ -63,6 +63,7 @@ PTSM 当前已支持七个垂直领域（发疯文学、苏轼诗词赏析、武
 - `side_effect_ledger` 现在支持 `scope_id` 参数，通过 `thread_id/scope_id` 组合键实现多维度的副作用去重，而不仅限于 thread 级别。
 - `harness_evals` 新增 `_aggregate_skill_stats`，按 skill 维度聚合 runs/completed/runtime_context_runs/completion_rate，输出到 harness-report 的 `skills` 字段。
 - evaluation gates 区分 `required` 和 `warning`：deterministic required failures 可以阻塞 local harness；XHS executor content-quality judge 在显式启用 eval 或生成链路配置 judge backend 时使用 `required` gate，但最终发布仍需人工确认。
+- playbook contract evaluator 现在承担通用正文质量硬约束，包括标题/封面反泛化、必需标签、必需/禁用正文词、评论提示、保存触发、正文长度区间和实验指令泄漏；新增约束应优先扩展 `src/ptsm/evaluations/contracts_eval.py`，避免在 runtime 或单个 playbook 中写领域分支。
 
 ## Current Design Pressure
 

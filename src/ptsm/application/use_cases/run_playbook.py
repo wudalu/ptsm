@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 import re
 import sys
@@ -26,6 +27,7 @@ from ptsm.infrastructure.observability.run_store import RunStore
 from ptsm.infrastructure.artifacts.file_store import FileArtifactStore
 from ptsm.infrastructure.memory.store import ExecutionMemoryStore
 from ptsm.infrastructure.images.factory import build_image_backend
+from ptsm.infrastructure.images.note_card_backend import NoteCardImageBackend
 from ptsm.infrastructure.images.watermark_remover import WatermarkRemover
 from ptsm.infrastructure.publishers.contracts import Publisher
 from ptsm.infrastructure.publishers.factory import build_publisher
@@ -342,10 +344,25 @@ def run_playbook(
         ):
             image_backend = build_image_backend(settings)
             if image_backend is None:
-                image_generation = {
-                    "status": "skipped",
-                    "reason": "backend_not_configured",
-                }
+                runtime_skill_contents = list(result.get("runtime_skill_contents") or [])
+                runtime_context_summary = _summarize_runtime_skill_contents(
+                    runtime_skill_contents
+                )
+                image_generation = NoteCardImageBackend().generate(
+                    prompt=_build_note_card_image_payload(
+                        scene=request.scene,
+                        runtime_context_summary=runtime_context_summary,
+                        final_content=result["final_content"],
+                    ),
+                    output_dir=Path.cwd() / DEFAULT_GENERATED_IMAGES_DIR,
+                    output_stem=f"{artifact_path.stem}-cover",
+                )
+                image_generation["runtime_context_summary"] = runtime_context_summary
+                resolved_image_paths = list(
+                    image_generation.get("generated_image_paths")
+                    or image_generation.get("image_paths")
+                    or []
+                )
             else:
                 runtime_skill_contents = list(result.get("runtime_skill_contents") or [])
                 runtime_context_summary = _summarize_runtime_skill_contents(
@@ -734,6 +751,29 @@ def _build_image_generation_prompt(
         "真人随手拍，不要复杂小字，不要在图片上添加任何标签文字如#发疯文学等话题标签，不要额外水印。"
     )
     return _truncate_text(prompt, 800)
+
+
+def _build_note_card_image_payload(
+    *,
+    scene: str,
+    runtime_context_summary: str,
+    final_content: dict[str, Any],
+) -> str:
+    return json.dumps(
+        {
+            "style": "xhs_note_card_v1",
+            "scene": _truncate_text(str(final_content.get("scene", scene)).strip() or scene, 80),
+            "title": _truncate_text(str(final_content.get("title", "")).strip(), 80),
+            "image_text": _truncate_text(str(final_content.get("image_text", "")).strip(), 120),
+            "body": _truncate_text(
+                " ".join(str(final_content.get("body", "")).split()),
+                360,
+            ),
+            "hashtags": list(final_content.get("hashtags", []) or []),
+            "runtime_context_summary": runtime_context_summary,
+        },
+        ensure_ascii=False,
+    )
 
 
 def _summarize_runtime_skill_contents(contents: list[str]) -> str:

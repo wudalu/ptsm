@@ -78,3 +78,9 @@ node_contracts:
       - final_content
       - activated_skill_details
       - runtime_skill_details
+
+quality_judges:
+  executor_content_quality:
+    evaluator_id: llm.executor.content_quality
+    gate_level: required
+    threshold: 0.7

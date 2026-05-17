@@ -12,3 +12,19 @@ optional_skills: []
 reflection:
   must_include_phrase: ""
   required_hashtag: "#AI资讯"
+  body_must_include_any:
+    - 是什么
+    - 为什么重要
+    - 普通人
+    - 收藏
+    - 评论区
+  body_must_not_include_any:
+    - 暴富
+    - 收益承诺
+    - 买入建议
+    - 梭哈
+    - 变体要求
+    - 模板要求
+    - comment_chain
+    - save_tool
+    - identity_conflict

@@ -2,7 +2,7 @@
 title: PTSM Playbooks
 status: active
 owner: ptsm
-last_verified: 2026-05-16
+last_verified: 2026-05-17
 source_of_truth: true
 related_paths:
   - src/ptsm/playbooks/registry.py
@@ -25,6 +25,7 @@ Playbook 是 PTSM 的业务编排单元。它把领域、平台、技能需求�
 - `daily_english_post` 是每日英语单词学习内容，陪伴式教育风格。默认绑定 `acct-daily-english-local`。
 - `modern_psychology_post` 专门输出现代心理困境观察内容，用第一人称微场景解释心理机制，并要求一个可保存的小工具、例子型评论提示和专业帮助边界；`psychology_safety` 约束诊断、治疗承诺、药物建议和危机处理边界。默认绑定 `acct-psychology-local`。
 - `human_enrichment_daily_post` 专门输出人类丰容 / 日常变量实验内容，用一个具体角落、物件或路线写「原本惯性 -> 一个变量 -> 三步清单 -> 轻量结果 -> 评论区例子」。它要求低成本、非医疗化、非购物清单式表达，并通过 `content_review.image_form` 暴露 3:4 封面和轮播形式建议。默认绑定 `acct-enrichment-local`。
+- `sushi_poetry_daily_post`、`wuxia_character_post`、`ai_tech_daily_post`、`daily_english_post` 现在也都有 playbook-local `evaluation.yaml`，和发疯文学/现代心理学一样声明 executor 内容质量 judge 为 `required`，并用确定性 node contract 检查领域标签、正文结构、评论提示、收藏触发和实验指令泄漏。
 - `modern_psychology_post` 的 deterministic fallback 会按场景簇生成不同候选：周日/周一预焦虑、被说想太多后的边界压力、下班后被消息拉回工位、会议尴尬复盘、脑内复盘会、普通回复复盘接龙。这样离线实验候选不会因为同属“反刍思维”而退化成同一个标题/封面。
 - `PlaybookRegistry` 支持列出定义、按 id 查询，以及按账号选择。
 - `PlaybookDefinition.reflection` 是结构化规则字典，支持必需规则（如 `required_hashtag`、非空 `must_include_phrase`）、可选内容质量规则（如 `title_must_not_equal_any`、`body_must_include_any`、`body_must_not_include_any`）和推荐规则（如 `recommended_phrases`）。推荐词只作为风格提示，不应被 runtime 当成硬门槛。
@@ -56,7 +57,7 @@ Playbook 是 PTSM 的业务编排单元。它把领域、平台、技能需求�
 
 发疯文学和现代心理学 playbook 的 `playbook.yaml` reflection rules 与 `evaluation.yaml` 都会拦截内容实验操作词泄漏，例如 `想让评论区`、`想存一组`、`变体要求`、`模板要求`、`comment_chain`、`save_tool`、`identity_conflict`。这些词可以出现在 operator 选题记录或实验日志里，但不能进入最终正文。
 
-这两个 XHS 内容质量 playbook 的 `evaluation.yaml` 还配置了 `quality_judges.executor_content_quality`，gate level 为 `required`。显式启用 eval judge 时，失败会计入 `required_failed`；运行时配置 LLM judge backend 时，reflector 会把失败的 `rewrite_hint` 作为下一轮生成反馈。无论 judge 是否通过，最终 artifact 仍会写出 `content_review`，供人工确认后再决定是否发布。
+七个真实 XHS 内容质量 playbook 的 `evaluation.yaml` 都配置了 `quality_judges.executor_content_quality`，gate level 为 `required`。显式启用 eval judge 时，失败会计入 `required_failed`；运行时配置 LLM judge backend 时，reflector 会按 playbook contract 自动启用 judge，并把失败的 `rewrite_hint` 作为下一轮生成反馈。无论 judge 是否通过，最终 artifact 仍会写出 `content_review`，供人工确认后再决定是否发布。
 
 当前定义目录位于 [`src/ptsm/playbooks/definitions/`](../src/ptsm/playbooks/definitions/)。
 

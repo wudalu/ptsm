@@ -24,6 +24,7 @@ from ptsm.infrastructure.memory.store import (
     FileExecutionMemory,
     InMemoryExecutionMemory,
 )
+from ptsm.evaluations.playbook_contracts import load_playbook_eval_contract
 from ptsm.playbooks.loader import PlaybookLoader
 from ptsm.playbooks.registry import PlaybookRegistry
 from ptsm.skills.loader import SkillLoader
@@ -66,10 +67,9 @@ def build_playbook_workflow(
     drafting_agent = drafting_agent or FengkuangDraftingAgent(
         backend=build_drafting_backend(settings, model=drafting_model)
     )
-    if content_quality_judge_backend is None and playbook_id in {
-        "fengkuang_daily_post",
-        "modern_psychology_post",
-    }:
+    if content_quality_judge_backend is None and _playbook_requires_content_quality_judge(
+        playbook_id
+    ):
         content_quality_judge_backend = build_llm_judge_backend(settings)
     content_quality_judge = (
         build_content_quality_judge_gate(content_quality_judge_backend)
@@ -126,6 +126,14 @@ def build_fengkuang_workflow(
         skill_context_resolver=skill_context_resolver,
         content_quality_judge_backend=content_quality_judge_backend,
     )
+
+
+def _playbook_requires_content_quality_judge(playbook_id: str) -> bool:
+    contract = load_playbook_eval_contract(PLAYBOOK_ROOT, playbook_id)
+    if contract is None:
+        return False
+    judge = contract.quality_judges.get("executor_content_quality")
+    return isinstance(judge, dict) and judge.get("gate_level") == "required"
 
 
 def build_file_backed_runtime_state(
@@ -234,9 +242,18 @@ def _build_content_review(state: ExecutionState) -> dict[str, object]:
             "5分钟",
             "边界句",
             "消息草稿",
+            "收藏",
+            "收藏清单",
+            "可收藏",
+            "截图",
+            "可截图",
             "清单",
             "三步",
             "先试",
+            "记住",
+            "记下来",
+            "这一句",
+            "句型",
         )
     )
     safety_risks = [

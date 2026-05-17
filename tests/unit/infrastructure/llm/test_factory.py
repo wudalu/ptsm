@@ -97,6 +97,9 @@ def test_deterministic_backend_can_follow_sushi_poetry_context() -> None:
 
     assert "苏轼" in draft["body"]
     assert "#苏轼" in draft["hashtags"]
+    assert any(cue in draft["body"] for cue in ("存", "记下来", "可收藏", "这一句"))
+    assert "评论区" in draft["body"]
+    assert not any(term in draft["body"] for term in ("课堂讲义", "百科", "知识点"))
     assert "发疯文学" not in draft["body"]
 
 
@@ -114,8 +117,56 @@ def test_deterministic_backend_can_follow_wuxia_context() -> None:
 
     assert "令狐冲" in draft["body"]
     assert "笑傲江湖" in draft["body"]
+    assert "原文" in draft["body"]
+    assert "截图" in draft["body"]
+    assert "评论区" in draft["body"]
     assert "#金庸" in draft["hashtags"]
-    assert len(draft["body"]) >= 400
+    assert len(draft["body"]) >= 800
+    assert "发疯文学" not in draft["body"]
+
+
+def test_deterministic_backend_can_follow_ai_tech_context() -> None:
+    backend = DeterministicDraftBackend()
+
+    draft = backend.generate(
+        scene="OpenAI 发布一项新的多模态助手更新，普通用户想知道到底值不值得试",
+        planner_prompt="# AI科技资讯 Planner\n目标：写一条适合小红书的 AI/科技资讯。",
+        skill_contents=[
+            "# AI Tech Style\n需要 3秒核心信息、普通人影响、收藏清单、非投资建议。",
+            "# AI Tech Hashtagging\n标签必须包含 `#AI资讯`。",
+        ],
+    )
+
+    assert "是什么" in draft["body"]
+    assert "为什么重要" in draft["body"]
+    assert "普通人" in draft["body"]
+    assert "收藏" in draft["body"]
+    assert "清单" in draft["body"]
+    assert "评论区" in draft["body"]
+    assert "非投资建议" in draft["body"]
+    assert "#AI资讯" in draft["hashtags"]
+    assert "发疯文学" not in draft["body"]
+
+
+def test_deterministic_backend_can_follow_daily_english_context() -> None:
+    backend = DeterministicDraftBackend()
+
+    draft = backend.generate(
+        scene="想学一个开会和私聊都能用的英语表达",
+        planner_prompt="# 每日英语学习 Planner\n目标：写一条每日英语学习内容。",
+        skill_contents=[
+            "# Daily English Style\n需要真实场景、可收藏句型、评论区造句，不要词典式。",
+            "# Daily English Hashtagging\n标签必须包含 `#每日英语`。",
+        ],
+    )
+
+    for term in ["音标", "词性", "例句", "翻译", "句型", "造句"]:
+        assert term in draft["body"]
+    assert "真实场景" in draft["body"]
+    assert "可收藏" in draft["body"] or "收藏" in draft["body"]
+    assert "评论区" in draft["body"]
+    assert "词典式" not in draft["body"]
+    assert "#每日英语" in draft["hashtags"]
     assert "发疯文学" not in draft["body"]
 
 

@@ -795,6 +795,52 @@ def test_run_fengkuang_playbook_skips_generation_for_dry_run_without_flag(
     assert result.get("image_generation") is None
 
 
+def test_run_fengkuang_playbook_uses_local_note_card_when_provider_missing(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    artifact_path = tmp_path / "artifact.json"
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "fengkuang_daily_post",
+                "final_content": {"title": "旧标题"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    publisher = CapturingPublisher()
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_fengkuang_workflow",
+        lambda **_: FakeWorkflow(artifact_path),
+    )
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_image_backend",
+        lambda _settings: None,
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = run_fengkuang_playbook(
+        FengkuangRequest(
+            scene="周六社畜躺平",
+            platform="xiaohongshu",
+            account_id="acct-fk-local",
+            auto_generate_images=True,
+        ),
+        publisher=publisher,
+    )
+
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+
+    assert result["image_generation"]["provider"] == "local_note_card"
+    assert result["image_generation"]["style"] == "xhs_note_card_v1"
+    assert publisher.received_image_paths
+    assert Path(publisher.received_image_paths[0]).exists()
+    assert artifact["image_generation"]["provider"] == "local_note_card"
+
+
 def test_build_image_generation_prompt_stays_within_bailian_limit() -> None:
     prompt = _build_image_generation_prompt(
         scene="周六社畜躺平",

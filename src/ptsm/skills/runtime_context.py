@@ -100,9 +100,11 @@ class XhsTrendScanContextBuilder:
         *,
         server_url: str,
         tool_runner: McpToolRunner | None = None,
+        timeout_seconds: float = 4.0,
     ) -> None:
         self.server_url = server_url
         self.tool_runner = tool_runner or LangChainMcpToolRunner(server_url=server_url)
+        self.timeout_seconds = timeout_seconds
 
     def build(
         self, *, scene: str, domain: str, playbook_id: str,
@@ -111,7 +113,15 @@ class XhsTrendScanContextBuilder:
     ) -> str | None:
         try:
             return asyncio.run(
-                self._build_async(scene=scene, domain=domain, playbook_id=playbook_id, keyword_hints=keyword_hints)
+                asyncio.wait_for(
+                    self._build_async(
+                        scene=scene,
+                        domain=domain,
+                        playbook_id=playbook_id,
+                        keyword_hints=keyword_hints,
+                    ),
+                    timeout=self.timeout_seconds,
+                )
             )
         except RuntimeError as exc:
             if "asyncio.run()" in str(exc):
@@ -173,7 +183,7 @@ class TopicResearchContextBuilder:
             today = date.today().isoformat()
             artifact_path = self._artifact_dir / f"topic-scan-{today}.json"
 
-            if fresh_topic_research or not artifact_path.exists():
+            if fresh_topic_research:
                 _run_topic_radar_scan(str(self._artifact_dir))
 
             if not artifact_path.exists():

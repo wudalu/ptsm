@@ -2,7 +2,7 @@
 title: PTSM Runtime
 status: active
 owner: ptsm
-last_verified: 2026-05-16
+last_verified: 2026-05-17
 source_of_truth: true
 related_paths:
   - src/ptsm/agent_runtime/runtime.py
@@ -29,7 +29,7 @@ related_paths:
 2. `build_playbook_workflow()` 按所选 playbook/domain 组装 LangGraph 图。
 3. graph 依次运行 ingest、planner、memory、executor、reflector、finalize。
 4. memory 节点读取当前账号最近同 playbook lessons，并把避免重复的 compact context 注入 `runtime_skill_contents`。
-5. reflector 先跑 deterministic reflection rules；如果当前 playbook 配置了 LLM judge backend，还会把 executor draft 交给 content-quality judge。judge 失败或输出无效时会把 `rewrite_hint` 写入 `reflection_feedback` 并回到 executor 重写，直到通过或达到 `max_attempts`。
+5. reflector 先跑 deterministic reflection rules；如果当前 playbook 的 `evaluation.yaml` 声明 required executor content-quality judge 且运行时配置了 LLM judge backend，还会把 executor draft 交给 content-quality judge。judge 失败或输出无效时会把 `rewrite_hint` 写入 `reflection_feedback` 并回到 executor 重写，直到通过或达到 `max_attempts`。
 6. finalize 写入 artifact、执行 lessons memory，并生成 `content_review` 供人工确认。
 7. 应用层根据结果决定是否生成发布图片、发布、查状态、开浏览器。
 
@@ -40,9 +40,9 @@ related_paths:
 - `run_playbook()` 默认会在 `.ptsm/agent_runtime/` 下创建持久 execution memory 和 checkpoint。
 - workflow 会在 drafting 前读取最近 3 条同账号、同 playbook 的 lessons，形成 `# Recent Account Memory` runtime context，提示 drafting backend 避免重复标题形状、开头、热词和收尾。
 - `run_playbook()` 现在也会在 `.ptsm/agent_runtime/side-effects.json` 下记录成功副作用结果，用于同一 `thread_id` 的安全重放。
-- `run_playbook()` 现在可以在真实发布缺图时调用 provider-backed image backend，默认把生成图写到 `outputs/generated_images/`；即梦配置优先于百炼配置。
+- `run_playbook()` 现在可以在真实发布缺图或显式 `--auto-generate-image` 时生成封面图，默认写到 `outputs/generated_images/`；即梦配置优先于百炼配置，provider 未配置时回退到本地 `local_note_card` PNG renderer。
 - deterministic / deepseek drafting backend 现在会读取 playbook prompt、playbook persona prompt、静态 scoped skills，以及 planner 注入的 runtime skill contexts，不再只面向发疯文学。
-- deterministic drafting backend 可以通过小型 contextual draft helper 为特定 playbook 提供离线 dry-run 草稿，供 harness 和 e2e 测试在没有真实 LLM 调用时验证领域硬约束；当前覆盖 `modern_psychology_post` 的心理安全/工具边界，以及 `wuxia_character_post` 的金庸人物评述基础结构。
+- deterministic drafting backend 可以通过小型 contextual draft helper 为特定 playbook 提供离线 dry-run 草稿，供 harness 和 e2e 测试在没有真实 LLM 调用时验证领域硬约束；当前覆盖现代心理学、武侠人物评述、苏轼诗词赏析、AI 科技资讯、每日英语学习和人类丰容实验的基础结构。
 - 显式注入依赖时，运行时仍兼容 `InMemoryExecutionMemory` 和 `InMemorySaver`。
 - 持久 checkpoint 以 `thread_id` 为键保存；复用同一个 `thread_id` 才能跨进程读取同一条执行线程。
 - 当前 side-effect ledger 只复用成功 publish 结果，不缓存失败 publish 或只读状态检查。
@@ -65,6 +65,7 @@ related_paths:
 - 图片生成现在是发布前的一段显式步骤，会把 prompt、模型和生成路径写回 artifact，便于后续验收和排障。
 - 图片生成 prompt 现在也会读取 `runtime_skill_contents` 里的实时切口和场景张力，让封面图和正文共享同一层热点上下文。
 - 图片生成 prompt 现在也会读取 artifact `content_review.image_form` 中的图片形式摘要；当人类丰容 playbook 提供轮播式建议时，单张封面生成会保留“原本状态、材料平铺、清单、改变后细节”等视觉提示。
+- 本地 note-card renderer 生成类似小红书常见笔记卡片的 3:4 竖版 PNG，使用 final content 的标题、封面语和正文摘要直接绘制，不调用外部图片 API。
 - 图片生成后可选去水印后处理（`WATERMARK_REMOVAL_ENABLED=true`），使用 OpenCV inpainting 检测并移除底角残留水印，处理结果写入 artifact 的 `watermark_removal` 字段。
 - artifact evaluation 不在 LangGraph 节点内运行；`run_playbook()` 完成 artifact/image/publish/post-publish 后再调用 eval use case，因此 rule/contract evaluator 失败不会改变原始 runtime graph 的控制流。内容质量 LLM judge 是生成链路例外：它在 reflector 内作为重写门使用。
 - 当前仍没有远端 state backend；cross-thread lookup 只限本地 execution memory 中最近同账号同 playbook lessons 的轻量回读。

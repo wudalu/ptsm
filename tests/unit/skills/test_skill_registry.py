@@ -182,3 +182,18 @@ def test_human_enrichment_skills_have_correct_tags() -> None:
         assert "人类丰容实验" in skill.domain_tags
         assert "xiaohongshu" in skill.platform_tags
         assert "human_enrichment_daily_post" in skill.playbook_tags
+
+
+def test_remaining_domain_style_skills_encode_xhs_quality_mechanics() -> None:
+    skill_root = Path("src/ptsm/skills/builtin")
+    expected_markers = {
+        "sushi_poetry_style": ["生活瞬间", "可收藏", "评论区", "不要讲义"],
+        "wuxia_commentary_style": ["当代切口", "原文", "截图", "评论区"],
+        "ai_tech_style": ["3秒核心信息", "普通人影响", "收藏清单", "非投资建议"],
+        "daily_english_style": ["真实场景", "造句", "可收藏", "不要词典式"],
+    }
+
+    for skill_name, markers in expected_markers.items():
+        content = (skill_root / skill_name / "SKILL.md").read_text(encoding="utf-8")
+        for marker in markers:
+            assert marker in content
