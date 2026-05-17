@@ -74,6 +74,20 @@ def test_publish_quickstart_covers_operator_switches_and_watermark_policy() -> N
     assert "必须" in quickstart_text
 
 
+def test_publish_quickstart_includes_conversational_guidance() -> None:
+    quickstart_text = (DOCS_ROOT / "operations" / "publish-quickstart.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "对话式发布引导" in quickstart_text
+    assert "用户:" in quickstart_text
+    assert "助手:" in quickstart_text
+    assert "先 dry-run" in quickstart_text
+    assert "仅自己可见" in quickstart_text
+    assert "公开发布" in quickstart_text
+    assert "不要跳过" in quickstart_text
+
+
 def test_local_runbook_does_not_reintroduce_stale_publish_flow_claims() -> None:
     runbook_text = (DOCS_ROOT / "operations" / "local-runbook.md").read_text(
         encoding="utf-8"
