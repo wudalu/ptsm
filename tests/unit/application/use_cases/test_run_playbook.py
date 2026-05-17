@@ -9,6 +9,7 @@ from ptsm.accounts.registry import AccountRegistry
 from ptsm.application.models import FengkuangRequest, PlaybookRequest
 from ptsm.application.use_cases.run_playbook import (
     _build_image_generation_prompt,
+    _build_note_card_image_payload,
     run_playbook,
     run_fengkuang_playbook,
 )
@@ -906,6 +907,74 @@ def test_run_fengkuang_playbook_uses_local_note_card_when_provider_missing(
     assert publisher.received_image_paths
     assert Path(publisher.received_image_paths[0]).exists()
     assert artifact["image_generation"]["provider"] == "local_note_card"
+
+
+def test_run_fengkuang_playbook_uses_requested_local_image_style_when_provider_missing(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    artifact_path = tmp_path / "artifact.json"
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "fengkuang_daily_post",
+                "final_content": {
+                    "title": "领导连发三个在吗",
+                    "image_text": "在吗？在的，但灵魂已飞行",
+                    "body": "领导：在吗\n我：在的，但灵魂已进入飞行模式",
+                    "hashtags": ["#发疯文学"],
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    publisher = CapturingPublisher()
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_fengkuang_workflow",
+        lambda **_: FakeWorkflow(artifact_path),
+    )
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_image_backend",
+        lambda _settings: None,
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = run_fengkuang_playbook(
+        FengkuangRequest(
+            scene="周一早上领导连发三个在吗",
+            platform="xiaohongshu",
+            account_id="acct-fk-local",
+            auto_generate_images=True,
+            local_image_style="wechat_chat",
+        ),
+        publisher=publisher,
+    )
+
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+
+    assert result["image_generation"]["style"] == "wechat_chat_v1"
+    assert artifact["image_generation"]["style"] == "wechat_chat_v1"
+    assert publisher.received_image_paths
+
+
+def test_build_note_card_image_payload_includes_local_image_style() -> None:
+    payload = json.loads(
+        _build_note_card_image_payload(
+            scene="周一早上领导连发三个在吗",
+            runtime_context_summary="",
+            final_content={
+                "title": "领导连发三个在吗",
+                "image_text": "在吗？",
+                "body": "我咖啡还没打开。",
+                "hashtags": ["#发疯文学"],
+            },
+            local_image_style="iphone_notes",
+        )
+    )
+
+    assert payload["style"] == "iphone_notes"
 
 
 def test_build_image_generation_prompt_stays_within_bailian_limit() -> None:

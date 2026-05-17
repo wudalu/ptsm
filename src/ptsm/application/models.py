@@ -19,6 +19,7 @@ class PlaybookRequest(BaseModel):
     wait_for_publish_status: bool = False
     fresh_topic_research: bool = False
     format_pattern_path: str | None = None
+    local_image_style: str | None = None
 
 
 class FengkuangRequest(PlaybookRequest):

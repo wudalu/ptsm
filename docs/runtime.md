@@ -42,7 +42,7 @@ related_paths:
 - `run_playbook()` 默认会在 `.ptsm/agent_runtime/` 下创建持久 execution memory 和 checkpoint。
 - workflow 会在 drafting 前读取最近 3 条同账号、同 playbook 的 lessons，形成 `# Recent Account Memory` runtime context，提示 drafting backend 避免重复标题形状、开头、热词和收尾。
 - `run_playbook()` 现在也会在 `.ptsm/agent_runtime/side-effects.json` 下记录成功副作用结果，用于同一 `thread_id` 的安全重放。
-- `run_playbook()` 现在可以在真实发布缺图或显式 `--auto-generate-image` 时生成封面图，默认写到 `outputs/generated_images/`；即梦配置优先于百炼配置，provider 未配置时回退到本地 `local_note_card` PNG renderer。
+- `run_playbook()` 现在可以在真实发布缺图或显式 `--auto-generate-image` 时生成封面图，默认写到 `outputs/generated_images/`；即梦配置优先于百炼配置，provider 未配置时回退到本地 `local_note_card` PNG renderer。本地 renderer 支持默认笔记卡、iPhone Notes-like 和 WeChat chat-like 三类确定性 3:4 样式。
 - deterministic / deepseek drafting backend 现在会读取 playbook prompt、playbook persona prompt、静态 scoped skills，以及 planner 注入的 runtime skill contexts，不再只面向发疯文学。
 - `xhs_trend_scan` 的 runtime context 现在优先读取本地 `outputs/artifacts/xhs-pattern-library/current.json` 里的 approved/candidate format patterns；普通 `run-playbook` 不默认实时搜索小红书。只有在显式 fresh research 路径且本地 pattern snapshot 不可用时，才会回退到 live MCP trend scan。`topic_research` 也会在保留 topic-radar 选题上下文的同时追加同一份本地 pattern summary；当 topic-radar artifact 缺失时，它仍可只返回 pattern context。
 - deterministic drafting backend 可以通过小型 contextual draft helper 为特定 playbook 提供离线 dry-run 草稿，供 harness 和 e2e 测试在没有真实 LLM 调用时验证领域硬约束；当前覆盖现代心理学、武侠人物评述、苏轼诗词赏析、AI 科技资讯、每日英语学习和人类丰容实验的基础结构。人类丰容 deterministic 分支覆盖桌面/角落、路线/感官、手作/材料流三类场景，避免所有离线样例退化成同一标题形状。
@@ -69,7 +69,7 @@ related_paths:
 - 图片生成现在是发布前的一段显式步骤，会把 prompt、模型和生成路径写回 artifact，便于后续验收和排障。
 - 图片生成 prompt 现在也会读取 `runtime_skill_contents` 里的实时切口和场景张力，让封面图和正文共享同一层热点上下文。
 - 图片生成 prompt 现在也会读取 artifact `content_review.image_form` 中的图片形式摘要；当人类丰容 playbook 提供轮播式建议时，单张封面生成会保留“原本状态、材料平铺、清单、改变后细节”等视觉提示，并明确 AI 生成图只是氛围参考，不应伪装成真实前后证据。
-- 本地 note-card renderer 生成类似小红书常见笔记卡片的 3:4 竖版 PNG，使用 final content 的标题、封面语和正文摘要直接绘制，不调用外部图片 API。
+- 本地 note-card renderer 生成 3:4 竖版 PNG，使用 final content 的标题、封面语和正文摘要直接绘制，不调用外部图片 API。默认样式是小红书常见笔记卡片；operator 也可以通过 `--local-image-style iphone_notes` 或 `--local-image-style wechat_chat` 在本地 fallback 路径生成 iPhone 记事本风格或微信聊天记录风格封面。
 - 图片生成后可选去水印后处理（`WATERMARK_REMOVAL_ENABLED=true`），使用 OpenCV inpainting 检测并移除底角残留水印，处理结果写入 artifact 的 `watermark_removal` 字段。
 - artifact evaluation 不在 LangGraph 节点内运行；`run_playbook()` 完成 artifact/image/publish/post-publish 后再调用 eval use case，因此 rule/contract evaluator 失败不会改变原始 runtime graph 的控制流。内容质量 LLM judge 是生成链路例外：它在 reflector 内作为重写门使用。
 - 当前仍没有远端 state backend；cross-thread lookup 只限本地 execution memory 中最近同账号同 playbook lessons 的轻量回读。

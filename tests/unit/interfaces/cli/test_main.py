@@ -281,6 +281,45 @@ def test_run_playbook_cli_passes_format_pattern_path(
     )
 
 
+def test_run_playbook_cli_passes_local_image_style(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run_playbook(
+        request: PlaybookRequest,
+        *,
+        thread_id: str | None = None,
+        **kwargs: object,
+    ) -> dict[str, object]:
+        captured["request"] = request
+        return {"status": "completed"}
+
+    monkeypatch.setattr("ptsm.interfaces.cli.main.run_playbook", fake_run_playbook)
+
+    exit_code = main(
+        [
+            "run-playbook",
+            "--scene",
+            "领导连发三个在吗",
+            "--account-id",
+            "acct-fk-local",
+            "--playbook-id",
+            "fengkuang_daily_post",
+            "--auto-generate-image",
+            "--local-image-style",
+            "iphone_notes",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload["status"] == "completed"
+    assert captured["request"].local_image_style == "iphone_notes"
+
+
 def test_collect_xhs_patterns_cli_dispatches_to_use_case(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],

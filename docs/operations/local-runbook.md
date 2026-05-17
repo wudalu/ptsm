@@ -103,7 +103,7 @@ With `--wait-for-publish-status`, PTSM retries `search_feeds` title match for ~8
 
 #### What happens in both paths
 
-1. **Image generation**: Auto-triggered when `publish_mode=mcp-real` and no `--publish-image-path` is provided. Priority: Jimeng (`jimeng_t2i_v40`) → Bailian (`qwen-image-2.0-pro`). The image prompt incorporates scene, title, image_text, body summary, persona, and runtime trend context — but **no hashtags or tag text are added to the image** (the prompt explicitly forbids rendering `#发疯文学` or any topic tags on the image). Output lands in `outputs/generated_images/`.
+1. **Image generation**: Auto-triggered when `publish_mode=mcp-real` and no `--publish-image-path` is provided. Priority: Jimeng (`jimeng_t2i_v40`) → Bailian (`qwen-image-2.0-pro`) → local `local_note_card` renderer. The image prompt incorporates scene, title, image_text, body summary, persona, and runtime trend context — but **no hashtags or tag text are added to the image** (the prompt explicitly forbids rendering `#发疯文学` or any topic tags on the image). Output lands in `outputs/generated_images/`. If external image providers are not configured, use `--local-image-style note_card|iphone_notes|wechat_chat` to choose the deterministic local cover style.
 
 2. **Watermark removal** (optional): If `WATERMARK_REMOVAL_ENABLED=true` in `.env`, OpenCV Canny edge detection + TELEA inpainting is applied to remove residual watermarks in image corners. Result written to `*-nowm.png`.
 
@@ -136,6 +136,7 @@ uv run python -m ptsm.bootstrap xhs-open-browser \
 |------|---------|
 | `--publish-mode mcp-real` | Real publish via XHS MCP (omit for dry-run) |
 | `--auto-generate-image` | Force image generation even in dry-run |
+| `--local-image-style note_card|iphone_notes|wechat_chat` | Choose the deterministic local fallback cover style when external image providers are not configured |
 | `--publish-visibility "仅自己可见"` | Private post — safe for review before going public |
 | `--publish-visibility "公开"` | Public post — visible to all, supports auto-verification |
 | `--wait-for-publish-status` | Block until publish status is auto-verified or times out |
@@ -164,6 +165,17 @@ PIC_MODEL_SIZE=1104*1472
 ```
 
 When both are configured, Jimeng is used first.
+
+### Local Renderer Styles
+
+When neither Jimeng nor Bailian is configured, PTSM falls back to the local Pillow renderer and writes 3:4 PNGs under `outputs/generated_images/`. The default style is `note_card`, which records `image_generation.style=xhs_note_card_v1`. For dry-runs or private tests that need a more native social screenshot shape, pass one of:
+
+```bash
+--local-image-style iphone_notes
+--local-image-style wechat_chat
+```
+
+These local styles render iPhone Notes-like and WeChat chat transcript-like covers from the generated title, `image_text`, body summary, scene, and runtime context. They do not call external image APIs, and artifacts record the effective style as `iphone_notes_v1` or `wechat_chat_v1`.
 
 ### Watermark Removal (Optional)
 
@@ -212,7 +224,8 @@ uv run python -m ptsm.bootstrap run-fengkuang \
 uv run python -m ptsm.bootstrap run-fengkuang \
   --scene "周六社畜躺平" \
   --account-id acct-fk-local \
-  --auto-generate-image
+  --auto-generate-image \
+  --local-image-style iphone_notes
 
 # Generic playbook dry-run
 uv run python -m ptsm.bootstrap run-playbook \

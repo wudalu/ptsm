@@ -41,6 +41,8 @@ from ptsm.plan_runner.runner import (
     run_subprocess_command,
 )
 
+LOCAL_IMAGE_STYLE_CHOICES = ("note_card", "iphone_notes", "wechat_chat")
+
 
 def build_parser() -> argparse.ArgumentParser:
     """Build the top-level CLI parser."""
@@ -69,6 +71,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_false",
     )
     fengkuang.set_defaults(auto_generate_image=None)
+    fengkuang.add_argument("--local-image-style", choices=LOCAL_IMAGE_STYLE_CHOICES)
     fengkuang.add_argument("--publish-visibility")
     fengkuang.add_argument("--open-browser-if-needed", action="store_true")
     fengkuang.add_argument("--wait-for-publish-status", action="store_true")
@@ -103,6 +106,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_false",
     )
     run_playbook_cli.set_defaults(auto_generate_image=None)
+    run_playbook_cli.add_argument("--local-image-style", choices=LOCAL_IMAGE_STYLE_CHOICES)
     run_playbook_cli.add_argument("--publish-visibility")
     run_playbook_cli.add_argument("--open-browser-if-needed", action="store_true")
     run_playbook_cli.add_argument("--wait-for-publish-status", action="store_true")
@@ -350,6 +354,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 publish_mode=args.publish_mode,
                 publish_image_paths=args.publish_image_path,
                 auto_generate_images=args.auto_generate_image,
+                local_image_style=args.local_image_style,
                 publish_visibility=args.publish_visibility,
                 login_qrcode_output_path=str(args.login_qrcode_output),
                 open_browser_if_needed=args.open_browser_if_needed,
@@ -374,6 +379,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 publish_mode=args.publish_mode,
                 publish_image_paths=args.publish_image_path,
                 auto_generate_images=args.auto_generate_image,
+                local_image_style=args.local_image_style,
                 publish_visibility=args.publish_visibility,
                 login_qrcode_output_path=str(args.login_qrcode_output),
                 open_browser_if_needed=args.open_browser_if_needed,

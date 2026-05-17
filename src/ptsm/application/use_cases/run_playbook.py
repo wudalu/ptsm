@@ -365,6 +365,7 @@ def run_playbook(
                         scene=request.scene,
                         runtime_context_summary=runtime_context_summary,
                         final_content=result["final_content"],
+                        local_image_style=request.local_image_style,
                     ),
                     output_dir=Path.cwd() / DEFAULT_GENERATED_IMAGES_DIR,
                     output_stem=f"{artifact_path.stem}-cover",
@@ -797,10 +798,11 @@ def _build_note_card_image_payload(
     scene: str,
     runtime_context_summary: str,
     final_content: dict[str, Any],
+    local_image_style: str | None = None,
 ) -> str:
     return json.dumps(
         {
-            "style": "xhs_note_card_v1",
+            "style": local_image_style or "xhs_note_card_v1",
             "scene": _truncate_text(str(final_content.get("scene", scene)).strip() or scene, 80),
             "title": _truncate_text(str(final_content.get("title", "")).strip(), 80),
             "image_text": _truncate_text(str(final_content.get("image_text", "")).strip(), 120),
