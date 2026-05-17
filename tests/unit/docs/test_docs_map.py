@@ -56,6 +56,36 @@ def test_operations_doc_mentions_plan_runs_command() -> None:
     assert "--auto-generate-image" in doc_text
 
 
+def test_publish_quickstart_covers_operator_switches_and_watermark_policy() -> None:
+    quickstart_text = (DOCS_ROOT / "operations" / "publish-quickstart.md").read_text(
+        encoding="utf-8"
+    )
+    operations_text = (DOCS_ROOT / "operations.md").read_text(encoding="utf-8")
+
+    assert "publish-quickstart.md" in operations_text
+    assert "--publish-mode mcp-real" in quickstart_text
+    assert "--auto-generate-image" in quickstart_text
+    assert "--no-auto-generate-image" in quickstart_text
+    assert "--publish-image-path" in quickstart_text
+    assert "--local-image-style" in quickstart_text
+    assert "final_content.image_plan" in quickstart_text
+    assert "watermark_removal" in quickstart_text
+    assert "真实发布" in quickstart_text
+    assert "必须" in quickstart_text
+
+
+def test_local_runbook_does_not_reintroduce_stale_publish_flow_claims() -> None:
+    runbook_text = (DOCS_ROOT / "operations" / "local-runbook.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "Dry-run (Content Generation Only)" not in runbook_text
+    assert "without publishing or generating images" not in runbook_text
+    assert "deterministic local fallback cover style" not in runbook_text
+    assert "Watermark Removal (Optional)" not in runbook_text
+    assert "Watermark removal** (optional)" not in runbook_text
+
+
 def test_docs_cover_image_generation_provider_paths() -> None:
     runbook_text = (DOCS_ROOT / "operations" / "local-runbook.md").read_text(
         encoding="utf-8"

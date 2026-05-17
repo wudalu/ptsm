@@ -38,6 +38,7 @@ repository.
 - freshness and ownership metadata on active docs
 - a path-aware `docs-sync` gate that uses `related_paths` to block code changes that skip their most specific source-of-truth docs
 - a single `harness-check` entrypoint that runs the docs gate, local harness drift checks, and deterministic pytest
+- targeted docs tests for operational contracts that `docs-sync` cannot infer from docs-only prose changes
 - an installable pre-push hook plus GitHub workflow so the same harness rules run locally and in CI
 - a two-tier enforcement model: practical local gates by default, full `--strict` gates in CI branch protection
 - mechanical architecture checks for import boundaries
@@ -70,6 +71,26 @@ repository.
 - traces and metrics if local file observability stops being enough
 - calibrated LLM judge suites after enough dry-run, pattern-library and publish examples exist; current human review stays lightweight through each artifact's `content_review` plus operator conversation, not a separate review queue or approval UI
 - richer skill quality evals if completion-rate aggregation stops being enough
+
+## Docs-Only Cleanup Gap
+
+`docs-sync` is intentionally code-to-doc coverage, not a semantic Markdown
+validator. It looks at changed code paths under `src/ptsm/**` and
+`shared_contracts/**`, then checks whether the most specific source-of-truth doc
+surface was also touched. A docs-only runbook edit has no relevant code path, so
+`docs-sync` returns ok by design.
+
+The previous gap was not that `harness-check` skipped pytest. It was that the
+docs tests only asserted metadata and broad keywords, so stale publishing claims
+such as "dry-run never generates images", "local screenshots are fallback only",
+or "real-publish watermark removal is optional" had no machine-checkable
+contract. For docs-only cleanup that changes operator behavior, add a focused
+`tests/unit/docs/` assertion and run:
+
+```bash
+uv run pytest tests/unit/docs/test_docs_map.py tests/unit/docs/test_docs_metadata.py -q
+uv run python -m ptsm.bootstrap harness-check --changed-path docs/<changed-doc>.md
+```
 
 ## What We Should Not Copy Blindly
 

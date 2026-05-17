@@ -2,7 +2,7 @@
 title: PTSM Development Workflow
 status: active
 owner: ptsm
-last_verified: 2026-05-09
+last_verified: 2026-05-17
 source_of_truth: true
 related_paths:
   - AGENTS.md
@@ -24,7 +24,7 @@ This workflow applies to larger development work only:
 - new publish, verification, observability, or harness surfaces
 
 It does not cover small bug fixes, typo fixes, docs-only cleanup, or narrow test
-maintenance. Those should get a smaller workflow later.
+maintenance. Docs-only cleanup uses the smaller workflow in section 10.
 
 ## Principle
 
@@ -217,3 +217,35 @@ uv run python -m ptsm.bootstrap harness-check --base-ref origin/main
 ```
 
 Use `--strict` when matching CI or branch-protection behavior locally.
+
+## 10. Docs-Only Cleanup Workflow
+
+Use this smaller flow when the change only edits docs, runbooks, plans, or
+research notes and does not alter runtime behavior.
+
+1. Identify the active source-of-truth doc surface first. Start at
+   [`docs/index.md`](index.md), then open the most specific linked doc or runbook.
+2. State whether the cleanup changes an operational contract or only wording.
+   If it changes a contract, add or update a docs test under `tests/unit/docs/`
+   before editing the prose.
+3. Keep the cleanup scoped to the stale or unclear area. Do not bundle unrelated
+   historical note cleanup with current operator instructions.
+4. If touching an active core source-of-truth doc and revalidating its claims,
+   update `last_verified`.
+5. Run docs-focused verification before handoff:
+
+```bash
+uv run pytest tests/unit/docs/test_docs_map.py tests/unit/docs/test_docs_metadata.py -q
+uv run python -m ptsm.bootstrap docs-sync --changed-path docs/<changed-doc>.md
+```
+
+6. For operator, harness, or publish docs, also run the relevant targeted unit
+   tests or `harness-check --changed-path ...`:
+
+```bash
+uv run python -m ptsm.bootstrap harness-check --changed-path docs/<changed-doc>.md
+```
+
+`docs-sync` intentionally treats docs-only changes as ok because it only blocks
+code changes that omit matching docs. Semantic docs-only drift must be covered by
+targeted docs tests and review of the relevant source-of-truth page.

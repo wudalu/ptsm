@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 import re
 import sys
-from typing import Any
+from typing import Any, Sequence
 
 from ptsm.accounts.registry import AccountRegistry
 from ptsm.agent_runtime.runtime import (
@@ -417,7 +417,11 @@ def run_playbook(
                 )
 
         watermark_removal = None
-        if settings.watermark_removal_enabled and resolved_image_paths:
+        if _should_remove_watermark(
+            publish_mode=publish_mode,
+            watermark_removal_enabled=settings.watermark_removal_enabled,
+            image_paths=resolved_image_paths,
+        ):
             remover = WatermarkRemover(
                 corner_search_ratio=settings.watermark_removal_corner_search_ratio,
                 inpaint_radius=settings.watermark_removal_inpaint_radius,
@@ -437,6 +441,10 @@ def run_playbook(
                     cleaned_paths.append(cleaned)
             watermark_removal = {
                 "status": "completed",
+                "policy": _watermark_removal_policy(
+                    publish_mode=publish_mode,
+                    watermark_removal_enabled=settings.watermark_removal_enabled,
+                ),
                 "results": watermark_results,
             }
             if cleaned_paths:
@@ -770,6 +778,31 @@ def _should_generate_images(
     if auto_generate_images is False:
         return False
     return publish_mode == "mcp-real"
+
+
+def _should_remove_watermark(
+    *,
+    publish_mode: str,
+    watermark_removal_enabled: bool,
+    image_paths: Sequence[str],
+) -> bool:
+    if not image_paths:
+        return False
+    if publish_mode == "mcp-real":
+        return True
+    return watermark_removal_enabled
+
+
+def _watermark_removal_policy(
+    *,
+    publish_mode: str,
+    watermark_removal_enabled: bool,
+) -> str:
+    if publish_mode == "mcp-real":
+        return "required_for_real_publish"
+    if watermark_removal_enabled:
+        return "enabled_by_settings"
+    return "disabled"
 
 
 def _build_image_generation_prompt(

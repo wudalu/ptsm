@@ -2,6 +2,7 @@
 
 See also:
 
+- `docs/operations/publish-quickstart.md`
 - `docs/operations/task-completion-automation.md`
 
 ## Canonical Real Publish Workflow (Agent-Ready)
@@ -47,9 +48,9 @@ COOKIES_PATH=cookies/fk-local.json .ptsm/bin/xhs-mcp/xiaohongshu-mcp-darwin-amd6
 
 The login helper opens a browser and may require QR scan plus second-factor confirmation. After it exits, verify with `uv run python -m ptsm.bootstrap xhs-login-status` before scanning or publishing.
 
-### Step 2 — Dry-run (Content Generation Only)
+### Step 2 — Dry-run (Content And Optional Image Preview)
 
-Always dry-run first. This runs the full plan → execute → reflect pipeline without publishing or generating images:
+Always dry-run first. This runs the full plan → execute → reflect pipeline without publishing. It does not generate images by default, but `--auto-generate-image` can preview the same image decision path before any real publish:
 
 ```bash
 uv run python -m ptsm.bootstrap run-fengkuang \
@@ -58,13 +59,13 @@ uv run python -m ptsm.bootstrap run-fengkuang \
 ```
 
 This exercises:
-- **Planner**: selects playbook (fengkuang_daily_post) and skills (xhs_trend_scan, fengkuang_style, positive_reframe, xhs_hashtagging)
+- **Planner**: selects playbook (`fengkuang_daily_post`) and skills such as `xhs_trend_scan`, `topic_research`, `fengkuang_style`, `positive_reframe`, `xhs_hashtagging`, and `xhs_image_strategy`.
 - **xhs_trend_scan**: loads the local XHS pattern library snapshot when available and injects reusable hook/body/image structures into `runtime_skill_contents`. Ordinary generation does not call live XHS by default; if no snapshot exists, it falls back to static SKILL.md guidance.
 - **Memory**: reads recent same-account, same-playbook lessons and injects a compact anti-repetition context before drafting.
 - **Executor**: DeepSeek LLM generates title, image_text, body, hashtags from scene + persona + planner + static skills + local pattern context + recent memory context.
 - **Reflector**: enforces required rules such as `#发疯文学`, configured deterministic quality rules such as rejecting generic fengkuang titles, requiring a comment/copyable mechanic, and blocking mental-health/medical jokes. Light positive closings like `也算` are recommended style, not a mandatory phrase gate. Passes to finalize, or retries up to max_attempts.
 
-Review the output. If content quality is good, proceed to real publish.
+Review `content_review`, `content_review.image_plan`, and the final正文. If content and image strategy look good, proceed to real publish.
 
 ### Step 3 — Real Publish
 
@@ -103,9 +104,9 @@ With `--wait-for-publish-status`, PTSM retries `search_feeds` title match for ~8
 
 #### What happens in both paths
 
-1. **Image generation**: Auto-triggered when `publish_mode=mcp-real` and no `--publish-image-path` is provided. Priority: Jimeng (`jimeng_t2i_v40`) → Bailian (`qwen-image-2.0-pro`) → local `local_note_card` renderer. The image prompt incorporates scene, title, image_text, body summary, persona, and runtime trend context — but **no hashtags or tag text are added to the image** (the prompt explicitly forbids rendering `#发疯文学` or any topic tags on the image). Output lands in `outputs/generated_images/`. If external image providers are not configured, use `--local-image-style note_card|iphone_notes|wechat_chat` to choose the deterministic local cover style.
+1. **Image generation**: Auto-triggered when `publish_mode=mcp-real`, no `--publish-image-path` is provided, and `--no-auto-generate-image` is not set. Operator `--local-image-style` can actively choose `note_card`, `iphone_notes`, or `wechat_chat`; otherwise `final_content.image_plan` from `xhs_image_strategy` can choose `local_social_screenshot` or provider image. If neither the operator nor the LLM chooses a route, PTSM uses the configured image provider when available, then the local renderer. The image prompt incorporates scene, title, image_text, body summary, persona, and runtime trend context, but no hashtags or tag text are added to the image. Output lands in `outputs/generated_images/`.
 
-2. **Watermark removal** (optional): If `WATERMARK_REMOVAL_ENABLED=true` in `.env`, OpenCV Canny edge detection + TELEA inpainting is applied to remove residual watermarks in image corners. Result written to `*-nowm.png`.
+2. **Watermark removal**: Real publish with any final image path always runs OpenCV Canny edge detection + TELEA inpainting to remove residual watermarks in image corners. Result written to `*-nowm.png` and recorded under `watermark_removal`. Dry-run image experiments only run this step when `WATERMARK_REMOVAL_ENABLED=true`.
 
 3. **Publish**: XHS MCP `publish_content` is called with title, body, images, tags, and visibility. The side-effect ledger (`.ptsm/agent_runtime/side-effects.json`) records successful publishes keyed by `thread_id` — re-running with the same thread_id will skip duplicate publish.
 
@@ -136,7 +137,9 @@ uv run python -m ptsm.bootstrap xhs-open-browser \
 |------|---------|
 | `--publish-mode mcp-real` | Real publish via XHS MCP (omit for dry-run) |
 | `--auto-generate-image` | Force image generation even in dry-run |
-| `--local-image-style note_card|iphone_notes|wechat_chat` | Choose the deterministic local fallback cover style when external image providers are not configured |
+| `--no-auto-generate-image` | Disable automatic image generation, including real publish auto-fill |
+| `--publish-image-path <path>` | Use one or more existing local image files |
+| `--local-image-style note_card|iphone_notes|wechat_chat` | Actively choose the deterministic local cover style |
 | `--publish-visibility "仅自己可见"` | Private post — safe for review before going public |
 | `--publish-visibility "公开"` | Public post — visible to all, supports auto-verification |
 | `--wait-for-publish-status` | Block until publish status is auto-verified or times out |
@@ -177,13 +180,15 @@ PTSM can also use the local Pillow renderer as an explicit local cover path and 
 
 These local styles render iPhone Notes-like and WeChat chat transcript-like covers from the generated title, `image_text`, body summary, scene, and runtime context. They do not call external image APIs, and artifacts record the effective style as `iphone_notes_v1` or `wechat_chat_v1`. The artifact also records `image_generation.image_plan` so the run can be audited as `llm_image_plan`, `manual_override`, or default provider/local behavior.
 
-### Watermark Removal (Optional)
+### Watermark Removal
 
 ```env
 WATERMARK_REMOVAL_ENABLED=true
 ```
 
-Uses OpenCV to detect text-like patterns in image corners (Canny edge detection → contour filling → mask dilation) and remove them via TELEA inpainting. Results are written to `*-nowm.png` and recorded in the artifact under `watermark_removal`.
+Real publish with final images always runs this post-processing step before publishing, regardless of `WATERMARK_REMOVAL_ENABLED`. The env flag controls whether dry-run image experiments also preview the same cleanup.
+
+The remover uses OpenCV to detect text-like patterns in image corners (Canny edge detection → contour filling → mask dilation) and remove them via TELEA inpainting. Results are written to `*-nowm.png` and recorded in the artifact under `watermark_removal`.
 
 ## Hotspot Scanning (xhs_trend_scan)
 
@@ -339,7 +344,7 @@ ptsm accounts
   },
   {
     "account_id": "acct-wuxia-local",
-    "nickname": "武侠人物评述实验号",
+    "nickname": "武侠人物深度评述",
     "platform": "xiaohongshu",
     "domain": "武侠人物评述",
     "publish_mode": "dry-run"
@@ -364,6 +369,13 @@ ptsm accounts
     "platform": "xiaohongshu",
     "domain": "现代心理困境观察",
     "publish_mode": "dry-run"
+  },
+  {
+    "account_id": "acct-enrichment-local",
+    "nickname": "日常丰容实验号",
+    "platform": "xiaohongshu",
+    "domain": "人类丰容实验",
+    "publish_mode": "dry-run"
   }
 ]
 ```
@@ -378,6 +390,7 @@ ptsm accounts
 | AI科技资讯 | `acct-ai-tech-local` | (未绑定 cookie) | AI/科技趋势速递与解读 |
 | 每日英语学习 | `acct-daily-english-local` | (未绑定 cookie) | 每日单词学习、陪伴式教育 |
 | 现代心理困境观察 | `acct-psychology-local` | (未绑定 cookie) | 场景化心理科普、情绪解释、安全边界 |
+| 人类丰容实验 | `acct-enrichment-local` | (未绑定 cookie) | 家的丰容计划、低成本改造、日常变量实验 |
 
 账号定义在 `src/ptsm/accounts/definitions/*.yaml`。新增账号只需加一个 YAML 文件。
 
@@ -458,6 +471,12 @@ uv run python -m ptsm.bootstrap run-playbook \
   --scene "下班后还在反复复盘白天一句话" \
   --account-id acct-psychology-local \
   --playbook-id modern_psychology_post
+
+# 人类丰容实验领域
+uv run python -m ptsm.bootstrap run-playbook \
+  --scene "把书桌改成十分钟手作角" \
+  --account-id acct-enrichment-local \
+  --playbook-id human_enrichment_daily_post
 ```
 
 账号的 `domain` 决定了自动选哪个 playbook。`publish_mode: dry-run` 默认只生成不发布。改为 `mcp-real` 后走真实发布链路。

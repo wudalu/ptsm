@@ -70,7 +70,7 @@ related_paths:
 - 图片生成 prompt 现在也会读取 `runtime_skill_contents` 里的实时切口和场景张力，让封面图和正文共享同一层热点上下文。
 - 图片生成 prompt 现在也会读取 artifact `content_review.image_form` 中的图片形式摘要；当人类丰容 playbook 提供轮播式建议时，单张封面生成会保留“原本状态、材料平铺、清单、改变后细节”等视觉提示，并明确 AI 生成图只是氛围参考，不应伪装成真实前后证据。
 - 本地 note-card renderer 生成 3:4 竖版 PNG，使用 final content 的标题、封面语和正文摘要直接绘制，不调用外部图片 API。默认样式是小红书常见笔记卡片；`xhs_image_strategy` 会让 drafting backend 在 `final_content.image_plan` 中选择 `wechat_chat`、`iphone_notes`、`note_card` 或 `provider_image`。operator 也可以通过 `--local-image-style iphone_notes` 或 `--local-image-style wechat_chat` 主动覆盖为本地 iPhone 记事本风格或微信聊天记录风格封面。
-- 图片生成后可选去水印后处理（`WATERMARK_REMOVAL_ENABLED=true`），使用 OpenCV inpainting 检测并移除底角残留水印，处理结果写入 artifact 的 `watermark_removal` 字段。
+- 真实发布只要最终有图片路径，就会强制执行去水印后处理，使用 OpenCV inpainting 检测并移除底角残留水印，处理结果写入 artifact 的 `watermark_removal` 字段。`WATERMARK_REMOVAL_ENABLED=true` 只控制 dry-run 图片实验是否也预览这一步。
 - artifact evaluation 不在 LangGraph 节点内运行；`run_playbook()` 完成 artifact/image/publish/post-publish 后再调用 eval use case，因此 rule/contract evaluator 失败不会改变原始 runtime graph 的控制流。内容质量 LLM judge 是生成链路例外：它在 reflector 内作为重写门使用。
 - 当前仍没有远端 state backend；cross-thread lookup 只限本地 execution memory 中最近同账号同 playbook lessons 的轻量回读。
 

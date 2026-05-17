@@ -2,7 +2,7 @@
 title: XHS Content Experiment Runbook
 status: active
 owner: ptsm
-last_verified: 2026-05-16
+last_verified: 2026-05-17
 source_of_truth: true
 related_paths:
   - docs/research/2026-05-15-xhs-content-experiment-log.md
@@ -30,7 +30,8 @@ Run each topic as one of three variants:
 2. Assign exactly one variant type.
 3. Generate the draft with `--eval`.
 4. Confirm deterministic eval has `required_failed = 0`.
-5. Record the planned variant in `docs/research/2026-05-15-xhs-content-experiment-log.md`.
+5. Confirm the planned image format in `content_review.image_plan`, `content_review.image_form`, or `image_generation.image_plan` when the run generated an image.
+6. Record the planned variant and image format in `docs/research/2026-05-15-xhs-content-experiment-log.md`.
 
 Variant labels are operator metadata. They can be written in the experiment log or used while planning, but final正文 must not contain `变体要求`, `comment_chain`, `save_tool`, or `identity_conflict`; the playbook eval contracts treat those as instruction leakage.
 
@@ -57,6 +58,7 @@ Record metrics at `2h`, `24h`, and `72h` after publish:
 - collects
 - comments
 - shares
+- image format used, such as provider image, `note_card`, `iphone_notes`, or `wechat_chat`
 - comment quality notes
 - next rewrite decision
 
@@ -72,6 +74,7 @@ interaction_rate = interaction_score / views
 - `comment_chain` wins only if comments contain user examples or completions, not just “哈哈哈”.
 - `save_tool` wins only if collects grow faster than likes or readers mention saving/screenshotting.
 - `identity_conflict` wins only if shares/comments show “this is me” recognition.
+- Image format changes should be read separately from正文 mechanics. A strong正文 with a weak cover is `revise_hook`; a strong cover with low saves/comments is usually `revise_mechanic`.
 - A losing variant is still useful when the failed mechanic is clear.
 
 ## First Calibration Thresholds

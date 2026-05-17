@@ -25,3 +25,11 @@ surfaces, or harness rules:
 
 This does not apply to small bug fixes, typo fixes, docs-only cleanup, or narrow
 test maintenance. Those should use a smaller workflow when one is defined.
+
+## Docs-Only Cleanup Workflow
+
+For docs-only cleanup, use the smaller workflow in
+`docs/development-workflow.md`: identify the active source-of-truth surface,
+add or update a focused docs test when the cleanup changes an operational
+contract, run docs metadata/map tests, and use `harness-check --changed-path ...`
+for operator, publish, or harness docs.

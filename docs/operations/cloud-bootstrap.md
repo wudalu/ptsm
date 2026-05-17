@@ -2,7 +2,7 @@
 title: PTSM Cloud Bootstrap
 status: active
 owner: ptsm
-last_verified: 2026-05-02
+last_verified: 2026-05-17
 source_of_truth: true
 related_paths:
   - README.md
@@ -144,7 +144,17 @@ uv run python -m ptsm.bootstrap run-fengkuang \
   --auto-generate-image
 ```
 
-真实发布模式下，如果未显式传 `--publish-image-path`，且图片后端配置可用，PTSM 默认也会尝试自动补图。即梦和百炼同时配置时优先使用即梦。
+也可以主动选择本地截图式封面，不调用外部图片 provider：
+
+```bash
+uv run python -m ptsm.bootstrap run-fengkuang \
+  --scene "领导18:57突然发来一句在吗" \
+  --account-id acct-fk-local \
+  --auto-generate-image \
+  --local-image-style wechat_chat
+```
+
+真实发布模式下，如果未显式传 `--publish-image-path`，且没有传 `--no-auto-generate-image`，PTSM 默认会自动补图。operator 的 `--local-image-style` 优先；否则运行时可根据 `final_content.image_plan` 选择本地截图式封面或 provider image。即梦和百炼同时配置时优先使用即梦。
 
 ## Step 6: Real Publish Prerequisites
 
@@ -177,6 +187,7 @@ uv run python -m ptsm.bootstrap run-fengkuang \
   --scene "周三下班地铁没座位" \
   --account-id acct-fk-local \
   --publish-mode mcp-real \
+  --auto-generate-image \
   --wait-for-publish-status
 ```
 
@@ -187,9 +198,11 @@ uv run python -m ptsm.bootstrap run-fengkuang \
   --scene "周三下班地铁没座位" \
   --account-id acct-fk-local \
   --publish-mode mcp-real \
-  --publish-visibility "仅自己可见" \
-  --wait-for-publish-status
+  --auto-generate-image \
+  --publish-visibility "仅自己可见"
 ```
+
+真实发布只要最终有图片，就会先执行 `watermark_removal` 后处理再把图片交给 XHS MCP。私密帖通常需要在小红书 App 人工确认样式，因为上游 MCP 可能不会返回可自动核验的 `post_id`。
 
 更细的登录、发布和诊断说明见 [`docs/operations/local-runbook.md`](local-runbook.md)。
 

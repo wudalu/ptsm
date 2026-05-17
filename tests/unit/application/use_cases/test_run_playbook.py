@@ -207,6 +207,26 @@ class CapturingImageBackend:
         }
 
 
+def _patch_passthrough_watermark_remover(monkeypatch: pytest.MonkeyPatch) -> None:
+    class PassthroughWatermarkRemover:
+        def __init__(self, **_: object) -> None:
+            pass
+
+        def remove(self, *, image_path: Path, output_dir: Path, output_stem: str):
+            return {
+                "status": "skipped",
+                "reason": "test_passthrough",
+                "provider": "fake-remover",
+                "source_path": str(image_path),
+                "output_path": str(image_path),
+            }
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.WatermarkRemover",
+        PassthroughWatermarkRemover,
+    )
+
+
 class PreflightFailingPublisher:
     def publish(self, **_: object) -> dict[str, object]:
         raise PublisherPreflightError(
@@ -771,6 +791,7 @@ def test_run_fengkuang_playbook_generates_image_for_real_publish_when_missing(
             },
         )(),
     )
+    _patch_passthrough_watermark_remover(monkeypatch)
     monkeypatch.chdir(tmp_path)
 
     result = run_fengkuang_playbook(
@@ -820,6 +841,7 @@ def test_run_fengkuang_playbook_prefers_manual_image_paths(
         "ptsm.application.use_cases.run_playbook.build_image_backend",
         fail_build_image_backend,
     )
+    _patch_passthrough_watermark_remover(monkeypatch)
     monkeypatch.chdir(tmp_path)
 
     run_fengkuang_playbook(
@@ -834,6 +856,79 @@ def test_run_fengkuang_playbook_prefers_manual_image_paths(
     )
 
     assert publisher.received_image_paths == [str(manual_image)]
+
+
+def test_run_fengkuang_real_publish_always_removes_watermark_for_images(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    artifact_path = tmp_path / "artifact.json"
+    manual_image = tmp_path / "manual.png"
+    cleaned_image = tmp_path / "generated_images" / "manual-nowm.png"
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "fengkuang_daily_post",
+                "final_content": {"title": "旧标题"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    publisher = CapturingPublisher()
+    calls: list[dict[str, object]] = []
+
+    class FakeWatermarkRemover:
+        def __init__(self, **kwargs: object) -> None:
+            calls.append({"init": kwargs})
+
+        def remove(self, *, image_path: Path, output_dir: Path, output_stem: str):
+            calls.append(
+                {
+                    "image_path": str(image_path),
+                    "output_dir": str(output_dir),
+                    "output_stem": output_stem,
+                }
+            )
+            return {
+                "status": "removed",
+                "provider": "fake-remover",
+                "source_path": str(image_path),
+                "output_path": str(cleaned_image),
+            }
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_fengkuang_workflow",
+        lambda **_: FakeWorkflow(artifact_path),
+    )
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.WatermarkRemover",
+        FakeWatermarkRemover,
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = run_fengkuang_playbook(
+        FengkuangRequest(
+            scene="周六社畜躺平",
+            platform="xiaohongshu",
+            account_id="acct-fk-local",
+            publish_mode="mcp-real",
+            publish_image_paths=[str(manual_image)],
+        ),
+        settings=Settings.model_construct(
+            default_model_provider="deterministic",
+            deepseek_api_key=None,
+            watermark_removal_enabled=False,
+        ),
+        publisher=publisher,
+    )
+
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+
+    assert calls[1]["image_path"] == str(manual_image)
+    assert publisher.received_image_paths == [str(cleaned_image)]
+    assert result["watermark_removal"]["status"] == "completed"
+    assert artifact["watermark_removal"]["status"] == "completed"
 
 
 def test_run_fengkuang_playbook_skips_generation_for_dry_run_without_flag(
@@ -1010,6 +1105,7 @@ def test_run_fengkuang_playbook_uses_llm_local_image_plan_even_when_provider_exi
         "ptsm.application.use_cases.run_playbook.build_image_backend",
         lambda _settings: image_backend,
     )
+    _patch_passthrough_watermark_remover(monkeypatch)
     monkeypatch.chdir(tmp_path)
 
     result = run_fengkuang_playbook(
@@ -1069,6 +1165,7 @@ def test_run_fengkuang_playbook_uses_provider_when_image_plan_requests_provider(
         "ptsm.application.use_cases.run_playbook.build_image_backend",
         lambda _settings: image_backend,
     )
+    _patch_passthrough_watermark_remover(monkeypatch)
     monkeypatch.chdir(tmp_path)
 
     result = run_fengkuang_playbook(
@@ -1117,6 +1214,7 @@ def test_run_fengkuang_playbook_local_image_style_forces_local_even_when_provide
         "ptsm.application.use_cases.run_playbook.build_image_backend",
         lambda _settings: image_backend,
     )
+    _patch_passthrough_watermark_remover(monkeypatch)
     monkeypatch.chdir(tmp_path)
 
     result = run_fengkuang_playbook(
@@ -1249,6 +1347,7 @@ def test_run_fengkuang_playbook_passes_runtime_context_into_image_prompt(
         "ptsm.application.use_cases.run_playbook.build_image_backend",
         lambda _settings: image_backend,
     )
+    _patch_passthrough_watermark_remover(monkeypatch)
     monkeypatch.chdir(tmp_path)
 
     result = run_fengkuang_playbook(

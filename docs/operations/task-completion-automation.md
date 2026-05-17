@@ -25,7 +25,8 @@ uv run python -m ptsm.bootstrap logs --run-id <run_id>
 uv run python -m ptsm.bootstrap logs --artifact outputs/artifacts/<artifact>.json
 uv run python -m ptsm.bootstrap xhs-open-browser --target login
 uv run python -m ptsm.bootstrap xhs-check-publish --artifact outputs/artifacts/<artifact>.json
-uv run python -m ptsm.bootstrap run-fengkuang --scene "..." --account-id acct-fk-local --wait-for-publish-status
+uv run python -m ptsm.bootstrap run-fengkuang --scene "..." --account-id acct-fk-local --auto-generate-image
+uv run python -m ptsm.bootstrap run-fengkuang --scene "..." --account-id acct-fk-local --publish-mode mcp-real --auto-generate-image --publish-visibility "公开" --wait-for-publish-status
 ```
 
 ## Recommended Trigger Strategy
@@ -58,8 +59,10 @@ uv run python -m ptsm.bootstrap doctor
 uv run python -m ptsm.bootstrap run-fengkuang \
   --scene "周三下班地铁没座位" \
   --account-id acct-fk-local \
-  --wait-for-publish-status
+  --auto-generate-image
 ```
+
+真实发布 smoke 只在任务明确要求外部副作用时使用，并且必须显式写出 `--publish-mode mcp-real`、可见性和状态等待参数。
 
 如果任务已知会产出某个 artifact，也可以加：
 
@@ -112,7 +115,7 @@ uv run python -m ptsm.bootstrap xhs-check-publish \
 verify:
   - uv run pytest tests/unit/application/use_cases/test_xhs_publish_status.py -q
   - uv run python -m ptsm.bootstrap doctor
-  - uv run python -m ptsm.bootstrap run-fengkuang --scene "周三下班地铁没座位" --account-id acct-fk-local --wait-for-publish-status
+  - uv run python -m ptsm.bootstrap run-fengkuang --scene "周三下班地铁没座位" --account-id acct-fk-local --auto-generate-image
 ```
 ````
 
@@ -160,7 +163,7 @@ uv run python -m ptsm.bootstrap run-plan \
 ```yaml
 verify:
   - uv run pytest tests/unit/application/use_cases/test_xhs_publish_status.py -q
-  - uv run python -m ptsm.bootstrap run-fengkuang --scene "周三下班地铁没座位" --account-id acct-fk-local --wait-for-publish-status
+  - uv run python -m ptsm.bootstrap run-fengkuang --scene "周三下班地铁没座位" --account-id acct-fk-local --auto-generate-image
 ```
 ````
 
@@ -188,7 +191,14 @@ verify:
 verify:
   - uv run pytest -q
   - uv run python -m ptsm.bootstrap doctor
-  - uv run python -m ptsm.bootstrap run-fengkuang --scene "周三下班地铁没座位" --account-id acct-fk-local --wait-for-publish-status
+  - uv run python -m ptsm.bootstrap run-fengkuang --scene "周三下班地铁没座位" --account-id acct-fk-local --auto-generate-image
+```
+
+真实发布 smoke 示例：
+
+```yaml
+verify:
+  - uv run python -m ptsm.bootstrap run-fengkuang --scene "周三下班地铁没座位" --account-id acct-fk-local --publish-mode mcp-real --auto-generate-image --publish-visibility "公开" --wait-for-publish-status
 ```
 
 ### Browser Fallback Task
@@ -204,6 +214,16 @@ verify:
 - 浏览器打开本身通常不要放进默认自动 gate
 - 更推荐先跑状态检查
 - 只有状态检查返回 `manual_check_required` 时，才人工或交互式触发 `xhs-open-browser`
+
+### Docs-Only Cleanup Task
+
+```yaml
+verify:
+  - uv run pytest tests/unit/docs/test_docs_map.py tests/unit/docs/test_docs_metadata.py -q
+  - uv run python -m ptsm.bootstrap harness-check --changed-path docs/operations/local-runbook.md
+```
+
+如果 docs-only cleanup 改的是操作合同，例如发布流程、图片策略、真实发布副作用或 harness 行为，要先加一条 `tests/unit/docs/` 断言。`docs-sync` 会接受 docs-only 改动，这是设计使然；这类语义漂移要靠 targeted docs tests 和 `harness-check --changed-path ...` 抓。
 
 ## How To Make Codex Follow This Consistently
 
