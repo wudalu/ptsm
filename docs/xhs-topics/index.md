@@ -13,6 +13,7 @@ related_paths:
   - src/ptsm/playbooks/definitions
   - src/topic_radar
   - docs/topic-radar.md
+  - docs/xhs-topics/image-forms-by-domain.md
 ---
 
 # XHS Topic Index
@@ -35,7 +36,8 @@ related_paths:
 
 1. 先看 [`skills-landscape.md`](skills-landscape.md)，明确现成能力和当前缺口。
 2. 再看 [`verticals.md`](verticals.md)，决定后续 1 到 2 个季度要主攻的垂类。
-3. 最后看 [`harness-integration.md`](harness-integration.md)，把热点研究接到 PTSM 的 artifacts、planner 输入和 future skills。
+3. 看 [`image-forms-by-domain.md`](image-forms-by-domain.md)，把不同领域的封面图角色、文字密度和本地/外部图片形式定下来。
+4. 最后看 [`harness-integration.md`](harness-integration.md)，把热点研究接到 PTSM 的 artifacts、planner 输入和 future skills。
 
 ## 适用场景
 

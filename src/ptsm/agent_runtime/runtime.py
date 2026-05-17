@@ -346,7 +346,16 @@ def _build_image_plan_review(final_content: dict[str, object]) -> dict[str, obje
     raw_plan = final_content.get("image_plan")
     if not isinstance(raw_plan, dict):
         return None
-    allowed_fields = ("backend", "style", "reason", "prompt_focus")
+    allowed_fields = (
+        "backend",
+        "style",
+        "role",
+        "text_density",
+        "max_text_units",
+        "cover_text_strategy",
+        "reason",
+        "prompt_focus",
+    )
     image_plan = {
         field: str(raw_plan[field]).strip()
         for field in allowed_fields

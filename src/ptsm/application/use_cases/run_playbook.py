@@ -860,16 +860,111 @@ def _build_note_card_image_payload(
             "scene": _truncate_text(str(final_content.get("scene", scene)).strip() or scene, 80),
             "title": _truncate_text(str(final_content.get("title", "")).strip(), 80),
             "image_text": _truncate_text(str(final_content.get("image_text", "")).strip(), 120),
-            "body": _truncate_text(
-                " ".join(str(final_content.get("body", "")).split()),
-                360,
-            ),
+            "body": _select_local_image_body(final_content, image_plan or {}),
             "hashtags": list(final_content.get("hashtags", []) or []),
             "runtime_context_summary": runtime_context_summary,
             "image_plan": _image_generation_decision_metadata(image_plan or {}),
         },
         ensure_ascii=False,
     )
+
+
+_LOW_DENSITY_IMAGE_ROLES = {
+    "cover_hook",
+    "save_tool",
+    "comment_prompt",
+    "evidence_or_scene",
+    "shareable_line",
+}
+
+
+def _select_local_image_body(
+    final_content: dict[str, Any],
+    image_plan: dict[str, Any],
+) -> str:
+    body = str(final_content.get("body", "") or "")
+    if not _uses_low_density_image_copy(image_plan):
+        return _truncate_text(" ".join(body.split()), 360)
+
+    max_units = _image_plan_max_text_units(image_plan, default=2)
+    short_lines = _extract_short_image_lines(body, max_units=max_units)
+    if short_lines:
+        return "\n".join(short_lines[:max_units])
+    return ""
+
+
+def _uses_low_density_image_copy(image_plan: dict[str, Any]) -> bool:
+    metadata = _image_generation_decision_metadata(image_plan)
+    text_density = metadata.get("text_density", "").lower()
+    role = metadata.get("role", "").lower()
+    return text_density == "low" or role in _LOW_DENSITY_IMAGE_ROLES
+
+
+def _image_plan_max_text_units(
+    image_plan: dict[str, Any],
+    *,
+    default: int,
+) -> int:
+    raw_value = str(image_plan.get("max_text_units") or "").strip()
+    try:
+        value = int(raw_value)
+    except ValueError:
+        value = default
+    return max(1, min(value, 4))
+
+
+def _extract_short_image_lines(body: str, *, max_units: int) -> list[str]:
+    lines: list[str] = []
+    for raw_line in body.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        inline_tool_lines = _extract_inline_tool_lines(line, max_units=max_units)
+        if inline_tool_lines:
+            lines.extend(inline_tool_lines)
+            if len(lines) >= max_units:
+                return lines[:max_units]
+            continue
+        list_match = re.match(r"^(?:[-*•]|\d+[.)、．])\s*(.+)$", line)
+        if list_match is not None:
+            candidate = list_match.group(1).strip()
+        elif len(line) <= 24:
+            candidate = line
+        else:
+            continue
+        if candidate:
+            lines.append(_truncate_text(candidate, 32))
+        if len(lines) >= max_units:
+            return lines
+
+    if lines:
+        return lines
+
+    compact = " ".join(body.split())
+    sentences = [
+        sentence.strip()
+        for sentence in re.split(r"[。！？!?]\s*", compact)
+        if sentence.strip()
+    ]
+    return [_truncate_text(sentence, 32) for sentence in sentences[:max_units] if len(sentence) <= 36]
+
+
+def _extract_inline_tool_lines(line: str, *, max_units: int) -> list[str]:
+    marker_match = re.search(r"(?:三栏|清单|步骤|工具)[:：]", line)
+    if marker_match is None:
+        return []
+    tail = line[marker_match.end() :].strip()
+    parts = [part.strip(" 。") for part in re.split(r"[;；]\s*", tail) if part.strip()]
+    lines: list[str] = []
+    for part in parts:
+        if not part:
+            continue
+        if not any(separator in part for separator in ("=", "＝", ":", "：")) and len(part) > 24:
+            continue
+        lines.append(_truncate_text(part, 32))
+        if len(lines) >= max_units:
+            break
+    return lines
 
 
 def _resolve_image_generation_decision(
@@ -884,6 +979,7 @@ def _resolve_image_generation_decision(
     requested_style = _normalized_image_plan_value(image_plan.get("style"))
     reason = str(image_plan.get("reason") or "").strip()
     prompt_focus = str(image_plan.get("prompt_focus") or "").strip()
+    role_fields = _image_plan_role_fields(image_plan)
 
     if request.local_image_style:
         return {
@@ -893,6 +989,7 @@ def _resolve_image_generation_decision(
             "selected_backend": "local_note_card",
             "requested_style": request.local_image_style,
             "reason": "manual --local-image-style override",
+            **role_fields,
         }
 
     if requested_backend in {
@@ -909,6 +1006,7 @@ def _resolve_image_generation_decision(
             "requested_style": requested_style or "note_card",
             "reason": reason,
             "prompt_focus": prompt_focus,
+            **role_fields,
         }
 
     if requested_backend in {"provider_image", "provider", "external", "external_provider"}:
@@ -921,6 +1019,7 @@ def _resolve_image_generation_decision(
                 "requested_style": requested_style,
                 "reason": reason,
                 "prompt_focus": prompt_focus,
+                **role_fields,
             }
         return {
             "route": "local",
@@ -931,6 +1030,7 @@ def _resolve_image_generation_decision(
             "reason": reason,
             "prompt_focus": prompt_focus,
             "fallback_reason": "provider_image_requested_but_unavailable",
+            **role_fields,
         }
 
     if image_backend_available:
@@ -942,6 +1042,7 @@ def _resolve_image_generation_decision(
             "requested_style": requested_style,
             "reason": reason,
             "prompt_focus": prompt_focus,
+            **role_fields,
         }
 
     return {
@@ -952,6 +1053,7 @@ def _resolve_image_generation_decision(
         "requested_style": requested_style or "note_card",
         "reason": reason,
         "prompt_focus": prompt_focus,
+        **role_fields,
     }
 
 
@@ -964,11 +1066,24 @@ def _image_generation_decision_metadata(decision: dict[str, Any]) -> dict[str, s
         "reason",
         "prompt_focus",
         "fallback_reason",
+        "role",
+        "text_density",
+        "max_text_units",
+        "cover_text_strategy",
     )
     return {
         field: str(decision[field]).strip()
         for field in fields
         if decision.get(field) is not None and str(decision[field]).strip()
+    }
+
+
+def _image_plan_role_fields(image_plan: dict[str, Any]) -> dict[str, str]:
+    fields = ("role", "text_density", "max_text_units", "cover_text_strategy")
+    return {
+        field: str(image_plan[field]).strip()
+        for field in fields
+        if image_plan.get(field) is not None and str(image_plan[field]).strip()
     }
 
 
@@ -989,6 +1104,14 @@ def _summarize_image_plan(image_plan: dict[str, Any] | None) -> str:
         parts.append(metadata["reason"])
     if metadata.get("prompt_focus"):
         parts.append(metadata["prompt_focus"])
+    if metadata.get("role"):
+        parts.append(f"role={metadata['role']}")
+    if metadata.get("text_density"):
+        parts.append(f"text_density={metadata['text_density']}")
+    if metadata.get("max_text_units"):
+        parts.append(f"max_text_units={metadata['max_text_units']}")
+    if metadata.get("cover_text_strategy"):
+        parts.append(metadata["cover_text_strategy"])
     return "；".join(parts)
 
 

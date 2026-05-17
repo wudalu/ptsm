@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import re
 import textwrap
 from typing import Any
 
@@ -99,7 +100,7 @@ class NoteCardImageBackend:
 
         title = str(payload.get("title") or "小红书笔记").strip()
         image_text = str(payload.get("image_text") or "").strip()
-        body = str(payload.get("body") or payload.get("prompt") or "").strip()
+        body = _select_display_body(payload)
 
         y = _draw_wrapped(
             draw,
@@ -136,7 +137,7 @@ class NoteCardImageBackend:
             y = max(y + int(34 * scale), quote_box_bottom + int(42 * scale))
 
         if body:
-            summary = " ".join(body.split())
+            summary = body if "\n" in body else " ".join(body.split())
             y = _draw_wrapped(
                 draw,
                 text=summary,
@@ -200,7 +201,7 @@ class NoteCardImageBackend:
 
         title = str(payload.get("title") or "小红书笔记").strip()
         image_text = str(payload.get("image_text") or "").strip()
-        body = str(payload.get("body") or payload.get("prompt") or "").strip()
+        body = _select_display_body(payload)
 
         y = _draw_wrapped(
             draw,
@@ -245,7 +246,7 @@ class NoteCardImageBackend:
             y = max(y + int(36 * scale), quote_bottom + int(44 * scale))
 
         if body:
-            summary = " ".join(body.split())
+            summary = body if "\n" in body else " ".join(body.split())
             _draw_wrapped(
                 draw,
                 text=summary,
@@ -425,6 +426,101 @@ def _normalize_style(value: object) -> str:
         "wechat_chat_v1": "wechat_chat_v1",
     }
     return aliases.get(style, NoteCardImageBackend.style)
+
+
+_LOW_DENSITY_IMAGE_ROLES = {
+    "cover_hook",
+    "save_tool",
+    "comment_prompt",
+    "evidence_or_scene",
+    "shareable_line",
+}
+
+
+def _select_display_body(payload: dict[str, Any]) -> str:
+    body = str(payload.get("body") or payload.get("prompt") or "").strip()
+    image_plan = payload.get("image_plan")
+    if not isinstance(image_plan, dict) or not _uses_low_density_display(image_plan):
+        return body
+
+    max_units = _display_max_text_units(image_plan, default=2)
+    short_lines = _extract_short_display_lines(body, max_units=max_units)
+    if short_lines:
+        return "\n".join(short_lines[:max_units])
+    return ""
+
+
+def _uses_low_density_display(image_plan: dict[str, Any]) -> bool:
+    role = str(image_plan.get("role") or "").strip().lower()
+    text_density = str(image_plan.get("text_density") or "").strip().lower()
+    return text_density == "low" or role in _LOW_DENSITY_IMAGE_ROLES
+
+
+def _display_max_text_units(image_plan: dict[str, Any], *, default: int) -> int:
+    raw_value = str(image_plan.get("max_text_units") or "").strip()
+    try:
+        value = int(raw_value)
+    except ValueError:
+        value = default
+    return max(1, min(value, 4))
+
+
+def _extract_short_display_lines(body: str, *, max_units: int) -> list[str]:
+    lines: list[str] = []
+    for raw_line in body.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        inline_tool_lines = _extract_inline_tool_lines(line, max_units=max_units)
+        if inline_tool_lines:
+            lines.extend(inline_tool_lines)
+            if len(lines) >= max_units:
+                return lines[:max_units]
+            continue
+        list_match = re.match(r"^(?:[-*•]|\d+[.)、．])\s*(.+)$", line)
+        if list_match is not None:
+            candidate = list_match.group(1).strip()
+        elif len(line) <= 24:
+            candidate = line
+        else:
+            continue
+        if candidate:
+            lines.append(_truncate_for_canvas(candidate, 32))
+        if len(lines) >= max_units:
+            return lines
+
+    if lines:
+        return lines
+
+    compact = " ".join(body.split())
+    sentences = [
+        sentence.strip()
+        for sentence in re.split(r"[。！？!?]\s*", compact)
+        if sentence.strip()
+    ]
+    return [
+        _truncate_for_canvas(sentence, 32)
+        for sentence in sentences[:max_units]
+        if len(sentence) <= 36
+    ]
+
+
+def _extract_inline_tool_lines(line: str, *, max_units: int) -> list[str]:
+    marker_match = re.search(r"(?:三栏|清单|步骤|工具)[:：]", line)
+    if marker_match is None:
+        return []
+    tail = line[marker_match.end() :].strip()
+    parts = [part.strip(" 。") for part in re.split(r"[;；]\s*", tail) if part.strip()]
+    lines: list[str] = []
+    for part in parts:
+        if not part:
+            continue
+        if not any(separator in part for separator in ("=", "＝", ":", "：")) and len(part) > 24:
+            continue
+        lines.append(_truncate_for_canvas(part, 32))
+        if len(lines) >= max_units:
+            break
+    return lines
 
 
 def _draw_phone_status_bar(

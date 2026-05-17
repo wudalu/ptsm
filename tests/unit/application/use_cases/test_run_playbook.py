@@ -1097,6 +1097,10 @@ def test_run_fengkuang_playbook_uses_llm_local_image_plan_even_when_provider_exi
             {
                 "backend": "local_social_screenshot",
                 "style": "wechat_chat",
+                "role": "comment_prompt",
+                "text_density": "low",
+                "max_text_units": "2",
+                "cover_text_strategy": "只保留一条触发消息和一句可复制回复",
                 "reason": "聊天记录更适合本地微信截图",
             },
         ),
@@ -1126,6 +1130,13 @@ def test_run_fengkuang_playbook_uses_llm_local_image_plan_even_when_provider_exi
     assert result["image_generation"]["image_plan"]["source"] == "llm_image_plan"
     assert result["image_generation"]["image_plan"]["selected_backend"] == "local_note_card"
     assert result["image_generation"]["image_plan"]["requested_style"] == "wechat_chat"
+    assert result["image_generation"]["image_plan"]["role"] == "comment_prompt"
+    assert result["image_generation"]["image_plan"]["text_density"] == "low"
+    assert result["image_generation"]["image_plan"]["max_text_units"] == "2"
+    assert (
+        result["image_generation"]["image_plan"]["cover_text_strategy"]
+        == "只保留一条触发消息和一句可复制回复"
+    )
     assert artifact["image_generation"]["image_plan"] == result["image_generation"]["image_plan"]
     assert publisher.received_image_paths
     assert Path(publisher.received_image_paths[0]).exists()
@@ -1252,6 +1263,81 @@ def test_build_note_card_image_payload_includes_local_image_style() -> None:
     )
 
     assert payload["style"] == "iphone_notes"
+
+
+def test_build_note_card_image_payload_clamps_low_density_tool_body() -> None:
+    payload = json.loads(
+        _build_note_card_image_payload(
+            scene="下班路上反复复盘会议上说错的那句话",
+            runtime_context_summary="",
+            final_content={
+                "title": "会议后反复复盘，不是你太玻璃心",
+                "image_text": "先把脑内回放按暂停",
+                "body": (
+                    "下班地铁里，我又一次点开公司群聊，反复确认自己在会议上说错的"
+                    "那句话有没有被所有人记住。越想越觉得脸发烫，甚至开始脑补明天"
+                    "大家看我的眼神。\n"
+                    "1. 给这件事起名：复盘漩涡\n"
+                    "2. 分开事实和脑补\n"
+                    "3. 给明天留一句可执行动作"
+                ),
+                "hashtags": ["#心理学", "#情绪管理"],
+            },
+            local_image_style="iphone_notes",
+            image_plan={
+                "source": "llm_image_plan",
+                "requested_backend": "local_social_screenshot",
+                "selected_backend": "local_note_card",
+                "requested_style": "iphone_notes",
+                "role": "save_tool",
+                "text_density": "low",
+                "max_text_units": "3",
+                "cover_text_strategy": "封面只放一个问题和三条急救句",
+                "prompt_focus": "心理复盘急救卡",
+            },
+        )
+    )
+
+    assert payload["image_plan"]["role"] == "save_tool"
+    assert payload["image_plan"]["text_density"] == "low"
+    assert payload["image_plan"]["max_text_units"] == "3"
+    assert "下班地铁里" not in payload["body"]
+    assert len(payload["body"]) <= 120
+    assert len([line for line in payload["body"].splitlines() if line.strip()]) <= 3
+
+
+def test_build_note_card_image_payload_extracts_inline_tool_lines() -> None:
+    payload = json.loads(
+        _build_note_card_image_payload(
+            scene="下班路上反复复盘会议上说错的那句话",
+            runtime_context_summary="",
+            final_content={
+                "title": "下班路上复盘会议，不是你在小题大做",
+                "image_text": "先分清原话和脑补",
+                "body": (
+                    "下班路上反复复盘会议上说错的那句话，脑子还在把会议那一秒拖回进度条。\n"
+                    "可以先存一个事实 / 猜测 / 下一步三栏：事实=对方实际说了什么；"
+                    "猜测=我补出的评价；下一步=明天是否用一句轻确认收尾。"
+                ),
+                "hashtags": ["#心理学", "#情绪管理"],
+            },
+            local_image_style="iphone_notes",
+            image_plan={
+                "selected_backend": "local_note_card",
+                "requested_style": "iphone_notes",
+                "role": "save_tool",
+                "text_density": "low",
+                "max_text_units": "3",
+                "prompt_focus": "做成低密度工具卡，保留标题、封面语和最多三条短句。",
+            },
+        )
+    )
+
+    assert "事实=对方实际说了什么" in payload["body"]
+    assert "猜测=我补出的评价" in payload["body"]
+    assert "下一步=明天是否用一句轻确认收尾" in payload["body"]
+    assert "低密度工具卡" not in payload["body"]
+    assert len([line for line in payload["body"].splitlines() if line.strip()]) == 3
 
 
 def test_build_image_generation_prompt_stays_within_bailian_limit() -> None:

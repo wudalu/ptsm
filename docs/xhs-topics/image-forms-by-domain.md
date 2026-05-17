@@ -1,0 +1,67 @@
+---
+title: XHS Image Forms By Domain
+status: active
+owner: ptsm
+last_verified: 2026-05-17
+source_of_truth: false
+related_paths:
+  - docs/xhs-topics/index.md
+  - docs/skills.md
+  - docs/runtime.md
+  - src/ptsm/skills/builtin/xhs_image_strategy/SKILL.md
+  - src/ptsm/infrastructure/images/note_card_backend.py
+---
+
+# XHS Image Forms By Domain
+
+这份文档回答一个运行时策略问题：不同领域的小红书封面应该采用什么图片形式，且尽量简单。
+
+核心结论：封面图不是正文截图。它只承担一个任务：让用户一眼知道“我为什么要点开、保存或评论”。因此图片先定 `role`，再定 `text_density`，最后才定 `backend/style`。
+
+## Shared Defaults
+
+- 默认 `text_density=low`。
+- 封面最多 1 到 3 个文字单元，用 `max_text_units` 表达。
+- 本地截图式图片只放短句、清单项或聊天气泡，不放完整正文段落。
+- 有真实物件、空间、材料、过程、界面或人物氛围时，优先视觉证据，不做纯文字海报。
+- AI 生成图只能做氛围参考，不能伪装成真实前后对比、真实数据截图或真实观察证据。
+
+## Domain Matrix
+
+| 领域 | 首选图片角色 | 推荐形式 | 文字上限 | 避免 |
+| --- | --- | --- | --- | --- |
+| 现代心理学 | `save_tool` 或 `cover_hook` | 一句问题 + 三条工具句；或一个具身生活场景 | 2 到 3 | 把心理机制解释、诊断边界和长正文画进图里 |
+| 发疯文学/职场情绪 | `comment_prompt` 或 `shareable_line` | 微信聊天气泡、短金句卡、可复制回复 | 1 到 2 | 大段吐槽截图、过密备忘录 |
+| 每日英语 | `save_tool` | 一句场景句 + 一个替换句型；必要时聊天式对照 | 2 到 3 | 词典页、讲义页、密集语法说明 |
+| AI/科技资讯 | `evidence_or_scene` 或 `cover_hook` | 一个关键变化、界面/设备场景、简短对比 | 1 到 2 | 假装真实产品截图、信息图堆字 |
+| 人类丰容/生活变量 | `evidence_or_scene` | 原本状态、材料平铺、完成细节、三步清单页 | 1 到 3 | 只有标题没有生活证据的文字海报 |
+| 手作/食物/寿司诗意内容 | `evidence_or_scene` | 材料、过程、完成品、细节特写 | 0 到 1 | 用文字卡替代可看的过程或成品 |
+| 武侠人物评述 | `evidence_or_scene` 或 `cover_hook` | 氛围图、人物姿态、场景隐喻、短判断 | 1 | 设定说明书式海报 |
+
+## Local Style Selection
+
+- `wechat_chat`: 当正文核心是消息、群聊、可复制回复或评论接龙时使用。`role=comment_prompt`，`max_text_units=2`。
+- `iphone_notes`: 当正文核心是可保存工具、三步练习、英语句型或小纸条时使用。`role=save_tool`，`max_text_units=3`。
+- `note_card`: 当正文核心是一句强判断或短金句时使用。`role=cover_hook` 或 `shareable_line`，`max_text_units=1` 到 `2`。
+- `provider_image`: 当用户需要看见空间、物件、材料、人物氛围、过程、设备或界面感时使用。`role=evidence_or_scene`，`max_text_units=0` 到 `1`。
+
+## Psychology Default
+
+现代心理学最容易误用“备忘录截图”：把正文摘要、机制解释、边界声明都塞进图里，会变成密密麻麻的小字。默认策略应改成：
+
+- 封面标题：一个用户能认出的困境。
+- 封面语：一句非诊断化重构。
+- 图片正文：最多三条短工具句。
+
+示例结构：
+
+```json
+{
+  "role": "save_tool",
+  "text_density": "low",
+  "max_text_units": "3",
+  "cover_text_strategy": "只放一个问题和三条急救句",
+  "backend": "local_social_screenshot",
+  "style": "iphone_notes"
+}
+```
