@@ -56,10 +56,10 @@ Skill 层负责让运行时按请求范围暴露合适的 builtin skills，而�
 - 它现在优先消费本地 `outputs/artifacts/xhs-pattern-library/current.json`。这些结果不会覆盖静态 `SKILL.md` 文本，而是作为独立 `runtime_skill_contents` 参与标题、正文和封面语气生成。如果本地 snapshot 缺失，普通生成会静默跳过动态 context；显式 fresh research 才会尝试 live MCP scan。
 - `xhs_trend_scan` 的 runtime context 不只列热门标题，还会从标题和互动结构推断 `comment_chain`、`save_tool`、`copyable_line`、`identity_conflict` 等内容机制，提示 drafting backend 借鉴“为什么互动”，而不是复写样本标题。
 - `xhs_trend_scan` live MCP 调用现在有短超时保护；MCP 未响应、未登录或缺工具时会回退静态 skill，不阻塞 dry-run。
-- `topic_research` 是第二个 research builtin skill，通过读取 topic-radar 产出的多平台选题报告，为 planner 提供跨平台的热门话题和选题角度。优先消费当日 artifact JSON 中的 LLM 分析结果，artifact 不可用时静默跳过。
+- `topic_research` 是第二个 research builtin skill，通过读取 topic-radar 产出的多平台选题报告，为 planner 提供跨平台的热门话题和选题角度。优先消费当日 artifact JSON 中的 LLM 分析结果；如果本地 XHS pattern library 命中，它会把 format pattern summary 追加到 topic context。artifact 不可用但 pattern snapshot 可用时，`topic_research` 仍会返回 pattern context；两者都不可用时静默跳过。
 - 这类内容策略索引仍以 [`docs/xhs-topics/index.md`](xhs-topics/index.md) 和 [`docs/topic-radar.md`](topic-radar.md) 为入口。
-- 运行时动态资源当前主要表现为 `runtime_context` 记录，例如 `xhs_trend_scan` 的站内热点扫描结果，或 `topic_research` 对当日 topic-radar artifact 的摘要注入。
-- 当运行在 deterministic provider 下时，`run_playbook` 会传入空的 runtime skill resolver，避免本地 harness 和离线 dry-run 因 live XHS MCP / topic scan 状态而阻塞；真实 LLM/provider 路径仍按默认 resolver 尝试注入动态上下文。
+- 运行时动态资源当前主要表现为 `runtime_context` 记录，例如 `xhs_trend_scan` 的本地格式 pattern / 站内热点扫描结果，或 `topic_research` 对当日 topic-radar artifact 与本地 format pattern 的摘要注入。
+- 当运行在 deterministic provider 下时，`run_playbook` 只读取本地 XHS pattern snapshot，不触发 live XHS MCP / topic scan；真实 LLM/provider 路径仍按默认 resolver 尝试注入动态上下文。
 
 ## Routing Design
 

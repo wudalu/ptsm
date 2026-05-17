@@ -34,7 +34,9 @@ from ptsm.infrastructure.publishers.factory import build_publisher
 from ptsm.infrastructure.publishers.xiaohongshu_mcp_publisher import PublisherPreflightError
 from ptsm.playbooks.registry import PlaybookRegistry
 from ptsm.skills.runtime_context import (
+    PatternAwareTopicResearchContextBuilder,
     SkillContextResolver,
+    TopicResearchContextBuilder,
     XhsPatternContextBuilder,
     build_skill_context_resolver,
 )
@@ -674,16 +676,25 @@ def _build_runtime_skill_context_resolver(
     provider = settings.default_model_provider.lower().strip()
     pattern_path = format_pattern_path or settings.xhs_pattern_library_path
     if provider == "deterministic":
-        return SkillContextResolver(
-            builders={"xhs_trend_scan": XhsPatternContextBuilder(pattern_path=pattern_path)}
-        )
+        return _build_local_pattern_skill_context_resolver(pattern_path=pattern_path)
     if provider == "deepseek" and not settings.deepseek_api_key:
-        return SkillContextResolver(
-            builders={"xhs_trend_scan": XhsPatternContextBuilder(pattern_path=pattern_path)}
-        )
+        return _build_local_pattern_skill_context_resolver(pattern_path=pattern_path)
     if format_pattern_path:
         return build_skill_context_resolver(settings=settings, pattern_path=pattern_path)
     return None
+
+
+def _build_local_pattern_skill_context_resolver(*, pattern_path: str) -> SkillContextResolver:
+    pattern_builder = XhsPatternContextBuilder(pattern_path=pattern_path)
+    return SkillContextResolver(
+        builders={
+            "xhs_trend_scan": pattern_builder,
+            "topic_research": PatternAwareTopicResearchContextBuilder(
+                topic_builder=TopicResearchContextBuilder(allow_fresh_scan=False),
+                pattern_builder=pattern_builder,
+            ),
+        }
+    )
 
 
 def _build_rerun_command(

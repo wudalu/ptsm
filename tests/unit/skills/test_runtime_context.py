@@ -1,10 +1,17 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import date
 import json
+from pathlib import Path
 
 from ptsm.skills import runtime_context
-from ptsm.skills.runtime_context import TopicResearchContextBuilder, XhsTrendScanContextBuilder
+from ptsm.skills.runtime_context import (
+    PatternAwareTopicResearchContextBuilder,
+    TopicResearchContextBuilder,
+    XhsPatternContextBuilder,
+    XhsTrendScanContextBuilder,
+)
 
 
 def _search_payload(*titles: tuple[str, int, int, int, int]) -> list[dict[str, str]]:
@@ -72,6 +79,46 @@ class HangingMcpRunner:
     async def invoke_tool(self, tool_name: str, payload: dict[str, object]) -> object:
         await asyncio.sleep(10)
         return []
+
+
+def _write_pattern_snapshot(tmp_path: Path) -> Path:
+    current = tmp_path / "current.json"
+    current.write_text(
+        json.dumps(
+            {
+                "status": "available",
+                "lane": "human_enrichment",
+                "created_at": "2026-05-17T00:30:00Z",
+                "source_snapshot": str(tmp_path / "patterns-2026-05-17.json"),
+                "patterns": [
+                    {
+                        "pattern_id": "human_enrichment.sudden_realization.001",
+                        "lane": "human_enrichment",
+                        "status": "candidate",
+                        "title_hook": "sudden_realization",
+                        "body_structure": "ordinary friction -> one variable -> checklist -> comment",
+                        "image_sequence": [
+                            "cover",
+                            "before state",
+                            "variable/material flat lay",
+                            "mini checklist",
+                            "after state",
+                            "comment invitation",
+                        ],
+                        "save_trigger": "三步清单",
+                        "comment_trigger": "评论区交一个具体例子",
+                        "example_titles": ["突然意识到书桌也需要丰容"],
+                        "source_sample_ids": ["note-1"],
+                        "cover_ratio": "3:4",
+                        "created_at": "2026-05-17T00:30:00Z",
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    return current
 
 
 def test_xhs_trend_scan_context_builder_summarizes_live_search_results() -> None:
@@ -155,3 +202,93 @@ def test_topic_research_skips_scan_when_artifact_missing_and_not_fresh(
 
     assert context is None
     assert calls == 0
+
+
+def test_topic_research_can_disable_fresh_scan_for_local_only_resolver(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    calls = 0
+
+    def fake_scan(_artifact_dir: str) -> None:
+        nonlocal calls
+        calls += 1
+
+    monkeypatch.setattr(runtime_context, "_run_topic_radar_scan", fake_scan)
+    builder = TopicResearchContextBuilder(
+        artifact_dir=str(tmp_path),
+        allow_fresh_scan=False,
+    )
+
+    context = builder.build(
+        scene="人类丰容",
+        domain="人类丰容实验",
+        playbook_id="human_enrichment_daily_post",
+        fresh_topic_research=True,
+    )
+
+    assert context is None
+    assert calls == 0
+
+
+def test_pattern_aware_topic_research_uses_local_pattern_when_topic_artifact_missing(
+    tmp_path: Path,
+) -> None:
+    builder = PatternAwareTopicResearchContextBuilder(
+        topic_builder=TopicResearchContextBuilder(artifact_dir=str(tmp_path / "topic")),
+        pattern_builder=XhsPatternContextBuilder(pattern_path=_write_pattern_snapshot(tmp_path)),
+    )
+
+    context = builder.build(
+        scene="把下班后的书桌从堆满快递盒改成一个十分钟手作角",
+        domain="人类丰容实验",
+        playbook_id="human_enrichment_daily_post",
+        fresh_topic_research=False,
+    )
+
+    assert context is not None
+    assert "# XHS Format Pattern Library Context" in context
+    assert "human_enrichment.sudden_realization.001" in context
+    assert "sudden_realization" in context
+
+
+def test_pattern_aware_topic_research_appends_pattern_to_topic_artifact(
+    tmp_path: Path,
+) -> None:
+    topic_dir = tmp_path / "topic"
+    topic_dir.mkdir()
+    (topic_dir / f"topic-scan-{date.today().isoformat()}.json").write_text(
+        json.dumps(
+            {
+                "scan_summary": "今天生活方式讨论集中在低成本微调。",
+                "recommended_angles": [
+                    {
+                        "vertical": "人类丰容",
+                        "angle": "把晚饭后路线改成一个十分钟感官实验",
+                        "why_discussion_likely": "低成本且容易评论复刻",
+                    }
+                ],
+                "discovered_verticals": [],
+                "noise_topics": [],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    builder = PatternAwareTopicResearchContextBuilder(
+        topic_builder=TopicResearchContextBuilder(artifact_dir=str(topic_dir)),
+        pattern_builder=XhsPatternContextBuilder(pattern_path=_write_pattern_snapshot(tmp_path)),
+    )
+
+    context = builder.build(
+        scene="人类丰容",
+        domain="人类丰容实验",
+        playbook_id="human_enrichment_daily_post",
+        fresh_topic_research=False,
+    )
+
+    assert context is not None
+    assert "# Topic Research" in context
+    assert "把晚饭后路线改成一个十分钟感官实验" in context
+    assert "# XHS Format Pattern Library Context" in context
+    assert context.index("# Topic Research") < context.index("# XHS Format Pattern Library Context")

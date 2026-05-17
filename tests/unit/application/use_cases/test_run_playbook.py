@@ -1147,8 +1147,11 @@ def test_run_playbook_uses_local_pattern_context_for_deterministic_provider(
 
     assert result["status"] == "completed"
     builders = getattr(resolver, "_builders")
-    assert list(builders) == ["xhs_trend_scan"]
+    assert list(builders) == ["xhs_trend_scan", "topic_research"]
     assert builders["xhs_trend_scan"].__class__.__name__ == "XhsPatternContextBuilder"
+    assert builders["topic_research"].__class__.__name__ == (
+        "PatternAwareTopicResearchContextBuilder"
+    )
 
 
 def test_run_playbook_uses_local_pattern_context_when_deepseek_key_missing(
@@ -1213,8 +1216,11 @@ def test_run_playbook_uses_local_pattern_context_when_deepseek_key_missing(
 
     assert result["status"] == "completed"
     builders = getattr(resolver, "_builders")
-    assert list(builders) == ["xhs_trend_scan"]
+    assert list(builders) == ["xhs_trend_scan", "topic_research"]
     assert builders["xhs_trend_scan"].__class__.__name__ == "XhsPatternContextBuilder"
+    assert builders["topic_research"].__class__.__name__ == (
+        "PatternAwareTopicResearchContextBuilder"
+    )
 
 
 def test_run_playbook_supports_sushi_poetry_repo_assets(

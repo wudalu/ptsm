@@ -271,11 +271,57 @@ class PatternAwareXhsTrendContextBuilder:
         )
 
 
+class PatternAwareTopicResearchContextBuilder:
+    """Append local XHS format patterns to topic research context when available."""
+
+    def __init__(
+        self,
+        *,
+        topic_builder: TopicResearchContextBuilder,
+        pattern_builder: XhsPatternContextBuilder,
+    ) -> None:
+        self.topic_builder = topic_builder
+        self.pattern_builder = pattern_builder
+
+    @property
+    def last_selection(self) -> dict[str, str] | None:
+        return self.topic_builder.last_selection
+
+    def build(
+        self, *, scene: str, domain: str, playbook_id: str,
+        keyword_hints: list[str] | None = None,
+        fresh_topic_research: bool = False,
+    ) -> str | None:
+        topic_context = self.topic_builder.build(
+            scene=scene,
+            domain=domain,
+            playbook_id=playbook_id,
+            keyword_hints=keyword_hints,
+            fresh_topic_research=fresh_topic_research,
+        )
+        pattern_context = self.pattern_builder.build(
+            scene=scene,
+            domain=domain,
+            playbook_id=playbook_id,
+            keyword_hints=keyword_hints,
+            fresh_topic_research=fresh_topic_research,
+        )
+        if topic_context and pattern_context:
+            return f"{topic_context}\n\n{pattern_context}"
+        return topic_context or pattern_context
+
+
 class TopicResearchContextBuilder:
     """Read topic-radar artifact and inject topic suggestions for the `topic_research` skill."""
 
-    def __init__(self, *, artifact_dir: str = "outputs/artifacts") -> None:
+    def __init__(
+        self,
+        *,
+        artifact_dir: str = "outputs/artifacts",
+        allow_fresh_scan: bool = True,
+    ) -> None:
         self._artifact_dir = Path(artifact_dir)
+        self._allow_fresh_scan = allow_fresh_scan
         self._last_selection: dict[str, str] | None = None
 
     @property
@@ -292,7 +338,7 @@ class TopicResearchContextBuilder:
             today = date.today().isoformat()
             artifact_path = self._artifact_dir / f"topic-scan-{today}.json"
 
-            if fresh_topic_research:
+            if fresh_topic_research and self._allow_fresh_scan:
                 _run_topic_radar_scan(str(self._artifact_dir))
 
             if not artifact_path.exists():
@@ -502,6 +548,7 @@ def build_skill_context_resolver(
     pattern_builder = XhsPatternContextBuilder(
         pattern_path=pattern_path or settings.xhs_pattern_library_path
     )
+    topic_builder = TopicResearchContextBuilder()
     return SkillContextResolver(
         builders={
             "xhs_trend_scan": PatternAwareXhsTrendContextBuilder(
@@ -511,7 +558,10 @@ def build_skill_context_resolver(
                     tool_runner=xhs_tool_runner,
                 ),
             ),
-            "topic_research": TopicResearchContextBuilder(),
+            "topic_research": PatternAwareTopicResearchContextBuilder(
+                topic_builder=topic_builder,
+                pattern_builder=pattern_builder,
+            ),
         }
     )
 

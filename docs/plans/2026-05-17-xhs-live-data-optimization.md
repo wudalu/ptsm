@@ -167,6 +167,134 @@ uv run python -m ptsm.bootstrap collect-xhs-patterns --lane human_enrichment --k
 uv run python -m ptsm.bootstrap analyze-xhs-patterns --sample-path /tmp/ptsm-xhs-pattern-smoke/samples-2026-05-17.json --lane human_enrichment --output-dir /tmp/ptsm-xhs-pattern-smoke/library
 ```
 
+## 2026-05-17 Continuation Polish Slice
+
+After merging the first implementation slice, a follow-up audit found two
+remaining weak spots from the original plan:
+
+1. `Task 4` says the local pattern summary should be available to both
+   `xhs_trend_scan` and `topic_research`. Current generation records the
+   pattern context through `xhs_trend_scan`, while `topic_research` still only
+   returns topic-radar context.
+2. `Task 5` asks deterministic human-enrichment drafts to vary across at least
+   desk/home corner, walking/sensory route, and handcraft/material flow scenes.
+   Current deterministic tests cover the desk/home-corner path, while route and
+   material-flow variants are only represented in prompt assets.
+
+### Polish Task 1: Pattern-Aware Topic Research Context
+
+**Files:**
+
+- Modify: `src/ptsm/skills/runtime_context.py`
+- Modify: `tests/unit/skills/test_runtime_context.py`
+- Modify: `tests/unit/skills/test_xhs_pattern_context.py`
+
+**Steps:**
+
+1. Write a failing unit test proving `topic_research` can receive local
+   `# XHS Format Pattern Library Context` when a matching pattern snapshot
+   exists and the topic-radar artifact is missing.
+2. Write a paired test proving existing topic-radar context is preserved and the
+   format-pattern block is appended when both sources exist.
+3. Add a small `PatternAwareTopicResearchContextBuilder` that composes
+   `TopicResearchContextBuilder` with `XhsPatternContextBuilder`.
+4. Wire `build_skill_context_resolver()` so `topic_research` uses the composed
+   builder while `xhs_trend_scan` keeps its current pattern-first/live-fallback
+   behavior.
+
+verify:
+
+```bash
+uv run pytest tests/unit/skills/test_runtime_context.py tests/unit/skills/test_xhs_pattern_context.py -q
+```
+
+done_when:
+
+- Human-enrichment runs with both `xhs_trend_scan` and `topic_research` can see
+  the same local format pattern library without live XHS calls.
+- Existing topic-radar selected-angle behavior is not removed.
+
+### Polish Task 2: Deterministic Human-Enrichment Scene Variation
+
+**Files:**
+
+- Modify: `src/ptsm/infrastructure/llm/contextual_drafts.py`
+- Modify: `tests/unit/infrastructure/llm/test_factory.py`
+- Modify: `src/ptsm/playbooks/definitions/human_enrichment_daily_post/reflection.md`
+
+**Steps:**
+
+1. Write failing tests for walking/sensory route and handcraft/material flow
+   scenes.
+2. Assert the three scene families produce distinct titles and bodies while
+   retaining `变量`, `十分钟` or `低成本`, a three-step saveable structure, and a
+   comment prompt.
+3. Add route and material-flow branches before the generic human-enrichment
+   fallback.
+4. Keep safety and leakage constraints unchanged.
+
+verify:
+
+```bash
+uv run pytest tests/unit/infrastructure/llm/test_factory.py tests/e2e/test_human_enrichment_publish_dry_run.py -q
+```
+
+done_when:
+
+- Offline deterministic human-enrichment generation covers desk/home corner,
+  walking/sensory route, and handcraft/material flow scenes.
+- The e2e human-enrichment dry-run still passes with the existing desk scene.
+
+### Polish Task 3: Docs And Harness Gate
+
+**Files:**
+
+- Modify: `docs/runtime.md`
+- Modify: `docs/playbooks.md`
+- Modify: `docs/skills.md`
+- Modify: `docs/plans/2026-05-17-xhs-live-data-optimization.md`
+
+verify:
+
+```bash
+uv run pytest tests/unit/skills/test_runtime_context.py tests/unit/skills/test_xhs_pattern_context.py tests/unit/infrastructure/llm/test_factory.py tests/e2e/test_human_enrichment_publish_dry_run.py -q
+uv run python -m ptsm.bootstrap docs-sync --base-ref origin/main
+uv run python -m ptsm.bootstrap harness-check --base-ref origin/main --strict
+```
+
+done_when:
+
+- Source-of-truth docs describe pattern-aware `topic_research` and the three
+  deterministic human-enrichment scene families.
+- Docs sync and strict harness both report `status=ok`.
+
+Polish implementation status:
+
+- Added `PatternAwareTopicResearchContextBuilder`, so `topic_research` preserves
+  topic-radar context when present and appends local XHS format patterns when a
+  matching snapshot exists.
+- Wired the default runtime skill resolver so both `xhs_trend_scan` and
+  `topic_research` can expose local pattern context without live XHS calls.
+- Updated the deterministic / no-DeepSeek-key `run-playbook` resolver to expose
+  the same local pattern context to `topic_research` while disabling fresh
+  topic-radar scans.
+- Added deterministic human-enrichment branches for route/sensory scenes and
+  handcraft/material-flow scenes, alongside the existing desk/corner branch.
+- Updated `docs/runtime.md`, `docs/playbooks.md`, and `docs/skills.md`.
+
+Polish verification evidence:
+
+```bash
+uv run pytest tests/unit/skills/test_runtime_context.py tests/unit/skills/test_xhs_pattern_context.py -q
+uv run pytest tests/unit/skills/test_runtime_context.py tests/unit/application/use_cases/test_run_playbook.py::test_run_playbook_uses_local_pattern_context_for_deterministic_provider tests/unit/application/use_cases/test_run_playbook.py::test_run_playbook_uses_local_pattern_context_when_deepseek_key_missing -q
+uv run pytest tests/unit/infrastructure/llm/test_factory.py::test_deterministic_human_enrichment_varies_route_and_material_scenes -q
+uv run pytest tests/unit/infrastructure/llm/test_factory.py tests/e2e/test_human_enrichment_publish_dry_run.py -q
+uv run pytest tests/unit/skills/test_runtime_context.py tests/unit/skills/test_xhs_pattern_context.py tests/unit/infrastructure/llm/test_factory.py tests/e2e/test_human_enrichment_publish_dry_run.py -q
+uv run pytest -q --ignore=tests/e2e
+uv run python -m ptsm.bootstrap docs-sync --base-ref origin/main
+uv run python -m ptsm.bootstrap harness-check --base-ref origin/main --strict
+```
+
 ---
 
 ### Task 1: Add Periodic XHS Sample Collection

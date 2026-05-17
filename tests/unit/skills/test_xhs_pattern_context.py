@@ -3,10 +3,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ptsm.skills.runtime_context import XhsPatternContextBuilder
+from ptsm.config.settings import Settings
+from ptsm.skills.runtime_context import XhsPatternContextBuilder, build_skill_context_resolver
 
 
-def test_xhs_pattern_context_builder_renders_local_snapshot(tmp_path: Path) -> None:
+def _write_snapshot(tmp_path: Path) -> Path:
     current = tmp_path / "current.json"
     current.write_text(
         json.dumps(
@@ -43,6 +44,11 @@ def test_xhs_pattern_context_builder_renders_local_snapshot(tmp_path: Path) -> N
         ),
         encoding="utf-8",
     )
+    return current
+
+
+def test_xhs_pattern_context_builder_renders_local_snapshot(tmp_path: Path) -> None:
+    current = _write_snapshot(tmp_path)
 
     context = XhsPatternContextBuilder(pattern_path=current).build(
         scene="把书桌改成十分钟手作角",
@@ -67,3 +73,23 @@ def test_xhs_pattern_context_builder_returns_none_for_missing_snapshot(tmp_path:
     )
 
     assert context is None
+
+
+def test_skill_context_resolver_wires_pattern_context_for_topic_research(
+    tmp_path: Path,
+) -> None:
+    resolver = build_skill_context_resolver(
+        settings=Settings(),
+        pattern_path=_write_snapshot(tmp_path),
+    )
+
+    context = resolver._builders["topic_research"].build(  # noqa: SLF001
+        scene="把下班后的书桌从堆满快递盒改成一个十分钟手作角",
+        domain="人类丰容实验",
+        playbook_id="human_enrichment_daily_post",
+        fresh_topic_research=False,
+    )
+
+    assert context is not None
+    assert "# XHS Format Pattern Library Context" in context
+    assert "human_enrichment.sudden_realization.001" in context

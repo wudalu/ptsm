@@ -135,7 +135,35 @@ def _build_human_enrichment_draft(
     runtime_context: str,
 ) -> dict[str, Any]:
     hooks = _extract_pattern_hooks(runtime_context)
-    if any(keyword in scene for keyword in ("书桌", "快递盒", "手作", "工位", "桌")):
+    if any(keyword in scene for keyword in ("旧毛线", "毛线", "拼豆", "钩织", "材料")):
+        title = (
+            "这堆旧材料原来这么适合丰容"
+            if "process_or_tutorial" in hooks
+            else "给旧材料一个十分钟丰容流程"
+        )
+        image_text = "旧材料也能变新鲜"
+        body = (
+            f"{scene}。我不急着买新东西，先把手边材料当成一个小变量。\n"
+            "十分钟三步清单：把旧毛线、拼豆或零散材料平铺出来；只选一个颜色或形状开头；"
+            "做完先放在每天能看见的位置。\n"
+            "重点不是作品多完整，而是让材料从闲置变成今天可以碰一下的生活入口。"
+            "评论区交一个你家最想重新拿出来的旧材料。"
+        )
+    elif any(keyword in scene for keyword in ("路线", "散步", "Colorwalk", "通勤包", "走路", "路上")):
+        title = (
+            "突然意识到路线也需要丰容"
+            if "sudden_realization" in hooks
+            else "给常走路线加一个低成本变量"
+        )
+        image_text = "换一条路也算丰容"
+        body = (
+            f"{scene}。今天不把自己塞进新的计划，只给这条熟路加一个低成本变量。\n"
+            "十分钟三步清单：出门前选一个颜色；路上只找三处同色小细节；"
+            "回家后记下最想多看一眼的位置。\n"
+            "它不会立刻改变生活，但能让一段自动驾驶的路重新有一点感官存在。"
+            "评论区交一条你想先丰容的日常路线。"
+        )
+    elif any(keyword in scene for keyword in ("书桌", "快递盒", "手作", "工位", "桌")):
         title = (
             "突然意识到书桌也需要丰容"
             if "sudden_realization" in hooks

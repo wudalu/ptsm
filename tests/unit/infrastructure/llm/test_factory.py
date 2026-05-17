@@ -242,6 +242,52 @@ def test_deterministic_human_enrichment_uses_pattern_library_context() -> None:
     assert "评论区" in draft["body"]
 
 
+def test_deterministic_human_enrichment_varies_route_and_material_scenes() -> None:
+    backend = DeterministicDraftBackend()
+    common_kwargs = {
+        "planner_prompt": "# Human Enrichment Planner\n目标：写一条人类丰容日常变量实验。",
+        "persona_prompt": "# Human Enrichment Persona\n日常变量，3:4 竖版封面，低成本生活实验。",
+        "skill_contents": [
+            "# Human Enrichment Style\n必须包含一个变量、三步清单和评论区例子。",
+            "# XHS Enrichment Hashtagging\n标签必须包含 `#人类丰容计划`。",
+        ],
+        "runtime_skill_contents": [
+            "# XHS Format Pattern Library Context\n"
+            "- status: available\n"
+            "- lane: human_enrichment\n"
+            "- pattern_ids: human_enrichment.sudden_realization.001\n"
+            "- hook_archetypes: sudden_realization, process_or_tutorial\n"
+            "- body_structures: ordinary friction -> one variable -> checklist -> comment\n"
+            "- image_sequences: cover -> before state -> variable/material flat lay -> mini checklist -> after state -> comment invitation\n"
+            "- primary_ratio: 3:4\n"
+            "- 约束：借鉴结构、节奏和互动机制，不要复写样本标题。"
+        ],
+    }
+
+    desk = backend.generate(
+        scene="把下班后的书桌从堆满快递盒改成一个十分钟手作角",
+        **common_kwargs,
+    )
+    route = backend.generate(
+        scene="晚饭后总走同一条小区路线，想做一次十分钟Colorwalk",
+        **common_kwargs,
+    )
+    material = backend.generate(
+        scene="把旧毛线和拼豆材料整理成一个十分钟手作流程",
+        **common_kwargs,
+    )
+
+    assert len({desk["title"], route["title"], material["title"]}) == 3
+    assert any(term in route["title"] for term in ("路线", "Colorwalk", "散步"))
+    assert any(term in material["title"] for term in ("材料", "手作", "毛线", "拼豆"))
+    for draft in (route, material):
+        assert "变量" in draft["body"]
+        assert any(term in draft["body"] for term in ("十分钟", "低成本"))
+        assert any(term in draft["body"] for term in ("三步", "清单"))
+        assert "评论区" in draft["body"]
+        assert "#人类丰容计划" in draft["hashtags"]
+
+
 def test_deterministic_modern_psychology_draft_has_mini_tool_and_example_prompt() -> None:
     backend = DeterministicDraftBackend()
 

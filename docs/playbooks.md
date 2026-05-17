@@ -24,7 +24,7 @@ Playbook 是 PTSM 的业务编排单元。它把领域、平台、技能需求�
 - `ai_tech_daily_post` 专门输出 AI/科技资讯速递，结构化拆解科技进展。默认绑定 `acct-ai-tech-local`。
 - `daily_english_post` 是每日英语单词学习内容，陪伴式教育风格。默认绑定 `acct-daily-english-local`。
 - `modern_psychology_post` 专门输出现代心理困境观察内容，用第一人称微场景解释心理机制，并要求一个可保存的小工具、例子型评论提示和专业帮助边界；`psychology_safety` 约束诊断、治疗承诺、药物建议和危机处理边界。默认绑定 `acct-psychology-local`。
-- `human_enrichment_daily_post` 专门输出人类丰容 / 日常变量实验内容，用一个具体角落、物件或路线写「原本惯性 -> 一个变量 -> 三步清单 -> 轻量结果 -> 评论区例子」。它要求低成本、非医疗化、非购物清单式表达，并会优先借鉴本地 XHS pattern library 的 hook / 清单 / 轮播结构，而不是普通发帖时实时检索小红书。它通过 `content_review.image_form` 暴露 3:4 封面、轮播形式建议、pattern ids 和每页文字约束。默认绑定 `acct-enrichment-local`。
+- `human_enrichment_daily_post` 专门输出人类丰容 / 日常变量实验内容，用一个具体角落、物件或路线写「原本惯性 -> 一个变量 -> 三步清单 -> 轻量结果 -> 评论区例子」。它要求低成本、非医疗化、非购物清单式表达，并会优先借鉴本地 XHS pattern library 的 hook / 清单 / 轮播结构，而不是普通发帖时实时检索小红书。离线 deterministic 草稿会按桌面/角落、路线/感官、手作/材料流生成不同标题和正文结构。它通过 `content_review.image_form` 暴露 3:4 封面、轮播形式建议、pattern ids 和每页文字约束。默认绑定 `acct-enrichment-local`。
 - `sushi_poetry_daily_post`、`wuxia_character_post`、`ai_tech_daily_post`、`daily_english_post` 现在也都有 playbook-local `evaluation.yaml`，和发疯文学/现代心理学一样声明 executor 内容质量 judge 为 `required`，并用确定性 node contract 检查领域标签、正文结构、评论提示、收藏触发和实验指令泄漏。
 - `modern_psychology_post` 的 deterministic fallback 会按场景簇生成不同候选：周日/周一预焦虑、被说想太多后的边界压力、下班后被消息拉回工位、会议尴尬复盘、脑内复盘会、普通回复复盘接龙。这样离线实验候选不会因为同属“反刍思维”而退化成同一个标题/封面。
 - `PlaybookRegistry` 支持列出定义、按 id 查询，以及按账号选择。
