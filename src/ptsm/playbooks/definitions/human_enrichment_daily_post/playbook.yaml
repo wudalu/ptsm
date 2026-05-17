@@ -1,0 +1,39 @@
+playbook_id: human_enrichment_daily_post
+version: 1
+domain: 人类丰容实验
+platforms:
+  - xiaohongshu
+required_skills:
+  - xhs_trend_scan
+  - topic_research
+  - human_enrichment_style
+  - xhs_enrichment_visuals
+  - xhs_enrichment_hashtagging
+optional_skills: []
+reflection:
+  required_hashtag: "#人类丰容计划"
+  body_must_include_any:
+    - 变量
+    - 微调
+    - 三步
+    - 清单
+    - 今天先试
+  body_must_not_include_any:
+    - 治好
+    - 治愈焦虑
+    - 治愈抑郁
+    - 诊断
+    - 用药
+    - 变体要求
+    - comment_chain
+    - save_tool
+    - image_brief
+max_attempts: 3
+drafting_model: deepseek-v4-pro
+trend_keywords:
+  - 人类丰容
+  - 家的丰容计划
+  - 零成本丰容
+  - 工位丰容
+  - Colorwalk
+  - 钩织

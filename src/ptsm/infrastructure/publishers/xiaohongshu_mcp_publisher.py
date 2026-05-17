@@ -9,7 +9,6 @@ from typing import Any, Protocol, Sequence
 
 import httpx
 from langchain_core.messages import ToolMessage
-from langchain_mcp_adapters.client import MultiServerMCPClient
 
 from ptsm.accounts.registry import AccountProfile
 
@@ -51,6 +50,8 @@ class LangChainMcpToolRunner:
 
     async def _load_tools(self) -> dict[str, Any]:
         if self._tools is None:
+            from langchain_mcp_adapters.client import MultiServerMCPClient
+
             client = MultiServerMCPClient(
                 {
                     "xiaohongshu": {

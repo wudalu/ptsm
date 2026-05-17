@@ -13,6 +13,8 @@ def build_contextual_deterministic_draft(
     """Return a domain-specific deterministic draft when context is explicit."""
     if _is_wuxia_context(scene=scene, extra_context=extra_context):
         return _build_wuxia_draft(scene=scene, feedback=feedback)
+    if _is_human_enrichment_context(scene=scene, extra_context=extra_context):
+        return _build_human_enrichment_draft(scene=scene, feedback=feedback)
     if _is_modern_psychology_context(scene=scene, extra_context=extra_context):
         return _build_modern_psychology_draft(
             scene=scene,
@@ -51,6 +53,64 @@ def _is_modern_psychology_context(*, scene: str, extra_context: str) -> bool:
             "专业帮助",
         )
     )
+
+
+def _is_human_enrichment_context(*, scene: str, extra_context: str) -> bool:
+    combined = f"{scene}\n{extra_context}"
+    return any(
+        keyword in combined
+        for keyword in (
+            "人类丰容实验",
+            "人类丰容",
+            "Human Enrichment",
+            "日常变量",
+            "#人类丰容计划",
+            "#家的丰容计划",
+        )
+    )
+
+
+def _build_human_enrichment_draft(*, scene: str, feedback: str) -> dict[str, Any]:
+    if any(keyword in scene for keyword in ("书桌", "快递盒", "手作", "工位", "桌")):
+        title = "给书桌加一个零成本变量"
+        image_text = "今天先丰容这个角落"
+        body = (
+            f"{scene}。我不打算把生活一次性改造完，只先给这个角落加一个小变量。\n"
+            "三步清单：先清出一个手掌大的空位；把最常用的杯子和便签放到伸手可及；"
+            "给今晚的十分钟手作留一个固定位置。\n"
+            "这不是要立刻变精致，只是把日复一日里的一厘米还给自己。"
+            "评论区交一个你想先丰容的角落，我来收集零成本版本。"
+        )
+    elif any(keyword in scene for keyword in ("窗台", "玄关", "床头", "角落")):
+        title = "这个小角落先丰容一厘米"
+        image_text = "给生活留一点新鲜感"
+        body = (
+            f"{scene}。今天不做大改造，只给它加一个看得见的小变量。\n"
+            "可保存三步：拿走一个最碍眼的杂物；补一个能每天看见的颜色；"
+            "把明天会用到的小东西提前放好。\n"
+            "变化很小，但它会提醒我这里不是临时堆放区，也是生活的一部分。"
+            "评论区交一个你家最想先微调的角落。"
+        )
+    else:
+        title = "今天先试一个日常变量"
+        image_text = "低成本丰容一下"
+        body = (
+            f"{scene}。我想先做一个很小的人类丰容实验，不靠大购物，也不假装人生马上焕新。\n"
+            "三步清单：选一个每天都会经过的位置；加一个不用花钱的小变量；"
+            "晚上回来只观察它有没有让自己多停留十秒。\n"
+            "如果有，就把它留下；如果没有，明天换一个变量。"
+            "评论区交一个你会先试的日常变量。"
+        )
+
+    if feedback != "无" and "今天先试" not in body:
+        body += "\n今天先试一个最小版本，别把丰容变成新的待办压力。"
+
+    return {
+        "title": title,
+        "image_text": image_text,
+        "body": body,
+        "hashtags": ["#人类丰容计划", "#家的丰容计划", "#低成本生活", "#小红书生活"],
+    }
 
 
 def _build_wuxia_draft(*, scene: str, feedback: str) -> dict[str, Any]:

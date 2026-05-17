@@ -151,3 +151,41 @@ def test_registry_selects_modern_psychology_by_account() -> None:
     playbook = registry.select_for_account(account=account)
 
     assert playbook.playbook_id == "modern_psychology_post"
+
+
+def test_registry_loads_human_enrichment_playbook() -> None:
+    registry = PlaybookRegistry(
+        playbook_root=Path("src/ptsm/playbooks/definitions"),
+    )
+
+    playbook = registry.get("human_enrichment_daily_post")
+
+    assert playbook.domain == "人类丰容实验"
+    assert "xiaohongshu" in playbook.platforms
+    assert playbook.required_skills == [
+        "xhs_trend_scan",
+        "topic_research",
+        "human_enrichment_style",
+        "xhs_enrichment_visuals",
+        "xhs_enrichment_hashtagging",
+    ]
+    assert playbook.trend_keywords == [
+        "人类丰容",
+        "家的丰容计划",
+        "零成本丰容",
+        "工位丰容",
+        "Colorwalk",
+        "钩织",
+    ]
+    assert playbook.max_attempts == 3
+
+
+def test_registry_selects_human_enrichment_by_account() -> None:
+    registry = PlaybookRegistry(
+        playbook_root=Path("src/ptsm/playbooks/definitions"),
+    )
+    account = AccountRegistry().get("acct-enrichment-local")
+
+    playbook = registry.select_for_account(account=account)
+
+    assert playbook.playbook_id == "human_enrichment_daily_post"

@@ -140,3 +140,35 @@ def test_modern_psychology_safety_skill_is_not_exposed_to_fengkuang() -> None:
 
     skill_names = {skill.skill_name for skill in surface.list_summaries()}
     assert "psychology_safety" not in skill_names
+
+
+def test_selector_exposes_human_enrichment_skills() -> None:
+    selector = _build_selector()
+
+    surface = selector.select(
+        domain="人类丰容实验",
+        platform="xiaohongshu",
+        playbook_id="human_enrichment_daily_post",
+    )
+
+    assert [item.skill_name for item in surface.list_summaries()] == [
+        "xhs_trend_scan",
+        "topic_research",
+        "human_enrichment_style",
+        "xhs_enrichment_visuals",
+        "xhs_enrichment_hashtagging",
+    ]
+
+
+def test_human_enrichment_skills_are_not_exposed_to_psychology() -> None:
+    selector = _build_selector()
+
+    surface = selector.select(
+        domain="现代心理困境观察",
+        platform="xiaohongshu",
+        playbook_id="modern_psychology_post",
+    )
+
+    skill_names = {skill.skill_name for skill in surface.list_summaries()}
+    assert "human_enrichment_style" not in skill_names
+    assert "xhs_enrichment_visuals" not in skill_names

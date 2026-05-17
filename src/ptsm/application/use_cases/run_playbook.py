@@ -31,6 +31,7 @@ from ptsm.infrastructure.publishers.contracts import Publisher
 from ptsm.infrastructure.publishers.factory import build_publisher
 from ptsm.infrastructure.publishers.xiaohongshu_mcp_publisher import PublisherPreflightError
 from ptsm.playbooks.registry import PlaybookRegistry
+from ptsm.skills.runtime_context import SkillContextResolver
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[2]
 PLAYBOOK_ROOT = PACKAGE_ROOT / "playbooks" / "definitions"
@@ -355,6 +356,7 @@ def run_playbook(
                         scene=request.scene,
                         persona_prompt=str(result.get("persona_prompt") or ""),
                         runtime_skill_contents=runtime_skill_contents,
+                        content_review=result.get("content_review"),
                         final_content=result["final_content"],
                     ),
                     output_dir=Path.cwd() / DEFAULT_GENERATED_IMAGES_DIR,
@@ -613,11 +615,13 @@ def _build_workflow_for_playbook(
     checkpointer: object,
     settings: Settings,
 ):
+    skill_context_resolver = _build_runtime_skill_context_resolver(settings)
     if playbook_id == "fengkuang_daily_post":
         return build_fengkuang_workflow(
             memory=memory,
             checkpointer=checkpointer,
             settings=settings,
+            skill_context_resolver=skill_context_resolver,
         )
     return build_playbook_workflow(
         playbook_id=playbook_id,
@@ -625,7 +629,17 @@ def _build_workflow_for_playbook(
         memory=memory,
         checkpointer=checkpointer,
         settings=settings,
+        skill_context_resolver=skill_context_resolver,
     )
+
+
+def _build_runtime_skill_context_resolver(settings: Settings) -> SkillContextResolver | None:
+    provider = settings.default_model_provider.lower().strip()
+    if provider == "deterministic":
+        return SkillContextResolver(builders={})
+    if provider == "deepseek" and not settings.deepseek_api_key:
+        return SkillContextResolver(builders={})
+    return None
 
 
 def _build_rerun_command(
@@ -690,6 +704,7 @@ def _build_image_generation_prompt(
     scene: str,
     persona_prompt: str | None = None,
     runtime_skill_contents: list[str] | None = None,
+    content_review: dict[str, Any] | None = None,
     final_content: dict[str, Any],
 ) -> str:
     scene_text = _truncate_text(str(final_content.get("scene", scene)).strip() or scene, 80)
@@ -704,6 +719,7 @@ def _build_image_generation_prompt(
         _summarize_runtime_skill_contents(runtime_skill_contents or []),
         120,
     )
+    image_form = _truncate_text(_summarize_image_form(content_review), 120)
     prompt = (
         "为小红书帖子生成一张 3:4 竖版封面图，适合中文社交媒体发布。"
         f"主题场景：{scene_text}。"
@@ -712,6 +728,7 @@ def _build_image_generation_prompt(
         f"正文情绪摘要：{body}。"
         f"账号人设参考：{persona or '像真实创作者在发帖'}。"
         f"实时话题切口：{runtime_context or '贴近日常讨论热感即可'}。"
+        f"图片形式参考：{image_form or '单张真实感封面'}。"
         "要求：中文互联网感，构图干净，有留白，像真人账号会发的封面"
         "，避免机械对称、塑料质感和营销海报感，保留真实随手拍氛围，"
         "真人随手拍，不要复杂小字，不要在图片上添加任何标签文字如#发疯文学等话题标签，不要额外水印。"
@@ -731,6 +748,26 @@ def _summarize_runtime_skill_contents(contents: list[str]) -> str:
         if signals:
             break
     return "，".join(signals)
+
+
+def _summarize_image_form(content_review: dict[str, Any] | None) -> str:
+    if not isinstance(content_review, dict):
+        return ""
+    image_form = content_review.get("image_form")
+    if not isinstance(image_form, dict):
+        return ""
+    sequence = image_form.get("recommended_sequence")
+    if not isinstance(sequence, list):
+        return ""
+    translated = {
+        "cover": "封面",
+        "before state": "原本状态",
+        "variable/material flat lay": "变量或材料平铺",
+        "mini checklist": "清单",
+        "after state": "改变后细节",
+        "comment invitation": "评论区提问",
+    }
+    return "，".join(translated.get(str(item), str(item)) for item in sequence[:5])
 
 
 def _extract_runtime_signal(content: str, *, label: str) -> str:

@@ -48,6 +48,7 @@ Skill 层负责让运行时按请求范围暴露合适的 builtin skills，而�
 - `ai_tech_style` / `ai_tech_hashtagging` 只服务 `ai_tech_daily_post`
 - `daily_english_style` / `daily_english_hashtagging` 只服务 `daily_english_post`
 - `psychology_style` / `psychology_safety` / `xhs_psychology_hashtagging` 只服务 `modern_psychology_post`，其中 `psychology_style` 要求“第一人称微场景 -> 心理机制 -> 非诊断化重构 -> 可保存小工具 -> 例子型评论 -> 专业边界”，`psychology_safety` 约束不诊断、不治疗承诺、不提供药物建议，并在严重风险场景引导专业帮助
+- `human_enrichment_style` / `xhs_enrichment_visuals` / `xhs_enrichment_hashtagging` 只服务 `human_enrichment_daily_post`。其中 `human_enrichment_style` 要求“具体角落/物件 -> 原本惯性 -> 一个低成本变量 -> 三步清单 -> 评论区例子”，`xhs_enrichment_visuals` 编码 3:4 竖版封面和轮播图形式，`xhs_enrichment_hashtagging` 要求 `#人类丰容计划` 等搜索友好标签。
 
 ## Strategy Layer
 
@@ -57,6 +58,7 @@ Skill 层负责让运行时按请求范围暴露合适的 builtin skills，而�
 - `topic_research` 是第二个 research builtin skill，通过读取 topic-radar 产出的多平台选题报告，为 planner 提供跨平台的热门话题和选题角度。优先消费当日 artifact JSON 中的 LLM 分析结果，artifact 不可用时静默跳过。
 - 这类内容策略索引仍以 [`docs/xhs-topics/index.md`](xhs-topics/index.md) 和 [`docs/topic-radar.md`](topic-radar.md) 为入口。
 - 运行时动态资源当前主要表现为 `runtime_context` 记录，例如 `xhs_trend_scan` 的站内热点扫描结果，或 `topic_research` 对当日 topic-radar artifact 的摘要注入。
+- 当运行在 deterministic provider 下时，`run_playbook` 会传入空的 runtime skill resolver，避免本地 harness 和离线 dry-run 因 live XHS MCP / topic scan 状态而阻塞；真实 LLM/provider 路径仍按默认 resolver 尝试注入动态上下文。
 
 ## Routing Design
 

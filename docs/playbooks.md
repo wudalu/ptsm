@@ -19,11 +19,12 @@ Playbook 是 PTSM 的业务编排单元。它把领域、平台、技能需求�
 
 ## Current State
 
-- 当前仓库里有六个真实 playbook：`fengkuang_daily_post`、`sushi_poetry_daily_post`、`wuxia_character_post`、`ai_tech_daily_post`、`daily_english_post`、`modern_psychology_post`。
+- 当前仓库里有七个真实 playbook：`fengkuang_daily_post`、`sushi_poetry_daily_post`、`wuxia_character_post`、`ai_tech_daily_post`、`daily_english_post`、`modern_psychology_post`、`human_enrichment_daily_post`。
 - `wuxia_character_post` 专门输出长篇武侠人物评述（800-1500字），用当代流行文化视角解读金庸古龙人物。默认绑定 `acct-wuxia-local`。
 - `ai_tech_daily_post` 专门输出 AI/科技资讯速递，结构化拆解科技进展。默认绑定 `acct-ai-tech-local`。
 - `daily_english_post` 是每日英语单词学习内容，陪伴式教育风格。默认绑定 `acct-daily-english-local`。
 - `modern_psychology_post` 专门输出现代心理困境观察内容，用第一人称微场景解释心理机制，并要求一个可保存的小工具、例子型评论提示和专业帮助边界；`psychology_safety` 约束诊断、治疗承诺、药物建议和危机处理边界。默认绑定 `acct-psychology-local`。
+- `human_enrichment_daily_post` 专门输出人类丰容 / 日常变量实验内容，用一个具体角落、物件或路线写「原本惯性 -> 一个变量 -> 三步清单 -> 轻量结果 -> 评论区例子」。它要求低成本、非医疗化、非购物清单式表达，并通过 `content_review.image_form` 暴露 3:4 封面和轮播形式建议。默认绑定 `acct-enrichment-local`。
 - `modern_psychology_post` 的 deterministic fallback 会按场景簇生成不同候选：周日/周一预焦虑、被说想太多后的边界压力、下班后被消息拉回工位、会议尴尬复盘、脑内复盘会、普通回复复盘接龙。这样离线实验候选不会因为同属“反刍思维”而退化成同一个标题/封面。
 - `PlaybookRegistry` 支持列出定义、按 id 查询，以及按账号选择。
 - `PlaybookDefinition.reflection` 是结构化规则字典，支持必需规则（如 `required_hashtag`、非空 `must_include_phrase`）、可选内容质量规则（如 `title_must_not_equal_any`、`body_must_include_any`、`body_must_not_include_any`）和推荐规则（如 `recommended_phrases`）。推荐词只作为风格提示，不应被 runtime 当成硬门槛。
@@ -63,7 +64,7 @@ Playbook 是 PTSM 的业务编排单元。它把领域、平台、技能需求�
 
 - 账号注册表提供 `account_id -> domain/platform` 基础映射。
 - 请求可以显式指定 `playbook_id`，否则按账号域和平台做默认选择。
-- `acct-fk-local` 默认落到 `fengkuang_daily_post`，`acct-sushi-local` 默认落到 `sushi_poetry_daily_post`，`acct-daily-english-local` 默认落到 `daily_english_post`，`acct-psychology-local` 默认落到 `modern_psychology_post`。
+- `acct-fk-local` 默认落到 `fengkuang_daily_post`，`acct-sushi-local` 默认落到 `sushi_poetry_daily_post`，`acct-daily-english-local` 默认落到 `daily_english_post`，`acct-psychology-local` 默认落到 `modern_psychology_post`，`acct-enrichment-local` 默认落到 `human_enrichment_daily_post`。
 - 兼容入口 `run-fengkuang` 仍保留，但多 playbook 场景优先使用通用 `run-playbook`。
 
 ## Related Files

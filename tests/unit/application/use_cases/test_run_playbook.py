@@ -12,6 +12,7 @@ from ptsm.application.use_cases.run_playbook import (
     run_playbook,
     run_fengkuang_playbook,
 )
+from ptsm.config.settings import Settings
 from ptsm.infrastructure.memory.checkpoint import FileCheckpointSaver
 from ptsm.infrastructure.memory.store import FileExecutionMemory
 from ptsm.infrastructure.observability.run_store import RunStore
@@ -826,6 +827,38 @@ def test_build_image_generation_prompt_stays_within_bailian_limit() -> None:
     assert "真人随手拍" in prompt
 
 
+def test_build_image_generation_prompt_uses_image_form_review() -> None:
+    prompt = _build_image_generation_prompt(
+        scene="把下班后的书桌从堆满快递盒改成一个十分钟手作角",
+        persona_prompt="# Human Enrichment Persona\n3:4 竖版封面，真实生活角落。",
+        runtime_skill_contents=[],
+        content_review={
+            "image_form": {
+                "primary_ratio": "3:4",
+                "cover_style": "real-life creator cover",
+                "recommended_sequence": [
+                    "cover",
+                    "before state",
+                    "variable/material flat lay",
+                    "mini checklist",
+                    "after state",
+                    "comment invitation",
+                ],
+            }
+        },
+        final_content={
+            "title": "给书桌加一个零成本变量",
+            "image_text": "今天先丰容这个角落",
+            "body": "三步清单，评论区交一个角落。",
+            "hashtags": ["#人类丰容计划"],
+        },
+    )
+
+    assert "原本状态" in prompt
+    assert "材料平铺" in prompt
+    assert "清单" in prompt
+
+
 def test_run_fengkuang_playbook_passes_runtime_context_into_image_prompt(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -935,6 +968,134 @@ def test_run_playbook_supports_non_fengkuang_playbook_with_generic_runtime(
     assert result["playbook_id"] == "sushi_poetry_daily_post"
     assert captured["playbook_id"] == "sushi_poetry_daily_post"
     assert captured["domain"] == "苏轼诗词赏析"
+
+
+def test_run_playbook_uses_empty_runtime_skill_context_for_deterministic_provider(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    artifact_path = tmp_path / "artifact.json"
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "sushi_poetry_daily_post",
+                "final_content": {"title": "旧标题"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    _write_account_definition(
+        tmp_path / "accounts" / "acct-sushi-local.yaml",
+        account_id="acct-sushi-local",
+        nickname="苏轼诗词赏析实验号",
+        domain="苏轼诗词赏析",
+    )
+    _write_playbook_definition(
+        tmp_path / "playbooks" / "sushi_poetry_daily_post",
+        playbook_id="sushi_poetry_daily_post",
+        domain="苏轼诗词赏析",
+        required_hashtag="#苏轼",
+        required_phrase="苏轼",
+    )
+    captured: dict[str, object] = {}
+
+    def fake_build_playbook_workflow(**kwargs: object) -> FakeWorkflow:
+        captured.update(kwargs)
+        return FakeWorkflow(artifact_path)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        fake_build_playbook_workflow,
+        raising=False,
+    )
+
+    result = run_playbook(
+        PlaybookRequest(
+            scene="夜里读到定风波",
+            account_id="acct-sushi-local",
+            playbook_id="sushi_poetry_daily_post",
+        ),
+        settings=Settings.model_construct(
+            default_model_provider="deterministic",
+            deepseek_api_key=None,
+            watermark_removal_enabled=False,
+        ),
+        accounts=AccountRegistry(account_root=tmp_path / "accounts"),
+        playbooks=PlaybookRegistry(playbook_root=tmp_path / "playbooks"),
+        publisher=SuccessfulPublisher(),
+        run_store=RunStore(base_dir=tmp_path / "runs"),
+    )
+
+    resolver = captured["skill_context_resolver"]
+
+    assert result["status"] == "completed"
+    assert getattr(resolver, "_builders") == {}
+
+
+def test_run_playbook_uses_empty_runtime_skill_context_when_deepseek_key_missing(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    artifact_path = tmp_path / "artifact.json"
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "sushi_poetry_daily_post",
+                "final_content": {"title": "旧标题"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    _write_account_definition(
+        tmp_path / "accounts" / "acct-sushi-local.yaml",
+        account_id="acct-sushi-local",
+        nickname="苏轼诗词赏析实验号",
+        domain="苏轼诗词赏析",
+    )
+    _write_playbook_definition(
+        tmp_path / "playbooks" / "sushi_poetry_daily_post",
+        playbook_id="sushi_poetry_daily_post",
+        domain="苏轼诗词赏析",
+        required_hashtag="#苏轼",
+        required_phrase="苏轼",
+    )
+    captured: dict[str, object] = {}
+
+    def fake_build_playbook_workflow(**kwargs: object) -> FakeWorkflow:
+        captured.update(kwargs)
+        return FakeWorkflow(artifact_path)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        fake_build_playbook_workflow,
+        raising=False,
+    )
+
+    result = run_playbook(
+        PlaybookRequest(
+            scene="夜里读到定风波",
+            account_id="acct-sushi-local",
+            playbook_id="sushi_poetry_daily_post",
+        ),
+        settings=Settings.model_construct(
+            default_model_provider="deepseek",
+            deepseek_api_key=None,
+            watermark_removal_enabled=False,
+        ),
+        accounts=AccountRegistry(account_root=tmp_path / "accounts"),
+        playbooks=PlaybookRegistry(playbook_root=tmp_path / "playbooks"),
+        publisher=SuccessfulPublisher(),
+        run_store=RunStore(base_dir=tmp_path / "runs"),
+    )
+
+    resolver = captured["skill_context_resolver"]
+
+    assert result["status"] == "completed"
+    assert getattr(resolver, "_builders") == {}
 
 
 def test_run_playbook_supports_sushi_poetry_repo_assets(

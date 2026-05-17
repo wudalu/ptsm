@@ -234,6 +234,9 @@ def _build_content_review(state: ExecutionState) -> dict[str, object]:
             "5分钟",
             "边界句",
             "消息草稿",
+            "清单",
+            "三步",
+            "先试",
         )
     )
     safety_risks = [
@@ -245,6 +248,7 @@ def _build_content_review(state: ExecutionState) -> dict[str, object]:
             "治疗",
             "用药",
             "诊断",
+            "治好",
             "治好焦虑",
             "治愈抑郁",
         )
@@ -274,7 +278,7 @@ def _build_content_review(state: ExecutionState) -> dict[str, object]:
         for item in state.get("runtime_skill_details", [])
         if isinstance(item, dict) and item.get("skill_name")
     ]
-    return {
+    review: dict[str, object] = {
         "status": "needs_human_review",
         "publish_recommendation": "hold_for_human_confirmation",
         "generation_logic": {
@@ -311,4 +315,29 @@ def _build_content_review(state: ExecutionState) -> dict[str, object]:
             ),
         },
         "review_notes": notes,
+    }
+    image_form = _build_image_form_review(state)
+    if image_form:
+        review["image_form"] = image_form
+    return review
+
+
+def _build_image_form_review(state: ExecutionState) -> dict[str, object] | None:
+    if state.get("playbook_id") != "human_enrichment_daily_post":
+        return None
+    return {
+        "primary_ratio": "3:4",
+        "cover_style": "real-life creator cover",
+        "recommended_sequence": [
+            "cover",
+            "before state",
+            "variable/material flat lay",
+            "mini checklist",
+            "after state",
+            "comment invitation",
+        ],
+        "notes": (
+            "Use a real-life-looking vertical cover first. Treat generated images "
+            "as mood/reference visuals, not factual before-after evidence."
+        ),
     }

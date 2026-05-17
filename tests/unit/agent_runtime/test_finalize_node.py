@@ -78,3 +78,59 @@ def test_finalize_persists_step_outputs_for_evaluation(tmp_path: Path) -> None:
             "final_body": "场景正文",
         }
     ]
+
+
+def test_finalize_adds_image_form_review_for_human_enrichment(tmp_path: Path) -> None:
+    memory = InMemoryExecutionMemory()
+    finalize = build_finalize_node(
+        execution_memory=memory,
+        artifact_store=FileArtifactStore(base_dir=tmp_path / "artifacts"),
+    )
+
+    result = finalize(
+        {
+            "account_id": "acct-enrichment-local",
+            "playbook_id": "human_enrichment_daily_post",
+            "drafting_provider": "deterministic",
+            "selected_playbook": "human_enrichment_daily_post",
+            "candidate_skills": ["human_enrichment_style"],
+            "activated_skills": ["human_enrichment_style"],
+            "activated_skill_details": [{"skill_name": "human_enrichment_style"}],
+            "runtime_skill_details": [],
+            "runtime_skill_contents": [],
+            "planner_prompt": "# planner",
+            "persona_prompt": "# persona",
+            "reflection_prompt": "# reflection",
+            "reflection_rules": {"required_hashtag": "#人类丰容计划"},
+            "attempt_count": 1,
+            "draft_content": {
+                "title": "给书桌加一个零成本变量",
+                "body": "三步清单，评论区交一个角落。",
+                "image_text": "今天先丰容这个角落",
+                "hashtags": ["#人类丰容计划"],
+            },
+            "required_revision": False,
+            "reflection_decision": "finalize",
+            "reflection_feedback": "",
+            "scene": "把下班后的书桌改成手作角",
+            "final_content": {
+                "title": "给书桌加一个零成本变量",
+                "body": "三步清单，评论区交一个角落。",
+                "image_text": "今天先丰容这个角落",
+                "hashtags": ["#人类丰容计划"],
+            },
+        }
+    )
+
+    review = result["content_review"]
+
+    assert review["image_form"]["primary_ratio"] == "3:4"
+    assert review["image_form"]["cover_style"] == "real-life creator cover"
+    assert review["image_form"]["recommended_sequence"] == [
+        "cover",
+        "before state",
+        "variable/material flat lay",
+        "mini checklist",
+        "after state",
+        "comment invitation",
+    ]

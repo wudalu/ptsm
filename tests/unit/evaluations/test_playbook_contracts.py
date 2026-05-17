@@ -81,3 +81,16 @@ class TestPlaybookEvalContract:
             contract.quality_judges["executor_content_quality"]["evaluator_id"]
             == "llm.executor.content_quality"
         )
+
+    def test_loads_human_enrichment_contract(self):
+        root = Path(__file__).parent.parent.parent.parent / "src" / "ptsm" / "playbooks" / "definitions"
+        contract = load_playbook_eval_contract(root, "human_enrichment_daily_post")
+        assert contract is not None
+        assert contract.suite_id == "human_enrichment_daily_post.default"
+        executor_constraints = contract.node_contracts["executor"]["constraints"]
+        assert "#人类丰容计划" in executor_constraints["hashtags_must_include_any"]
+        assert "变量" in executor_constraints["body_must_include_any"]
+        assert "评论区" in executor_constraints["body_must_include_comment_prompt_any"]
+        assert "清单" in executor_constraints["body_must_include_save_trigger_any"]
+        assert "治好" in executor_constraints["body_must_not_include_any"]
+        assert "image_brief" in executor_constraints["body_must_not_include_any"]

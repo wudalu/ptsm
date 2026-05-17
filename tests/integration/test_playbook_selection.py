@@ -79,3 +79,26 @@ def test_modern_psychology_account_routes_to_modern_psychology_playbook():
     assert result["playbook_id"] == "modern_psychology_post"
     assert result["account"]["account_id"] == "acct-psychology-local"
     assert "#心理学" in result["final_content"]["hashtags"]
+
+
+def test_human_enrichment_account_routes_to_human_enrichment_playbook():
+    from ptsm.config.settings import Settings
+
+    playbook_request_cls, run_playbook = _load_playbook_contracts()
+
+    result = run_playbook(
+        playbook_request_cls(
+            account_id="acct-enrichment-local",
+            playbook_id="human_enrichment_daily_post",
+            scene="把下班后的书桌从堆满快递盒改成一个十分钟手作角",
+        ),
+        settings=Settings.model_construct(
+            default_model_provider="deterministic",
+            deepseek_api_key=None,
+            watermark_removal_enabled=False,
+        ),
+    )
+
+    assert result["playbook_id"] == "human_enrichment_daily_post"
+    assert result["account"]["account_id"] == "acct-enrichment-local"
+    assert "#人类丰容计划" in result["final_content"]["hashtags"]

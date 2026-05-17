@@ -153,3 +153,32 @@ def test_modern_psychology_skills_have_correct_tags() -> None:
         assert "现代心理困境观察" in skill.domain_tags
         assert "xiaohongshu" in skill.platform_tags
         assert "modern_psychology_post" in skill.playbook_tags
+
+
+def test_registry_discovers_human_enrichment_skills() -> None:
+    registry = SkillRegistry(
+        skill_root=Path("src/ptsm/skills/builtin"),
+    )
+
+    skill_names = {skill.skill_name for skill in registry.list_skills()}
+
+    assert "human_enrichment_style" in skill_names
+    assert "xhs_enrichment_visuals" in skill_names
+    assert "xhs_enrichment_hashtagging" in skill_names
+
+
+def test_human_enrichment_skills_have_correct_tags() -> None:
+    registry = SkillRegistry(
+        skill_root=Path("src/ptsm/skills/builtin"),
+    )
+
+    skills = {skill.skill_name: skill for skill in registry.list_skills()}
+    for skill_name in [
+        "human_enrichment_style",
+        "xhs_enrichment_visuals",
+        "xhs_enrichment_hashtagging",
+    ]:
+        skill = skills[skill_name]
+        assert "人类丰容实验" in skill.domain_tags
+        assert "xiaohongshu" in skill.platform_tags
+        assert "human_enrichment_daily_post" in skill.playbook_tags

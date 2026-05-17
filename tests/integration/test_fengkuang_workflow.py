@@ -91,7 +91,11 @@ def test_build_fengkuang_workflow_delegates_to_build_playbook_workflow(
 
 def test_fengkuang_workflow_finalizes_without_required_ye_suan_and_persists_memory() -> None:
     memory = InMemoryExecutionMemory()
-    workflow = build_fengkuang_workflow(memory=memory, settings=_deterministic_settings())
+    workflow = build_fengkuang_workflow(
+        memory=memory,
+        settings=_deterministic_settings(),
+        skill_context_resolver=FakeTrendContextResolver(),
+    )
 
     result = workflow.invoke(
         FengkuangRequest(
@@ -160,6 +164,7 @@ def test_fengkuang_workflow_persists_checkpoint_with_file_backed_saver(
         artifact_store=FileArtifactStore(base_dir=tmp_path / "artifacts"),
         checkpointer=FileCheckpointSaver(path=checkpoint_path),
         settings=_deterministic_settings(),
+        skill_context_resolver=FakeTrendContextResolver(),
     )
 
     result = workflow.invoke(
@@ -189,6 +194,7 @@ def test_fengkuang_workflow_persists_lessons_with_file_backed_memory(
         memory=FileExecutionMemory(path=memory_path),
         artifact_store=FileArtifactStore(base_dir=tmp_path / "artifacts"),
         settings=_deterministic_settings(),
+        skill_context_resolver=FakeTrendContextResolver(),
     )
 
     result = workflow.invoke(
@@ -220,7 +226,11 @@ def test_fengkuang_workflow_reads_recent_account_memory_before_drafting() -> Non
             "final_body": "评论区接一句工牌背面的疯话。至少先让工牌替我发言。",
         },
     )
-    workflow = build_fengkuang_workflow(memory=memory, settings=_deterministic_settings())
+    workflow = build_fengkuang_workflow(
+        memory=memory,
+        settings=_deterministic_settings(),
+        skill_context_resolver=FakeTrendContextResolver(),
+    )
 
     result = workflow.invoke(
         FengkuangRequest(
@@ -310,6 +320,7 @@ def test_fengkuang_workflow_stops_after_max_attempts() -> None:
         drafting_agent=NeverImprovingDraftingAgent(),
         max_attempts=3,
         settings=_deterministic_settings(),
+        skill_context_resolver=FakeTrendContextResolver(),
     )
 
     result = workflow.invoke(
@@ -362,6 +373,7 @@ def test_fengkuang_workflow_regenerates_when_content_quality_judge_fails() -> No
         content_quality_judge_backend=judge_backend,
         max_attempts=3,
         settings=_deterministic_settings(),
+        skill_context_resolver=FakeTrendContextResolver(),
     )
 
     result = workflow.invoke(

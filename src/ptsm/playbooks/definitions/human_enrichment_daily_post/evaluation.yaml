@@ -1,0 +1,80 @@
+version: 1
+suite_id: human_enrichment_daily_post.default
+uses:
+  final_content: final_content.v1
+  artifact: artifact.v1
+  skill_activation: skill_activation.v1
+
+node_contracts:
+  planner:
+    output_contract: skill_activation.v1
+    required_fields:
+      - selected_playbook
+      - activated_skills
+      - activated_skill_details
+      - planner_prompt
+      - persona_prompt
+    required_skills:
+      from_playbook: true
+    runtime_context:
+      allowed_missing:
+        - xhs_trend_scan
+        - topic_research
+      required_traceability: true
+
+  executor:
+    output_schema: final_content.v1
+    required_fields:
+      - title
+      - body
+      - image_text
+      - hashtags
+    constraints:
+      title_max_chars: 30
+      hashtags_min_count: 3
+      hashtags_max_count: 7
+      hashtags_must_include_any:
+        - "#人类丰容计划"
+        - "#家的丰容计划"
+      body_must_include_any:
+        - 变量
+        - 微调
+        - 三步
+        - 清单
+        - 今天先试
+      body_must_include_comment_prompt_any:
+        - 评论区
+        - 你会先
+        - 交一个
+      body_must_include_save_trigger_any:
+        - 清单
+        - 三步
+        - 先试
+        - 可保存
+      body_must_not_include_any:
+        - 治好
+        - 治愈焦虑
+        - 治愈抑郁
+        - 诊断
+        - 用药
+        - 变体要求
+        - comment_chain
+        - save_tool
+        - image_brief
+
+  reflector:
+    allowed_decisions:
+      - retry
+      - finalize
+      - fail
+    invariants:
+      - retry_requires_feedback
+      - finalize_requires_passing_required_rules
+
+  finalize:
+    artifact_schema: artifact.v1
+    required_fields:
+      - playbook_id
+      - final_content
+      - activated_skill_details
+      - runtime_skill_details

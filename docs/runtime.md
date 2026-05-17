@@ -52,6 +52,7 @@ related_paths:
 - finalize 写入 lessons memory 时会记录 title、image_text、hashtags 和 final_body，供后续 memory 节点做跨帖去重参考。
 - deterministic drafting fallback 会消费 recent account memory 做轻量去重；发疯文学和现代心理困境观察都会在近期标题/封面撞车时切换到备用表达，而不是只证明 memory 被读到。
 - finalize 现在还会写入 `content_review`，包含生成逻辑、互动/收藏/安全信号、LLM 内容质量门状态和人工确认建议。这个 review 不等于自动发布批准；当前人工调整流程是 operator 基于该说明继续对话修改，而不是进入独立审核队列。
+- 对 `human_enrichment_daily_post`，`content_review` 还会写入 `image_form`，记录 3:4 竖版封面、真实创作者封面风格和推荐轮播顺序（封面、原本状态、变量/材料平铺、清单、改变后细节、评论区提问）。当前发布链路仍只自动生成单张封面图，轮播顺序先作为人工 review 和未来图片扩展依据。
 
 ## Practical Implications
 
@@ -63,6 +64,7 @@ related_paths:
 - `xhs_trend_scan` 这类动态 research skill 输出现在以独立 `runtime_skill_contents` 进入 drafting backend，不再和静态 `SKILL.md` 文本混在同一个字段里。
 - 图片生成现在是发布前的一段显式步骤，会把 prompt、模型和生成路径写回 artifact，便于后续验收和排障。
 - 图片生成 prompt 现在也会读取 `runtime_skill_contents` 里的实时切口和场景张力，让封面图和正文共享同一层热点上下文。
+- 图片生成 prompt 现在也会读取 artifact `content_review.image_form` 中的图片形式摘要；当人类丰容 playbook 提供轮播式建议时，单张封面生成会保留“原本状态、材料平铺、清单、改变后细节”等视觉提示。
 - 图片生成后可选去水印后处理（`WATERMARK_REMOVAL_ENABLED=true`），使用 OpenCV inpainting 检测并移除底角残留水印，处理结果写入 artifact 的 `watermark_removal` 字段。
 - artifact evaluation 不在 LangGraph 节点内运行；`run_playbook()` 完成 artifact/image/publish/post-publish 后再调用 eval use case，因此 rule/contract evaluator 失败不会改变原始 runtime graph 的控制流。内容质量 LLM judge 是生成链路例外：它在 reflector 内作为重写门使用。
 - 当前仍没有远端 state backend；cross-thread lookup 只限本地 execution memory 中最近同账号同 playbook lessons 的轻量回读。
