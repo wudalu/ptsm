@@ -51,6 +51,10 @@ class Settings(BaseSettings):
         default="仅自己可见",
         validation_alias="XHS_DEFAULT_VISIBILITY",
     )
+    xhs_pattern_library_path: str = Field(
+        default="outputs/artifacts/xhs-pattern-library/current.json",
+        validation_alias="XHS_PATTERN_LIBRARY_PATH",
+    )
     pic_model_api_key: str | None = Field(default=None, validation_alias="PIC_MODEL_API_KEY")
     pic_model_base_url: str = Field(
         default="https://dashscope.aliyuncs.com/api/v1",

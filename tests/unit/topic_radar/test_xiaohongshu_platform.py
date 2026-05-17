@@ -29,6 +29,44 @@ class TestFeedItem:
         item = FeedItem(feed_id=None, title="", author="")
         assert item.engagement_score == 0
 
+    def test_search_feeds_preserves_cover_shape_without_reusable_url(self):
+        class FakeClient:
+            async def invoke_tool(self, server, tool_name, payload, timeout=20.0):
+                return {
+                    "feeds": [
+                        {
+                            "id": "note-cover",
+                            "xsecToken": "token-cover",
+                            "noteCard": {
+                                "displayTitle": "空无一物的家vs丰容后的家",
+                                "user": {"nickname": "作者"},
+                                "cover": {
+                                    "width": "1080",
+                                    "height": "1440",
+                                    "urlDefault": "https://example.invalid/cover.jpg",
+                                },
+                                "interactInfo": {
+                                    "likedCount": "120",
+                                    "commentCount": "30",
+                                    "sharedCount": "5",
+                                    "collectedCount": "70",
+                                },
+                            },
+                        }
+                    ]
+                }
+
+        items = asyncio.run(
+            XiaohongshuPlatform(FakeClient()).search_feeds("人类丰容", limit=1)
+        )
+
+        assert len(items) == 1
+        item = items[0]
+        assert item.cover_width == 1080
+        assert item.cover_height == 1440
+        assert item.has_cover_url is True
+        assert "urlDefault" in item.raw["noteCard"]["cover"]
+
 
 class TestToInt:
     def test_plain_int_string(self):

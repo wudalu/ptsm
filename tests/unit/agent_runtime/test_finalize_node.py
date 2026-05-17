@@ -134,6 +134,63 @@ def test_finalize_adds_image_form_review_for_human_enrichment(tmp_path: Path) ->
         "after state",
         "comment invitation",
     ]
+    assert review["image_form"]["text_constraints"]["cover_max_chars"] == 14
+    assert review["image_form"]["text_constraints"]["forbid_hashtags"] is True
+    assert review["image_form"]["carousel_brief"][0]["role"] == "cover"
+    assert review["image_form"]["carousel_brief"][3]["role"] == "mini checklist"
+
+
+def test_finalize_image_form_uses_pattern_ids_from_runtime_context(tmp_path: Path) -> None:
+    finalize = build_finalize_node(
+        execution_memory=InMemoryExecutionMemory(),
+        artifact_store=FileArtifactStore(base_dir=tmp_path / "artifacts"),
+    )
+
+    result = finalize(
+        {
+            "account_id": "acct-enrichment-local",
+            "playbook_id": "human_enrichment_daily_post",
+            "drafting_provider": "deterministic",
+            "selected_playbook": "human_enrichment_daily_post",
+            "candidate_skills": ["human_enrichment_style"],
+            "activated_skills": ["human_enrichment_style"],
+            "activated_skill_details": [{"skill_name": "human_enrichment_style"}],
+            "runtime_skill_details": [{"skill_name": "xhs_trend_scan"}],
+            "runtime_skill_contents": [
+                "# XHS Format Pattern Library Context\n"
+                "- status: available\n"
+                "- lane: human_enrichment\n"
+                "- pattern_ids: human_enrichment.sudden_realization.001, human_enrichment.saveable_list.002\n"
+                "- image_sequences: cover -> before state -> variable/material flat lay -> mini checklist -> after state -> comment invitation\n"
+                "- primary_ratio: 3:4"
+            ],
+            "planner_prompt": "# planner",
+            "persona_prompt": "# persona",
+            "reflection_prompt": "# reflection",
+            "reflection_rules": {"required_hashtag": "#人类丰容计划"},
+            "attempt_count": 1,
+            "draft_content": {
+                "title": "突然意识到书桌也需要丰容",
+                "body": "三步清单，评论区交一个角落。",
+                "image_text": "今天先丰容这个角落",
+                "hashtags": ["#人类丰容计划"],
+            },
+            "required_revision": False,
+            "reflection_decision": "finalize",
+            "reflection_feedback": "",
+            "scene": "把下班后的书桌改成手作角",
+            "final_content": {
+                "title": "突然意识到书桌也需要丰容",
+                "body": "三步清单，评论区交一个角落。",
+                "image_text": "今天先丰容这个角落",
+                "hashtags": ["#人类丰容计划"],
+            },
+        }
+    )
+
+    image_form = result["content_review"]["image_form"]
+    assert image_form["image_pattern_id"] == "human_enrichment.sudden_realization.001"
+    assert image_form["carousel_pattern_id"] == "human_enrichment.saveable_list.002"
 
 
 def test_finalize_content_review_detects_domain_save_mechanics(tmp_path: Path) -> None:

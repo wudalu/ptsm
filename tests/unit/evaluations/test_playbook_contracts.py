@@ -94,6 +94,10 @@ class TestPlaybookEvalContract:
         assert "清单" in executor_constraints["body_must_include_save_trigger_any"]
         assert "治好" in executor_constraints["body_must_not_include_any"]
         assert "image_brief" in executor_constraints["body_must_not_include_any"]
+        assert "pattern_id" in executor_constraints["body_must_not_include_any"]
+        assert "低成本" in executor_constraints["body_must_include_any"]
+        assert "十分钟" in executor_constraints["body_must_include_any"]
+        assert "今天能试" in executor_constraints["body_must_include_any"]
         quality_judge = contract.quality_judges["executor_content_quality"]
         assert quality_judge["evaluator_id"] == "llm.executor.content_quality"
         assert quality_judge["gate_level"] == "required"

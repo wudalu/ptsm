@@ -151,6 +151,9 @@ def test_scan_xiaohongshu_preserves_feed_metadata_for_teardown(monkeypatch):
                     shares=4,
                     collects=30,
                     xsec_token="token-1",
+                    cover_width=1080,
+                    cover_height=1440,
+                    has_cover_url=True,
                 )
             ]
 
@@ -180,6 +183,9 @@ def test_scan_xiaohongshu_preserves_feed_metadata_for_teardown(monkeypatch):
     assert item.metadata["collects"] == 30
     assert item.metadata["shares"] == 4
     assert item.metadata["keyword"] == "发疯文学"
+    assert item.metadata["cover_width"] == 1080
+    assert item.metadata["cover_height"] == 1440
+    assert item.metadata["has_cover_url"] is True
 
 
 def test_scan_xiaohongshu_searches_all_requested_keywords(monkeypatch):

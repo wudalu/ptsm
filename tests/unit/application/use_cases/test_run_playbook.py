@@ -94,6 +94,40 @@ class FakeWorkflow:
         }
 
 
+class PatternWorkflow(FakeWorkflow):
+    def invoke(self, payload: dict[str, object], config: dict[str, object] | None = None):
+        result = super().invoke(payload, config)
+        result["playbook_id"] = "human_enrichment_daily_post"
+        result["final_content"] = {
+            "title": "突然意识到书桌也需要丰容",
+            "image_text": "今天先丰容这个角落",
+            "body": "三步清单：清出空位、放一个变量、晚上观察。评论区交一个你会先试的角落。",
+            "hashtags": ["#人类丰容计划", "#家的丰容计划", "#低成本生活"],
+        }
+        result["runtime_skill_contents"] = [
+            "# XHS Format Pattern Library Context\n"
+            "- status: available\n"
+            "- lane: human_enrichment\n"
+            "- source: outputs/artifacts/xhs-pattern-library/current.json\n"
+            "- pattern_ids: human_enrichment.sudden_realization.001\n"
+            "- hook_archetypes: sudden_realization\n"
+            "- body_structures: ordinary friction -> one variable -> checklist -> comment\n"
+            "- image_sequences: cover -> before state -> variable/material flat lay -> mini checklist -> after state -> comment invitation\n"
+            "- primary_ratio: 3:4\n"
+            "- 约束：借鉴结构，不要复写样本标题。"
+        ]
+        result["runtime_skill_details"] = [
+            {
+                "skill_name": "xhs_trend_scan",
+                "resource_type": "runtime_context",
+                "resource_id": "xhs_trend_scan:runtime_context",
+                "source_path": None,
+                "content_preview": "# XHS Format Pattern Library Context",
+            }
+        ]
+        return result
+
+
 class SuccessfulPublisher:
     def publish(self, **kwargs: object) -> dict[str, object]:
         return {
@@ -264,16 +298,49 @@ def test_run_fengkuang_playbook_returns_run_metadata(
         "xhs_trend_scan",
         "fengkuang_style",
     ]
-    assert result["run"]["activated_skill_details"][0]["skill_name"] == "xhs_trend_scan"
-    assert result["run"]["runtime_skill_details"] == [
-        {
-            "skill_name": "xhs_trend_scan",
-            "resource_type": "runtime_context",
-            "resource_id": "xhs_trend_scan:runtime_context",
-            "source_path": None,
-            "content_preview": "# XHS Trend Scan Live Context",
-        }
+
+
+def test_run_playbook_records_format_patterns_used_in_response_and_artifact(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    artifact_path = tmp_path / "artifact.json"
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "human_enrichment_daily_post",
+                "final_content": {"title": "旧标题"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        lambda **_: PatternWorkflow(artifact_path),
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = run_playbook(
+        PlaybookRequest(
+            scene="把书桌改成十分钟手作角",
+            account_id="acct-enrichment-local",
+            playbook_id="human_enrichment_daily_post",
+        ),
+        publisher=SuccessfulPublisher(),
+    )
+
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+
+    assert result["format_patterns_used"]["status"] == "available"
+    assert result["format_patterns_used"]["lane"] == "human_enrichment"
+    assert result["format_patterns_used"]["pattern_ids"] == [
+        "human_enrichment.sudden_realization.001"
     ]
+    assert artifact["format_patterns_used"] == result["format_patterns_used"]
+    assert result["run"]["runtime_skill_details"][0]["content_preview"] == (
+        "# XHS Format Pattern Library Context"
+    )
 
 
 def test_run_fengkuang_playbook_reuses_successful_publish_result_for_same_thread(
@@ -903,6 +970,8 @@ def test_build_image_generation_prompt_uses_image_form_review() -> None:
     assert "原本状态" in prompt
     assert "材料平铺" in prompt
     assert "清单" in prompt
+    assert "氛围参考" in prompt
+    assert "不要伪装成真实前后对比" in prompt
 
 
 def test_run_fengkuang_playbook_passes_runtime_context_into_image_prompt(
@@ -1016,7 +1085,7 @@ def test_run_playbook_supports_non_fengkuang_playbook_with_generic_runtime(
     assert captured["domain"] == "苏轼诗词赏析"
 
 
-def test_run_playbook_uses_empty_runtime_skill_context_for_deterministic_provider(
+def test_run_playbook_uses_local_pattern_context_for_deterministic_provider(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -1077,10 +1146,12 @@ def test_run_playbook_uses_empty_runtime_skill_context_for_deterministic_provide
     resolver = captured["skill_context_resolver"]
 
     assert result["status"] == "completed"
-    assert getattr(resolver, "_builders") == {}
+    builders = getattr(resolver, "_builders")
+    assert list(builders) == ["xhs_trend_scan"]
+    assert builders["xhs_trend_scan"].__class__.__name__ == "XhsPatternContextBuilder"
 
 
-def test_run_playbook_uses_empty_runtime_skill_context_when_deepseek_key_missing(
+def test_run_playbook_uses_local_pattern_context_when_deepseek_key_missing(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -1141,7 +1212,9 @@ def test_run_playbook_uses_empty_runtime_skill_context_when_deepseek_key_missing
     resolver = captured["skill_context_resolver"]
 
     assert result["status"] == "completed"
-    assert getattr(resolver, "_builders") == {}
+    builders = getattr(resolver, "_builders")
+    assert list(builders) == ["xhs_trend_scan"]
+    assert builders["xhs_trend_scan"].__class__.__name__ == "XhsPatternContextBuilder"
 
 
 def test_run_playbook_supports_sushi_poetry_repo_assets(

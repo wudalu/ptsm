@@ -230,6 +230,9 @@ async def _scan_xiaohongshu(
                                 "collects": feed.collects,
                                 "shares": feed.shares,
                                 "keyword": kw,
+                                "cover_width": feed.cover_width,
+                                "cover_height": feed.cover_height,
+                                "has_cover_url": feed.has_cover_url,
                             },
                         )
                     )

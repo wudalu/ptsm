@@ -10,11 +10,15 @@ related_paths:
   - src/ptsm/application/services/account_publisher_context.py
   - src/ptsm/application/services/side_effect_ledger.py
   - src/ptsm/application/use_cases/harness_evals.py
+  - src/ptsm/application/use_cases/collect_xhs_patterns.py
+  - src/ptsm/application/use_cases/analyze_xhs_patterns.py
   - src/ptsm/agent_runtime
   - src/ptsm/agent_runtime/state.py
+  - src/ptsm/domain
   - src/ptsm/evaluations
   - src/ptsm/infrastructure
   - src/ptsm/infrastructure/evaluations
+  - src/ptsm/infrastructure/xhs_patterns
   - src/ptsm/interfaces
 ---
 
@@ -56,6 +60,7 @@ PTSM 当前已支持七个垂直领域（发疯文学、苏轼诗词赏析、武
 - single-case diagnostics such as `diagnose-publish` 同样留在 `application/use_cases`，通过组合 `doctor`、logs 和 artifact readers 来输出归因，而不是把诊断逻辑塞进 publisher 或 CLI。
 - side-effect replay control 也放在 `application/services + application/use_cases`，避免让 `agent_runtime` 直接承担发布副作用策略。
 - provider-backed image generation 也留在 `infrastructure`，由 `application/use_cases/run_playbook.py` 在发布前编排调用，避免把外部 API 协议直接塞进 runtime graph。
+- XHS format pattern library 分成三层：`topic_radar` 负责外部 MCP 采样，`ptsm.domain.xhs_patterns` 定义本地样本和 pattern 领域模型，`ptsm.infrastructure.xhs_patterns` 只做本地 JSON snapshot 存储，`application/use_cases/collect_xhs_patterns.py` / `analyze_xhs_patterns.py` 负责编排 CLI 用例。普通生成只读取本地 snapshot，不直接依赖 live MCP。
 - `PlaybookRequest.scene` 在 `--fresh-topic-research` 模式下可为空，由 topic-radar 多平台扫描 + 交互选题后构建 enriched scene 注入工作流，选题结果同时写入 artifact 的 `topic_selection` 字段。
 - `ExecutionState` 现在携带 `activated_skill_details`、`runtime_skill_details` 和 `memory_hits` 等 observability 字段，记录每个 skill 的元信息（display_name、source_path、resource_type）以及本次回读的账号 lessons，供 artifact 写入、drafting context 和 harness evals 聚合消费。
 - `human_enrichment_daily_post` 以新增 playbook/account/skill/evaluation 资产接入人类丰容实验，不需要 runtime 增加领域分支；它的 artifact `content_review` 会额外写出 `image_form`，供 3:4 封面和轮播式人工 review 使用。

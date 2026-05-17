@@ -211,6 +211,37 @@ def test_deterministic_backend_can_follow_human_enrichment_context() -> None:
     assert not any(term in draft["body"] for term in ("治好", "诊断", "用药"))
 
 
+def test_deterministic_human_enrichment_uses_pattern_library_context() -> None:
+    backend = DeterministicDraftBackend()
+
+    draft = backend.generate(
+        scene="把下班后的书桌从堆满快递盒改成一个十分钟手作角",
+        planner_prompt="# Human Enrichment Planner\n目标：写一条人类丰容日常变量实验。",
+        persona_prompt="# Human Enrichment Persona\n日常变量，3:4 竖版封面，低成本生活实验。",
+        skill_contents=[
+            "# Human Enrichment Style\n必须包含一个变量、三步清单和评论区例子。",
+            "# XHS Enrichment Hashtagging\n标签必须包含 `#人类丰容计划`。",
+        ],
+        runtime_skill_contents=[
+            "# XHS Format Pattern Library Context\n"
+            "- status: available\n"
+            "- lane: human_enrichment\n"
+            "- pattern_ids: human_enrichment.sudden_realization.001\n"
+            "- hook_archetypes: sudden_realization, saveable_list\n"
+            "- body_structures: ordinary friction -> one variable -> checklist -> comment\n"
+            "- image_sequences: cover -> before state -> variable/material flat lay -> mini checklist -> after state -> comment invitation\n"
+            "- primary_ratio: 3:4\n"
+            "- 约束：借鉴结构、节奏和互动机制，不要复写样本标题。"
+        ],
+    )
+
+    assert draft["title"].startswith("突然意识到")
+    assert "书桌" in draft["title"]
+    assert "十分钟" in draft["body"]
+    assert "三步清单" in draft["body"]
+    assert "评论区" in draft["body"]
+
+
 def test_deterministic_modern_psychology_draft_has_mini_tool_and_example_prompt() -> None:
     backend = DeterministicDraftBackend()
 

@@ -96,6 +96,79 @@ def test_build_parser_supports_run_playbook() -> None:
     assert args.login_qrcode_output == Path("/tmp/xhs-login-qrcode.png")
 
 
+def test_build_parser_supports_run_playbook_format_pattern_override() -> None:
+    parser = build_parser()
+
+    args = parser.parse_args(
+        [
+            "run-playbook",
+            "--scene",
+            "把书桌改成手作角",
+            "--account-id",
+            "acct-enrichment-local",
+            "--playbook-id",
+            "human_enrichment_daily_post",
+            "--format-pattern-path",
+            "outputs/artifacts/xhs-pattern-library/current.json",
+        ]
+    )
+
+    assert args.command == "run-playbook"
+    assert args.format_pattern_path == Path("outputs/artifacts/xhs-pattern-library/current.json")
+
+
+def test_build_parser_supports_collect_xhs_patterns() -> None:
+    parser = build_parser()
+
+    args = parser.parse_args(
+        [
+            "collect-xhs-patterns",
+            "--lane",
+            "human_enrichment",
+            "--keywords",
+            "人类丰容,家的丰容计划",
+            "--sample-limit-per-keyword",
+            "8",
+            "--output-dir",
+            "outputs/artifacts/xhs-pattern-library",
+            "--dry-run",
+            "--delay-seconds",
+            "0.2",
+        ]
+    )
+
+    assert args.command == "collect-xhs-patterns"
+    assert args.lane == "human_enrichment"
+    assert args.keywords == "人类丰容,家的丰容计划"
+    assert args.sample_limit_per_keyword == 8
+    assert args.output_dir == Path("outputs/artifacts/xhs-pattern-library")
+    assert args.dry_run is True
+    assert args.delay_seconds == 0.2
+
+
+def test_build_parser_supports_analyze_xhs_patterns() -> None:
+    parser = build_parser()
+
+    args = parser.parse_args(
+        [
+            "analyze-xhs-patterns",
+            "--sample-path",
+            "outputs/artifacts/xhs-pattern-library/samples-2026-05-17.json",
+            "--lane",
+            "human_enrichment",
+            "--output-dir",
+            "outputs/artifacts/xhs-pattern-library",
+        ]
+    )
+
+    assert args.command == "analyze-xhs-patterns"
+    assert args.sample_path == Path(
+        "outputs/artifacts/xhs-pattern-library/samples-2026-05-17.json"
+    )
+    assert args.lane == "human_enrichment"
+    assert args.output_dir == Path("outputs/artifacts/xhs-pattern-library")
+
+
 def test_build_parser_supports_run_plan() -> None:
     parser = build_parser()
 

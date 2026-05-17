@@ -122,10 +122,14 @@ def _pick_why(vertical: str) -> str:
     return mapping.get(vertical, "通用讨论诱因：低门槛参与 + 情绪共鸣 + 经验交换")
 
 
-def _flatten_trending(trending_items: dict[str, list[TrendingItem]]) -> list[dict]:
+def _flatten_trending(
+    trending_items: dict[str, list[TrendingItem]],
+    *,
+    raw_trending_limit_per_platform: int = 100,
+) -> list[dict]:
     flat: list[dict] = []
     for platform, items in trending_items.items():
-        for item in items[:30]:
+        for item in items[:raw_trending_limit_per_platform]:
             row = {
                 "platform": item.platform,
                 "rank": item.rank,

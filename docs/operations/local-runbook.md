@@ -59,9 +59,9 @@ uv run python -m ptsm.bootstrap run-fengkuang \
 
 This exercises:
 - **Planner**: selects playbook (fengkuang_daily_post) and skills (xhs_trend_scan, fengkuang_style, positive_reframe, xhs_hashtagging)
-- **xhs_trend_scan**: calls MCP `search_feeds` with keywords derived from the scene to find real-time hot posts on Xiaohongshu. The live trend context (top posts by engagement score, recommended angle, tension) is injected into both the content drafting prompt and the image generation prompt. If MCP is unreachable, it falls back to the static SKILL.md guidance.
+- **xhs_trend_scan**: loads the local XHS pattern library snapshot when available and injects reusable hook/body/image structures into `runtime_skill_contents`. Ordinary generation does not call live XHS by default; if no snapshot exists, it falls back to static SKILL.md guidance.
 - **Memory**: reads recent same-account, same-playbook lessons and injects a compact anti-repetition context before drafting.
-- **Executor**: DeepSeek LLM generates title, image_text, body, hashtags from scene + persona + planner + static skills + live trend context + recent memory context.
+- **Executor**: DeepSeek LLM generates title, image_text, body, hashtags from scene + persona + planner + static skills + local pattern context + recent memory context.
 - **Reflector**: enforces required rules such as `#发疯文学`, configured deterministic quality rules such as rejecting generic fengkuang titles, requiring a comment/copyable mechanic, and blocking mental-health/medical jokes. Light positive closings like `也算` are recommended style, not a mandatory phrase gate. Passes to finalize, or retries up to max_attempts.
 
 Review the output. If content quality is good, proceed to real publish.
@@ -175,14 +175,25 @@ Uses OpenCV to detect text-like patterns in image corners (Canny edge detection 
 
 ## Hotspot Scanning (xhs_trend_scan)
 
-The `xhs_trend_scan` skill runs during the planner phase. It:
+The `xhs_trend_scan` skill runs during the planner phase. Ordinary generation is local-first:
 
-1. Derives search keywords from the scene (e.g., weekday cues, work cues, playbook domain)
-2. Calls MCP `search_feeds` with each keyword
-3. Ranks results by engagement score (`likes + comments×4 + shares×6 + collects×2`)
-4. Injects the top 4 unique hits as `runtime_skill_contents` into both content drafting and image generation
+1. Try to load `outputs/artifacts/xhs-pattern-library/current.json`.
+2. If a matching lane exists, inject pattern ids, hook archetypes, body structures and image sequences as `runtime_skill_contents`.
+3. If no snapshot exists, ordinary generation skips dynamic context and falls back to static `SKILL.md` guidance.
+4. Live MCP `search_feeds` is reserved for explicit fresh research or the separate `collect-xhs-patterns` job.
 
-If MCP is unreachable or not logged in, it silently falls back to static trend judgment from `SKILL.md`.
+This prevents normal content runs from depending on current XHS login state. The periodic collection command is:
+
+```bash
+uv run python -m ptsm.bootstrap collect-xhs-patterns \
+  --lane human_enrichment \
+  --keywords "人类丰容,家的丰容计划,低成本改造,钩织,拼豆" \
+  --sample-limit-per-keyword 8
+
+uv run python -m ptsm.bootstrap analyze-xhs-patterns \
+  --sample-path outputs/artifacts/xhs-pattern-library/samples-2026-05-17.json \
+  --lane human_enrichment
+```
 
 **Keyword derivation for 发疯文学:**
 - Detects weekday tokens (周一~周日) → adds day-specific search terms

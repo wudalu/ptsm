@@ -16,6 +16,9 @@ class FeedItem:
     shares: int = 0
     collects: int = 0
     xsec_token: str | None = None
+    cover_width: int | None = None
+    cover_height: int | None = None
+    has_cover_url: bool = False
     raw: dict | None = None
 
     @property
@@ -118,6 +121,7 @@ class XiaohongshuPlatform:
             interact = note.get("interactInfo")
             feed_id = _find_first_string(item, "id")
             xsec_token = _find_first_string(item, "xsecToken", "xsec_token")
+            cover = _extract_cover_metadata(item)
 
             items.append(
                 FeedItem(
@@ -129,6 +133,9 @@ class XiaohongshuPlatform:
                     shares=_to_int(interact.get("sharedCount")) if isinstance(interact, dict) else 0,
                     collects=_to_int(interact.get("collectedCount")) if isinstance(interact, dict) else 0,
                     xsec_token=xsec_token,
+                    cover_width=cover["cover_width"],
+                    cover_height=cover["cover_height"],
+                    has_cover_url=cover["has_cover_url"],
                     raw=item,
                 )
             )
@@ -233,6 +240,7 @@ class XiaohongshuPlatform:
             interact = note.get("interactInfo")
             feed_id = _find_first_string(item, "id")
             xsec_token = _find_first_string(item, "xsecToken", "xsec_token")
+            cover = _extract_cover_metadata(item)
 
             items.append(
                 FeedItem(
@@ -244,6 +252,9 @@ class XiaohongshuPlatform:
                     shares=_to_int(interact.get("sharedCount")) if isinstance(interact, dict) else 0,
                     collects=_to_int(interact.get("collectedCount")) if isinstance(interact, dict) else 0,
                     xsec_token=xsec_token,
+                    cover_width=cover["cover_width"],
+                    cover_height=cover["cover_height"],
+                    has_cover_url=cover["has_cover_url"],
                     raw=item,
                 )
             )
@@ -289,3 +300,53 @@ def _normalize_tags(raw_tags: object) -> list[str]:
         if text:
             tags.append(text)
     return tags
+
+
+def _extract_cover_metadata(item: dict) -> dict[str, object]:
+    note = item.get("noteCard") if isinstance(item.get("noteCard"), dict) else item
+    cover: object = None
+    if isinstance(note, dict):
+        cover = note.get("cover") or note.get("coverInfo")
+        if cover is None:
+            image_list = note.get("imageList") or note.get("images")
+            if isinstance(image_list, list) and image_list:
+                cover = image_list[0]
+    width = None
+    height = None
+    has_url = False
+    if isinstance(cover, dict):
+        width = _to_optional_int(
+            cover.get("width")
+            or cover.get("w")
+            or cover.get("imageWidth")
+            or cover.get("originalWidth")
+        )
+        height = _to_optional_int(
+            cover.get("height")
+            or cover.get("h")
+            or cover.get("imageHeight")
+            or cover.get("originalHeight")
+        )
+        has_url = _contains_cover_url(cover)
+    return {
+        "cover_width": width,
+        "cover_height": height,
+        "has_cover_url": has_url,
+    }
+
+
+def _contains_cover_url(payload: object) -> bool:
+    if isinstance(payload, dict):
+        for key, value in payload.items():
+            if "url" in str(key).lower() and isinstance(value, str) and value.strip():
+                return True
+            if _contains_cover_url(value):
+                return True
+    if isinstance(payload, list):
+        return any(_contains_cover_url(item) for item in payload)
+    return False
+
+
+def _to_optional_int(value: object) -> int | None:
+    parsed = _to_int(value)
+    return parsed if parsed > 0 else None

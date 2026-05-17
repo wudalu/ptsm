@@ -33,7 +33,11 @@ from ptsm.infrastructure.publishers.contracts import Publisher
 from ptsm.infrastructure.publishers.factory import build_publisher
 from ptsm.infrastructure.publishers.xiaohongshu_mcp_publisher import PublisherPreflightError
 from ptsm.playbooks.registry import PlaybookRegistry
-from ptsm.skills.runtime_context import SkillContextResolver
+from ptsm.skills.runtime_context import (
+    SkillContextResolver,
+    XhsPatternContextBuilder,
+    build_skill_context_resolver,
+)
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[2]
 PLAYBOOK_ROOT = PACKAGE_ROOT / "playbooks" / "definitions"
@@ -313,6 +317,7 @@ def run_playbook(
         memory=memory,
         checkpointer=checkpointer,
         settings=settings,
+        format_pattern_path=request.format_pattern_path,
     )
     effective_thread_id = thread_id or run.run_id
     config = {"configurable": {"thread_id": effective_thread_id}}
@@ -324,6 +329,11 @@ def run_playbook(
         config=config,
     )
     result = {"playbook_id": playbook.playbook_id, **result}
+    format_patterns_used = _extract_format_patterns_used(
+        result,
+        pattern_path=request.format_pattern_path or settings.xhs_pattern_library_path,
+    )
+    result["format_patterns_used"] = format_patterns_used
     run_store.append_event(
         run.run_id,
         event="workflow_completed",
@@ -482,6 +492,7 @@ def run_playbook(
                 "publish_result": publish_result,
                 "image_generation": image_generation,
                 "watermark_removal": watermark_removal,
+                "format_patterns_used": format_patterns_used,
                 "run": run.to_dict(),
             },
         )
@@ -536,6 +547,7 @@ def run_playbook(
             "activated_skills": list(result.get("activated_skills") or []),
             "activated_skill_details": list(result.get("activated_skill_details") or []),
             "runtime_skill_details": list(result.get("runtime_skill_details") or []),
+            "format_patterns_used": format_patterns_used,
         },
     )
 
@@ -631,8 +643,12 @@ def _build_workflow_for_playbook(
     memory: ExecutionMemoryStore,
     checkpointer: object,
     settings: Settings,
+    format_pattern_path: str | None = None,
 ):
-    skill_context_resolver = _build_runtime_skill_context_resolver(settings)
+    skill_context_resolver = _build_runtime_skill_context_resolver(
+        settings,
+        format_pattern_path=format_pattern_path,
+    )
     if playbook_id == "fengkuang_daily_post":
         return build_fengkuang_workflow(
             memory=memory,
@@ -650,12 +666,23 @@ def _build_workflow_for_playbook(
     )
 
 
-def _build_runtime_skill_context_resolver(settings: Settings) -> SkillContextResolver | None:
+def _build_runtime_skill_context_resolver(
+    settings: Settings,
+    *,
+    format_pattern_path: str | None = None,
+) -> SkillContextResolver | None:
     provider = settings.default_model_provider.lower().strip()
+    pattern_path = format_pattern_path or settings.xhs_pattern_library_path
     if provider == "deterministic":
-        return SkillContextResolver(builders={})
+        return SkillContextResolver(
+            builders={"xhs_trend_scan": XhsPatternContextBuilder(pattern_path=pattern_path)}
+        )
     if provider == "deepseek" and not settings.deepseek_api_key:
-        return SkillContextResolver(builders={})
+        return SkillContextResolver(
+            builders={"xhs_trend_scan": XhsPatternContextBuilder(pattern_path=pattern_path)}
+        )
+    if format_pattern_path:
+        return build_skill_context_resolver(settings=settings, pattern_path=pattern_path)
     return None
 
 
@@ -748,6 +775,7 @@ def _build_image_generation_prompt(
         f"图片形式参考：{image_form or '单张真实感封面'}。"
         "要求：中文互联网感，构图干净，有留白，像真人账号会发的封面"
         "，避免机械对称、塑料质感和营销海报感，保留真实随手拍氛围，"
+        "AI 生成图只作为氛围参考，不要伪装成真实前后对比或真实观察证据，"
         "真人随手拍，不要复杂小字，不要在图片上添加任何标签文字如#发疯文学等话题标签，不要额外水印。"
     )
     return _truncate_text(prompt, 800)
@@ -824,6 +852,52 @@ def _truncate_text(value: str, limit: int) -> str:
     if limit <= 1:
         return normalized[:limit]
     return normalized[: limit - 1].rstrip() + "…"
+
+
+def _extract_format_patterns_used(
+    result: dict[str, Any],
+    *,
+    pattern_path: str,
+) -> dict[str, Any]:
+    for content in result.get("runtime_skill_contents") or []:
+        text = str(content)
+        if "# XHS Format Pattern Library Context" not in text:
+            continue
+        return {
+            "status": _extract_context_value(text, "status") or "available",
+            "freshness": _extract_context_value(text, "freshness"),
+            "lane": _extract_context_value(text, "lane"),
+            "source_artifact_path": _extract_context_value(text, "source"),
+            "pattern_ids": _split_context_list(_extract_context_value(text, "pattern_ids")),
+            "hook_archetypes": _split_context_list(
+                _extract_context_value(text, "hook_archetypes")
+            ),
+            "body_structures": _split_context_list(
+                _extract_context_value(text, "body_structures"),
+                separator="|",
+            ),
+            "image_sequences": _split_context_list(
+                _extract_context_value(text, "image_sequences"),
+                separator="|",
+            ),
+            "primary_ratio": _extract_context_value(text, "primary_ratio"),
+        }
+    return {
+        "status": "unavailable",
+        "source_artifact_path": pattern_path,
+        "pattern_ids": [],
+    }
+
+
+def _extract_context_value(content: str, key: str) -> str:
+    match = re.search(rf"^-\s*{re.escape(key)}:\s*(.+)$", content, flags=re.MULTILINE)
+    return match.group(1).strip() if match else ""
+
+
+def _split_context_list(value: str, *, separator: str = ",") -> list[str]:
+    if not value:
+        return []
+    return [part.strip() for part in value.split(separator) if part.strip()]
 
 
 def _should_record_publish_result(result: dict[str, Any] | None) -> bool:

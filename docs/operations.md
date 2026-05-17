@@ -2,7 +2,7 @@
 title: PTSM Operations
 status: active
 owner: ptsm
-last_verified: 2026-05-16
+last_verified: 2026-05-17
 source_of_truth: true
 related_paths:
   - docs/operations/cloud-bootstrap.md
@@ -13,6 +13,8 @@ related_paths:
   - docs/research/2026-05-15-xhs-content-experiment-log.md
   - src/ptsm/interfaces/cli/main.py
   - src/ptsm/application/use_cases/run_playbook.py
+  - src/ptsm/application/use_cases/collect_xhs_patterns.py
+  - src/ptsm/application/use_cases/analyze_xhs_patterns.py
   - src/ptsm/application/use_cases/docs_sync.py
   - src/ptsm/application/use_cases/eval_artifact.py
   - src/ptsm/application/use_cases/harness_check.py
@@ -87,6 +89,9 @@ COOKIES_PATH=cookies/fk-local.json .ptsm/bin/xhs-mcp/xiaohongshu-mcp-darwin-amd6
 - `uv run python -m ptsm.bootstrap run-fengkuang --fresh-topic-research --account-id acct-fk-local --auto-generate-image --publish-mode mcp-real --publish-visibility "仅自己可见"`
 - `uv run python -m ptsm.bootstrap run-playbook --scene "..." --account-id acct-wuxia-local --playbook-id wuxia_character_post --publish-mode mcp-real --auto-generate-image --publish-visibility "公开" --wait-for-publish-status`
 - `uv run python -m ptsm.bootstrap xhs-check-publish --artifact outputs/artifacts/<artifact>.json`
+- `uv run python -m ptsm.bootstrap collect-xhs-patterns --lane human_enrichment --keywords "人类丰容,家的丰容计划,低成本改造,钩织,拼豆" --sample-limit-per-keyword 8`
+- `uv run python -m ptsm.bootstrap analyze-xhs-patterns --sample-path outputs/artifacts/xhs-pattern-library/samples-2026-05-17.json --lane human_enrichment`
+- `uv run python -m ptsm.bootstrap run-playbook --scene "把书桌改成十分钟手作角" --account-id acct-enrichment-local --playbook-id human_enrichment_daily_post --format-pattern-path outputs/artifacts/xhs-pattern-library/current.json`
 
 ## Usage Notes
 
@@ -104,6 +109,7 @@ COOKIES_PATH=cookies/fk-local.json .ptsm/bin/xhs-mcp/xiaohongshu-mcp-darwin-amd6
 - `eval-artifact` 可对已有 artifact 独立跑 eval，不依赖运行时。
 - `diagnose-publish` 是对单次发布问题的只读诊断入口，适合排查 “为什么没法自动确认已发布” 或 “为什么发布后状态不明确”。
 - `--fresh-topic-research` 通过 topic-radar 先扫描平台热点，交互式让用户选题后再生成内容，此时 `--scene` 可选。
+- `collect-xhs-patterns` / `analyze-xhs-patterns` 是周期采集和格式沉淀入口。普通 `run-playbook` 默认只读取本地 pattern snapshot，不会每次发帖都检索实时高互动帖子；需要实验特定 snapshot 时，用 `--format-pattern-path` 覆盖。
 - `run-playbook` 是多 playbook 的通用入口；`run-fengkuang` 只保留给已有发疯文学兼容脚本和习惯命令。
 - `run-fengkuang --auto-generate-image` 会在缺少 `--publish-image-path` 时尝试调用已配置的图片后端生成封面；即梦配置优先于百炼配置，真实发布模式下默认也会尝试自动补图。
 - 小红书真实发布前，需要先单独启动外部 `xiaohongshu-mcp` 服务；PTSM 默认不会自动拉起 `.ptsm/bin/xhs-mcp/xiaohongshu-mcp-darwin-amd64`。

@@ -141,3 +141,26 @@ class TestBuildScanResult:
         assert result.raw_trending[0]["comments"] == 9
         assert result.raw_trending[0]["collects"] == 30
         assert result.raw_trending[0]["shares"] == 4
+
+    def test_raw_trending_default_limit_keeps_later_keyword_groups(self):
+        items = []
+        for index in range(45):
+            keyword = "普通人用AI" if index >= 35 else "人类丰容"
+            items.append(
+                TrendingItem(
+                    rank=index + 1,
+                    title=f"{keyword} 样本 {index}",
+                    hot_score=1000 - index,
+                    platform="xiaohongshu",
+                    metadata={"keyword": keyword, "feed_id": f"note-{index}"},
+                )
+            )
+
+        result = build_scan_result(
+            trending_items={"xiaohongshu": items},
+            verticals=[],
+            cross_signals=[],
+        )
+
+        assert len(result.raw_trending) == 45
+        assert any(row["keyword"] == "普通人用AI" for row in result.raw_trending)

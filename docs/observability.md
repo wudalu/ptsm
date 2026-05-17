@@ -14,6 +14,9 @@ related_paths:
   - src/ptsm/application/use_cases/runs.py
   - src/ptsm/application/use_cases/harness_report.py
   - src/ptsm/infrastructure/images
+  - src/ptsm/infrastructure/xhs_patterns
+  - src/ptsm/application/use_cases/collect_xhs_patterns.py
+  - src/ptsm/application/use_cases/analyze_xhs_patterns.py
   - src/ptsm/plan_runner/runner.py
   - outputs/artifacts
   - outputs/generated_images
@@ -33,6 +36,9 @@ PTSM 当前的观测性核心是本地文件系统里的 run store 和 artifacts
 - `.ptsm/plan_runs/<run_id>.json`
 - `.ptsm/plan_runs/<run_id>.evidence.json`
 - `outputs/artifacts/*.json`
+- `outputs/artifacts/xhs-pattern-library/samples-*.json`
+- `outputs/artifacts/xhs-pattern-library/patterns-*.json`
+- `outputs/artifacts/xhs-pattern-library/current.json`
 - `outputs/generated_images/*`
 - `.ptsm/evals/<eval_run_id>/summary.json`
 - `.ptsm/evals/<eval_run_id>/results.jsonl`
@@ -61,11 +67,13 @@ PTSM 当前的观测性核心是本地文件系统里的 run store 和 artifacts
 - `ptsm harness-report` 会把 `doctor`、`gc` 和 `harness-evals` 合成一个本地快照，并支持对 stale docs、gc candidate、run completion rate、plan-run completion rate 做 threshold 检查。
 - `ptsm diagnose-publish` 会把 `doctor`、run logs、artifact metadata 和 `xhs-check-publish` 的结果组合成一次只读诊断，给出 `likely_cause`、`evidence` 和 `next_actions`。
 - real publish 或显式 `--auto-generate-image` 运行现在会把 `image_generation` metadata 落进 artifact，包含 provider、model/style、prompt 或本地渲染输入、`generated_image_paths`，以及从 `runtime_skill_contents` 提炼出的 `runtime_context_summary`；当前 provider 可为 `jimeng`、`bailian` 或本地 `local_note_card`。
+- `collect-xhs-patterns` 会把 XHS 原始样本写入 `outputs/artifacts/xhs-pattern-library/samples-*.json`，包含关键词级成功/失败、互动指标、feed identifiers、封面宽高和采集时间；失败关键词留在 `keyword_errors`，不会覆盖已成功样本。
+- `analyze-xhs-patterns` 会把样本蒸馏为 `patterns-*.json` 和 `current.json`。生成链路命中本地 snapshot 时，artifact 和 CLI 响应会写入 `format_patterns_used`，记录 pattern ids、hook archetypes、body structures、image sequences、freshness 和来源 snapshot。
 - `ptsm eval-artifact --artifact <path>` 对单个 artifact 运行所有确定性 rule/contract evaluator，将结构化 EvalResult 写入 `.ptsm/evals/<eval_run_id>/results.jsonl`，并返回 eval run summary（status、counts、gate）。
 - `eval-artifact` 现在会读取 playbook-local `evaluation.yaml`，对已有 `node_contracts` 做确定性 contract enforcement；缺失 playbook evaluation contract 时仍保持非 fatal，便于迁移。当前 executor 约束支持 anti-generic `title_must_not_equal_any` / `image_text_must_not_equal_any`、`body_min_chars` / `body_max_chars`、`body_must_include_comment_prompt_any`、`body_must_include_save_trigger_any`、必需/禁用正文词和必需标签，也会把 `变体要求`、`comment_chain`、`save_tool`、`identity_conflict` 这类实验操作指令当作正文泄漏来拦截。
 - LLM judge adapter 默认不会被 `eval-artifact` 和 `harness-check` 调用，因此默认 harness 不需要网络或模型凭据。显式启用后，executor content-quality judge 会输出 `hook_specificity`、`save_trigger`、`comment_trigger`、`platform_native_format`、`persona_fit`、`safety` 六个标签和 `rewrite_hint`；当前 XHS 内容质量 playbook 将该 judge 配置为 `required`，失败会进入 `required_failed`。
 - 运行时 artifact 现在会持久化 `content_review`，记录生成逻辑、质量信号、LLM 内容质量门状态和人工确认建议；它是发布前人工确认材料，不是自动发布授权。
-- `human_enrichment_daily_post` 的 `content_review` 还会持久化 `image_form`，包含 `primary_ratio=3:4`、封面风格和推荐轮播顺序。这个字段用于人工 review 与图片生成 prompt 提示，不改变 `final_content.v1` 的必需字段，也不代表已经自动生成多图轮播。
+- `human_enrichment_daily_post` 的 `content_review` 还会持久化 `image_form`，包含 `primary_ratio=3:4`、封面风格、推荐轮播顺序、`carousel_brief`、封面/清单文字约束，以及命中的 `image_pattern_id` / `carousel_pattern_id`。这个字段用于人工 review 与图片生成 prompt 提示，不改变 `final_content.v1` 的必需字段，也不代表已经自动生成多图轮播。
 - `EvalStore` 持久化 eval runs：`.ptsm/evals/<eval_run_id>/summary.json` + `results.jsonl`，支持 `list_eval_runs()` 和 `read_results()` 查询。
 - `EvalStore` 的 summary source 现在记录 run/account/platform/playbook scope metadata，便于 scoped harness views 只聚合相关 eval runs。
 - `harness-evals` 现在聚合并报告 eval results：eval run 总数、按 status 和 suite 分布、按 passed/failed/warnings/errors 汇总，并区分 `required_failed` 和 `warning_failed`。

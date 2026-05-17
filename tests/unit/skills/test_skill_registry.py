@@ -197,3 +197,19 @@ def test_remaining_domain_style_skills_encode_xhs_quality_mechanics() -> None:
         content = (skill_root / skill_name / "SKILL.md").read_text(encoding="utf-8")
         for marker in markers:
             assert marker in content
+
+
+def test_human_enrichment_style_mentions_pattern_library_hooks() -> None:
+    content = (
+        Path("src/ptsm/skills/builtin/human_enrichment_style/SKILL.md")
+        .read_text(encoding="utf-8")
+    )
+
+    for marker in [
+        "突然意识到",
+        "人，你该",
+        "before vs after",
+        "低成本变量清单",
+        "不要复写样本标题",
+    ]:
+        assert marker in content

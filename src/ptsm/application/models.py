@@ -18,6 +18,7 @@ class PlaybookRequest(BaseModel):
     open_browser_if_needed: bool = False
     wait_for_publish_status: bool = False
     fresh_topic_research: bool = False
+    format_pattern_path: str | None = None
 
 
 class FengkuangRequest(PlaybookRequest):

@@ -4,6 +4,7 @@ import pytest
 
 from topic_radar.mcp_client import (
     ServerHealth,
+    _clean_error,
     _guess_server,
     extract_text,
     extract_json_payload,
@@ -73,3 +74,15 @@ class TestServerHealth:
         assert health.reachable is False
         assert health.error == "connection refused"
         assert health.tool_count == 0
+
+
+def test_clean_error_surfaces_nested_http_500_from_exception_group() -> None:
+    exc = ExceptionGroup(
+        "unhandled errors in a TaskGroup",
+        [RuntimeError("HTTPStatusError: 500 Internal Server Error")],
+    )
+
+    message = _clean_error(exc)
+
+    assert "500" in message
+    assert "internal error" in message

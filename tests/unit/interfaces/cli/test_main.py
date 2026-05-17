@@ -239,3 +239,116 @@ def test_run_playbook_cli_passes_generic_request_fields(
     assert request.open_browser_if_needed is True
     assert request.wait_for_publish_status is True
     assert captured["thread_id"] == "thread-sushi-001"
+
+
+def test_run_playbook_cli_passes_format_pattern_path(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run_playbook(
+        request: PlaybookRequest,
+        *,
+        thread_id: str | None = None,
+        **kwargs: object,
+    ) -> dict[str, object]:
+        captured["request"] = request
+        return {"status": "completed", "format_patterns_used": {"status": "available"}}
+
+    monkeypatch.setattr("ptsm.interfaces.cli.main.run_playbook", fake_run_playbook)
+
+    exit_code = main(
+        [
+            "run-playbook",
+            "--scene",
+            "把书桌改成十分钟手作角",
+            "--account-id",
+            "acct-enrichment-local",
+            "--playbook-id",
+            "human_enrichment_daily_post",
+            "--format-pattern-path",
+            "outputs/artifacts/xhs-pattern-library/current.json",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload["format_patterns_used"]["status"] == "available"
+    assert captured["request"].format_pattern_path == (
+        "outputs/artifacts/xhs-pattern-library/current.json"
+    )
+
+
+def test_collect_xhs_patterns_cli_dispatches_to_use_case(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_collect(**kwargs: object) -> dict[str, object]:
+        captured.update(kwargs)
+        return {"status": "dry_run", "samples": []}
+
+    monkeypatch.setattr("ptsm.interfaces.cli.main.run_collect_xhs_patterns", fake_collect)
+
+    exit_code = main(
+        [
+            "collect-xhs-patterns",
+            "--lane",
+            "human_enrichment",
+            "--keywords",
+            "人类丰容,家的丰容计划",
+            "--sample-limit-per-keyword",
+            "8",
+            "--output-dir",
+            "outputs/artifacts/xhs-pattern-library",
+            "--dry-run",
+            "--delay-seconds",
+            "0",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload["status"] == "dry_run"
+    assert captured["lane"] == "human_enrichment"
+    assert captured["keywords"] == "人类丰容,家的丰容计划"
+    assert captured["sample_limit_per_keyword"] == 8
+    assert captured["dry_run"] is True
+
+
+def test_analyze_xhs_patterns_cli_dispatches_to_use_case(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_analyze(**kwargs: object) -> dict[str, object]:
+        captured.update(kwargs)
+        return {"status": "completed", "pattern_count": 2}
+
+    monkeypatch.setattr("ptsm.interfaces.cli.main.run_analyze_xhs_patterns", fake_analyze)
+
+    exit_code = main(
+        [
+            "analyze-xhs-patterns",
+            "--sample-path",
+            "outputs/artifacts/xhs-pattern-library/samples-2026-05-17.json",
+            "--lane",
+            "human_enrichment",
+            "--output-dir",
+            "outputs/artifacts/xhs-pattern-library",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload["pattern_count"] == 2
+    assert captured["lane"] == "human_enrichment"
+    assert captured["sample_path"] == Path(
+        "outputs/artifacts/xhs-pattern-library/samples-2026-05-17.json"
+    )

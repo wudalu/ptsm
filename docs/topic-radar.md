@@ -2,10 +2,14 @@
 title: Topic Radar
 status: active
 owner: ptsm
-last_verified: 2026-05-10
+last_verified: 2026-05-17
 source_of_truth: true
 related_paths:
   - src/topic_radar
+  - src/ptsm/application/use_cases/collect_xhs_patterns.py
+  - src/ptsm/application/use_cases/analyze_xhs_patterns.py
+  - src/ptsm/domain/xhs_patterns.py
+  - src/ptsm/infrastructure/xhs_patterns
   - docs/index.md
   - docs/xhs-topics/index.md
   - docs/operations/topic-radar-runbook.md
@@ -65,6 +69,40 @@ artifact 中 `analysis_method` 字段标记实际使用的路径（`"llm"` 或 `
 
 - **小红书**: 本地 xiaohongshu-mcp (HTTP MCP on localhost:18060)
 - **微博/抖音/知乎/B站/今日头条/豆瓣/少数派**: mcp-trends-hub (stdio MCP via npx)，共覆盖 7 个中文内容平台
+
+## XHS Periodic Pattern Collection
+
+PTSM 现在把“实时小红书检索”和“普通发帖生成”拆开：
+
+```bash
+uv run python -m ptsm.bootstrap collect-xhs-patterns \
+  --lane human_enrichment \
+  --keywords "人类丰容,家的丰容计划,低成本改造,钩织,拼豆" \
+  --sample-limit-per-keyword 8 \
+  --output-dir outputs/artifacts/xhs-pattern-library
+
+uv run python -m ptsm.bootstrap analyze-xhs-patterns \
+  --sample-path outputs/artifacts/xhs-pattern-library/samples-2026-05-17.json \
+  --lane human_enrichment \
+  --output-dir outputs/artifacts/xhs-pattern-library
+```
+
+`collect-xhs-patterns` 顺序采集关键词，不并发打 XHS MCP；单个关键词遇到
+HTTP 500、timeout 或登录波动时，会把已成功关键词的样本先落盘，并把失败关键词写入
+`keyword_errors`。样本保留标题、关键词、互动数、`feed_id`、`xsec_token`、
+作者、封面宽高和是否有封面 URL，但不会下载或复用创作者图片。
+
+`analyze-xhs-patterns` 把原始样本归一化为本地 `XhsSample`，再沉淀为
+`PostFormatPattern` snapshot。当前确定性规则会识别：
+
+- `sudden_realization`
+- `you_should_enrich`
+- `before_after_contrast`
+- `saveable_list`
+- `process_or_tutorial`
+
+最新可用 snapshot 写入 `outputs/artifacts/xhs-pattern-library/current.json`。
+普通 `run-playbook` 只读取这个本地 snapshot，不会默认实时搜索小红书。
 
 ## 分析能力
 

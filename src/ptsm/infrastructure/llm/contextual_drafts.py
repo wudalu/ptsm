@@ -16,7 +16,11 @@ def build_contextual_deterministic_draft(
     if _is_wuxia_context(scene=scene, extra_context=extra_context):
         return _build_wuxia_draft(scene=scene, feedback=feedback)
     if _is_human_enrichment_context(scene=scene, extra_context=extra_context):
-        return _build_human_enrichment_draft(scene=scene, feedback=feedback)
+        return _build_human_enrichment_draft(
+            scene=scene,
+            feedback=feedback,
+            runtime_context=runtime_context,
+        )
     if _is_ai_tech_context(scene=scene, extra_context=extra_context):
         return _build_ai_tech_draft(scene=scene, feedback=feedback)
     if _is_daily_english_context(scene=scene, extra_context=extra_context):
@@ -124,13 +128,23 @@ def _is_modern_psychology_context(*, scene: str, extra_context: str) -> bool:
     )
 
 
-def _build_human_enrichment_draft(*, scene: str, feedback: str) -> dict[str, Any]:
+def _build_human_enrichment_draft(
+    *,
+    scene: str,
+    feedback: str,
+    runtime_context: str,
+) -> dict[str, Any]:
+    hooks = _extract_pattern_hooks(runtime_context)
     if any(keyword in scene for keyword in ("书桌", "快递盒", "手作", "工位", "桌")):
-        title = "给书桌加一个零成本变量"
+        title = (
+            "突然意识到书桌也需要丰容"
+            if "sudden_realization" in hooks
+            else "给书桌加一个零成本变量"
+        )
         image_text = "今天先丰容这个角落"
         body = (
             f"{scene}。我不打算把生活一次性改造完，只先给这个角落加一个小变量。\n"
-            "三步清单：先清出一个手掌大的空位；把最常用的杯子和便签放到伸手可及；"
+            "十分钟三步清单：先清出一个手掌大的空位；把最常用的杯子和便签放到伸手可及；"
             "给今晚的十分钟手作留一个固定位置。\n"
             "这不是要立刻变精致，只是把日复一日里的一厘米还给自己。"
             "评论区交一个你想先丰容的角落，我来收集零成本版本。"
@@ -165,6 +179,16 @@ def _build_human_enrichment_draft(*, scene: str, feedback: str) -> dict[str, Any
         "body": body,
         "hashtags": ["#人类丰容计划", "#家的丰容计划", "#低成本生活", "#小红书生活"],
     }
+
+
+def _extract_pattern_hooks(runtime_context: str) -> set[str]:
+    if "# XHS Format Pattern Library Context" not in runtime_context:
+        return set()
+    for line in runtime_context.splitlines():
+        if line.startswith("- hook_archetypes:"):
+            raw = line.split(":", 1)[1]
+            return {part.strip() for part in raw.split(",") if part.strip()}
+    return set()
 
 
 def _build_sushi_poetry_draft(*, scene: str, feedback: str) -> dict[str, Any]:

@@ -2,7 +2,7 @@
 title: XHS Topic Index
 status: active
 owner: ptsm
-last_verified: 2026-04-23
+last_verified: 2026-05-17
 source_of_truth: false
 related_paths:
   - docs/index.md
@@ -28,6 +28,7 @@ related_paths:
 
 - 2026-04-22 复核时，官方 OpenAI curated skills 里没有小红书专项 skill，不能直接拿来做热点分析。
 - 当前仓库已经落地 `xhs_trend_scan` 作为第一个小红书 research builtin skill；帖子拆解和垂类路由仍未产品化。
+- 当前仓库已经落地周期性 XHS pattern library：`collect-xhs-patterns` 负责 bounded live MCP 采样，`analyze-xhs-patterns` 负责把原始样本变成可复用格式 snapshot，普通 `run-playbook` 读取本地 `current.json` 而不是每次实时搜索高互动帖子。
 - 真正可复用的外部能力在小红书 MCP / OpenClaw skill 生态；PTSM 更适合在这些能力之上做自己的 research skill，而不是直接照搬外部 workflow。
 
 ## 阅读顺序

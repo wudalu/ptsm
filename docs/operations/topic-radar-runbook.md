@@ -4,6 +4,7 @@ See also:
 
 - `docs/topic-radar.md`
 - `docs/plans/2026-05-03-topic-radar-research-agent.md`
+- `docs/plans/2026-05-17-xhs-live-data-optimization.md`
 
 ## Canonical Research Workflow (Agent-Ready)
 
@@ -169,7 +170,7 @@ Top terms: [('治愈', 24), ('教程', 18), ('求教程', 12), ('试试', 10), (
 | cross_platform_signals | list[CrossPlatformSignal] | 跨平台扩散信号 |
 | high_engagement_patterns | list[dict] | 高互动模式摘要 |
 | recommended_angles | list[dict] | 推荐选题角度 |
-| raw_trending | list[dict] | 原始热榜数据 (≤30/平台) |
+| raw_trending | list[dict] | 原始热榜数据 (默认 ≤100/平台) |
 | platform_errors | dict | 平台错误详情 |
 | analysis_method | string | `"llm"` 或 `"rules"` |
 | scan_summary | string | LLM 模式下的整体摘要 |
@@ -188,6 +189,33 @@ Top terms: [('治愈', 24), ('教程', 18), ('求教程', 12), ('试试', 10), (
 | teardown 返回 None | feed_id 无效或帖子已下架 | 换一个有效的 feed_id |
 
 XHS `raw_trending` rows should include `feed_id`, `xsec_token`, `author`, `likes`, `comments`, `collects`, `shares`, and the source `keyword` when returned by `search_feeds`. If those fields are missing, do not start detail teardown; first rerun scan after login recovery.
+
+## Periodic Pattern Library Workflow
+
+普通发帖不要每次临时检索最新小红书热帖。需要定期采样时，用 PTSM 的本地 pattern library 命令：
+
+```bash
+uv run python -m ptsm.bootstrap collect-xhs-patterns \
+  --lane human_enrichment \
+  --keywords "人类丰容,家的丰容计划,低成本改造,钩织,拼豆" \
+  --sample-limit-per-keyword 8 \
+  --output-dir outputs/artifacts/xhs-pattern-library
+
+uv run python -m ptsm.bootstrap analyze-xhs-patterns \
+  --sample-path outputs/artifacts/xhs-pattern-library/samples-2026-05-17.json \
+  --lane human_enrichment \
+  --output-dir outputs/artifacts/xhs-pattern-library
+```
+
+运行规则：
+
+- 关键词必须顺序采集，不并发调用 XHS MCP。
+- 每个关键词采完后立即落盘，后续关键词失败不能丢掉前序证据。
+- 遇到 HTTP 500 或 login/session 波动时，保留 partial artifact，并把失败关键词写入 `keyword_errors`。
+- 样本只保留标题、互动、feed identifiers、作者、封面尺寸和是否有封面 URL；不要下载或复用创作者图片。
+- 分析产物写入 `outputs/artifacts/xhs-pattern-library/current.json`，由普通 `run-playbook` 读取。
+
+如果 broad scan 连续出现 HTTP 500，停止扩大批量，先重启 MCP 服务并恢复登录态。不要把空样本或失败 keyword 当成有效趋势证据。
 
 ## Exit Codes
 

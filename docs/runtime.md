@@ -13,6 +13,8 @@ related_paths:
   - src/ptsm/application/use_cases/runs.py
   - src/ptsm/infrastructure/llm
   - src/ptsm/infrastructure/llm/factory.py
+  - src/ptsm/domain/xhs_patterns.py
+  - src/ptsm/infrastructure/xhs_patterns
   - src/ptsm/infrastructure/images
   - src/ptsm/infrastructure/images/watermark_remover.py
   - src/ptsm/infrastructure/memory/checkpoint.py
@@ -42,6 +44,7 @@ related_paths:
 - `run_playbook()` 现在也会在 `.ptsm/agent_runtime/side-effects.json` 下记录成功副作用结果，用于同一 `thread_id` 的安全重放。
 - `run_playbook()` 现在可以在真实发布缺图或显式 `--auto-generate-image` 时生成封面图，默认写到 `outputs/generated_images/`；即梦配置优先于百炼配置，provider 未配置时回退到本地 `local_note_card` PNG renderer。
 - deterministic / deepseek drafting backend 现在会读取 playbook prompt、playbook persona prompt、静态 scoped skills，以及 planner 注入的 runtime skill contexts，不再只面向发疯文学。
+- `xhs_trend_scan` 的 runtime context 现在优先读取本地 `outputs/artifacts/xhs-pattern-library/current.json` 里的 approved/candidate format patterns；普通 `run-playbook` 不默认实时搜索小红书。只有在显式 fresh research 路径且本地 pattern snapshot 不可用时，才会回退到 live MCP trend scan。
 - deterministic drafting backend 可以通过小型 contextual draft helper 为特定 playbook 提供离线 dry-run 草稿，供 harness 和 e2e 测试在没有真实 LLM 调用时验证领域硬约束；当前覆盖现代心理学、武侠人物评述、苏轼诗词赏析、AI 科技资讯、每日英语学习和人类丰容实验的基础结构。
 - 显式注入依赖时，运行时仍兼容 `InMemoryExecutionMemory` 和 `InMemorySaver`。
 - 持久 checkpoint 以 `thread_id` 为键保存；复用同一个 `thread_id` 才能跨进程读取同一条执行线程。
@@ -53,6 +56,7 @@ related_paths:
 - deterministic drafting fallback 会消费 recent account memory 做轻量去重；发疯文学和现代心理困境观察都会在近期标题/封面撞车时切换到备用表达，而不是只证明 memory 被读到。
 - finalize 现在还会写入 `content_review`，包含生成逻辑、互动/收藏/安全信号、LLM 内容质量门状态和人工确认建议。这个 review 不等于自动发布批准；当前人工调整流程是 operator 基于该说明继续对话修改，而不是进入独立审核队列。
 - 对 `human_enrichment_daily_post`，`content_review` 还会写入 `image_form`，记录 3:4 竖版封面、真实创作者封面风格和推荐轮播顺序（封面、原本状态、变量/材料平铺、清单、改变后细节、评论区提问）。当前发布链路仍只自动生成单张封面图，轮播顺序先作为人工 review 和未来图片扩展依据。
+- 当本地 pattern library 命中时，`run-playbook` 会在 response 和 artifact 中写入 `format_patterns_used`，包含 pattern ids、hook archetypes、body structures、image sequences 和 snapshot 来源。人类丰容的 `content_review.image_form` 还会带上 `image_pattern_id`、`carousel_pattern_id`、`carousel_brief` 和封面/清单页文字约束。
 
 ## Practical Implications
 
@@ -64,7 +68,7 @@ related_paths:
 - `xhs_trend_scan` 这类动态 research skill 输出现在以独立 `runtime_skill_contents` 进入 drafting backend，不再和静态 `SKILL.md` 文本混在同一个字段里。
 - 图片生成现在是发布前的一段显式步骤，会把 prompt、模型和生成路径写回 artifact，便于后续验收和排障。
 - 图片生成 prompt 现在也会读取 `runtime_skill_contents` 里的实时切口和场景张力，让封面图和正文共享同一层热点上下文。
-- 图片生成 prompt 现在也会读取 artifact `content_review.image_form` 中的图片形式摘要；当人类丰容 playbook 提供轮播式建议时，单张封面生成会保留“原本状态、材料平铺、清单、改变后细节”等视觉提示。
+- 图片生成 prompt 现在也会读取 artifact `content_review.image_form` 中的图片形式摘要；当人类丰容 playbook 提供轮播式建议时，单张封面生成会保留“原本状态、材料平铺、清单、改变后细节”等视觉提示，并明确 AI 生成图只是氛围参考，不应伪装成真实前后证据。
 - 本地 note-card renderer 生成类似小红书常见笔记卡片的 3:4 竖版 PNG，使用 final content 的标题、封面语和正文摘要直接绘制，不调用外部图片 API。
 - 图片生成后可选去水印后处理（`WATERMARK_REMOVAL_ENABLED=true`），使用 OpenCV inpainting 检测并移除底角残留水印，处理结果写入 artifact 的 `watermark_removal` 字段。
 - artifact evaluation 不在 LangGraph 节点内运行；`run_playbook()` 完成 artifact/image/publish/post-publish 后再调用 eval use case，因此 rule/contract evaluator 失败不会改变原始 runtime graph 的控制流。内容质量 LLM judge 是生成链路例外：它在 reflector 内作为重写门使用。

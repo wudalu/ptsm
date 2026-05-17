@@ -13,4 +13,14 @@
 5. **轻量结果**：只说感受和观察，不承诺治愈人生。
 6. **评论区例子**：问读者会先丰容哪个角落、交一个小变量，避免空泛「你怎么看」。
 
+如果 runtime context 提供 `XHS Format Pattern Library Context`，优先从里面选一个 hook archetype：
+
+- `sudden_realization`：写成「突然意识到某个普通物件/角落也需要丰容」。
+- `you_should_enrich`：写成「人，你该给某个角落/物件丰容了」。
+- `before_after_contrast`：写清原本状态和加变量后的微小差别。
+- `saveable_list`：写成低成本变量清单。
+- `process_or_tutorial`：写手作/材料流的过程感。
+
+这些是格式参考，不是标题库；不要复写样本标题，也不要把 pattern id 写进正文。
+
 输出时要让标题、封面文案、正文和图片想法互相支撑。标题和封面必须出现具体场景、物件或变量，不要只写「治愈生活」「精致日常」。

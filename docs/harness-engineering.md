@@ -62,11 +62,12 @@ repository.
 - a required content quality judge for XHS executor output when enabled/configured; it returns calibrated dimensions (`hook_specificity`, `save_trigger`, `comment_trigger`, `platform_native_format`, `persona_fit`, `safety`) plus a rewrite hint, and generation uses failed judge output as a retry signal before human review. Runtime judge activation is now driven by each playbook's `evaluation.yaml`, not a hard-coded playbook list.
 - generic playbook node-contract constraints for final-content text and hashtag checks, so high-risk domains can gate required tags, required safety language, forbidden claims, anti-generic titles/covers, body length, comment prompts, save/tool triggers, and experiment-instruction leakage without adding runtime branches
 - local code-rendered note-card image generation for XHS covers when auto image generation is requested and external image providers are not configured
+- a deterministic, local-first XHS pattern library loop: periodic `collect-xhs-patterns` persists partial MCP samples, `analyze-xhs-patterns` distills them into local format snapshots, and ordinary generation consumes `current.json` without live XHS calls
 
 ## What We Should Build Next
 
 - traces and metrics if local file observability stops being enough
-- calibrated LLM judge suites after enough dry-run and publish examples exist; current human review stays lightweight through each artifact's `content_review` plus operator conversation, not a separate review queue or approval UI
+- calibrated LLM judge suites after enough dry-run, pattern-library and publish examples exist; current human review stays lightweight through each artifact's `content_review` plus operator conversation, not a separate review queue or approval UI
 - richer skill quality evals if completion-rate aggregation stops being enough
 
 ## What We Should Not Copy Blindly

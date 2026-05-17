@@ -8,6 +8,8 @@ from typing import Sequence
 import uuid
 
 from ptsm.application.models import FengkuangRequest, PlaybookRequest
+from ptsm.application.use_cases.analyze_xhs_patterns import run_analyze_xhs_patterns
+from ptsm.application.use_cases.collect_xhs_patterns import run_collect_xhs_patterns
 from ptsm.application.use_cases.diagnose_publish import run_diagnose_publish
 from ptsm.application.use_cases.doctor import run_doctor
 from ptsm.application.use_cases.eval_artifact import run_eval_artifact
@@ -105,6 +107,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_playbook_cli.add_argument("--open-browser-if-needed", action="store_true")
     run_playbook_cli.add_argument("--wait-for-publish-status", action="store_true")
     run_playbook_cli.add_argument("--fresh-topic-research", action="store_true")
+    run_playbook_cli.add_argument("--format-pattern-path", type=Path)
     run_playbook_cli.add_argument("--eval", action="store_true")
     run_playbook_cli.add_argument(
         "--login-qrcode-output",
@@ -227,6 +230,27 @@ def build_parser() -> argparse.ArgumentParser:
     diagnose_publish.add_argument("--artifact", type=Path)
     diagnose_publish.add_argument("--run-id")
     diagnose_publish.add_argument("--server-url")
+
+    collect_xhs_patterns = subparsers.add_parser("collect-xhs-patterns")
+    collect_xhs_patterns.add_argument("--lane", required=True)
+    collect_xhs_patterns.add_argument("--keywords", required=True)
+    collect_xhs_patterns.add_argument("--sample-limit-per-keyword", type=int, default=8)
+    collect_xhs_patterns.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path("outputs/artifacts/xhs-pattern-library"),
+    )
+    collect_xhs_patterns.add_argument("--dry-run", action="store_true")
+    collect_xhs_patterns.add_argument("--delay-seconds", type=float, default=1.0)
+
+    analyze_xhs_patterns = subparsers.add_parser("analyze-xhs-patterns")
+    analyze_xhs_patterns.add_argument("--sample-path", type=Path, required=True)
+    analyze_xhs_patterns.add_argument("--lane", required=True)
+    analyze_xhs_patterns.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path("outputs/artifacts/xhs-pattern-library"),
+    )
 
     run_plan = subparsers.add_parser("run-plan")
     run_plan.add_argument("--plan", type=Path, required=True)
@@ -355,9 +379,33 @@ def main(argv: Sequence[str] | None = None) -> int:
                 open_browser_if_needed=args.open_browser_if_needed,
                 wait_for_publish_status=args.wait_for_publish_status,
                 fresh_topic_research=args.fresh_topic_research,
+                format_pattern_path=(
+                    str(args.format_pattern_path) if args.format_pattern_path else None
+                ),
             ),
             thread_id=args.thread_id,
             eval_enabled=args.eval,
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "collect-xhs-patterns":
+        result = run_collect_xhs_patterns(
+            lane=args.lane,
+            keywords=args.keywords,
+            sample_limit_per_keyword=args.sample_limit_per_keyword,
+            output_dir=args.output_dir,
+            dry_run=args.dry_run,
+            delay_seconds=args.delay_seconds,
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "analyze-xhs-patterns":
+        result = run_analyze_xhs_patterns(
+            sample_path=args.sample_path,
+            lane=args.lane,
+            output_dir=args.output_dir,
         )
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0

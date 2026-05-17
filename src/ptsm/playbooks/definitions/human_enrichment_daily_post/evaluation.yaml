@@ -42,6 +42,9 @@ node_contracts:
         - 三步
         - 清单
         - 今天先试
+        - 低成本
+        - 十分钟
+        - 今天能试
       body_must_include_comment_prompt_any:
         - 评论区
         - 你会先
@@ -61,6 +64,8 @@ node_contracts:
         - comment_chain
         - save_tool
         - image_brief
+        - pattern_id
+        - hook_archetypes
 
   reflector:
     allowed_decisions:

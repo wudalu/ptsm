@@ -108,6 +108,65 @@ Out of scope:
 - A dashboard or always-on crawler. A manual command and optional scheduled job
   are enough for this phase.
 
+## 2026-05-17 Implementation Slice
+
+Current source-of-truth docs say the cross-domain content-quality contracts and
+local note-card cover backend have already landed. This branch therefore treats
+`docs/plans/2026-05-17-cross-domain-content-quality-and-note-images.md` as
+completed context and implements the remaining live-data optimization path:
+
+1. design: keep XHS MCP access in a bounded, manually runnable collection use
+   case; never call live XHS from ordinary deterministic generation.
+2. implement: add local `XhsSample`, pattern extraction, pattern snapshot store,
+   CLI commands, generation-time pattern context injection, and richer
+   human-enrichment image/form metadata.
+3. test: write failing unit tests first for sample normalization, partial MCP
+   collection, pattern analysis/store, pattern-context injection, run-playbook
+   artifact metadata, and human-enrichment contract expectations.
+4. verify: run targeted pytest after each task, then `docs-sync` and
+   `harness-check --base-ref origin/main` before handoff.
+
+Branch assumptions:
+
+- The collector is a manual/cron-friendly command, not a daemon.
+- Tests use fake clients and local JSON fixtures; they must not require a live
+  MCP server or logged-in Xiaohongshu session.
+- Pattern records may store title/body/image structure and cover dimensions, but
+  must not store creator image URLs as reusable assets.
+- Generated posts should borrow pattern archetypes, not copy sample titles.
+
+Final branch gate:
+
+```bash
+uv run pytest -q --ignore=tests/e2e
+DEFAULT_LLM_PROVIDER=deterministic uv run pytest tests/e2e/test_human_enrichment_publish_dry_run.py -q
+uv run python -m ptsm.bootstrap docs-sync --base-ref origin/main
+uv run python -m ptsm.bootstrap harness-check --base-ref origin/main
+```
+
+Implementation status in this branch:
+
+- Implemented periodic sample collection via `ptsm collect-xhs-patterns`.
+- Implemented local sample normalization and deterministic pattern extraction.
+- Implemented local snapshot persistence under `outputs/artifacts/xhs-pattern-library`.
+- Implemented pattern-library runtime context injection for `xhs_trend_scan`.
+- Implemented `run-playbook --format-pattern-path` and artifact
+  `format_patterns_used` metadata.
+- Expanded human-enrichment prompt assets, deterministic draft behavior,
+  `content_review.image_form` carousel brief, and pattern leakage constraints.
+- Updated source-of-truth docs for architecture, runtime, skills, playbooks,
+  observability, operations and topic-radar.
+
+Verification evidence collected while implementing:
+
+```bash
+uv run pytest tests/unit/topic_radar/test_mcp_client.py tests/unit/topic_radar/test_xiaohongshu_platform.py tests/unit/topic_radar/test_cli.py tests/unit/topic_radar/test_output.py tests/unit/domain/test_xhs_patterns.py tests/unit/application/use_cases/test_collect_xhs_patterns.py tests/unit/application/use_cases/test_analyze_xhs_patterns.py tests/unit/infrastructure/test_xhs_pattern_store.py tests/unit/skills/test_xhs_pattern_context.py tests/unit/skills/test_runtime_context.py tests/unit/skills/test_skill_registry.py tests/unit/application/use_cases/test_run_playbook.py tests/unit/interfaces/cli/test_main.py tests/unit/test_bootstrap.py tests/unit/agent_runtime/test_finalize_node.py tests/unit/infrastructure/llm/test_factory.py tests/unit/evaluations/test_playbook_contracts.py -q
+uv run pytest -q --ignore=tests/e2e
+DEFAULT_LLM_PROVIDER=deterministic uv run pytest tests/e2e/test_human_enrichment_publish_dry_run.py -q
+uv run python -m ptsm.bootstrap collect-xhs-patterns --lane human_enrichment --keywords "人类丰容,家的丰容计划" --sample-limit-per-keyword 2 --output-dir /tmp/ptsm-xhs-pattern-smoke --dry-run --delay-seconds 0
+uv run python -m ptsm.bootstrap analyze-xhs-patterns --sample-path /tmp/ptsm-xhs-pattern-smoke/samples-2026-05-17.json --lane human_enrichment --output-dir /tmp/ptsm-xhs-pattern-smoke/library
+```
+
 ---
 
 ### Task 1: Add Periodic XHS Sample Collection

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, timezone
 import json
 import re
 from pathlib import Path
@@ -57,6 +57,19 @@ class ContentMechanic:
     label: str
     description: str
     signal_title: str
+
+
+@dataclass(frozen=True)
+class FormatPatternContext:
+    lane: str
+    pattern_ids: list[str]
+    hook_archetypes: list[str]
+    body_structures: list[str]
+    image_sequences: list[list[str]]
+    freshness: str
+    source_artifact_path: str
+    status: str
+    primary_ratio: str = ""
 
 
 class SkillContextResolver:
@@ -160,6 +173,102 @@ class XhsTrendScanContextBuilder:
             return None
 
         return _render_trend_context(scene=scene, keywords=keywords, hits=hits)
+
+
+class XhsPatternContextBuilder:
+    """Load approved/candidate XHS format patterns from a local snapshot."""
+
+    def __init__(
+        self,
+        *,
+        pattern_path: Path | str = "outputs/artifacts/xhs-pattern-library/current.json",
+        stale_after_days: int = 14,
+    ) -> None:
+        self.pattern_path = Path(pattern_path)
+        self.stale_after_days = stale_after_days
+
+    def build(
+        self, *, scene: str, domain: str, playbook_id: str,
+        keyword_hints: list[str] | None = None,
+        fresh_topic_research: bool = False,
+    ) -> str | None:
+        context = self.load_context(playbook_id=playbook_id, domain=domain)
+        if context is None or not context.pattern_ids:
+            return None
+        return _render_format_pattern_context(context)
+
+    def load_context(self, *, playbook_id: str, domain: str) -> FormatPatternContext | None:
+        if not self.pattern_path.exists():
+            return None
+        try:
+            data = json.loads(self.pattern_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        lane = _lane_for_playbook(playbook_id=playbook_id, domain=domain)
+        if str(data.get("lane") or "") != lane:
+            return None
+        patterns = [
+            item for item in data.get("patterns", [])
+            if isinstance(item, dict) and item.get("status") in {"approved", "candidate"}
+        ][:4]
+        if not patterns:
+            return None
+        created_at = str(data.get("created_at") or "")
+        freshness = _freshness_status(created_at, stale_after_days=self.stale_after_days)
+        return FormatPatternContext(
+            lane=lane,
+            pattern_ids=[str(item.get("pattern_id")) for item in patterns if item.get("pattern_id")],
+            hook_archetypes=[str(item.get("title_hook")) for item in patterns if item.get("title_hook")],
+            body_structures=[
+                str(item.get("body_structure")) for item in patterns if item.get("body_structure")
+            ],
+            image_sequences=[
+                [str(part) for part in item.get("image_sequence", [])]
+                for item in patterns
+                if isinstance(item.get("image_sequence"), list)
+            ],
+            freshness=freshness,
+            source_artifact_path=str(data.get("source_snapshot") or self.pattern_path),
+            status=str(data.get("status") or "available"),
+            primary_ratio=_dominant_pattern_ratio(patterns),
+        )
+
+
+class PatternAwareXhsTrendContextBuilder:
+    """Use the local pattern library for normal runs and live MCP only on fresh research."""
+
+    def __init__(
+        self,
+        *,
+        pattern_builder: XhsPatternContextBuilder,
+        live_builder: XhsTrendScanContextBuilder,
+    ) -> None:
+        self.pattern_builder = pattern_builder
+        self.live_builder = live_builder
+
+    def build(
+        self, *, scene: str, domain: str, playbook_id: str,
+        keyword_hints: list[str] | None = None,
+        fresh_topic_research: bool = False,
+    ) -> str | None:
+        pattern_context = self.pattern_builder.build(
+            scene=scene,
+            domain=domain,
+            playbook_id=playbook_id,
+            keyword_hints=keyword_hints,
+            fresh_topic_research=fresh_topic_research,
+        )
+        if pattern_context:
+            return pattern_context
+        if not fresh_topic_research:
+            return None
+        return self.live_builder.build(
+            scene=scene,
+            domain=domain,
+            playbook_id=playbook_id,
+            keyword_hints=keyword_hints,
+            fresh_topic_research=fresh_topic_research,
+        )
 
 
 class TopicResearchContextBuilder:
@@ -388,12 +497,19 @@ def build_skill_context_resolver(
     *,
     settings: Settings,
     xhs_tool_runner: McpToolRunner | None = None,
+    pattern_path: Path | str | None = None,
 ) -> SkillContextResolver:
+    pattern_builder = XhsPatternContextBuilder(
+        pattern_path=pattern_path or settings.xhs_pattern_library_path
+    )
     return SkillContextResolver(
         builders={
-            "xhs_trend_scan": XhsTrendScanContextBuilder(
-                server_url=settings.xhs_mcp_server_url,
-                tool_runner=xhs_tool_runner,
+            "xhs_trend_scan": PatternAwareXhsTrendContextBuilder(
+                pattern_builder=pattern_builder,
+                live_builder=XhsTrendScanContextBuilder(
+                    server_url=settings.xhs_mcp_server_url,
+                    tool_runner=xhs_tool_runner,
+                ),
             ),
             "topic_research": TopicResearchContextBuilder(),
         }
@@ -440,6 +556,62 @@ def _dedupe_preserve_order(values: Sequence[str]) -> list[str]:
         seen.add(normalized)
         deduped.append(normalized)
     return deduped
+
+
+def _lane_for_playbook(*, playbook_id: str, domain: str) -> str:
+    mapping = {
+        "human_enrichment_daily_post": "human_enrichment",
+    }
+    if playbook_id in mapping:
+        return mapping[playbook_id]
+    normalized = re.sub(r"[^a-z0-9]+", "_", playbook_id.lower()).strip("_")
+    return normalized or re.sub(r"\s+", "_", domain.strip().lower())
+
+
+def _freshness_status(created_at: str, *, stale_after_days: int) -> str:
+    if not created_at:
+        return "unknown"
+    try:
+        parsed = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+    except ValueError:
+        return "unknown"
+    now = datetime.now(timezone.utc)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return "stale" if (now - parsed).days > stale_after_days else "fresh"
+
+
+def _dominant_pattern_ratio(patterns: list[dict]) -> str:
+    counts: dict[str, int] = {}
+    for pattern in patterns:
+        ratio = str(pattern.get("cover_ratio") or "").strip()
+        if ratio:
+            counts[ratio] = counts.get(ratio, 0) + 1
+    if not counts:
+        return ""
+    return max(counts, key=counts.get)
+
+
+def _render_format_pattern_context(context: FormatPatternContext) -> str:
+    image_sequences = [
+        " -> ".join(sequence) for sequence in context.image_sequences[:2] if sequence
+    ]
+    lines = [
+        "# XHS Format Pattern Library Context",
+        f"- status: {context.status}",
+        f"- freshness: {context.freshness}",
+        f"- lane: {context.lane}",
+        f"- source: {context.source_artifact_path}",
+        f"- pattern_ids: {', '.join(context.pattern_ids)}",
+        f"- hook_archetypes: {', '.join(context.hook_archetypes)}",
+        f"- body_structures: {' | '.join(context.body_structures[:3])}",
+    ]
+    if image_sequences:
+        lines.append(f"- image_sequences: {' | '.join(image_sequences)}")
+    if context.primary_ratio:
+        lines.append(f"- primary_ratio: {context.primary_ratio}")
+    lines.append("- 约束：借鉴结构、节奏和互动机制，不要复写样本标题。")
+    return "\n".join(lines)
 
 
 def _parse_trend_hits(*, payload: object, keyword: str) -> list[TrendHit]:

@@ -342,19 +342,79 @@ def _build_content_review(state: ExecutionState) -> dict[str, object]:
 def _build_image_form_review(state: ExecutionState) -> dict[str, object] | None:
     if state.get("playbook_id") != "human_enrichment_daily_post":
         return None
-    return {
-        "primary_ratio": "3:4",
+    pattern_ids = _extract_format_pattern_ids(state)
+    primary_ratio = _extract_format_context_value(state, "primary_ratio") or "3:4"
+    sequence = _extract_image_sequence(state) or [
+        "cover",
+        "before state",
+        "variable/material flat lay",
+        "mini checklist",
+        "after state",
+        "comment invitation",
+    ]
+    carousel_brief = _build_carousel_brief(sequence)
+    image_form: dict[str, object] = {
+        "primary_ratio": primary_ratio,
         "cover_style": "real-life creator cover",
-        "recommended_sequence": [
-            "cover",
-            "before state",
-            "variable/material flat lay",
-            "mini checklist",
-            "after state",
-            "comment invitation",
-        ],
+        "recommended_sequence": sequence,
+        "carousel_brief": carousel_brief,
+        "text_constraints": {
+            "cover_max_chars": 14,
+            "checklist_max_bullets": 3,
+            "forbid_hashtags": True,
+            "forbid_watermarks": True,
+        },
         "notes": (
             "Use a real-life-looking vertical cover first. Treat generated images "
             "as mood/reference visuals, not factual before-after evidence."
         ),
     }
+    if pattern_ids:
+        image_form["image_pattern_id"] = pattern_ids[0]
+        image_form["carousel_pattern_id"] = pattern_ids[1] if len(pattern_ids) > 1 else pattern_ids[0]
+    return image_form
+
+
+def _extract_format_pattern_ids(state: ExecutionState) -> list[str]:
+    value = _extract_format_context_value(state, "pattern_ids")
+    return [part.strip() for part in value.split(",") if part.strip()]
+
+
+def _extract_image_sequence(state: ExecutionState) -> list[str]:
+    value = _extract_format_context_value(state, "image_sequences")
+    if not value:
+        return []
+    first_sequence = value.split("|", 1)[0]
+    return [part.strip() for part in first_sequence.split("->") if part.strip()]
+
+
+def _extract_format_context_value(state: ExecutionState, key: str) -> str:
+    for content in state.get("runtime_skill_contents", []):
+        text = str(content)
+        if "# XHS Format Pattern Library Context" not in text:
+            continue
+        for line in text.splitlines():
+            prefix = f"- {key}:"
+            if line.startswith(prefix):
+                return line[len(prefix):].strip()
+    return ""
+
+
+def _build_carousel_brief(sequence: list[str]) -> list[dict[str, object]]:
+    purpose_by_role = {
+        "cover": "3:4 cover with one short sentence",
+        "before state": "show the ordinary friction or original state",
+        "variable/material flat lay": "show the low-cost variable or material",
+        "mini checklist": "show no more than three action bullets",
+        "after state": "show the changed detail or sensory result",
+        "comment invitation": "invite readers to share a concrete example",
+    }
+    return [
+        {
+            "slide": index,
+            "role": role,
+            "purpose": purpose_by_role.get(role, role),
+            "text_limit": "one short sentence" if role == "cover" else "keep text sparse",
+        }
+        for index, role in enumerate(sequence, start=1)
+    ]
