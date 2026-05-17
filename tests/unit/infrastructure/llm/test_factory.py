@@ -149,6 +149,26 @@ def test_deterministic_image_plan_ignores_strategy_catalog_when_choosing_style()
     assert image_plan["text_density"] == "low"
 
 
+def test_deterministic_psychology_message_boundary_prefers_save_tool_notes() -> None:
+    draft = DeterministicDraftBackend().generate(
+        scene="收到朋友消息就急着解释，想要一个边界句模板",
+        planner_prompt="# Modern Psychology Planner\n目标：输出可收藏的心理学小工具。",
+        persona_prompt="# Modern Psychology Persona\n有心理学素养但不做诊断。",
+        skill_contents=[
+            "# XHS Image Strategy\n"
+            "心理学可保存工具优先 iPhone 记事本；只有真实聊天对话才用微信聊天记录。",
+            "# Psychology Style\n需要边界句模板和例子型评论提示。",
+        ],
+    )
+
+    image_plan = draft["image_plan"]
+    assert image_plan["backend"] == "local_social_screenshot"
+    assert image_plan["style"] == "iphone_notes"
+    assert image_plan["role"] == "save_tool"
+    assert image_plan["text_density"] == "low"
+    assert image_plan["max_text_units"] == "3"
+
+
 def test_deterministic_backend_prefers_provider_image_for_real_object_visuals() -> None:
     draft = DeterministicDraftBackend().generate(
         scene="把下班后的书桌从堆满快递盒改成一个十分钟手作角",
@@ -524,6 +544,40 @@ def test_deterministic_modern_psychology_draft_varies_by_scene_mechanic() -> Non
         for tool in ("事实 / 猜测 / 下一步", "三栏", "5分钟", "边界句", "消息草稿", "模板")
     )
     assert "评论区" in ordinary_reply["body"]
+
+
+def test_deterministic_modern_psychology_draft_covers_digital_and_loneliness_lanes() -> None:
+    backend = DeterministicDraftBackend()
+    skill_contents = [
+        "# Psychology Style\n需要数字生活、孤独和关系压力等选题轮换。",
+        "# Psychology Safety\n禁止诊断化表达，必须提示专业帮助边界。",
+        "# XHS Psychology Hashtagging\n标签必须包含 `#心理学`。",
+    ]
+
+    digital = backend.generate(
+        scene="睡前刷短视频停不下来，越刷越空但又不想停",
+        planner_prompt="# 现代心理困境观察 Planner",
+        persona_prompt="# Modern Psychology Persona",
+        skill_contents=skill_contents,
+    )
+    loneliness = backend.generate(
+        scene="看到别人周末都在聚会，自己突然觉得很孤独也很失败",
+        planner_prompt="# 现代心理困境观察 Planner",
+        persona_prompt="# Modern Psychology Persona",
+        skill_contents=skill_contents,
+    )
+
+    assert digital["title"] != "下班后还在复盘一句话，不是你太敏感"
+    assert loneliness["title"] != "下班后还在复盘一句话，不是你太敏感"
+    assert digital["title"] != loneliness["title"]
+    assert any(term in digital["body"] for term in ("信息过载", "情绪回避", "低控制感"))
+    assert any(term in loneliness["body"] for term in ("孤独", "比较焦虑", "社交耗竭"))
+    assert "专业帮助" in digital["body"]
+    assert "专业帮助" in loneliness["body"]
+    assert "#心理学" in digital["hashtags"]
+    assert "#心理学" in loneliness["hashtags"]
+    assert any(tag in digital["hashtags"] for tag in ("#信息过载", "#睡眠恢复"))
+    assert any(tag in loneliness["hashtags"] for tag in ("#孤独感", "#比较焦虑"))
 
 
 def test_deterministic_drafts_strip_experiment_variant_instructions() -> None:

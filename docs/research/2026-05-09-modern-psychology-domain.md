@@ -169,6 +169,39 @@ Product implication:
 4. `轻量行动`：提供 1-2 个低风险行动，例如记录触发点、减少睡前刺激、向可信任的人求助。
 5. `专业边界`：如果持续痛苦、功能受损、自伤想法或严重睡眠问题，应寻求专业帮助。
 
+## 2026-05-17 Optimization Update: XHS Form And Topic Selection
+
+User concern: 心理学内容专业度高，如果只靠长文字，读者未必愿意看完；需要判断小红书上这类内容更适合怎样的图文呈现，以及当前选题方式是否过窄。
+
+### Evidence
+
+- 本地 live-like 样本 `outputs/artifacts/xhs-content-quality-search-2026-05-15.json` 覆盖 `心理学`、`情绪管理`、`职场焦虑`、`反刍思维` 等关键词。高互动标题集中在具体痛点和可保存价值，例如“跳过情绪，看见事实。”、“建议工资3w以下工作很烦躁的反复观看”、“思维反刍...或许是你内耗的最大原因”。这说明心理内容需要一眼能识别的场景/重构/工具，而不是纯概念标题。
+- `docs/research/2026-05-17-xhs-live-mcp-sample.md` 的 live MCP 样本虽然主要服务人类丰容方向，但确认高互动 XHS 图文常见机制是 realization hook、before/after tension、saveable mini format、comment examples；这套机制可迁移到心理内容的“困境识别 -> 小工具 -> 例子评论”。
+- 公开小红书图文 SOP 资料把链路拆成“选题决定上限、封面标题决定点击、正文决定完读、评论区决定转化”，并强调不要写成一大坨文字。Source: <https://jiandan.link/blog/%E5%B0%8F%E7%BA%A2%E4%B9%A6%E5%9B%BE%E6%96%87%E7%AC%94%E8%AE%B0%E5%88%9B%E4%BD%9Csop/>
+- 公开情绪管理封面资料认为偏理性分析/心理咨询类内容适合简约风，但封面应传递情绪和核心主题，避免文字塞太满；细节应该留给内页/正文。Source: <https://www.designkit.cn/article/tsqxdmmrhsjgxdqxglxhsfm20250715>
+
+### Format Decision
+
+心理学方向不应把正文截图化，也不应做密集信息图。第一阶段默认用“平实贴图 + 少量文字”：
+
+1. `iphone_notes` / `save_tool`：三栏工具、5分钟练习、边界句、消息草稿、想法改写。封面只放一个问题和最多三条短工具句。
+2. `note_card` / `cover_hook`：一句强重构，例如“不是你太敏感，是大脑还在找确定感”。
+3. `wechat_chat` / `comment_prompt`：只用于真实聊天对话、群聊气泡、可复制回复。不能因为正文里出现“消息”两个字就默认聊天截图。
+4. `provider_image` / `evidence_or_scene`：只在主题需要真实空间、物件或生活场景氛围时使用；AI 图不能伪装成真实诊疗、真实证据或真实前后对比。
+
+### Topic Selection Decision
+
+当前实现容易把心理内容收敛到“下班复盘一句话 / 反刍思维”。优化后应把选题池拆成六个 lane：
+
+1. 职场复盘 / 低控制感：会议、临时消息、周一预焦虑、冒名顶替感。
+2. 关系边界 / 消息压力：被说想太多、害怕拒绝、回复后反复检查。
+3. 数字生活 / 信息过载：睡前短视频、越刷越空、比较焦虑、AI 陪伴边界。
+4. 孤独 / 社交耗竭：看见别人热闹后的落差、越社交越累、害怕被落下。
+5. 情绪调节 / 恢复练习：5分钟落地、事实和猜测分栏、低成本恢复动作。
+6. 热点心理化重构：把公共事件转成“情绪如何被触发、边界如何守住”的低风险解释，不追诊断、不蹭灾难。
+
+运行时仍应优先使用本地 pattern / topic artifact，不在每次生成时重度实时搜索小红书。普通生成要稳定、可复现；live search 更适合周期性研究和更新 pattern snapshot。
+
 ## Safety And Compliance Boundaries
 
 必须禁止：

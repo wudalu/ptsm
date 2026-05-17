@@ -549,6 +549,22 @@ def _build_deterministic_image_plan(
             str(draft.get("body", "")),
         ]
     )
+    context_signal = f"{extra_context}\n{content_signal}"
+    if (
+        _looks_like_modern_psychology(context_signal)
+        and _looks_like_note_screenshot(content_signal)
+        and not _looks_like_explicit_chat_exchange(content_signal)
+    ):
+        return {
+            "backend": "local_social_screenshot",
+            "style": "iphone_notes",
+            "role": "save_tool",
+            "text_density": "low",
+            "max_text_units": "3",
+            "cover_text_strategy": "只放一个问题和三条可保存短句，不把正文搬进图里。",
+            "reason": "心理内容以边界句、三栏或5分钟工具为主，低密度记事本截图更适合收藏。",
+            "prompt_focus": "做成低密度工具卡，保留标题、封面语和最多三条短句。",
+        }
     if _looks_like_chat_screenshot(content_signal):
         return {
             "backend": "local_social_screenshot",
@@ -608,6 +624,36 @@ def _looks_like_chat_screenshot(text: str) -> bool:
             "聊天",
             "消息",
             "草稿箱",
+        )
+    )
+
+
+def _looks_like_explicit_chat_exchange(text: str) -> bool:
+    return any(
+        cue in text
+        for cue in (
+            "领导：",
+            "老板：",
+            "同事：",
+            "我：",
+            "群聊",
+            "群里",
+            "对话",
+            "聊天气泡",
+        )
+    )
+
+
+def _looks_like_modern_psychology(text: str) -> bool:
+    return any(
+        cue in text
+        for cue in (
+            "Modern Psychology",
+            "现代心理困境观察",
+            "Psychology Style",
+            "Psychology Safety",
+            "#心理学",
+            "专业帮助",
         )
     )
 
