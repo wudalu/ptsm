@@ -63,6 +63,48 @@ def test_factory_builds_deepseek_backend_when_key_present() -> None:
     assert "会议连开三场" in draft["body"]
 
 
+def test_parse_json_payload_preserves_optional_image_plan() -> None:
+    payload = _parse_json_payload(
+        '{"title":"t","image_text":"i","body":"b","hashtags":["#x"],'
+        '"image_plan":{"backend":"local_social_screenshot","style":"wechat_chat",'
+        '"reason":"聊天截图更像真实发帖"}}'
+    )
+
+    assert payload["image_plan"]["backend"] == "local_social_screenshot"
+    assert payload["image_plan"]["style"] == "wechat_chat"
+    assert payload["image_plan"]["reason"] == "聊天截图更像真实发帖"
+
+
+def test_deterministic_backend_emits_local_chat_image_plan_when_strategy_skill_loaded() -> None:
+    draft = DeterministicDraftBackend().generate(
+        scene="领导18:57发在吗让我补材料",
+        skill_contents=[
+            "# XHS Image Strategy\n"
+            "输出 image_plan，并在聊天记录更适合时选择 local_social_screenshot。"
+        ],
+    )
+
+    assert draft["image_plan"]["backend"] == "local_social_screenshot"
+    assert draft["image_plan"]["style"] == "wechat_chat"
+    assert "聊天" in draft["image_plan"]["reason"] or "群聊" in draft["image_plan"]["reason"]
+
+
+def test_deterministic_backend_prefers_provider_image_for_real_object_visuals() -> None:
+    draft = DeterministicDraftBackend().generate(
+        scene="把下班后的书桌从堆满快递盒改成一个十分钟手作角",
+        planner_prompt="# Human Enrichment Planner\n目标：写一条人类丰容日常变量实验。",
+        persona_prompt="# Human Enrichment Persona\n日常变量，3:4 竖版封面，低成本生活实验。",
+        skill_contents=[
+            "# XHS Image Strategy\n真实物件、空间、材料和手作过程优先 provider_image。",
+            "# Human Enrichment Style\n必须包含一个变量、三步清单和评论区例子。",
+            "# XHS Enrichment Hashtagging\n标签必须包含 `#人类丰容计划`。",
+        ],
+    )
+
+    assert draft["image_plan"]["backend"] == "provider_image"
+    assert draft["image_plan"]["style"] == "photo_reference"
+
+
 def test_deterministic_backend_sanitizes_meta_scene_and_adapts_weekend_theme() -> None:
     backend = DeterministicDraftBackend()
 

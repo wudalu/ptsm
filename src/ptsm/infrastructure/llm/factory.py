@@ -17,6 +17,7 @@ from ptsm.infrastructure.llm.contextual_drafts import build_contextual_determini
 XHS_DRAFT_SYSTEM_PROMPT = (
     "你是一个负责小红书中文内容草稿的文案助手。"
     "请输出严格 JSON，对象字段必须是 title, image_text, body, hashtags。"
+    "如果上下文要求图片策略，可额外输出 image_plan 对象。"
     "语气要自然、可读、贴近社交媒体发布。"
 )
 
@@ -91,12 +92,20 @@ class DeterministicDraftBackend:
             start_marker="实时上下文开始",
             end_marker="实时上下文结束",
         )
-        return _build_deterministic_draft(
+        draft = _build_deterministic_draft(
             scene=scene,
             feedback=feedback,
             extra_context=extra_context,
             runtime_context=runtime_context,
         )
+        if _has_xhs_image_strategy(extra_context) and "image_plan" not in draft:
+            draft["image_plan"] = _build_deterministic_image_plan(
+                scene=scene,
+                extra_context=extra_context,
+                runtime_context=runtime_context,
+                draft=draft,
+            )
+        return draft
 
 
 class DeepSeekDraftBackend:
@@ -448,12 +457,16 @@ def _parse_json_payload(content: str) -> dict[str, Any]:
             payload["hashtags"] = _extract_hashtags_from_body(
                 payload.get("body", "")
             )
-    return {
+    result = {
         "title": payload["title"],
         "image_text": payload["image_text"],
         "body": _strip_trailing_hashtags(payload["body"]),
         "hashtags": _normalize_hashtags(payload["hashtags"]),
     }
+    image_plan = payload.get("image_plan")
+    if isinstance(image_plan, dict):
+        result["image_plan"] = _normalize_image_plan_payload(image_plan)
+    return result
 
 
 def _repair_json_payload_text(content: str) -> str:
@@ -486,6 +499,12 @@ def _build_deepseek_hard_requirements(*, extra_context: str, runtime_context: st
             "必须包含一个具体职场物件或社交对象；必须包含评论区接龙/补充提示；"
             "必须包含可复制句或可保存模板；不得用心理疾病、治疗、医院、用药作为笑点。"
         )
+    if _has_xhs_image_strategy(extra_context):
+        requirements.append(
+            "额外输出 image_plan 对象：backend 只能选 local_social_screenshot 或 "
+            "provider_image；本地样式 style 只能选 wechat_chat、iphone_notes 或 note_card；"
+            "reason 用一句话解释为什么这个图片形式适合当前主题。"
+        )
     if "苏轼" in extra_context:
         requirements.append("正文必须包含“苏轼”。")
     return " ".join(requirements)
@@ -502,6 +521,115 @@ def _should_apply_runtime_trend(*, scene: str, runtime_context: str) -> bool:
     if not runtime_context.strip() or runtime_context.strip() == "无":
         return False
     return any(cue in scene for cue in ("老板", "领导", "群里", "需求", "下班", "工位"))
+
+
+def _has_xhs_image_strategy(extra_context: str) -> bool:
+    return any(
+        marker in extra_context
+        for marker in ("XHS Image Strategy", "xhs_image_strategy", "image_plan")
+    )
+
+
+def _build_deterministic_image_plan(
+    *,
+    scene: str,
+    extra_context: str,
+    runtime_context: str,
+    draft: dict[str, Any],
+) -> dict[str, str]:
+    combined = "\n".join(
+        [
+            scene,
+            extra_context,
+            runtime_context,
+            str(draft.get("title", "")),
+            str(draft.get("image_text", "")),
+            str(draft.get("body", "")),
+        ]
+    )
+    if _looks_like_chat_screenshot(combined):
+        return {
+            "backend": "local_social_screenshot",
+            "style": "wechat_chat",
+            "reason": "正文像聊天或群聊记录，本地微信聊天截图更贴近真实小红书首屏。",
+            "prompt_focus": "把可复制回复做成聊天气泡，不放话题标签。",
+        }
+    if _looks_like_real_visual(combined):
+        return {
+            "backend": "provider_image",
+            "style": "photo_reference",
+            "reason": "主题依赖真实物件、空间或过程画面，外部图片模型更适合做生活化氛围参考。",
+            "prompt_focus": "生成真实生活角落或材料过程感，避免伪装事实证据。",
+        }
+    if _looks_like_note_screenshot(combined):
+        return {
+            "backend": "local_social_screenshot",
+            "style": "iphone_notes",
+            "reason": "内容以清单、句型或可保存工具为主，本地记事本截图更适合截图收藏。",
+            "prompt_focus": "保留标题和一句封面语，正文摘要像手机备忘录。",
+        }
+    return {
+        "backend": "local_social_screenshot",
+        "style": "note_card",
+        "reason": "主题以文字表达和封面句为主，本地笔记卡片足够承载首屏信息。",
+        "prompt_focus": "突出标题和封面语，画面干净留白。",
+    }
+
+
+def _looks_like_chat_screenshot(text: str) -> bool:
+    return any(
+        cue in text
+        for cue in (
+            "领导：",
+            "老板：",
+            "同事：",
+            "我：",
+            "在吗",
+            "群聊",
+            "群里",
+            "聊天",
+            "消息",
+            "草稿箱",
+        )
+    )
+
+
+def _looks_like_note_screenshot(text: str) -> bool:
+    return any(
+        cue in text
+        for cue in (
+            "三栏",
+            "5分钟",
+            "边界句",
+            "清单",
+            "模板",
+            "可复制",
+            "可收藏",
+            "截图",
+            "句型",
+            "小纸条",
+            "记下来",
+        )
+    )
+
+
+def _looks_like_real_visual(text: str) -> bool:
+    return any(
+        cue in text
+        for cue in (
+            "书桌",
+            "角落",
+            "桌面",
+            "窗台",
+            "材料",
+            "手作",
+            "平铺",
+            "前后",
+            "变量",
+            "空间",
+            "路线",
+        )
+    )
 
 
 def _extract_runtime_signal(runtime_context: str, *, label: str) -> str:
@@ -537,3 +665,12 @@ def _normalize_hashtags(raw_hashtags: object) -> list[str]:
         return [str(tag).strip() for tag in raw_hashtags if str(tag).strip()]
 
     raise ValueError("hashtags must be a list or string")
+
+
+def _normalize_image_plan_payload(raw_plan: dict[str, Any]) -> dict[str, str]:
+    allowed_fields = ("backend", "style", "reason", "prompt_focus")
+    return {
+        field: str(raw_plan[field]).strip()
+        for field in allowed_fields
+        if raw_plan.get(field) is not None and str(raw_plan[field]).strip()
+    }

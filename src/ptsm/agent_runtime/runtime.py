@@ -336,7 +336,23 @@ def _build_content_review(state: ExecutionState) -> dict[str, object]:
     image_form = _build_image_form_review(state)
     if image_form:
         review["image_form"] = image_form
+    image_plan = _build_image_plan_review(final_content)
+    if image_plan:
+        review["image_plan"] = image_plan
     return review
+
+
+def _build_image_plan_review(final_content: dict[str, object]) -> dict[str, object] | None:
+    raw_plan = final_content.get("image_plan")
+    if not isinstance(raw_plan, dict):
+        return None
+    allowed_fields = ("backend", "style", "reason", "prompt_focus")
+    image_plan = {
+        field: str(raw_plan[field]).strip()
+        for field in allowed_fields
+        if raw_plan.get(field) is not None and str(raw_plan[field]).strip()
+    }
+    return image_plan or None
 
 
 def _build_image_form_review(state: ExecutionState) -> dict[str, object] | None:

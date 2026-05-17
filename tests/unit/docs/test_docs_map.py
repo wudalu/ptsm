@@ -68,6 +68,19 @@ def test_docs_cover_image_generation_provider_paths() -> None:
     assert "outputs/generated_images" in observability_text
 
 
+def test_docs_cover_xhs_image_strategy_skill_and_active_local_selection() -> None:
+    skills_text = (DOCS_ROOT / "skills.md").read_text(encoding="utf-8")
+    runtime_text = (DOCS_ROOT / "runtime.md").read_text(encoding="utf-8")
+    runbook_text = (DOCS_ROOT / "operations" / "local-runbook.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "xhs_image_strategy" in skills_text
+    assert "final_content.image_plan" in runtime_text
+    assert "--local-image-style" in runbook_text
+    assert "explicit local override" in runbook_text
+
+
 def test_docs_index_links_core_maps() -> None:
     index_text = (DOCS_ROOT / "index.md").read_text(encoding="utf-8")
 

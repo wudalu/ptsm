@@ -42,6 +42,7 @@ Skill 层负责让运行时按请求范围暴露合适的 builtin skills，而�
 当前真实例子：
 
 - `xhs_trend_scan` 服务当前所有 `xiaohongshu` playbook，负责热点扫描、选题切口判断和内容机制提取；普通生成优先消费本地 XHS pattern library snapshot，只有显式 fresh research 且本地 snapshot 不可用时才回退到实时 MCP 趋势上下文
+- `xhs_image_strategy` 服务当前所有 `xiaohongshu` playbook，负责让 drafting backend 输出可选 `final_content.image_plan`：在微信聊天记录、iPhone 记事本或笔记卡这类文字原生首屏适合时选择 `local_social_screenshot`，在真实物件、空间、材料、手作过程和生活氛围图更重要时选择 `provider_image`。它只做策略决策，不直接生成图片。
 - `fengkuang_style` / `positive_reframe` / `xhs_hashtagging` 只服务 `fengkuang_daily_post`。这些 skills 现在把“具体职场物件或社交对象 + 可复制疯话/模板 + 评论区接龙 + 非医疗化安全边界”作为生成要求；`也算`、`至少`、`还能` 只作为轻量缓冲词库，不再是固定结尾。
 - `sushi_poetry_style` / `xhs_poetry_hashtagging` 只服务 `sushi_poetry_daily_post`，现在要求“生活瞬间 -> 苏轼词句 -> 可收藏小纸条 -> 评论区共读”，避免讲义腔和百科腔
 - `wuxia_commentary_style` / `xhs_wuxia_hashtagging` 只服务 `wuxia_character_post`，现在要求当代切口、人物出处、原文佐证、可截图判断和评论区人物讨论
@@ -53,6 +54,7 @@ Skill 层负责让运行时按请求范围暴露合适的 builtin skills，而�
 ## Strategy Layer
 
 - `xhs_trend_scan` 是当前第一个小红书 research builtin skill，用来在写作前补一层格式/热点参考。
+- `xhs_image_strategy` 是共享的小红书图片策略 skill，用来把正文结构和图片生成后端连接起来。它要求草稿可附带 `image_plan`，下游 `run_playbook` 再把该计划解析为本地 renderer 或外部 provider 的实际调用。
 - 它现在优先消费本地 `outputs/artifacts/xhs-pattern-library/current.json`。这些结果不会覆盖静态 `SKILL.md` 文本，而是作为独立 `runtime_skill_contents` 参与标题、正文和封面语气生成。如果本地 snapshot 缺失，普通生成会静默跳过动态 context；显式 fresh research 才会尝试 live MCP scan。
 - `xhs_trend_scan` 的 runtime context 不只列热门标题，还会从标题和互动结构推断 `comment_chain`、`save_tool`、`copyable_line`、`identity_conflict` 等内容机制，提示 drafting backend 借鉴“为什么互动”，而不是复写样本标题。
 - `xhs_trend_scan` live MCP 调用现在有短超时保护；MCP 未响应、未登录或缺工具时会回退静态 skill，不阻塞 dry-run。

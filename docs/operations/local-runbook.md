@@ -168,14 +168,14 @@ When both are configured, Jimeng is used first.
 
 ### Local Renderer Styles
 
-When neither Jimeng nor Bailian is configured, PTSM falls back to the local Pillow renderer and writes 3:4 PNGs under `outputs/generated_images/`. The default style is `note_card`, which records `image_generation.style=xhs_note_card_v1`. For dry-runs or private tests that need a more native social screenshot shape, pass one of:
+PTSM can also use the local Pillow renderer as an explicit local cover path and write 3:4 PNGs under `outputs/generated_images/`. The default style is `note_card`, which records `image_generation.style=xhs_note_card_v1`. The shared `xhs_image_strategy` skill may set `final_content.image_plan.backend=local_social_screenshot` to choose this path automatically. For dry-runs or private tests that need a more native social screenshot shape, pass one of these as an explicit local override, even when Jimeng or Bailian is configured:
 
 ```bash
 --local-image-style iphone_notes
 --local-image-style wechat_chat
 ```
 
-These local styles render iPhone Notes-like and WeChat chat transcript-like covers from the generated title, `image_text`, body summary, scene, and runtime context. They do not call external image APIs, and artifacts record the effective style as `iphone_notes_v1` or `wechat_chat_v1`.
+These local styles render iPhone Notes-like and WeChat chat transcript-like covers from the generated title, `image_text`, body summary, scene, and runtime context. They do not call external image APIs, and artifacts record the effective style as `iphone_notes_v1` or `wechat_chat_v1`. The artifact also records `image_generation.image_plan` so the run can be audited as `llm_image_plan`, `manual_override`, or default provider/local behavior.
 
 ### Watermark Removal (Optional)
 

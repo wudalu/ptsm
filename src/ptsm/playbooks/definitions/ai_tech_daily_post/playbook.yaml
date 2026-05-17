@@ -6,6 +6,7 @@ platforms:
 required_skills:
   - xhs_trend_scan
   - topic_research
+  - xhs_image_strategy
   - ai_tech_style
   - ai_tech_hashtagging
 optional_skills: []

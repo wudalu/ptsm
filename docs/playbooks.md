@@ -20,6 +20,7 @@ Playbook 是 PTSM 的业务编排单元。它把领域、平台、技能需求�
 ## Current State
 
 - 当前仓库里有七个真实 playbook：`fengkuang_daily_post`、`sushi_poetry_daily_post`、`wuxia_character_post`、`ai_tech_daily_post`、`daily_english_post`、`modern_psychology_post`、`human_enrichment_daily_post`。
+- 七个小红书 playbook 都加载共享 `xhs_image_strategy`，使正文生成阶段可以同时给出图片后端和样式计划；这个策略与各领域 style / hashtag skill 并列，不替代领域内容约束。
 - `wuxia_character_post` 专门输出长篇武侠人物评述（800-1500字），用当代流行文化视角解读金庸古龙人物。默认绑定 `acct-wuxia-local`。
 - `ai_tech_daily_post` 专门输出 AI/科技资讯速递，结构化拆解科技进展。默认绑定 `acct-ai-tech-local`。
 - `daily_english_post` 是每日英语单词学习内容，陪伴式教育风格。默认绑定 `acct-daily-english-local`。

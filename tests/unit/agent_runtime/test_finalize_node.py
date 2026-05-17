@@ -140,6 +140,71 @@ def test_finalize_adds_image_form_review_for_human_enrichment(tmp_path: Path) ->
     assert review["image_form"]["carousel_brief"][3]["role"] == "mini checklist"
 
 
+def test_finalize_adds_image_plan_review_when_final_content_contains_plan(
+    tmp_path: Path,
+) -> None:
+    finalize = build_finalize_node(
+        execution_memory=InMemoryExecutionMemory(),
+        artifact_store=FileArtifactStore(base_dir=tmp_path / "artifacts"),
+    )
+
+    result = finalize(
+        {
+            "account_id": "acct-fk-local",
+            "playbook_id": "fengkuang_daily_post",
+            "drafting_provider": "deterministic",
+            "selected_playbook": "fengkuang_daily_post",
+            "candidate_skills": ["fengkuang_style", "xhs_image_strategy"],
+            "activated_skills": ["fengkuang_style", "xhs_image_strategy"],
+            "activated_skill_details": [
+                {"skill_name": "fengkuang_style"},
+                {"skill_name": "xhs_image_strategy"},
+            ],
+            "runtime_skill_details": [],
+            "runtime_skill_contents": [],
+            "planner_prompt": "# planner",
+            "persona_prompt": "# persona",
+            "reflection_prompt": "# reflection",
+            "reflection_rules": {"required_hashtag": "#发疯文学"},
+            "attempt_count": 1,
+            "draft_content": {
+                "title": "领导18:57发在吗",
+                "body": "领导：在吗\n我：收到，但灵魂已下班。",
+                "image_text": "收到，但灵魂已下班",
+                "hashtags": ["#发疯文学"],
+                "image_plan": {
+                    "backend": "local_social_screenshot",
+                    "style": "wechat_chat",
+                    "reason": "聊天记录更符合正文的群聊形态",
+                },
+            },
+            "required_revision": False,
+            "reflection_decision": "finalize",
+            "reflection_feedback": "",
+            "scene": "领导18:57发在吗让我补材料",
+            "final_content": {
+                "title": "领导18:57发在吗",
+                "body": "领导：在吗\n我：收到，但灵魂已下班。",
+                "image_text": "收到，但灵魂已下班",
+                "hashtags": ["#发疯文学"],
+                "image_plan": {
+                    "backend": "local_social_screenshot",
+                    "style": "wechat_chat",
+                    "reason": "聊天记录更符合正文的群聊形态",
+                },
+            },
+        }
+    )
+
+    artifact = json.loads(Path(str(result["artifact_path"])).read_text(encoding="utf-8"))
+    image_plan = result["content_review"]["image_plan"]
+
+    assert image_plan["backend"] == "local_social_screenshot"
+    assert image_plan["style"] == "wechat_chat"
+    assert image_plan["reason"] == "聊天记录更符合正文的群聊形态"
+    assert artifact["content_review"]["image_plan"] == image_plan
+
+
 def test_finalize_image_form_uses_pattern_ids_from_runtime_context(tmp_path: Path) -> None:
     finalize = build_finalize_node(
         execution_memory=InMemoryExecutionMemory(),

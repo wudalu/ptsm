@@ -355,20 +355,32 @@ def run_playbook(
             auto_generate_images=request.auto_generate_images,
         ):
             image_backend = build_image_backend(settings)
-            if image_backend is None:
-                runtime_skill_contents = list(result.get("runtime_skill_contents") or [])
-                runtime_context_summary = _summarize_runtime_skill_contents(
-                    runtime_skill_contents
-                )
+            runtime_skill_contents = list(result.get("runtime_skill_contents") or [])
+            runtime_context_summary = _summarize_runtime_skill_contents(
+                runtime_skill_contents
+            )
+            image_decision = _resolve_image_generation_decision(
+                request=request,
+                final_content=result["final_content"],
+                image_backend_available=image_backend is not None,
+            )
+            if image_decision["route"] == "local":
                 image_generation = NoteCardImageBackend().generate(
                     prompt=_build_note_card_image_payload(
                         scene=request.scene,
                         runtime_context_summary=runtime_context_summary,
                         final_content=result["final_content"],
-                        local_image_style=request.local_image_style,
+                        local_image_style=str(image_decision.get("requested_style") or ""),
+                        image_plan=image_decision,
                     ),
                     output_dir=Path.cwd() / DEFAULT_GENERATED_IMAGES_DIR,
                     output_stem=f"{artifact_path.stem}-cover",
+                )
+                image_decision["selected_backend"] = str(
+                    image_generation.get("provider") or "local_note_card"
+                )
+                image_generation["image_plan"] = _image_generation_decision_metadata(
+                    image_decision
                 )
                 image_generation["runtime_context_summary"] = runtime_context_summary
                 resolved_image_paths = list(
@@ -377,10 +389,8 @@ def run_playbook(
                     or []
                 )
             else:
-                runtime_skill_contents = list(result.get("runtime_skill_contents") or [])
-                runtime_context_summary = _summarize_runtime_skill_contents(
-                    runtime_skill_contents
-                )
+                if image_backend is None:
+                    raise RuntimeError("image backend decision selected provider without backend")
                 image_generation = image_backend.generate(
                     prompt=_build_image_generation_prompt(
                         scene=request.scene,
@@ -388,9 +398,16 @@ def run_playbook(
                         runtime_skill_contents=runtime_skill_contents,
                         content_review=result.get("content_review"),
                         final_content=result["final_content"],
+                        image_plan=image_decision,
                     ),
                     output_dir=Path.cwd() / DEFAULT_GENERATED_IMAGES_DIR,
                     output_stem=f"{artifact_path.stem}-cover",
+                )
+                image_decision["selected_backend"] = str(
+                    image_generation.get("provider") or image_decision["selected_backend"]
+                )
+                image_generation["image_plan"] = _image_generation_decision_metadata(
+                    image_decision
                 )
                 image_generation["runtime_context_summary"] = runtime_context_summary
                 resolved_image_paths = list(
@@ -762,6 +779,7 @@ def _build_image_generation_prompt(
     runtime_skill_contents: list[str] | None = None,
     content_review: dict[str, Any] | None = None,
     final_content: dict[str, Any],
+    image_plan: dict[str, Any] | None = None,
 ) -> str:
     scene_text = _truncate_text(str(final_content.get("scene", scene)).strip() or scene, 80)
     title = _truncate_text(str(final_content.get("title", "")).strip(), 80)
@@ -776,6 +794,7 @@ def _build_image_generation_prompt(
         120,
     )
     image_form = _truncate_text(_summarize_image_form(content_review), 120)
+    image_plan_summary = _truncate_text(_summarize_image_plan(image_plan), 140)
     prompt = (
         "为小红书帖子生成一张 3:4 竖版封面图，适合中文社交媒体发布。"
         f"主题场景：{scene_text}。"
@@ -785,6 +804,7 @@ def _build_image_generation_prompt(
         f"账号人设参考：{persona or '像真实创作者在发帖'}。"
         f"实时话题切口：{runtime_context or '贴近日常讨论热感即可'}。"
         f"图片形式参考：{image_form or '单张真实感封面'}。"
+        f"图片策略：{image_plan_summary or '未指定，按真实感封面处理'}。"
         "要求：中文互联网感，构图干净，有留白，像真人账号会发的封面"
         "，避免机械对称、塑料质感和营销海报感，保留真实随手拍氛围，"
         "AI 生成图只作为氛围参考，不要伪装成真实前后对比或真实观察证据，"
@@ -799,6 +819,7 @@ def _build_note_card_image_payload(
     runtime_context_summary: str,
     final_content: dict[str, Any],
     local_image_style: str | None = None,
+    image_plan: dict[str, Any] | None = None,
 ) -> str:
     return json.dumps(
         {
@@ -812,9 +833,130 @@ def _build_note_card_image_payload(
             ),
             "hashtags": list(final_content.get("hashtags", []) or []),
             "runtime_context_summary": runtime_context_summary,
+            "image_plan": _image_generation_decision_metadata(image_plan or {}),
         },
         ensure_ascii=False,
     )
+
+
+def _resolve_image_generation_decision(
+    *,
+    request: PlaybookRequest,
+    final_content: dict[str, Any],
+    image_backend_available: bool,
+) -> dict[str, Any]:
+    raw_plan = final_content.get("image_plan")
+    image_plan = raw_plan if isinstance(raw_plan, dict) else {}
+    requested_backend = _normalized_image_plan_value(image_plan.get("backend"))
+    requested_style = _normalized_image_plan_value(image_plan.get("style"))
+    reason = str(image_plan.get("reason") or "").strip()
+    prompt_focus = str(image_plan.get("prompt_focus") or "").strip()
+
+    if request.local_image_style:
+        return {
+            "route": "local",
+            "source": "manual_override",
+            "requested_backend": "local_note_card",
+            "selected_backend": "local_note_card",
+            "requested_style": request.local_image_style,
+            "reason": "manual --local-image-style override",
+        }
+
+    if requested_backend in {
+        "local_social_screenshot",
+        "local_note_card",
+        "local",
+        "local_renderer",
+    }:
+        return {
+            "route": "local",
+            "source": "llm_image_plan",
+            "requested_backend": requested_backend,
+            "selected_backend": "local_note_card",
+            "requested_style": requested_style or "note_card",
+            "reason": reason,
+            "prompt_focus": prompt_focus,
+        }
+
+    if requested_backend in {"provider_image", "provider", "external", "external_provider"}:
+        if image_backend_available:
+            return {
+                "route": "provider",
+                "source": "llm_image_plan",
+                "requested_backend": requested_backend,
+                "selected_backend": "provider_image",
+                "requested_style": requested_style,
+                "reason": reason,
+                "prompt_focus": prompt_focus,
+            }
+        return {
+            "route": "local",
+            "source": "llm_image_plan",
+            "requested_backend": requested_backend,
+            "selected_backend": "local_note_card",
+            "requested_style": "note_card",
+            "reason": reason,
+            "prompt_focus": prompt_focus,
+            "fallback_reason": "provider_image_requested_but_unavailable",
+        }
+
+    if image_backend_available:
+        return {
+            "route": "provider",
+            "source": "default",
+            "requested_backend": "provider_image",
+            "selected_backend": "provider_image",
+            "requested_style": requested_style,
+            "reason": reason,
+            "prompt_focus": prompt_focus,
+        }
+
+    return {
+        "route": "local",
+        "source": "default",
+        "requested_backend": "local_note_card",
+        "selected_backend": "local_note_card",
+        "requested_style": requested_style or "note_card",
+        "reason": reason,
+        "prompt_focus": prompt_focus,
+    }
+
+
+def _image_generation_decision_metadata(decision: dict[str, Any]) -> dict[str, str]:
+    fields = (
+        "source",
+        "requested_backend",
+        "selected_backend",
+        "requested_style",
+        "reason",
+        "prompt_focus",
+        "fallback_reason",
+    )
+    return {
+        field: str(decision[field]).strip()
+        for field in fields
+        if decision.get(field) is not None and str(decision[field]).strip()
+    }
+
+
+def _normalized_image_plan_value(value: object) -> str:
+    return str(value or "").strip().lower()
+
+
+def _summarize_image_plan(image_plan: dict[str, Any] | None) -> str:
+    if not isinstance(image_plan, dict):
+        return ""
+    metadata = _image_generation_decision_metadata(image_plan)
+    parts: list[str] = []
+    if metadata.get("requested_backend"):
+        parts.append(f"backend={metadata['requested_backend']}")
+    if metadata.get("requested_style"):
+        parts.append(f"style={metadata['requested_style']}")
+    if metadata.get("reason"):
+        parts.append(metadata["reason"])
+    if metadata.get("prompt_focus"):
+        parts.append(metadata["prompt_focus"])
+    return "；".join(parts)
 
 
 def _summarize_runtime_skill_contents(contents: list[str]) -> str:

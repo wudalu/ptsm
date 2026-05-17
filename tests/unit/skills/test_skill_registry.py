@@ -16,6 +16,7 @@ def test_skill_registry_discovers_builtin_fengkuang_skills() -> None:
     assert "positive_reframe" in skill_names
     assert "xhs_hashtagging" in skill_names
     assert "xhs_trend_scan" in skill_names
+    assert "xhs_image_strategy" in skill_names
     assert "sushi_poetry_style" in skill_names
     assert "xhs_poetry_hashtagging" in skill_names
 
@@ -82,6 +83,22 @@ def test_skill_registry_parses_platform_scoped_xhs_trend_skill() -> None:
     assert spec.platform_tags == ["xiaohongshu"]
     assert spec.playbook_tags == []
     assert spec.token_budget_hint == 180
+    assert spec.assets_present is False
+
+
+def test_skill_registry_parses_platform_scoped_xhs_image_strategy_skill() -> None:
+    registry = SkillRegistry(
+        skill_root=Path("src/ptsm/skills/builtin"),
+    )
+
+    spec = next(
+        skill for skill in registry.list_skills() if skill.skill_name == "xhs_image_strategy"
+    )
+
+    assert spec.domain_tags == []
+    assert spec.platform_tags == ["xiaohongshu"]
+    assert spec.playbook_tags == []
+    assert spec.token_budget_hint == 220
     assert spec.assets_present is False
 
 

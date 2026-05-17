@@ -129,6 +129,23 @@ class PatternWorkflow(FakeWorkflow):
         return result
 
 
+class ImagePlanWorkflow(FakeWorkflow):
+    def __init__(self, artifact_path: Path, image_plan: dict[str, str]):
+        super().__init__(artifact_path)
+        self.image_plan = image_plan
+
+    def invoke(self, payload: dict[str, object], config: dict[str, object] | None = None):
+        result = super().invoke(payload, config)
+        result["final_content"] = {
+            "title": "领导18:57发在吗",
+            "image_text": "收到，但灵魂已下班",
+            "body": "领导：在吗\n我：收到，但灵魂已下班。",
+            "hashtags": ["#发疯文学"],
+            "image_plan": self.image_plan,
+        }
+        return result
+
+
 class SuccessfulPublisher:
     def publish(self, **kwargs: object) -> dict[str, object]:
         return {
@@ -956,6 +973,168 @@ def test_run_fengkuang_playbook_uses_requested_local_image_style_when_provider_m
 
     assert result["image_generation"]["style"] == "wechat_chat_v1"
     assert artifact["image_generation"]["style"] == "wechat_chat_v1"
+    assert publisher.received_image_paths
+
+
+def test_run_fengkuang_playbook_uses_llm_local_image_plan_even_when_provider_exists(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    artifact_path = tmp_path / "artifact.json"
+    generated_path = tmp_path / "provider-generated.png"
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "fengkuang_daily_post",
+                "final_content": {"title": "旧标题"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    publisher = CapturingPublisher()
+    image_backend = CapturingImageBackend(generated_path)
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_fengkuang_workflow",
+        lambda **_: ImagePlanWorkflow(
+            artifact_path,
+            {
+                "backend": "local_social_screenshot",
+                "style": "wechat_chat",
+                "reason": "聊天记录更适合本地微信截图",
+            },
+        ),
+    )
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_image_backend",
+        lambda _settings: image_backend,
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = run_fengkuang_playbook(
+        FengkuangRequest(
+            scene="领导18:57发在吗让我补材料",
+            platform="xiaohongshu",
+            account_id="acct-fk-local",
+            auto_generate_images=True,
+        ),
+        publisher=publisher,
+    )
+
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+
+    assert image_backend.prompts == []
+    assert result["image_generation"]["provider"] == "local_note_card"
+    assert result["image_generation"]["style"] == "wechat_chat_v1"
+    assert result["image_generation"]["image_plan"]["source"] == "llm_image_plan"
+    assert result["image_generation"]["image_plan"]["selected_backend"] == "local_note_card"
+    assert result["image_generation"]["image_plan"]["requested_style"] == "wechat_chat"
+    assert artifact["image_generation"]["image_plan"] == result["image_generation"]["image_plan"]
+    assert publisher.received_image_paths
+    assert Path(publisher.received_image_paths[0]).exists()
+
+
+def test_run_fengkuang_playbook_uses_provider_when_image_plan_requests_provider(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    artifact_path = tmp_path / "artifact.json"
+    generated_path = tmp_path / "provider-generated.png"
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "fengkuang_daily_post",
+                "final_content": {"title": "旧标题"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    publisher = CapturingPublisher()
+    image_backend = CapturingImageBackend(generated_path)
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_fengkuang_workflow",
+        lambda **_: ImagePlanWorkflow(
+            artifact_path,
+            {
+                "backend": "provider_image",
+                "style": "photo_reference",
+                "reason": "需要外部模型生成真实感氛围图",
+            },
+        ),
+    )
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_image_backend",
+        lambda _settings: image_backend,
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = run_fengkuang_playbook(
+        FengkuangRequest(
+            scene="领导18:57发在吗让我补材料",
+            platform="xiaohongshu",
+            account_id="acct-fk-local",
+            auto_generate_images=True,
+        ),
+        publisher=publisher,
+    )
+
+    assert len(image_backend.prompts) == 1
+    assert "provider_image" in image_backend.prompts[0]
+    assert "需要外部模型生成真实感氛围图" in image_backend.prompts[0]
+    assert result["image_generation"]["provider"] == "bailian"
+    assert result["image_generation"]["image_plan"]["source"] == "llm_image_plan"
+    assert result["image_generation"]["image_plan"]["selected_backend"] == "bailian"
+    assert publisher.received_image_paths == [str(generated_path)]
+
+
+def test_run_fengkuang_playbook_local_image_style_forces_local_even_when_provider_exists(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    artifact_path = tmp_path / "artifact.json"
+    generated_path = tmp_path / "provider-generated.png"
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "fengkuang_daily_post",
+                "final_content": {"title": "旧标题"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    publisher = CapturingPublisher()
+    image_backend = CapturingImageBackend(generated_path)
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_fengkuang_workflow",
+        lambda **_: FakeWorkflow(artifact_path),
+    )
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_image_backend",
+        lambda _settings: image_backend,
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = run_fengkuang_playbook(
+        FengkuangRequest(
+            scene="周一早上领导连发三个在吗",
+            platform="xiaohongshu",
+            account_id="acct-fk-local",
+            auto_generate_images=True,
+            local_image_style="iphone_notes",
+        ),
+        publisher=publisher,
+    )
+
+    assert image_backend.prompts == []
+    assert result["image_generation"]["provider"] == "local_note_card"
+    assert result["image_generation"]["style"] == "iphone_notes_v1"
+    assert result["image_generation"]["image_plan"]["source"] == "manual_override"
+    assert result["image_generation"]["image_plan"]["selected_backend"] == "local_note_card"
     assert publisher.received_image_paths
 
 

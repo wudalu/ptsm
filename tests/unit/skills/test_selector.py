@@ -31,6 +31,7 @@ def test_selector_returns_request_scoped_surface() -> None:
         "xhs_trend_scan",
         "topic_research",
         "xhs_hashtagging",
+        "xhs_image_strategy",
     ]
     assert "放大具体日常崩溃场景" not in surface.list_summaries()[0].short_description
 
@@ -62,6 +63,7 @@ def test_selector_returns_sushi_poetry_scoped_surface() -> None:
     assert [item.skill_name for item in surface.list_summaries()] == [
         "xhs_trend_scan",
         "topic_research",
+        "xhs_image_strategy",
         "sushi_poetry_style",
         "xhs_poetry_hashtagging",
     ]
@@ -94,6 +96,7 @@ def test_selector_exposes_wuxia_skills() -> None:
     assert "wuxia_commentary_style" in skill_names
     assert "xhs_wuxia_hashtagging" in skill_names
     assert "xhs_trend_scan" in skill_names
+    assert "xhs_image_strategy" in skill_names
 
 
 def test_surface_activates_xhs_trend_scan_for_xiaohongshu_requests() -> None:
@@ -110,6 +113,21 @@ def test_surface_activates_xhs_trend_scan_for_xiaohongshu_requests() -> None:
     assert "热点扫描" in loaded.content
 
 
+def test_selector_exposes_ai_tech_image_strategy() -> None:
+    selector = _build_selector()
+
+    surface = selector.select(
+        domain="AI科技资讯",
+        platform="xiaohongshu",
+        playbook_id="ai_tech_daily_post",
+    )
+
+    skill_names = {skill.skill_name for skill in surface.list_summaries()}
+    assert "ai_tech_style" in skill_names
+    assert "ai_tech_hashtagging" in skill_names
+    assert "xhs_image_strategy" in skill_names
+
+
 def test_selector_exposes_modern_psychology_skills() -> None:
     selector = _build_selector()
 
@@ -123,6 +141,7 @@ def test_selector_exposes_modern_psychology_skills() -> None:
     assert skill_names == [
         "xhs_trend_scan",
         "topic_research",
+        "xhs_image_strategy",
         "psychology_style",
         "psychology_safety",
         "xhs_psychology_hashtagging",
@@ -154,6 +173,7 @@ def test_selector_exposes_human_enrichment_skills() -> None:
     assert [item.skill_name for item in surface.list_summaries()] == [
         "xhs_trend_scan",
         "topic_research",
+        "xhs_image_strategy",
         "human_enrichment_style",
         "xhs_enrichment_visuals",
         "xhs_enrichment_hashtagging",

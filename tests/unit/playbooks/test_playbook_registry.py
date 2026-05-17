@@ -17,6 +17,7 @@ def test_playbook_registry_selects_fengkuang_daily_post() -> None:
     assert playbook.required_skills == [
         "xhs_trend_scan",
         "topic_research",
+        "xhs_image_strategy",
         "fengkuang_style",
         "positive_reframe",
         "xhs_hashtagging",
@@ -45,6 +46,7 @@ def test_playbook_registry_loads_sushi_poetry_playbook() -> None:
     assert playbook.required_skills == [
         "xhs_trend_scan",
         "topic_research",
+        "xhs_image_strategy",
         "sushi_poetry_style",
         "xhs_poetry_hashtagging",
     ]
@@ -72,6 +74,7 @@ def test_registry_loads_wuxia_playbook() -> None:
     assert "xiaohongshu" in playbook.platforms
     assert "wuxia_commentary_style" in playbook.required_skills
     assert "xhs_wuxia_hashtagging" in playbook.required_skills
+    assert "xhs_image_strategy" in playbook.required_skills
     assert playbook.trend_keywords == [
         "金庸群侠",
         "武侠人物",
@@ -91,6 +94,20 @@ def test_registry_selects_wuxia_by_account() -> None:
     assert playbook.playbook_id == "wuxia_character_post"
 
 
+def test_registry_loads_ai_tech_playbook_with_image_strategy() -> None:
+    registry = PlaybookRegistry(
+        playbook_root=Path("src/ptsm/playbooks/definitions"),
+    )
+
+    playbook = registry.get("ai_tech_daily_post")
+
+    assert playbook.domain == "AI科技资讯"
+    assert "xiaohongshu" in playbook.platforms
+    assert "ai_tech_style" in playbook.required_skills
+    assert "ai_tech_hashtagging" in playbook.required_skills
+    assert "xhs_image_strategy" in playbook.required_skills
+
+
 def test_registry_loads_daily_english_playbook() -> None:
     registry = PlaybookRegistry(
         playbook_root=Path("src/ptsm/playbooks/definitions"),
@@ -102,6 +119,7 @@ def test_registry_loads_daily_english_playbook() -> None:
     assert "xiaohongshu" in playbook.platforms
     assert "daily_english_style" in playbook.required_skills
     assert "daily_english_hashtagging" in playbook.required_skills
+    assert "xhs_image_strategy" in playbook.required_skills
 
 
 def test_registry_selects_daily_english_by_account() -> None:
@@ -127,6 +145,7 @@ def test_registry_loads_modern_psychology_playbook() -> None:
     assert playbook.required_skills == [
         "xhs_trend_scan",
         "topic_research",
+        "xhs_image_strategy",
         "psychology_style",
         "psychology_safety",
         "xhs_psychology_hashtagging",
@@ -165,6 +184,7 @@ def test_registry_loads_human_enrichment_playbook() -> None:
     assert playbook.required_skills == [
         "xhs_trend_scan",
         "topic_research",
+        "xhs_image_strategy",
         "human_enrichment_style",
         "xhs_enrichment_visuals",
         "xhs_enrichment_hashtagging",
