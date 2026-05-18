@@ -257,6 +257,9 @@ uv run python -m ptsm.bootstrap run-playbook \
   --playbook-id daily_english_post
 
 # Modern psychology dry-run
+uv run python -m ptsm.bootstrap guide-post \
+  --scene "下班后还在反复复盘白天一句话"
+
 uv run python -m ptsm.bootstrap run-playbook \
   --scene "下班后还在反复复盘白天一句话" \
   --account-id acct-psychology-local \
@@ -467,6 +470,9 @@ uv run python -m ptsm.bootstrap run-playbook \
   --playbook-id daily_english_post
 
 # 现代心理困境观察领域
+uv run python -m ptsm.bootstrap guide-post \
+  --scene "看到别人周末都在聚会，自己突然觉得很失败"
+
 uv run python -m ptsm.bootstrap run-playbook \
   --scene "下班后还在反复复盘白天一句话" \
   --account-id acct-psychology-local \

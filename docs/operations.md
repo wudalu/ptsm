@@ -2,7 +2,7 @@
 title: PTSM Operations
 status: active
 owner: ptsm
-last_verified: 2026-05-17
+last_verified: 2026-05-18
 source_of_truth: true
 related_paths:
   - docs/operations/publish-quickstart.md
@@ -14,6 +14,7 @@ related_paths:
   - docs/research/2026-05-15-xhs-content-experiment-log.md
   - src/ptsm/interfaces/cli/main.py
   - src/ptsm/application/use_cases/run_playbook.py
+  - src/ptsm/application/use_cases/guide_post.py
   - src/ptsm/application/use_cases/collect_xhs_patterns.py
   - src/ptsm/application/use_cases/analyze_xhs_patterns.py
   - src/ptsm/application/use_cases/docs_sync.py
@@ -85,6 +86,8 @@ COOKIES_PATH=cookies/fk-local.json .ptsm/bin/xhs-mcp/xiaohongshu-mcp-darwin-amd6
 - `uv run python -m ptsm.bootstrap run-playbook --scene "..." --account-id acct-wuxia-local --playbook-id wuxia_character_post --publish-mode mcp-real --auto-generate-image --publish-visibility "仅自己可见"`
 - `uv run python -m ptsm.bootstrap run-playbook --scene "Google发布Gemini 3模型" --account-id acct-ai-tech-local --playbook-id ai_tech_daily_post`
 - `uv run python -m ptsm.bootstrap run-playbook --scene "学一个表示坚持的高级词汇" --account-id acct-daily-english-local --playbook-id daily_english_post`
+- `uv run python -m ptsm.bootstrap guide-post`
+- `uv run python -m ptsm.bootstrap guide-post --scene "看到别人周末都在聚会，自己突然觉得很失败" --non-interactive`
 - `uv run python -m ptsm.bootstrap run-playbook --scene "下班后还在复盘会议上说错的那句话" --account-id acct-psychology-local --playbook-id modern_psychology_post`
 - `uv run python -m ptsm.bootstrap run-fengkuang --fresh-topic-research --account-id acct-fk-local`
 - `uv run python -m ptsm.bootstrap run-playbook --fresh-topic-research --account-id acct-psychology-local --playbook-id modern_psychology_post`
@@ -113,6 +116,7 @@ COOKIES_PATH=cookies/fk-local.json .ptsm/bin/xhs-mcp/xiaohongshu-mcp-darwin-amd6
 - `--fresh-topic-research` 通过 topic-radar 先扫描平台热点，交互式让用户选题后再生成内容，此时 `--scene` 可选。
 - `collect-xhs-patterns` / `analyze-xhs-patterns` 是周期采集和格式沉淀入口。普通 `run-playbook` 默认只读取本地 pattern snapshot，不会每次发帖都检索实时高互动帖子；需要实验特定 snapshot 时，用 `--format-pattern-path` 覆盖。
 - `run-playbook` 是多 playbook 的通用入口；`run-fengkuang` 只保留给已有发疯文学兼容脚本和习惯命令。
+- `guide-post` 是现代心理学发帖前的只读向导：默认走对话式引导，先问具体场景，再建议心理学 lane、机制、非诊断化重构、可保存小工具、评论提示和低密度封面，最后输出 Markdown brief 和可复制的 `run-playbook --publish-mode dry-run` 命令；脚本场景用 `--non-interactive` 输出 JSON。真正生成和发布仍走 `run-playbook`。
 - `run-fengkuang --auto-generate-image` 会在缺少 `--publish-image-path` 时尝试调用已配置的图片后端生成封面；即梦配置优先于百炼配置，真实发布模式下默认也会尝试自动补图。
 - `--no-auto-generate-image` 可以关闭自动补图；`--publish-image-path` 使用手动图片；`--local-image-style note_card|iphone_notes|wechat_chat` 可以主动选择本地截图式封面，即使外部图片 provider 已配置也生效。
 - 真实发布只要最终有图片，就必须经过 `watermark_removal` 后处理；dry-run 图片实验仍可用 `WATERMARK_REMOVAL_ENABLED=true` 选择是否预览去水印结果。

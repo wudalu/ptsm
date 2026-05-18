@@ -4,6 +4,7 @@ import argparse
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+import sys
 from typing import Sequence
 import uuid
 
@@ -15,6 +16,13 @@ from ptsm.application.use_cases.doctor import run_doctor
 from ptsm.application.use_cases.eval_artifact import run_eval_artifact
 from ptsm.accounts.registry import AccountRegistry
 from ptsm.application.use_cases.docs_sync import run_docs_sync
+from ptsm.application.use_cases.guide_post import (
+    GuidePostRequest,
+    PSYCHOLOGY_LANES,
+    format_guide_post_markdown,
+    resolve_psychology_lane,
+    run_guide_post,
+)
 from ptsm.application.use_cases.harness_check import run_harness_check
 from ptsm.application.use_cases.harness_evals import run_harness_evals
 from ptsm.application.use_cases.harness_gc import run_harness_gc
@@ -118,6 +126,18 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=DEFAULT_XHS_LOGIN_QRCODE_PATH,
     )
+
+    guide_post = subparsers.add_parser("guide-post")
+    guide_post.add_argument("--playbook-id", default="modern_psychology_post")
+    guide_post.add_argument("--account-id", default="acct-psychology-local")
+    guide_post.add_argument("--lane")
+    guide_post.add_argument("--scene")
+    guide_post.add_argument("--mechanism")
+    guide_post.add_argument("--save-tool")
+    guide_post.add_argument("--image-style", choices=LOCAL_IMAGE_STYLE_CHOICES)
+    guide_post.add_argument("--comment-prompt")
+    guide_post.add_argument("--non-interactive", action="store_true")
+    guide_post.add_argument("--format", choices=("json", "markdown"))
 
     xhs_login_status = subparsers.add_parser("xhs-login-status")
     xhs_login_status.add_argument("--server-url")
@@ -338,6 +358,79 @@ def run_plan_cli(
     return result.to_dict()
 
 
+def _prompt_to_stderr(prompt: str) -> str:
+    print(prompt, file=sys.stderr, end="")
+    return input().strip()
+
+
+def _print_guide_post_lane_options() -> None:
+    for idx, option in enumerate(PSYCHOLOGY_LANES, 1):
+        print(f"  {idx}. {option.name}", file=sys.stderr)
+
+
+def _collect_guide_post_request(args: argparse.Namespace) -> GuidePostRequest:
+    print("我们先把这条现代心理学帖子聊成一个可执行 brief。", file=sys.stderr)
+    scene = args.scene
+    if scene:
+        print(f"1/6 具体场景：{scene}", file=sys.stderr)
+    else:
+        scene = _prompt_to_stderr(
+            "1/6 先说一个具体瞬间，比如“看到别人周末都在聚会，自己突然很失败”： "
+        )
+
+    suggested_lane = resolve_psychology_lane(scene=scene)
+    print(
+        f"我会先按「{suggested_lane.name}」处理，这样更容易写成一个清楚的心理学切口。",
+        file=sys.stderr,
+    )
+
+    lane = args.lane
+    if lane:
+        print(f"2/6 选题 lane：{lane}", file=sys.stderr)
+    else:
+        print("2/6 如果方向不准，可以输入编号调整；回车接受建议。", file=sys.stderr)
+        _print_guide_post_lane_options()
+        selected_lane = _prompt_to_stderr(f"选题 lane [默认：{suggested_lane.name}]: ")
+        lane = selected_lane or suggested_lane.name
+
+    defaults = resolve_psychology_lane(lane=lane, scene=scene)
+
+    mechanism = args.mechanism
+    if mechanism is None:
+        mechanism = _prompt_to_stderr(
+            f"3/6 这篇只解释一个心理机制，建议「{defaults.mechanism}」。要改就输入新机制，回车接受: "
+        )
+
+    save_tool = args.save_tool
+    if save_tool is None:
+        save_tool = _prompt_to_stderr(
+            f"4/6 给读者一个可保存的小工具，建议「{defaults.save_tool}」。要改就输入，回车接受: "
+        )
+
+    image_style = args.image_style
+    if image_style is None:
+        image_style = _prompt_to_stderr(
+            f"5/6 封面建议低密度「{defaults.image_style}」。可选 note_card / iphone_notes / wechat_chat，回车接受: "
+        )
+
+    comment_prompt = args.comment_prompt
+    if comment_prompt is None:
+        comment_prompt = _prompt_to_stderr(
+            f"6/6 评论区要让用户给例子，建议「{defaults.comment_prompt}」。要改就输入，回车接受: "
+        )
+
+    return GuidePostRequest(
+        playbook_id=args.playbook_id,
+        account_id=args.account_id,
+        lane=lane,
+        scene=scene,
+        mechanism=mechanism,
+        save_tool=save_tool,
+        image_style=image_style,
+        comment_prompt=comment_prompt,
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """CLI entrypoint."""
     parser = build_parser()
@@ -393,6 +486,29 @@ def main(argv: Sequence[str] | None = None) -> int:
             eval_enabled=args.eval,
         )
         print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "guide-post":
+        request = (
+            GuidePostRequest(
+                playbook_id=args.playbook_id,
+                account_id=args.account_id,
+                lane=args.lane,
+                scene=args.scene,
+                mechanism=args.mechanism,
+                save_tool=args.save_tool,
+                image_style=args.image_style,
+                comment_prompt=args.comment_prompt,
+            )
+            if args.non_interactive
+            else _collect_guide_post_request(args)
+        )
+        result = run_guide_post(request)
+        output_format = args.format or ("json" if args.non_interactive else "markdown")
+        if output_format == "markdown":
+            print(format_guide_post_markdown(result))
+        else:
+            print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
 
     if args.command == "collect-xhs-patterns":

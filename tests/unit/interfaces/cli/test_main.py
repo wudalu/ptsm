@@ -391,3 +391,54 @@ def test_analyze_xhs_patterns_cli_dispatches_to_use_case(
     assert captured["sample_path"] == Path(
         "outputs/artifacts/xhs-pattern-library/samples-2026-05-17.json"
     )
+
+
+def test_guide_post_cli_outputs_non_interactive_psychology_brief(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    exit_code = main(
+        [
+            "guide-post",
+            "--scene",
+            "睡前刷短视频停不下来，越刷越焦虑",
+            "--non-interactive",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload["status"] == "completed"
+    assert payload["playbook_id"] == "modern_psychology_post"
+    assert payload["brief"]["lane"] == "数字生活 / 信息过载"
+    assert payload["brief"]["mechanism"] == "信息过载"
+    assert "run-playbook --scene" in payload["run_playbook_command_text"]
+
+
+def test_guide_post_cli_prompts_for_missing_fields(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    answers = iter(
+        [
+            "看到别人周末都在聚会，自己突然觉得很失败",
+            "",
+            "",
+            "",
+            "",
+            "你会把这句话送给哪一个瞬间？",
+        ]
+    )
+    monkeypatch.setattr("builtins.input", lambda: next(answers))
+
+    exit_code = main(["guide-post"])
+
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "我们先把这条现代心理学帖子聊成一个可执行 brief" in captured.err
+    assert "回车接受建议" in captured.err
+    assert "# Psychology Guidance Brief" in captured.out
+    assert "lane: 孤独 / 比较焦虑" in captured.out
+    assert "mechanism: 比较焦虑" in captured.out
+    assert "comment_prompt: 你会把这句话送给哪一个瞬间？" in captured.out

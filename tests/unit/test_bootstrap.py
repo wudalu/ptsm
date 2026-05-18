@@ -117,6 +117,43 @@ def test_build_parser_supports_run_playbook_format_pattern_override() -> None:
     assert args.format_pattern_path == Path("outputs/artifacts/xhs-pattern-library/current.json")
 
 
+def test_build_parser_supports_guide_post() -> None:
+    parser = build_parser()
+
+    args = parser.parse_args(
+        [
+            "guide-post",
+            "--scene",
+            "睡前刷短视频停不下来",
+            "--lane",
+            "数字生活 / 信息过载",
+            "--mechanism",
+            "信息过载",
+            "--save-tool",
+            "睡前 5 分钟收口法",
+            "--image-style",
+            "iphone_notes",
+            "--comment-prompt",
+            "你想把哪个入口提前收口？",
+            "--non-interactive",
+            "--format",
+            "markdown",
+        ]
+    )
+
+    assert args.command == "guide-post"
+    assert args.playbook_id == "modern_psychology_post"
+    assert args.account_id == "acct-psychology-local"
+    assert args.scene == "睡前刷短视频停不下来"
+    assert args.lane == "数字生活 / 信息过载"
+    assert args.mechanism == "信息过载"
+    assert args.save_tool == "睡前 5 分钟收口法"
+    assert args.image_style == "iphone_notes"
+    assert args.comment_prompt == "你想把哪个入口提前收口？"
+    assert args.non_interactive is True
+    assert args.format == "markdown"
+
+
 def test_build_parser_supports_collect_xhs_patterns() -> None:
     parser = build_parser()
 
@@ -947,6 +984,37 @@ def test_main_dispatches_run_playbook(monkeypatch, capsys) -> None:
     assert captured["request"].account_id == "acct-sushi-local"
     assert captured["request"].playbook_id == "sushi_poetry_daily_post"
     assert '"playbook_id": "sushi_poetry_daily_post"' in capsys.readouterr().out
+
+
+def test_main_dispatches_guide_post(monkeypatch, capsys) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run_guide_post(request):
+        captured["request"] = request
+        return {
+            "status": "completed",
+            "playbook_id": request.playbook_id,
+            "account_id": request.account_id,
+            "brief": {"lane": request.lane, "scene": request.scene},
+        }
+
+    monkeypatch.setattr("ptsm.interfaces.cli.main.run_guide_post", fake_run_guide_post)
+
+    exit_code = main(
+        [
+            "guide-post",
+            "--scene",
+            "睡前刷短视频停不下来",
+            "--lane",
+            "数字生活 / 信息过载",
+            "--non-interactive",
+        ]
+    )
+
+    assert exit_code == 0
+    assert captured["request"].scene == "睡前刷短视频停不下来"
+    assert captured["request"].lane == "数字生活 / 信息过载"
+    assert '"playbook_id": "modern_psychology_post"' in capsys.readouterr().out
 
 
 def test_main_dispatches_docs_sync_and_fails_on_error(monkeypatch, capsys) -> None:
