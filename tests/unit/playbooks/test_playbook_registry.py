@@ -209,3 +209,42 @@ def test_registry_selects_human_enrichment_by_account() -> None:
     playbook = registry.select_for_account(account=account)
 
     assert playbook.playbook_id == "human_enrichment_daily_post"
+
+
+def test_registry_loads_world_cup_playbook() -> None:
+    registry = PlaybookRegistry(
+        playbook_root=Path("src/ptsm/playbooks/definitions"),
+    )
+
+    playbook = registry.get("world_cup_daily_post")
+
+    assert playbook.domain == "世界杯主题"
+    assert "xiaohongshu" in playbook.platforms
+    assert playbook.required_skills == [
+        "xhs_trend_scan",
+        "topic_research",
+        "xhs_image_strategy",
+        "world_cup_style",
+        "xhs_world_cup_visuals",
+        "xhs_world_cup_hashtagging",
+    ]
+    assert playbook.trend_keywords == [
+        "世界杯",
+        "世界杯决赛",
+        "小组赛",
+        "淘汰赛",
+        "足球战术",
+        "看球",
+    ]
+    assert playbook.max_attempts == 3
+
+
+def test_registry_selects_world_cup_by_account() -> None:
+    registry = PlaybookRegistry(
+        playbook_root=Path("src/ptsm/playbooks/definitions"),
+    )
+    account = AccountRegistry().get("acct-world-cup-local")
+
+    playbook = registry.select_for_account(account=account)
+
+    assert playbook.playbook_id == "world_cup_daily_post"

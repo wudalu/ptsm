@@ -15,6 +15,8 @@ def build_contextual_deterministic_draft(
         return _build_sushi_poetry_draft(scene=scene, feedback=feedback)
     if _is_wuxia_context(scene=scene, extra_context=extra_context):
         return _build_wuxia_draft(scene=scene, feedback=feedback)
+    if _is_world_cup_context(scene=scene, extra_context=extra_context):
+        return _build_world_cup_draft(scene=scene, feedback=feedback)
     if _is_human_enrichment_context(scene=scene, extra_context=extra_context):
         return _build_human_enrichment_draft(
             scene=scene,
@@ -64,6 +66,26 @@ def _is_wuxia_context(*, scene: str, extra_context: str) -> bool:
             "#古龙",
             "令狐冲",
             "笑傲江湖",
+        )
+    )
+
+
+def _is_world_cup_context(*, scene: str, extra_context: str) -> bool:
+    combined = f"{scene}\n{extra_context}"
+    return any(
+        keyword in combined
+        for keyword in (
+            "世界杯主题",
+            "World Cup Style",
+            "XHS World Cup Hashtagging",
+            "world_cup_daily_post",
+            "world_cup_style",
+            "#世界杯",
+            "世界杯",
+            "决赛",
+            "小组赛",
+            "淘汰赛",
+            "看球",
         )
     )
 
@@ -276,6 +298,52 @@ def _build_wuxia_draft(*, scene: str, feedback: str) -> dict[str, Any]:
         "image_text": "自由不是不负责",
         "body": body,
         "hashtags": ["#金庸", "#令狐冲", "#笑傲江湖", "#武侠", "#读书笔记"],
+    }
+
+
+def _build_world_cup_draft(*, scene: str, feedback: str) -> dict[str, Any]:
+    if any(keyword in scene for keyword in ("赛后", "终场", "点球", "逆转", "加时")):
+        title = "这场世界杯赛后先复盘三件事"
+        image_text = "终场后别急着只看比分"
+        body = (
+            f"{scene}。这类世界杯赛后内容，普通球迷可以先别急着把情绪压成一句输赢，"
+            "先按三个看点复盘：比赛节奏什么时候变快，哪次边路推进最有威胁，"
+            "以及替补上来后有没有改变中场连接。\n"
+            "可收藏看球清单：先回看开场15分钟的压迫，再看下半场体能变化，最后看终场前的定位球选择。"
+            "这样聊球不会只剩吵架，也能把赛事情绪放回具体瞬间。\n"
+            "评论区想问问，你赛后最想复盘的是哪一个回合，还是哪位球员的选择？"
+        )
+    elif any(keyword in scene for keyword in ("朋友", "宿舍", "酒吧", "客厅", "熬夜", "看球局")):
+        title = "世界杯看球局先存这份清单"
+        image_text = "普通球迷也能聊起来"
+        body = (
+            f"{scene}。世界杯好看的地方不只是强强对话，也有一群人一起等开球的赛事情绪。"
+            "如果不是每个人都懂战术，可以先用三个看点把聊天拉到同一频道："
+            "谁负责推进，哪一侧边路更活跃，定位球会不会成为转折。\n"
+            "看球清单可以先收藏：开场看逼抢强度，中场看换人信号，赛后看哪次机会最可惜。"
+            "不用争成专家，能一起看懂几个瞬间就很够了。\n"
+            "评论区说说你看球时最在意氛围、球星，还是最后十分钟的心跳。"
+        )
+    else:
+        title = "这场世界杯赛前，普通球迷看三点"
+        image_text = "先看懂对位再开球"
+        body = (
+            f"{scene}。赛前不用把自己逼成战术分析师，普通球迷先抓三个看点就够了："
+            "阿根廷能不能把中场节奏稳住，法国的边路速度会不会把防线拉开，"
+            "以及定位球和替补变化会不会变成转折。\n"
+            "看球清单可以先收藏：开场15分钟看谁压得更靠前，中场看哪边体能先掉，"
+            "赛后再回看最接近进球的那次推进。这样看球，紧张会更具体，聊天也不只剩支持谁。\n"
+            "评论区想问问，你最想看阿根廷的中场控制，还是法国的反击速度？"
+        )
+
+    if feedback != "无" and "收藏" not in body:
+        body += "\n也可以先存成一张赛前看球清单，开球后按顺序对照。"
+
+    return {
+        "title": title,
+        "image_text": image_text,
+        "body": body,
+        "hashtags": ["#世界杯", "#足球", "#看球笔记", "#赛前看点"],
     }
 
 

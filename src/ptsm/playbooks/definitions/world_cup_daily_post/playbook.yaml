@@ -1,0 +1,42 @@
+playbook_id: world_cup_daily_post
+version: 1
+domain: 世界杯主题
+platforms:
+  - xiaohongshu
+required_skills:
+  - xhs_trend_scan
+  - topic_research
+  - xhs_image_strategy
+  - world_cup_style
+  - xhs_world_cup_visuals
+  - xhs_world_cup_hashtagging
+optional_skills: []
+reflection:
+  required_hashtag: "#世界杯"
+  body_must_include_any:
+    - 赛前
+    - 看点
+    - 看球
+    - 评论区
+    - 清单
+  body_must_not_include_any:
+    - 稳赚
+    - 下注
+    - 盘口
+    - 预测比分
+    - 内部消息
+    - 官方消息
+    - 变体要求
+    - 模板要求
+    - comment_chain
+    - save_tool
+    - identity_conflict
+max_attempts: 3
+drafting_model: deepseek-v4-pro
+trend_keywords:
+  - 世界杯
+  - 世界杯决赛
+  - 小组赛
+  - 淘汰赛
+  - 足球战术
+  - 看球

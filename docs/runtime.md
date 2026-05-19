@@ -2,7 +2,7 @@
 title: PTSM Runtime
 status: active
 owner: ptsm
-last_verified: 2026-05-17
+last_verified: 2026-05-19
 source_of_truth: true
 related_paths:
   - src/ptsm/agent_runtime/runtime.py
@@ -45,7 +45,7 @@ related_paths:
 - `run_playbook()` 现在可以在真实发布缺图或显式 `--auto-generate-image` 时生成封面图，默认写到 `outputs/generated_images/`；即梦配置优先于百炼配置。若 `final_content.image_plan.backend` 选择 `local_social_screenshot`，或 operator 传入 `--local-image-style`，即使 provider 已配置也会主动走本地 `local_note_card` PNG renderer。本地 renderer 支持默认笔记卡、iPhone Notes-like 和 WeChat chat-like 三类确定性 3:4 样式。`final_content.image_plan` 还会携带 `role`、`text_density`、`max_text_units` 和 `cover_text_strategy`，让运行时知道这张图是封面钩子、保存工具、评论触发还是证据/场景图。
 - deterministic / deepseek drafting backend 现在会读取 playbook prompt、playbook persona prompt、静态 scoped skills，以及 planner 注入的 runtime skill contexts，不再只面向发疯文学。
 - `xhs_trend_scan` 的 runtime context 现在优先读取本地 `outputs/artifacts/xhs-pattern-library/current.json` 里的 approved/candidate format patterns；普通 `run-playbook` 不默认实时搜索小红书。只有在显式 fresh research 路径且本地 pattern snapshot 不可用时，才会回退到 live MCP trend scan。`topic_research` 也会在保留 topic-radar 选题上下文的同时追加同一份本地 pattern summary；当 topic-radar artifact 缺失时，它仍可只返回 pattern context。
-- deterministic drafting backend 可以通过小型 contextual draft helper 为特定 playbook 提供离线 dry-run 草稿，供 harness 和 e2e 测试在没有真实 LLM 调用时验证领域硬约束；当前覆盖现代心理学、武侠人物评述、苏轼诗词赏析、AI 科技资讯、每日英语学习和人类丰容实验的基础结构。现代心理学 deterministic 分支覆盖职场反刍、关系边界、消息压力、数字生活/信息过载、孤独/比较焦虑等 lane，避免所有离线样例退化成同一标题形状；人类丰容 deterministic 分支覆盖桌面/角落、路线/感官、手作/材料流三类场景。
+- deterministic drafting backend 可以通过小型 contextual draft helper 为特定 playbook 提供离线 dry-run 草稿，供 harness 和 e2e 测试在没有真实 LLM 调用时验证领域硬约束；当前覆盖现代心理学、武侠人物评述、苏轼诗词赏析、AI 科技资讯、每日英语学习、人类丰容实验和世界杯主题的基础结构。现代心理学 deterministic 分支覆盖职场反刍、关系边界、消息压力、数字生活/信息过载、孤独/比较焦虑等 lane，避免所有离线样例退化成同一标题形状；人类丰容 deterministic 分支覆盖桌面/角落、路线/感官、手作/材料流三类场景；世界杯 deterministic 分支覆盖赛前看点、赛后复盘和看球局/球迷氛围三类场景，并禁止输出赌球、盘口、预测比分或伪装内部消息。
 - 显式注入依赖时，运行时仍兼容 `InMemoryExecutionMemory` 和 `InMemorySaver`。
 - 持久 checkpoint 以 `thread_id` 为键保存；复用同一个 `thread_id` 才能跨进程读取同一条执行线程。
 - 当前 side-effect ledger 只复用成功 publish 结果，不缓存失败 publish 或只读状态检查。

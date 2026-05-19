@@ -56,6 +56,17 @@ def test_account_registry_loads_human_enrichment_account() -> None:
     assert account.nickname == "日常丰容实验号"
 
 
+def test_account_registry_loads_world_cup_account() -> None:
+    registry = AccountRegistry()
+
+    account = registry.get("acct-world-cup-local")
+
+    assert account.account_id == "acct-world-cup-local"
+    assert account.platform == "xiaohongshu"
+    assert account.domain == "世界杯主题"
+    assert account.nickname == "世界杯看球手记实验号"
+
+
 def test_account_profile_to_dict_exposes_routing_fields() -> None:
     account = AccountRegistry().get("acct-fk-local")
 

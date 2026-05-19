@@ -565,6 +565,19 @@ def _build_deterministic_image_plan(
             "reason": "心理内容以边界句、三栏或5分钟工具为主，低密度记事本截图更适合收藏。",
             "prompt_focus": "做成低密度工具卡，保留标题、封面语和最多三条短句。",
         }
+    if _looks_like_world_cup(context_signal) and _looks_like_note_screenshot(
+        content_signal
+    ):
+        return {
+            "backend": "local_social_screenshot",
+            "style": "iphone_notes",
+            "role": "save_tool",
+            "text_density": "low",
+            "max_text_units": "3",
+            "cover_text_strategy": "只放赛前问题和三条看球清单，不伪造比分或赛程截图。",
+            "reason": "世界杯内容以赛前看点和看球清单为主，低密度记事本卡更适合收藏。",
+            "prompt_focus": "做成低密度看球清单卡，突出赛前看点和最多三条观察点。",
+        }
     if _looks_like_chat_screenshot(content_signal):
         return {
             "backend": "local_social_screenshot",
@@ -654,6 +667,19 @@ def _looks_like_modern_psychology(text: str) -> bool:
             "Psychology Safety",
             "#心理学",
             "专业帮助",
+        )
+    )
+
+
+def _looks_like_world_cup(text: str) -> bool:
+    return any(
+        cue in text
+        for cue in (
+            "世界杯主题",
+            "World Cup Style",
+            "XHS World Cup",
+            "#世界杯",
+            "看球清单",
         )
     )
 

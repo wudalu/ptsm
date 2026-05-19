@@ -2,7 +2,7 @@
 title: XHS Image Forms By Domain
 status: active
 owner: ptsm
-last_verified: 2026-05-17
+last_verified: 2026-05-19
 source_of_truth: false
 related_paths:
   - docs/xhs-topics/index.md
@@ -35,6 +35,7 @@ related_paths:
 | 每日英语 | `save_tool` | 一句场景句 + 一个替换句型；必要时聊天式对照 | 2 到 3 | 词典页、讲义页、密集语法说明 |
 | AI/科技资讯 | `evidence_or_scene` 或 `cover_hook` | 一个关键变化、界面/设备场景、简短对比 | 1 到 2 | 假装真实产品截图、信息图堆字 |
 | 人类丰容/生活变量 | `evidence_or_scene` | 原本状态、材料平铺、完成细节、三步清单页 | 1 到 3 | 只有标题没有生活证据的文字海报 |
+| 世界杯/看球笔记 | `save_tool`、`cover_hook` 或 `evidence_or_scene` | 赛前看点卡、看球清单、赛后复盘顺序、球衣围巾/客厅看球氛围 | 1 到 3 | 伪造真实比分截图、官方赛程/首发图、媒体新闻截图、赌球或预测比分导向 |
 | 手作/食物/寿司诗意内容 | `evidence_or_scene` | 材料、过程、完成品、细节特写 | 0 到 1 | 用文字卡替代可看的过程或成品 |
 | 武侠人物评述 | `evidence_or_scene` 或 `cover_hook` | 氛围图、人物姿态、场景隐喻、短判断 | 1 | 设定说明书式海报 |
 
