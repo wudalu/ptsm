@@ -23,6 +23,13 @@ surfaces, or harness rules:
 9. After implementation, update the matching source-of-truth docs.
 10. Run `harness-check` inside the worktree, then merge back to `main`.
 
+For every new domain or playbook, "matching source-of-truth docs" means the
+完整文档面, not only the nearest playbook/skill page. At minimum review and
+update `architecture.md`, `runtime.md`, `playbooks.md`, `skills.md`,
+`harness-engineering.md`, `docs/operations.md`, and any affected
+`docs/operations/` runbook. If a surface is intentionally unchanged, the plan or
+handoff must say why.
+
 This does not apply to small bug fixes, typo fixes, docs-only cleanup, or narrow
 test maintenance. Those should use a smaller workflow when one is defined.
 

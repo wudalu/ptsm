@@ -67,6 +67,24 @@ repository.
 - first-class XHS image strategy through `xhs_image_strategy` and `final_content.image_plan`, so deterministic dry-runs and artifacts can prove when local social screenshots are selected intentionally instead of only as provider fallback
 - a deterministic, local-first XHS pattern library loop: periodic `collect-xhs-patterns` persists partial MCP samples, `analyze-xhs-patterns` distills them into local format snapshots, and ordinary generation consumes `current.json` without live XHS calls
 
+## New Domain Documentation Completeness
+
+`docs-sync` is a minimum gate, not a complete domain-readiness proof. Every new
+domain or playbook must update the 完整文档面 before merge:
+
+- `architecture.md`
+- `runtime.md`
+- `playbooks.md`
+- `skills.md`
+- `harness-engineering.md`
+- `docs/operations.md`
+- affected `docs/operations/` runbooks
+
+The required plan must include this checklist explicitly. If a surface does not
+change, the plan or handoff must record why. This keeps operator commands,
+dry-run examples, publish guidance, harness expectations, and domain contracts
+discoverable from the repository rather than from memory.
+
 ## What We Should Build Next
 
 - traces and metrics if local file observability stops being enough

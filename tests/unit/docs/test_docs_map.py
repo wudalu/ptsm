@@ -35,6 +35,29 @@ def test_harness_engineering_doc_exists_with_key_sections() -> None:
     assert "diagnostic" in doc_text
 
 
+def test_new_domain_workflow_requires_complete_docs_surface() -> None:
+    agents_text = (PROJECT_ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    workflow_text = (DOCS_ROOT / "development-workflow.md").read_text(
+        encoding="utf-8"
+    )
+    harness_text = (DOCS_ROOT / "harness-engineering.md").read_text(encoding="utf-8")
+
+    required_markers = [
+        "完整文档面",
+        "docs/operations.md",
+        "docs/operations/",
+        "architecture.md",
+        "runtime.md",
+        "playbooks.md",
+        "skills.md",
+        "harness-engineering.md",
+    ]
+
+    for text in [agents_text, workflow_text, harness_text]:
+        for marker in required_markers:
+            assert marker in text
+
+
 def test_task_completion_automation_mentions_verification_evidence() -> None:
     doc_text = (DOCS_ROOT / "operations" / "task-completion-automation.md").read_text(
         encoding="utf-8"
@@ -54,6 +77,18 @@ def test_operations_doc_mentions_plan_runs_command() -> None:
     assert "harness-report" in doc_text
     assert "diagnose-publish" in doc_text
     assert "--auto-generate-image" in doc_text
+
+
+def test_operations_docs_include_world_cup_domain_commands() -> None:
+    operations_text = (DOCS_ROOT / "operations.md").read_text(encoding="utf-8")
+    runbook_text = (DOCS_ROOT / "operations" / "local-runbook.md").read_text(
+        encoding="utf-8"
+    )
+
+    for text in [operations_text, runbook_text]:
+        assert "acct-world-cup-local" in text
+        assert "world_cup_daily_post" in text
+        assert "世界杯主题" in text
 
 
 def test_publish_quickstart_covers_operator_switches_and_watermark_policy() -> None:

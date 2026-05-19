@@ -2,7 +2,7 @@
 title: PTSM Development Workflow
 status: active
 owner: ptsm
-last_verified: 2026-05-17
+last_verified: 2026-05-19
 source_of_truth: true
 related_paths:
   - AGENTS.md
@@ -124,6 +124,22 @@ Use the current plan style:
 For new domains, prefer additive files over runtime edits. If an existing file
 must change, make it an extension point rather than a domain-specific branch.
 
+For new domains and playbooks, the plan must include a 完整文档面 task. This is a
+deliberate checklist, not a docs-sync side effect. Review and update, or
+explicitly mark not applicable, each of these surfaces:
+
+- `architecture.md` for domain count, package facts, and architectural placement
+- `runtime.md` for deterministic dry-run, eval, artifact, memory, or image behavior
+- `playbooks.md` for account/playbook routing, required skills, reflection rules, and eval contract
+- `skills.md` for new builtin skill scope and content mechanics
+- `harness-engineering.md` for new gates, deterministic coverage, or harness policy
+- `docs/operations.md` for stable operator commands and command index entries
+- `docs/operations/` runbooks when dry-run, publish, account, login, image, eval, or operator steps change
+
+If a new domain has no operations impact beyond an existing generic command,
+still add or confirm a representative dry-run command in `docs/operations.md` or
+the relevant `docs/operations/` runbook so operators can discover it.
+
 ## 5. Define Verification Before Implementation
 
 Each task should say how it will be checked before the implementation starts.
@@ -195,6 +211,9 @@ Common mappings:
 - artifact, logs, runs, evals, diagnostics -> `docs/observability.md`
 - CLI/operator flows -> `docs/operations.md` or a linked runbook
 - harness gates and policy -> `docs/harness-engineering.md`
+
+New domain/playbook changes must use the broader 完整文档面 checklist from section
+4 even when `docs-sync` would be satisfied by only one or two mapped docs.
 
 When touching an active source-of-truth doc, update `last_verified` if the change
 also revalidates the doc's claims.

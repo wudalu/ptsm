@@ -264,6 +264,12 @@ uv run python -m ptsm.bootstrap run-playbook \
   --scene "下班后还在反复复盘白天一句话" \
   --account-id acct-psychology-local \
   --playbook-id modern_psychology_post
+
+# World Cup dry-run
+uv run python -m ptsm.bootstrap run-playbook \
+  --scene "阿根廷和法国决赛前，想写一篇普通球迷也能看懂的赛前看点" \
+  --account-id acct-world-cup-local \
+  --playbook-id world_cup_daily_post
 ```
 
 ## Diagnostics
@@ -379,6 +385,13 @@ ptsm accounts
     "platform": "xiaohongshu",
     "domain": "人类丰容实验",
     "publish_mode": "dry-run"
+  },
+  {
+    "account_id": "acct-world-cup-local",
+    "nickname": "世界杯看球手记实验号",
+    "platform": "xiaohongshu",
+    "domain": "世界杯主题",
+    "publish_mode": "dry-run"
   }
 ]
 ```
@@ -394,6 +407,7 @@ ptsm accounts
 | 每日英语学习 | `acct-daily-english-local` | (未绑定 cookie) | 每日单词学习、陪伴式教育 |
 | 现代心理困境观察 | `acct-psychology-local` | (未绑定 cookie) | 场景化心理科普、情绪解释、安全边界 |
 | 人类丰容实验 | `acct-enrichment-local` | (未绑定 cookie) | 家的丰容计划、低成本改造、日常变量实验 |
+| 世界杯主题 | `acct-world-cup-local` | (未绑定 cookie) | 普通球迷看球笔记、赛前看点、看球清单 |
 
 账号定义在 `src/ptsm/accounts/definitions/*.yaml`。新增账号只需加一个 YAML 文件。
 
