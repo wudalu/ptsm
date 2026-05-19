@@ -201,6 +201,45 @@ def test_human_enrichment_skills_have_correct_tags() -> None:
         assert "human_enrichment_daily_post" in skill.playbook_tags
 
 
+def test_registry_discovers_world_cup_skills() -> None:
+    registry = SkillRegistry(
+        skill_root=Path("src/ptsm/skills/builtin"),
+    )
+
+    skill_names = {skill.skill_name for skill in registry.list_skills()}
+
+    assert "world_cup_style" in skill_names
+    assert "xhs_world_cup_visuals" in skill_names
+    assert "xhs_world_cup_hashtagging" in skill_names
+
+
+def test_world_cup_skills_have_correct_tags() -> None:
+    registry = SkillRegistry(
+        skill_root=Path("src/ptsm/skills/builtin"),
+    )
+
+    skills = {skill.skill_name: skill for skill in registry.list_skills()}
+    for skill_name in [
+        "world_cup_style",
+        "xhs_world_cup_visuals",
+        "xhs_world_cup_hashtagging",
+    ]:
+        skill = skills[skill_name]
+        assert "世界杯主题" in skill.domain_tags
+        assert "xiaohongshu" in skill.platform_tags
+        assert "world_cup_daily_post" in skill.playbook_tags
+
+
+def test_world_cup_style_encodes_safe_xhs_mechanics() -> None:
+    content = (
+        Path("src/ptsm/skills/builtin/world_cup_style/SKILL.md")
+        .read_text(encoding="utf-8")
+    )
+
+    for marker in ["普通球迷", "赛事情绪", "看球清单", "禁止赌球", "不写预测比分"]:
+        assert marker in content
+
+
 def test_remaining_domain_style_skills_encode_xhs_quality_mechanics() -> None:
     skill_root = Path("src/ptsm/skills/builtin")
     expected_markers = {

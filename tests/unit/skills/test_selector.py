@@ -192,3 +192,37 @@ def test_human_enrichment_skills_are_not_exposed_to_psychology() -> None:
     skill_names = {skill.skill_name for skill in surface.list_summaries()}
     assert "human_enrichment_style" not in skill_names
     assert "xhs_enrichment_visuals" not in skill_names
+
+
+def test_selector_exposes_world_cup_skills() -> None:
+    selector = _build_selector()
+
+    surface = selector.select(
+        domain="世界杯主题",
+        platform="xiaohongshu",
+        playbook_id="world_cup_daily_post",
+    )
+
+    assert [item.skill_name for item in surface.list_summaries()] == [
+        "xhs_trend_scan",
+        "topic_research",
+        "xhs_image_strategy",
+        "world_cup_style",
+        "xhs_world_cup_visuals",
+        "xhs_world_cup_hashtagging",
+    ]
+
+
+def test_world_cup_skills_are_not_exposed_to_psychology() -> None:
+    selector = _build_selector()
+
+    surface = selector.select(
+        domain="现代心理困境观察",
+        platform="xiaohongshu",
+        playbook_id="modern_psychology_post",
+    )
+
+    skill_names = {skill.skill_name for skill in surface.list_summaries()}
+    assert "world_cup_style" not in skill_names
+    assert "xhs_world_cup_visuals" not in skill_names
+    assert "xhs_world_cup_hashtagging" not in skill_names

@@ -44,6 +44,18 @@ def test_playbook_loader_reads_human_enrichment_assets() -> None:
     assert "#人类丰容计划" in playbook.reflection_prompt
 
 
+def test_playbook_loader_reads_world_cup_assets() -> None:
+    loader = PlaybookLoader(playbook_root=Path("src/ptsm/playbooks/definitions"))
+
+    playbook = loader.load("world_cup_daily_post")
+
+    assert playbook.definition.playbook_id == "world_cup_daily_post"
+    assert "世界杯" in playbook.planner_prompt
+    assert "赛事情绪" in playbook.persona_prompt
+    assert "看球清单" in playbook.persona_prompt
+    assert "#世界杯" in playbook.reflection_prompt
+
+
 @pytest.mark.parametrize(
     ("playbook_id", "expected_prompt_markers"),
     [

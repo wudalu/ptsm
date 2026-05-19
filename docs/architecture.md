@@ -2,7 +2,7 @@
 title: PTSM Architecture
 status: active
 owner: ptsm
-last_verified: 2026-05-17
+last_verified: 2026-05-19
 source_of_truth: true
 related_paths:
   - src/ptsm
@@ -24,7 +24,7 @@ related_paths:
 
 # Architecture
 
-PTSM 当前已支持七个垂直领域（发疯文学、苏轼诗词赏析、武侠人物评述、AI科技资讯、每日英语学习、现代心理困境观察、人类丰容实验），通过 playbook + skill + account 注册表实现多领域并行运营。
+PTSM 当前已支持八个垂直领域（发疯文学、苏轼诗词赏析、武侠人物评述、AI科技资讯、每日英语学习、现代心理困境观察、人类丰容实验、世界杯主题），通过 playbook + skill + account 注册表实现多领域并行运营。
 
 ## Package Boundaries
 
@@ -51,7 +51,7 @@ PTSM 当前已支持七个垂直领域（发疯文学、苏轼诗词赏析、武
 
 - CLI 和 bootstrap 已是稳定入口。
 - 发布链路当前以小红书为主，支持 dry-run 和 MCP 实发。
-- 平台抽象正在形成，已支持七个垂直领域的 playbook 注册和账号矩阵管理。
+- 平台抽象正在形成，已支持八个垂直领域的 playbook 注册和账号矩阵管理。
 - playbook 目录现在不仅承载 planner / reflection，还可以承载 persona 这类账号口吻资产；`agent_runtime` 负责把这些资产作为显式状态传给 drafting backend，而不是把风格写死在 agent 类里。
 - 运行时还会把 `xhs_trend_scan` 这类 research skill 的动态结果单独放进 `runtime_skill_contents`，与静态 `SKILL.md` 文本分离，避免 prompt 组装时丢失实时上下文边界。
 - reporting / eval / inspection surface 优先放在 `application/use_cases` 上，并复用本地 artifact stores，而不是引入独立服务层。
@@ -64,6 +64,7 @@ PTSM 当前已支持七个垂直领域（发疯文学、苏轼诗词赏析、武
 - `PlaybookRequest.scene` 在 `--fresh-topic-research` 模式下可为空，由 topic-radar 多平台扫描 + 交互选题后构建 enriched scene 注入工作流，选题结果同时写入 artifact 的 `topic_selection` 字段。
 - `ExecutionState` 现在携带 `activated_skill_details`、`runtime_skill_details` 和 `memory_hits` 等 observability 字段，记录每个 skill 的元信息（display_name、source_path、resource_type）以及本次回读的账号 lessons，供 artifact 写入、drafting context 和 harness evals 聚合消费。
 - `human_enrichment_daily_post` 以新增 playbook/account/skill/evaluation 资产接入人类丰容实验，不需要 runtime 增加领域分支；它的 artifact `content_review` 会额外写出 `image_form`，供 3:4 封面和轮播式人工 review 使用。
+- `world_cup_daily_post` 以新增 playbook/account/skill/evaluation 资产接入世界杯主题，默认绑定 `acct-world-cup-local`；正文质量约束通过 playbook-local contract 禁止赌球、盘口、预测比分、内部/官方消息伪装等高风险表达，离线 deterministic helper 只服务本地 dry-run 验证。
 - `application/services/account_publisher_context.py` 提供 `PublisherContext` 解析：按 account cookie profile > settings defaults > CLI overrides 的优先级决定发布服务器、可见性和 cookie 路径。
 - `side_effect_ledger` 现在支持 `scope_id` 参数，通过 `thread_id/scope_id` 组合键实现多维度的副作用去重，而不仅限于 thread 级别。
 - `harness_evals` 新增 `_aggregate_skill_stats`，按 skill 维度聚合 runs/completed/runtime_context_runs/completion_rate，输出到 harness-report 的 `skills` 字段。

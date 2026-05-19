@@ -333,6 +333,54 @@ def test_deterministic_backend_can_follow_human_enrichment_context() -> None:
     assert not any(term in draft["body"] for term in ("治好", "诊断", "用药"))
 
 
+def test_deterministic_backend_can_follow_world_cup_context() -> None:
+    backend = DeterministicDraftBackend()
+
+    draft = backend.generate(
+        scene="阿根廷和法国决赛前，想写一篇普通球迷也能看懂的赛前看点",
+        planner_prompt="# 世界杯主题 Planner\n目标：写一条适合小红书的世界杯看球内容。",
+        persona_prompt="# World Cup Persona\n普通球迷视角，记录赛事情绪和看球清单。",
+        skill_contents=[
+            "# World Cup Style\n必须写给普通球迷，包含赛事情绪、看球清单，禁止赌球，不写预测比分。",
+            "# XHS World Cup Hashtagging\n标签必须包含 `#世界杯`。",
+        ],
+    )
+
+    combined = f"{draft['title']}\n{draft['image_text']}\n{draft['body']}"
+    assert "#世界杯" in draft["hashtags"]
+    assert "阿根廷" in draft["body"]
+    assert "法国" in draft["body"]
+    assert "普通球迷" in draft["body"]
+    assert any(term in combined for term in ("赛前", "看点", "看球"))
+    assert any(term in draft["body"] for term in ("看球清单", "清单", "收藏"))
+    assert "评论区" in draft["body"]
+    assert not any(
+        term in combined
+        for term in ("稳赚", "下注", "盘口", "预测比分", "内部消息", "官方消息")
+    )
+    assert "发疯文学" not in draft["body"]
+
+
+def test_deterministic_world_cup_image_plan_prefers_watch_list_card() -> None:
+    draft = DeterministicDraftBackend().generate(
+        scene="阿根廷和法国决赛前，想写一篇普通球迷也能看懂的赛前看点",
+        planner_prompt="# 世界杯主题 Planner\n目标：写一条适合小红书的世界杯看球内容。",
+        persona_prompt="# World Cup Persona\n普通球迷视角，记录赛事情绪和看球清单。",
+        skill_contents=[
+            "# XHS Image Strategy\n可收藏清单优先 iPhone 记事本截图，必须输出 image_plan。",
+            "# World Cup Style\n必须包含赛事情绪和看球清单。",
+        ],
+    )
+
+    image_plan = draft["image_plan"]
+    assert image_plan["backend"] == "local_social_screenshot"
+    assert image_plan["style"] == "iphone_notes"
+    assert image_plan["role"] == "save_tool"
+    assert image_plan["text_density"] == "low"
+    assert image_plan["max_text_units"] == "3"
+    assert "看球" in image_plan["reason"]
+
+
 def test_deterministic_human_enrichment_uses_pattern_library_context() -> None:
     backend = DeterministicDraftBackend()
 

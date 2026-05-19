@@ -1,0 +1,88 @@
+version: 1
+suite_id: world_cup_daily_post.default
+uses:
+  final_content: final_content.v1
+  artifact: artifact.v1
+  skill_activation: skill_activation.v1
+
+node_contracts:
+  planner:
+    output_contract: skill_activation.v1
+    required_fields:
+      - selected_playbook
+      - activated_skills
+      - activated_skill_details
+      - planner_prompt
+      - persona_prompt
+    required_skills:
+      from_playbook: true
+    runtime_context:
+      allowed_missing:
+        - xhs_trend_scan
+        - topic_research
+      required_traceability: true
+
+  executor:
+    output_schema: final_content.v1
+    required_fields:
+      - title
+      - body
+      - image_text
+      - hashtags
+    constraints:
+      title_max_chars: 32
+      hashtags_min_count: 3
+      hashtags_max_count: 7
+      hashtags_must_include_any:
+        - "#世界杯"
+      body_min_chars: 220
+      body_max_chars: 900
+      body_must_include_any:
+        - 赛前
+        - 看点
+        - 看球
+        - 评论区
+        - 清单
+      body_must_include_comment_prompt_any:
+        - 评论区
+        - 你支持谁
+        - 你最想看
+      body_must_include_save_trigger_any:
+        - 看球清单
+        - 收藏
+        - 复盘顺序
+      body_must_not_include_any:
+        - 稳赚
+        - 下注
+        - 盘口
+        - 预测比分
+        - 内部消息
+        - 官方消息
+        - 变体要求
+        - 模板要求
+        - comment_chain
+        - save_tool
+        - identity_conflict
+
+  reflector:
+    allowed_decisions:
+      - retry
+      - finalize
+      - fail
+    invariants:
+      - retry_requires_feedback
+      - finalize_requires_passing_required_rules
+
+  finalize:
+    artifact_schema: artifact.v1
+    required_fields:
+      - playbook_id
+      - final_content
+      - activated_skill_details
+      - runtime_skill_details
+
+quality_judges:
+  executor_content_quality:
+    evaluator_id: llm.executor.content_quality
+    gate_level: required
+    threshold: 0.7

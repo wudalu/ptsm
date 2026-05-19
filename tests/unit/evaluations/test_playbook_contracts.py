@@ -102,6 +102,23 @@ class TestPlaybookEvalContract:
         assert quality_judge["evaluator_id"] == "llm.executor.content_quality"
         assert quality_judge["gate_level"] == "required"
 
+    def test_loads_world_cup_contract(self):
+        root = Path(__file__).parent.parent.parent.parent / "src" / "ptsm" / "playbooks" / "definitions"
+        contract = load_playbook_eval_contract(root, "world_cup_daily_post")
+        assert contract is not None
+        assert contract.suite_id == "world_cup_daily_post.default"
+        executor_constraints = contract.node_contracts["executor"]["constraints"]
+        assert "#世界杯" in executor_constraints["hashtags_must_include_any"]
+        for term in ["赛前", "看点", "看球", "评论区", "清单"]:
+            assert term in executor_constraints["body_must_include_any"]
+        assert "评论区" in executor_constraints["body_must_include_comment_prompt_any"]
+        assert "看球清单" in executor_constraints["body_must_include_save_trigger_any"]
+        for forbidden in ["稳赚", "下注", "盘口", "预测比分", "内部消息", "官方消息"]:
+            assert forbidden in executor_constraints["body_must_not_include_any"]
+        quality_judge = contract.quality_judges["executor_content_quality"]
+        assert quality_judge["evaluator_id"] == "llm.executor.content_quality"
+        assert quality_judge["gate_level"] == "required"
+
     @pytest.mark.parametrize(
         ("playbook_id", "required_tags", "required_body_terms"),
         [
