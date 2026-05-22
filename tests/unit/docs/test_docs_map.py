@@ -102,6 +102,8 @@ def test_operations_docs_include_reddit_curation_domain_commands_and_credentials
         assert "reddit_curation_daily_post" in text
         assert "Reddit英文讨论转译" in text
         assert "REDDIT_CLIENT_ID" in text
+        assert "Responsible Builder Policy" in text
+        assert "explicit approval" in text
 
 
 def test_publish_quickstart_covers_operator_switches_and_watermark_policy() -> None:

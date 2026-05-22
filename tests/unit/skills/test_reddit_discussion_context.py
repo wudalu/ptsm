@@ -124,3 +124,5 @@ def test_reddit_discussion_context_reports_missing_credentials() -> None:
     assert "REDDIT_CLIENT_SECRET" in context
     assert "REDDIT_USER_AGENT" in context
     assert "read-only Reddit scan" in context
+    assert "Responsible Builder Policy" in context
+    assert "explicit Reddit approval" in context

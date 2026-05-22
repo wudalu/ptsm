@@ -119,7 +119,7 @@ COOKIES_PATH=cookies/fk-local.json .ptsm/bin/xhs-mcp/xiaohongshu-mcp-darwin-amd6
 - `diagnose-publish` 是对单次发布问题的只读诊断入口，适合排查 “为什么没法自动确认已发布” 或 “为什么发布后状态不明确”。
 - `--fresh-topic-research` 通过 topic-radar 先扫描平台热点，交互式让用户选题后再生成内容，此时 `--scene` 可选。
 - `collect-xhs-patterns` / `analyze-xhs-patterns` 是周期采集和格式沉淀入口。普通 `run-playbook` 默认只读取本地 pattern snapshot，不会每次发帖都检索实时高互动帖子；需要实验特定 snapshot 时，用 `--format-pattern-path` 覆盖。
-- `reddit_curation_daily_post` 会在 `reddit_discussion_scan` skill 激活时尝试读取 Reddit 英文讨论。配置 `REDDIT_CLIENT_ID`、`REDDIT_CLIENT_SECRET` 和 `REDDIT_USER_AGENT` 后才会形成真实最新 Reddit runtime context；未配置时 dry-run 会完成但上下文标记为 `missing_credentials`，不得声称内容来自最新 Reddit 热帖。
+- `reddit_curation_daily_post` 会在 `reddit_discussion_scan` skill 激活时尝试读取 Reddit 英文讨论。按 Reddit Responsible Builder Policy，读取 Reddit API 前需要为该用途取得 explicit approval，并保持透明、限量、只读、不规避限制、不做 Reddit 数据商业化或 AI 训练。配置已获批 app 的 `REDDIT_CLIENT_ID`、`REDDIT_CLIENT_SECRET` 和 `REDDIT_USER_AGENT` 后才会形成真实最新 Reddit runtime context；未配置时 dry-run 会完成但上下文标记为 `missing_credentials`，不得声称内容来自最新 Reddit 热帖。
 - `run-playbook` 是多 playbook 的通用入口；`run-fengkuang` 只保留给已有发疯文学兼容脚本和习惯命令。
 - `guide-post` 是现代心理学发帖前的只读向导：默认走对话式引导，先问具体场景，再建议心理学 lane、机制、非诊断化重构、可保存小工具、评论提示和低密度封面，最后输出 Markdown brief 和可复制的 `run-playbook --publish-mode dry-run` 命令；脚本场景用 `--non-interactive` 输出 JSON。真正生成和发布仍走 `run-playbook`。
 - `run-fengkuang --auto-generate-image` 会在缺少 `--publish-image-path` 时尝试调用已配置的图片后端生成封面；即梦配置优先于百炼配置，真实发布模式下默认也会尝试自动补图。

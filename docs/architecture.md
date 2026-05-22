@@ -66,7 +66,7 @@ PTSM 当前已支持九个垂直领域（发疯文学、苏轼诗词赏析、武
 - `ExecutionState` 现在携带 `activated_skill_details`、`runtime_skill_details` 和 `memory_hits` 等 observability 字段，记录每个 skill 的元信息（display_name、source_path、resource_type）以及本次回读的账号 lessons，供 artifact 写入、drafting context 和 harness evals 聚合消费。
 - `human_enrichment_daily_post` 以新增 playbook/account/skill/evaluation 资产接入人类丰容实验，不需要 runtime 增加领域分支；它的 artifact `content_review` 会额外写出 `image_form`，供 3:4 封面和轮播式人工 review 使用。
 - `world_cup_daily_post` 以新增 playbook/account/skill/evaluation 资产接入世界杯主题，默认绑定 `acct-world-cup-local`；正文质量约束通过 playbook-local contract 禁止赌球、盘口、预测比分、内部/官方消息伪装等高风险表达，离线 deterministic helper 只服务本地 dry-run 验证。
-- `reddit_curation_daily_post` 以新增 playbook/account/skill/evaluation 资产接入 Reddit英文讨论转译，默认绑定 `acct-reddit-curation-local`。实时来源通过 `reddit_discussion_scan` runtime context 读取 Reddit app-only OAuth 的公开讨论；缺少 `REDDIT_CLIENT_ID` / `REDDIT_CLIENT_SECRET` / `REDDIT_USER_AGENT` 时会写出缺配置上下文，不声称已获取最新 Reddit 热帖。
+- `reddit_curation_daily_post` 以新增 playbook/account/skill/evaluation 资产接入 Reddit英文讨论转译，默认绑定 `acct-reddit-curation-local`。实时来源通过已获批 Reddit app-only OAuth 的 `reddit_discussion_scan` runtime context 读取公开讨论；缺少 `REDDIT_CLIENT_ID` / `REDDIT_CLIENT_SECRET` / `REDDIT_USER_AGENT` 或未完成 Reddit Responsible Builder Policy 要求的 explicit approval 时会写出缺配置/缺权限上下文，不声称已获取最新 Reddit 热帖。
 - `application/services/account_publisher_context.py` 提供 `PublisherContext` 解析：按 account cookie profile > settings defaults > CLI overrides 的优先级决定发布服务器、可见性和 cookie 路径。
 - `side_effect_ledger` 现在支持 `scope_id` 参数，通过 `thread_id/scope_id` 组合键实现多维度的副作用去重，而不仅限于 thread 级别。
 - `harness_evals` 新增 `_aggregate_skill_stats`，按 skill 维度聚合 runs/completed/runtime_context_runs/completion_rate，输出到 harness-report 的 `skills` 字段。

@@ -280,7 +280,7 @@ uv run python -m ptsm.bootstrap run-playbook \
 
 ### Reddit Discussion Scan
 
-Reddit英文讨论转译使用 Reddit app-only OAuth 做只读扫描，不需要 Reddit 用户名或密码。创建 Reddit app 后配置：
+Reddit英文讨论转译使用 Reddit app-only OAuth 做只读扫描，不需要 Reddit 用户名或密码。按 Reddit Responsible Builder Policy，读取 Reddit API 前需要为该用途取得 explicit approval；app 描述要透明说明只读取公开 hot/top 英文讨论用于人工编辑参考，不做自动回帖、投票、私信、商业化 Reddit 数据或 AI 训练。创建并获批 Reddit app 后配置：
 
 ```env
 REDDIT_CLIENT_ID=your-client-id

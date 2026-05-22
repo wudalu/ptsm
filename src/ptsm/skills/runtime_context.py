@@ -747,8 +747,9 @@ def _render_reddit_missing_credentials_context() -> str:
             "# Reddit Discussion Scan Live Context",
             "- status: missing_credentials",
             "- required_env: REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET, REDDIT_USER_AGENT",
-            "- note: read-only Reddit scan is disabled until app-only OAuth credentials are configured.",
-            "- operator_action: create a Reddit app, set the env vars, then rerun the playbook.",
+            "- policy: follow Reddit's Responsible Builder Policy and get explicit Reddit approval before accessing Reddit data through the API.",
+            "- note: read-only Reddit scan is disabled until approved app-only OAuth credentials are configured.",
+            "- operator_action: create a Reddit app with a transparent read-only purpose, set the env vars, then rerun the playbook.",
             "- 约束：未拿到实时 Reddit 结果时，不要声称这条内容来自最新 Reddit 讨论。",
         ]
     )
