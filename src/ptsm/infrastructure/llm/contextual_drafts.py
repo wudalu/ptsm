@@ -11,6 +11,8 @@ def build_contextual_deterministic_draft(
     runtime_context: str,
 ) -> dict[str, Any] | None:
     """Return a domain-specific deterministic draft when context is explicit."""
+    if _is_reddit_curation_context(scene=scene, extra_context=extra_context):
+        return _build_reddit_curation_draft(scene=scene, feedback=feedback)
     if _is_sushi_poetry_context(scene=scene, extra_context=extra_context):
         return _build_sushi_poetry_draft(scene=scene, feedback=feedback)
     if _is_wuxia_context(scene=scene, extra_context=extra_context):
@@ -158,6 +160,21 @@ def _is_modern_psychology_context(*, scene: str, extra_context: str) -> bool:
     )
 
 
+def _is_reddit_curation_context(*, scene: str, extra_context: str) -> bool:
+    combined = f"{scene}\n{extra_context}"
+    return any(
+        keyword in combined
+        for keyword in (
+            "Reddit英文讨论转译",
+            "Reddit Curation Style",
+            "XHS Reddit Curation Hashtagging",
+            "reddit_curation_daily_post",
+            "reddit_discussion_scan",
+            "#Reddit",
+        )
+    )
+
+
 def _build_human_enrichment_draft(
     *,
     scene: str,
@@ -236,6 +253,49 @@ def _build_human_enrichment_draft(
         "image_text": image_text,
         "body": body,
         "hashtags": ["#人类丰容计划", "#家的丰容计划", "#低成本生活", "#小红书生活"],
+    }
+
+
+def _build_reddit_curation_draft(*, scene: str, feedback: str) -> dict[str, Any]:
+    if any(keyword in scene.lower() for keyword in ("burnout", "心理", "焦虑", "通知", "attention")):
+        title = "这个Reddit讨论，像极了消息压力"
+        image_text = "英文讨论翻成中文后更扎心"
+        body = (
+            f"{scene}。Reddit英文讨论里有个现象很适合翻成中文看："
+            "很多人不是讨厌消息本身，而是被“随时都要回应”的预期拖住。\n"
+            "翻成中文，它说的其实是低控制感：通知一响，人就被重新拉回工作、关系或任务里，"
+            "注意力还没恢复，又要开始判断对方是不是在等我。\n"
+            "国内读者容易有共鸣，是因为微信群、工作软件和短视频提醒常常混在一起，"
+            "休息时间也会变成半在线状态。\n"
+            "可收藏小结：先分清这条消息要不要现在处理；能不能给一个明确回复时间；"
+            "有没有必要把提醒关掉半小时。这样不是逃避，而是把注意力边界拿回来一点。\n"
+            "评论区想问问，你更想看 Reddit 上的心理学讨论，还是 AI 工具焦虑讨论？"
+        )
+        hashtags = ["#Reddit", "#心理学", "#情绪管理", "#英语阅读", "#效率工具"]
+    else:
+        title = "Reddit在聊AI代理，中文读者先看这点"
+        image_text = "别急着追工具，先看边界"
+        body = (
+            f"{scene}。Reddit英文讨论里最近很常见的一类问题，翻成中文就是："
+            "AI agent 看起来能替你处理小任务，但工具越多，普通人反而越需要判断哪些事不该交出去。\n"
+            "这不是简单的“AI又变强了”，而是一个更贴近日常的变化："
+            "从写邮件、整理资料到排计划，很多人开始把重复步骤拆给工具，但也担心隐私、权限和结果是否可靠。\n"
+            "国内读者可以先抓住一个判断框架：它能不能省掉重复整理；能不能让你检查来源；"
+            "能不能在出错时及时停下来。满足这三点，才值得放进工作流。\n"
+            "可收藏小结：AI工具先小范围试，不把账号、隐私和关键决策一次性交给它；"
+            "把它当助手，不当替你负责的人。不是投资建议，只是工具使用观察。\n"
+            "评论区想问问，你更想看 Reddit 上的 AI 热点，还是心理学英文讨论？"
+        )
+        hashtags = ["#Reddit", "#AI资讯", "#人工智能", "#效率工具", "#英语阅读"]
+
+    if feedback != "无" and "Reddit" not in body:
+        body = f"Reddit英文讨论里有个适合中文读者的切口。{body}"
+
+    return {
+        "title": title,
+        "image_text": image_text,
+        "body": body,
+        "hashtags": hashtags,
     }
 
 

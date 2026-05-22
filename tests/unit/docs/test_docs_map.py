@@ -91,6 +91,19 @@ def test_operations_docs_include_world_cup_domain_commands() -> None:
         assert "世界杯主题" in text
 
 
+def test_operations_docs_include_reddit_curation_domain_commands_and_credentials() -> None:
+    operations_text = (DOCS_ROOT / "operations.md").read_text(encoding="utf-8")
+    runbook_text = (DOCS_ROOT / "operations" / "local-runbook.md").read_text(
+        encoding="utf-8"
+    )
+
+    for text in [operations_text, runbook_text]:
+        assert "acct-reddit-curation-local" in text
+        assert "reddit_curation_daily_post" in text
+        assert "Reddit英文讨论转译" in text
+        assert "REDDIT_CLIENT_ID" in text
+
+
 def test_publish_quickstart_covers_operator_switches_and_watermark_policy() -> None:
     quickstart_text = (DOCS_ROOT / "operations" / "publish-quickstart.md").read_text(
         encoding="utf-8"

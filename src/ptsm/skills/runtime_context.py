@@ -13,6 +13,11 @@ from ptsm.infrastructure.publishers.xiaohongshu_mcp_publisher import (
     LangChainMcpToolRunner,
     McpToolRunner,
 )
+from ptsm.infrastructure.reddit.client import (
+    RedditAccessConfig,
+    RedditClient,
+    RedditDiscussion,
+)
 from ptsm.playbooks.registry import PlaybookDefinition
 from ptsm.skills.loader import LoadedSkill
 
@@ -20,6 +25,34 @@ _WEEKDAY_TOKENS = ("周一", "周二", "周三", "周四", "周五", "周六", "
 _WORK_CUES = ("老板", "领导", "工位", "下班", "上班", "需求", "开会", "会议", "群里", "打工")
 _OVERTIME_CUES = ("下班", "需求", "加班", "临时", "今晚", "初稿", "工位", "微信", "群里")
 _POETRY_CUES = ("苏轼", "定风波", "赤壁赋", "水调歌头", "诗词")
+_REDDIT_AI_TERMS = (
+    "ai",
+    "openai",
+    "chatgpt",
+    "claude",
+    "llm",
+    "agent",
+    "agents",
+    "model",
+    "automation",
+    "workflow",
+    "gpt",
+)
+_REDDIT_PSYCHOLOGY_TERMS = (
+    "psychology",
+    "therapist",
+    "therapy",
+    "burnout",
+    "anxiety",
+    "overwhelmed",
+    "notification",
+    "attention",
+    "mental",
+    "relationship",
+    "lonely",
+    "stress",
+    "work",
+)
 
 
 class RuntimeContextBuilder(Protocol):
@@ -35,6 +68,20 @@ class RuntimeContextBuilder(Protocol):
         fresh_topic_research: bool = False,
     ) -> str | None:
         """Return dynamic context text or `None` when unavailable."""
+
+
+class RedditDiscussionProvider(Protocol):
+    """Read-only provider used by the Reddit runtime context builder."""
+
+    def fetch_posts(
+        self,
+        *,
+        subreddits: list[str],
+        sorts: list[str],
+        time_filter: str,
+        limit_per_listing: int,
+    ) -> list[RedditDiscussion]:
+        """Return normalized Reddit posts."""
 
 
 @dataclass(frozen=True)
@@ -103,6 +150,87 @@ class SkillContextResolver:
                 if hasattr(builder, "last_selection") and builder.last_selection:  # type: ignore[union-attr]
                     state["selected_topic_angle"] = builder.last_selection  # type: ignore[union-attr]
         return contexts
+
+
+class RedditDiscussionContextBuilder:
+    """Build runtime context from current English Reddit discussions."""
+
+    def __init__(
+        self,
+        *,
+        client: RedditDiscussionProvider | None,
+        credentials_configured: bool = True,
+        subreddits: list[str] | None = None,
+        sorts: list[str] | None = None,
+        time_filter: str = "day",
+        limit_per_listing: int = 12,
+    ) -> None:
+        self.client = client
+        self.credentials_configured = credentials_configured
+        self.subreddits = subreddits or [
+            "OpenAI",
+            "ChatGPT",
+            "ClaudeAI",
+            "psychology",
+            "AskPsychology",
+        ]
+        self.sorts = sorts or ["hot", "top"]
+        self.time_filter = time_filter
+        self.limit_per_listing = limit_per_listing
+
+    @classmethod
+    def from_settings(cls, settings: Settings) -> "RedditDiscussionContextBuilder":
+        configured = bool(
+            settings.reddit_client_id
+            and settings.reddit_client_secret
+            and settings.reddit_user_agent
+        )
+        client: RedditClient | None = None
+        if configured:
+            client = RedditClient(
+                config=RedditAccessConfig(
+                    client_id=str(settings.reddit_client_id),
+                    client_secret=str(settings.reddit_client_secret),
+                    user_agent=settings.reddit_user_agent,
+                )
+            )
+        return cls(
+            client=client,
+            credentials_configured=configured,
+            subreddits=_split_csv(settings.reddit_subreddits),
+            sorts=_split_csv(settings.reddit_sorts),
+            time_filter=settings.reddit_time_filter,
+            limit_per_listing=settings.reddit_limit_per_listing,
+        )
+
+    def build(
+        self, *, scene: str, domain: str, playbook_id: str,
+        keyword_hints: list[str] | None = None,
+        fresh_topic_research: bool = False,
+    ) -> str | None:
+        if not self.credentials_configured or self.client is None:
+            return _render_reddit_missing_credentials_context()
+        try:
+            posts = self.client.fetch_posts(
+                subreddits=self.subreddits,
+                sorts=self.sorts,
+                time_filter=self.time_filter,
+                limit_per_listing=self.limit_per_listing,
+            )
+        except Exception as exc:
+            return _render_reddit_unavailable_context(str(exc))
+
+        selected = _select_reddit_discussions(posts, scene=scene)
+        if not selected:
+            return _render_reddit_unavailable_context(
+                "no AI or psychology discussion candidates returned"
+            )
+        return _render_reddit_discussion_context(
+            posts=selected,
+            subreddits=self.subreddits,
+            sorts=self.sorts,
+            time_filter=self.time_filter,
+        )
 
 
 class XhsTrendScanContextBuilder:
@@ -562,8 +690,128 @@ def build_skill_context_resolver(
                 topic_builder=topic_builder,
                 pattern_builder=pattern_builder,
             ),
+            "reddit_discussion_scan": RedditDiscussionContextBuilder.from_settings(settings),
         }
     )
+
+
+def _split_csv(value: str) -> list[str]:
+    return [part.strip() for part in value.split(",") if part.strip()]
+
+
+def _select_reddit_discussions(
+    posts: Sequence[RedditDiscussion],
+    *,
+    scene: str,
+    limit: int = 4,
+) -> list[RedditDiscussion]:
+    scored: list[tuple[int, RedditDiscussion]] = []
+    for post in posts:
+        fit_labels = _reddit_fit_labels(post)
+        if not fit_labels:
+            continue
+        score = (len(fit_labels) * 10_000) + post.engagement_score
+        if _scene_mentions_ai(scene) and "AI/tool anxiety" in fit_labels:
+            score += 5_000
+        if _scene_mentions_psychology(scene) and "psychology/life pressure" in fit_labels:
+            score += 5_000
+        scored.append((score, post))
+    return [post for _, post in sorted(scored, key=lambda item: item[0], reverse=True)[:limit]]
+
+
+def _reddit_fit_labels(post: RedditDiscussion) -> list[str]:
+    haystack = f"{post.subreddit} {post.title} {post.selftext}".lower()
+    labels: list[str] = []
+    if any(term in haystack for term in _REDDIT_AI_TERMS):
+        labels.append("AI/tool anxiety")
+    if any(term in haystack for term in _REDDIT_PSYCHOLOGY_TERMS):
+        labels.append("psychology/life pressure")
+    if any(term in haystack for term in ("work", "job", "productivity", "workflow", "office")):
+        labels.append("workplace relevance")
+    return labels
+
+
+def _scene_mentions_ai(scene: str) -> bool:
+    lower = scene.lower()
+    return "ai" in lower or "openai" in lower or "人工智能" in scene or "模型" in scene
+
+
+def _scene_mentions_psychology(scene: str) -> bool:
+    lower = scene.lower()
+    return "心理" in scene or "psychology" in lower or "burnout" in lower or "焦虑" in scene
+
+
+def _render_reddit_missing_credentials_context() -> str:
+    return "\n".join(
+        [
+            "# Reddit Discussion Scan Live Context",
+            "- status: missing_credentials",
+            "- required_env: REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET, REDDIT_USER_AGENT",
+            "- note: read-only Reddit scan is disabled until app-only OAuth credentials are configured.",
+            "- operator_action: create a Reddit app, set the env vars, then rerun the playbook.",
+            "- 约束：未拿到实时 Reddit 结果时，不要声称这条内容来自最新 Reddit 讨论。",
+        ]
+    )
+
+
+def _render_reddit_unavailable_context(reason: str) -> str:
+    return "\n".join(
+        [
+            "# Reddit Discussion Scan Live Context",
+            "- status: unavailable",
+            f"- reason: {_truncate_runtime_text(reason, 160)}",
+            "- 约束：不要声称这条内容来自最新 Reddit 讨论；可以退回常青英文讨论转译角度。",
+        ]
+    )
+
+
+def _render_reddit_discussion_context(
+    *,
+    posts: Sequence[RedditDiscussion],
+    subreddits: Sequence[str],
+    sorts: Sequence[str],
+    time_filter: str,
+) -> str:
+    lines = [
+        "# Reddit Discussion Scan Live Context",
+        "- status: available",
+        f"- fetched_at: {date.today().isoformat()}",
+        f"- subreddits: {', '.join(subreddits)}",
+        f"- sorts: {', '.join(sorts)}",
+        f"- time_filter: {time_filter}",
+        "",
+        "## Selected English discussions",
+    ]
+    for index, post in enumerate(posts, start=1):
+        fit = ", ".join(_reddit_fit_labels(post))
+        lines.append(f"{index}. r/{post.subreddit} `{post.title}`")
+        lines.append(
+            f"   - engagement: {post.score} upvotes / {post.num_comments} comments"
+            f" / ratio {post.upvote_ratio:.2f}"
+        )
+        lines.append(f"   - Chinese-reader fit: {fit}")
+        lines.append(f"   - source_url: {post.source_url}")
+        excerpt = _truncate_runtime_text(post.selftext, 180)
+        if excerpt:
+            lines.append(f"   - excerpt_en: {excerpt}")
+    lines.extend(
+        [
+            "",
+            "## 转译约束",
+            "- 只借讨论现象和观点结构，不复写原文长段。",
+            "- 用中文解释为什么这个英文讨论适合国内读者，保留 Reddit 来源边界。",
+            "- 不展示 Reddit 用户名，不把网友经历写成作者亲历。",
+            "- 心理相关内容不诊断、不治疗承诺；AI 相关内容不做投资建议。",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _truncate_runtime_text(value: str, limit: int) -> str:
+    text = re.sub(r"\s+", " ", value).strip()
+    if len(text) <= limit:
+        return text
+    return f"{text[: limit - 1].rstrip()}..."
 
 
 def _derive_keywords(*, scene: str, domain: str, playbook_id: str, hints: list[str] | None = None) -> list[str]:

@@ -2,7 +2,7 @@
 title: PTSM Skills
 status: active
 owner: ptsm
-last_verified: 2026-05-19
+last_verified: 2026-05-22
 source_of_truth: true
 related_paths:
   - src/ptsm/skills/contracts.py
@@ -51,6 +51,7 @@ Skill 层负责让运行时按请求范围暴露合适的 builtin skills，而�
 - `psychology_style` / `psychology_safety` / `xhs_psychology_hashtagging` 只服务 `modern_psychology_post`，其中 `psychology_style` 要求“第一人称微场景 -> 心理机制 -> 非诊断化重构 -> 可保存小工具 -> 例子型评论 -> 专业边界”，并把选题轮换到职场复盘、关系边界、数字生活、孤独比较、情绪调节和热点心理化重构六类 lane；`psychology_safety` 约束不诊断、不治疗承诺、不提供药物建议，并在严重风险场景引导专业帮助。该领域的图片策略默认低密度：工具型内容优先 `iphone_notes` / `save_tool`，单句重构用 `note_card`，真实聊天对话才用 `wechat_chat`。
 - `human_enrichment_style` / `xhs_enrichment_visuals` / `xhs_enrichment_hashtagging` 只服务 `human_enrichment_daily_post`。其中 `human_enrichment_style` 要求“具体角落/物件 -> 原本惯性 -> 一个低成本变量 -> 三步清单 -> 评论区例子”，并能借鉴本地 pattern library 的 `sudden_realization`、`you_should_enrich`、`before_after_contrast`、`saveable_list`、`process_or_tutorial` 结构，但禁止复写样本标题；`xhs_enrichment_visuals` 编码 3:4 竖版封面、每页文字约束和轮播图形式，`xhs_enrichment_hashtagging` 要求 `#人类丰容计划` 等搜索友好标签。
 - `world_cup_style` / `xhs_world_cup_visuals` / `xhs_world_cup_hashtagging` 只服务 `world_cup_daily_post`。其中 `world_cup_style` 要求“比赛语境 -> 普通球迷入口 -> 2 到 3 个看点 -> 看球清单 -> 赛事情绪 -> 评论区问题”，禁止赌球、盘口、下注、预测比分和内部/官方消息伪装；`xhs_world_cup_visuals` 约束 3:4 赛前看点卡、看球清单、赛后复盘和球迷氛围图；`xhs_world_cup_hashtagging` 要求 `#世界杯` 等搜索友好标签。
+- `reddit_discussion_scan` / `reddit_curation_style` / `xhs_reddit_curation_hashtagging` 只服务 `reddit_curation_daily_post`。其中 `reddit_discussion_scan` 读取 Reddit app-only OAuth 的公开 hot/top 英文讨论，优先筛选 AI 工具焦虑、心理/生活压力和工作流切口；缺少 `REDDIT_CLIENT_ID`、`REDDIT_CLIENT_SECRET` 或 `REDDIT_USER_AGENT` 时会注入缺配置上下文。`reddit_curation_style` 要求“Reddit 英文讨论 -> 翻成中文语境 -> 国内读者共鸣 -> 可收藏小结 -> 评论区问题”，并禁止长段原文搬运、展示用户名、伪亲历、心理诊断/治愈承诺和投资建议；`xhs_reddit_curation_hashtagging` 要求 `#Reddit` 等搜索友好标签。
 
 ## Strategy Layer
 
@@ -62,6 +63,7 @@ Skill 层负责让运行时按请求范围暴露合适的 builtin skills，而�
 - `topic_research` 是第二个 research builtin skill，通过读取 topic-radar 产出的多平台选题报告，为 planner 提供跨平台的热门话题和选题角度。优先消费当日 artifact JSON 中的 LLM 分析结果；如果本地 XHS pattern library 命中，它会把 format pattern summary 追加到 topic context。artifact 不可用但 pattern snapshot 可用时，`topic_research` 仍会返回 pattern context；两者都不可用时静默跳过。
 - 这类内容策略索引仍以 [`docs/xhs-topics/index.md`](xhs-topics/index.md) 和 [`docs/topic-radar.md`](topic-radar.md) 为入口。
 - 运行时动态资源当前主要表现为 `runtime_context` 记录，例如 `xhs_trend_scan` 的本地格式 pattern / 站内热点扫描结果，或 `topic_research` 对当日 topic-radar artifact 与本地 format pattern 的摘要注入。
+- Reddit 动态资源也以 `runtime_context` 记录：`reddit_discussion_scan` 会写出 `available`、`missing_credentials` 或 `unavailable` 状态，artifact 的 `runtime_skill_details` 会记录这次是否真的有 Reddit 来源上下文。
 - 当运行在 deterministic provider 下时，`run_playbook` 只读取本地 XHS pattern snapshot，不触发 live XHS MCP / topic scan；真实 LLM/provider 路径仍按默认 resolver 尝试注入动态上下文。
 
 ## Routing Design

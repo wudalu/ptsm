@@ -119,6 +119,33 @@ class TestPlaybookEvalContract:
         assert quality_judge["evaluator_id"] == "llm.executor.content_quality"
         assert quality_judge["gate_level"] == "required"
 
+    def test_loads_reddit_curation_contract(self):
+        root = Path(__file__).parent.parent.parent.parent / "src" / "ptsm" / "playbooks" / "definitions"
+        contract = load_playbook_eval_contract(root, "reddit_curation_daily_post")
+        assert contract is not None
+        assert contract.suite_id == "reddit_curation_daily_post.default"
+        executor_constraints = contract.node_contracts["executor"]["constraints"]
+        assert "#Reddit" in executor_constraints["hashtags_must_include_any"]
+        for term in ["Reddit", "英文讨论", "中文", "评论区", "收藏"]:
+            assert term in executor_constraints["body_must_include_any"]
+        assert "评论区" in executor_constraints["body_must_include_comment_prompt_any"]
+        assert "收藏" in executor_constraints["body_must_include_save_trigger_any"]
+        for forbidden in [
+            "我在Reddit上看到自己",
+            "亲测",
+            "诊断",
+            "治好",
+            "投资建议",
+            "变体要求",
+            "comment_chain",
+            "save_tool",
+            "identity_conflict",
+        ]:
+            assert forbidden in executor_constraints["body_must_not_include_any"]
+        quality_judge = contract.quality_judges["executor_content_quality"]
+        assert quality_judge["evaluator_id"] == "llm.executor.content_quality"
+        assert quality_judge["gate_level"] == "required"
+
     @pytest.mark.parametrize(
         ("playbook_id", "required_tags", "required_body_terms"),
         [

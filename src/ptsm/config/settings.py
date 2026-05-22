@@ -55,6 +55,28 @@ class Settings(BaseSettings):
         default="outputs/artifacts/xhs-pattern-library/current.json",
         validation_alias="XHS_PATTERN_LIBRARY_PATH",
     )
+    reddit_client_id: str | None = Field(default=None, validation_alias="REDDIT_CLIENT_ID")
+    reddit_client_secret: str | None = Field(
+        default=None,
+        validation_alias="REDDIT_CLIENT_SECRET",
+    )
+    reddit_user_agent: str = Field(
+        default="ptsm:reddit-curation:0.1 (by /u/replace-me)",
+        validation_alias="REDDIT_USER_AGENT",
+    )
+    reddit_subreddits: str = Field(
+        default="OpenAI,ChatGPT,ClaudeAI,ArtificialInteligence,singularity,psychology,AskPsychology,productivity",
+        validation_alias="REDDIT_SUBREDDITS",
+    )
+    reddit_sorts: str = Field(default="hot,top", validation_alias="REDDIT_SORTS")
+    reddit_time_filter: str = Field(
+        default="day",
+        validation_alias="REDDIT_TIME_FILTER",
+    )
+    reddit_limit_per_listing: int = Field(
+        default=12,
+        validation_alias="REDDIT_LIMIT_PER_LISTING",
+    )
     pic_model_api_key: str | None = Field(default=None, validation_alias="PIC_MODEL_API_KEY")
     pic_model_base_url: str = Field(
         default="https://dashscope.aliyuncs.com/api/v1",

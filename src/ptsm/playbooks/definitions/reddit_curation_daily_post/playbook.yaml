@@ -1,0 +1,39 @@
+playbook_id: reddit_curation_daily_post
+version: 1
+domain: Reddit英文讨论转译
+platforms:
+  - xiaohongshu
+required_skills:
+  - reddit_discussion_scan
+  - xhs_image_strategy
+  - reddit_curation_style
+  - xhs_reddit_curation_hashtagging
+optional_skills: []
+reflection:
+  must_include_phrase: "Reddit"
+  required_hashtag: "#Reddit"
+  body_must_include_any:
+    - Reddit
+    - 英文讨论
+    - 中文
+    - 评论区
+    - 收藏
+  body_must_not_include_any:
+    - 我在Reddit上看到自己
+    - 亲测
+    - 诊断
+    - 治好
+    - 投资建议
+    - 变体要求
+    - 模板要求
+    - comment_chain
+    - save_tool
+    - identity_conflict
+max_attempts: 3
+trend_keywords:
+  - OpenAI
+  - ChatGPT
+  - ClaudeAI
+  - psychology
+  - AskPsychology
+  - productivity

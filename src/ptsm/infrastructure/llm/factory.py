@@ -543,7 +543,7 @@ def _build_deterministic_image_plan(
     content_signal = "\n".join(
         [
             scene,
-            runtime_context,
+            _runtime_context_for_image_plan(runtime_context),
             str(draft.get("title", "")),
             str(draft.get("image_text", "")),
             str(draft.get("body", "")),
@@ -621,6 +621,16 @@ def _build_deterministic_image_plan(
         "reason": "主题以文字表达和封面句为主，本地笔记卡片足够承载首屏信息。",
         "prompt_focus": "突出标题和封面语，画面干净留白。",
     }
+
+
+def _runtime_context_for_image_plan(runtime_context: str) -> str:
+    """Keep live topic signals but ignore anti-repetition memory when choosing image style."""
+    blocks = re.split(r"\n{2,}", runtime_context.strip())
+    return "\n\n".join(
+        block
+        for block in blocks
+        if block.strip() and not block.lstrip().startswith("# Recent Account Memory")
+    )
 
 
 def _looks_like_chat_screenshot(text: str) -> bool:

@@ -67,6 +67,17 @@ def test_account_registry_loads_world_cup_account() -> None:
     assert account.nickname == "世界杯看球手记实验号"
 
 
+def test_account_registry_loads_reddit_curation_account() -> None:
+    registry = AccountRegistry()
+
+    account = registry.get("acct-reddit-curation-local")
+
+    assert account.account_id == "acct-reddit-curation-local"
+    assert account.platform == "xiaohongshu"
+    assert account.domain == "Reddit英文讨论转译"
+    assert account.nickname == "Reddit英文精选实验号"
+
+
 def test_account_profile_to_dict_exposes_routing_fields() -> None:
     account = AccountRegistry().get("acct-fk-local")
 

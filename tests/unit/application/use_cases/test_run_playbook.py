@@ -1580,10 +1580,17 @@ def test_run_playbook_uses_local_pattern_context_for_deterministic_provider(
 
     assert result["status"] == "completed"
     builders = getattr(resolver, "_builders")
-    assert list(builders) == ["xhs_trend_scan", "topic_research"]
+    assert list(builders) == [
+        "xhs_trend_scan",
+        "topic_research",
+        "reddit_discussion_scan",
+    ]
     assert builders["xhs_trend_scan"].__class__.__name__ == "XhsPatternContextBuilder"
     assert builders["topic_research"].__class__.__name__ == (
         "PatternAwareTopicResearchContextBuilder"
+    )
+    assert builders["reddit_discussion_scan"].__class__.__name__ == (
+        "RedditDiscussionContextBuilder"
     )
 
 
@@ -1649,10 +1656,17 @@ def test_run_playbook_uses_local_pattern_context_when_deepseek_key_missing(
 
     assert result["status"] == "completed"
     builders = getattr(resolver, "_builders")
-    assert list(builders) == ["xhs_trend_scan", "topic_research"]
+    assert list(builders) == [
+        "xhs_trend_scan",
+        "topic_research",
+        "reddit_discussion_scan",
+    ]
     assert builders["xhs_trend_scan"].__class__.__name__ == "XhsPatternContextBuilder"
     assert builders["topic_research"].__class__.__name__ == (
         "PatternAwareTopicResearchContextBuilder"
+    )
+    assert builders["reddit_discussion_scan"].__class__.__name__ == (
+        "RedditDiscussionContextBuilder"
     )
 
 

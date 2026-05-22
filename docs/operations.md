@@ -2,7 +2,7 @@
 title: PTSM Operations
 status: active
 owner: ptsm
-last_verified: 2026-05-19
+last_verified: 2026-05-22
 source_of_truth: true
 related_paths:
   - docs/operations/publish-quickstart.md
@@ -86,6 +86,8 @@ COOKIES_PATH=cookies/fk-local.json .ptsm/bin/xhs-mcp/xiaohongshu-mcp-darwin-amd6
 - `uv run python -m ptsm.bootstrap run-playbook --scene "..." --account-id acct-wuxia-local --playbook-id wuxia_character_post --publish-mode mcp-real --auto-generate-image --publish-visibility "仅自己可见"`
 - `uv run python -m ptsm.bootstrap run-playbook --scene "Google发布Gemini 3模型" --account-id acct-ai-tech-local --playbook-id ai_tech_daily_post`
 - `uv run python -m ptsm.bootstrap run-playbook --scene "学一个表示坚持的高级词汇" --account-id acct-daily-english-local --playbook-id daily_english_post`
+- Reddit英文讨论转译 dry-run:
+  `uv run python -m ptsm.bootstrap run-playbook --scene "从Reddit上AI和心理学英文讨论里选一个适合中文读者的角度" --account-id acct-reddit-curation-local --playbook-id reddit_curation_daily_post`
 - 世界杯主题 dry-run:
   `uv run python -m ptsm.bootstrap run-playbook --scene "阿根廷和法国决赛前，想写一篇普通球迷也能看懂的赛前看点" --account-id acct-world-cup-local --playbook-id world_cup_daily_post`
 - `uv run python -m ptsm.bootstrap guide-post`
@@ -117,6 +119,7 @@ COOKIES_PATH=cookies/fk-local.json .ptsm/bin/xhs-mcp/xiaohongshu-mcp-darwin-amd6
 - `diagnose-publish` 是对单次发布问题的只读诊断入口，适合排查 “为什么没法自动确认已发布” 或 “为什么发布后状态不明确”。
 - `--fresh-topic-research` 通过 topic-radar 先扫描平台热点，交互式让用户选题后再生成内容，此时 `--scene` 可选。
 - `collect-xhs-patterns` / `analyze-xhs-patterns` 是周期采集和格式沉淀入口。普通 `run-playbook` 默认只读取本地 pattern snapshot，不会每次发帖都检索实时高互动帖子；需要实验特定 snapshot 时，用 `--format-pattern-path` 覆盖。
+- `reddit_curation_daily_post` 会在 `reddit_discussion_scan` skill 激活时尝试读取 Reddit 英文讨论。配置 `REDDIT_CLIENT_ID`、`REDDIT_CLIENT_SECRET` 和 `REDDIT_USER_AGENT` 后才会形成真实最新 Reddit runtime context；未配置时 dry-run 会完成但上下文标记为 `missing_credentials`，不得声称内容来自最新 Reddit 热帖。
 - `run-playbook` 是多 playbook 的通用入口；`run-fengkuang` 只保留给已有发疯文学兼容脚本和习惯命令。
 - `guide-post` 是现代心理学发帖前的只读向导：默认走对话式引导，先问具体场景，再建议心理学 lane、机制、非诊断化重构、可保存小工具、评论提示和低密度封面，最后输出 Markdown brief 和可复制的 `run-playbook --publish-mode dry-run` 命令；脚本场景用 `--non-interactive` 输出 JSON。真正生成和发布仍走 `run-playbook`。
 - `run-fengkuang --auto-generate-image` 会在缺少 `--publish-image-path` 时尝试调用已配置的图片后端生成封面；即梦配置优先于百炼配置，真实发布模式下默认也会尝试自动补图。

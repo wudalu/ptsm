@@ -270,7 +270,29 @@ uv run python -m ptsm.bootstrap run-playbook \
   --scene "阿根廷和法国决赛前，想写一篇普通球迷也能看懂的赛前看点" \
   --account-id acct-world-cup-local \
   --playbook-id world_cup_daily_post
+
+# Reddit英文讨论转译 dry-run
+uv run python -m ptsm.bootstrap run-playbook \
+  --scene "从Reddit上AI和心理学英文讨论里选一个适合中文读者的角度" \
+  --account-id acct-reddit-curation-local \
+  --playbook-id reddit_curation_daily_post
 ```
+
+### Reddit Discussion Scan
+
+Reddit英文讨论转译使用 Reddit app-only OAuth 做只读扫描，不需要 Reddit 用户名或密码。创建 Reddit app 后配置：
+
+```env
+REDDIT_CLIENT_ID=your-client-id
+REDDIT_CLIENT_SECRET=your-client-secret
+REDDIT_USER_AGENT=ptsm:reddit-curation:0.1 (by /u/your_reddit_username)
+REDDIT_SUBREDDITS=OpenAI,ChatGPT,ClaudeAI,ArtificialInteligence,singularity,psychology,AskPsychology,productivity
+REDDIT_SORTS=hot,top
+REDDIT_TIME_FILTER=day
+REDDIT_LIMIT_PER_LISTING=12
+```
+
+如果未配置 Reddit env，artifact 的 `runtime_skill_details` 仍会记录 `reddit_discussion_scan`，但 runtime context 会标记 `missing_credentials`。这时可以做离线结构验证，不应把正文当成“最新 Reddit 热帖”。
 
 ## Diagnostics
 

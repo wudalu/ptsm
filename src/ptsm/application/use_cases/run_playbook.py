@@ -35,6 +35,7 @@ from ptsm.infrastructure.publishers.xiaohongshu_mcp_publisher import PublisherPr
 from ptsm.playbooks.registry import PlaybookRegistry
 from ptsm.skills.runtime_context import (
     PatternAwareTopicResearchContextBuilder,
+    RedditDiscussionContextBuilder,
     SkillContextResolver,
     TopicResearchContextBuilder,
     XhsPatternContextBuilder,
@@ -702,15 +703,25 @@ def _build_runtime_skill_context_resolver(
     provider = settings.default_model_provider.lower().strip()
     pattern_path = format_pattern_path or settings.xhs_pattern_library_path
     if provider == "deterministic":
-        return _build_local_pattern_skill_context_resolver(pattern_path=pattern_path)
+        return _build_local_pattern_skill_context_resolver(
+            pattern_path=pattern_path,
+            settings=settings,
+        )
     if provider == "deepseek" and not settings.deepseek_api_key:
-        return _build_local_pattern_skill_context_resolver(pattern_path=pattern_path)
+        return _build_local_pattern_skill_context_resolver(
+            pattern_path=pattern_path,
+            settings=settings,
+        )
     if format_pattern_path:
         return build_skill_context_resolver(settings=settings, pattern_path=pattern_path)
     return None
 
 
-def _build_local_pattern_skill_context_resolver(*, pattern_path: str) -> SkillContextResolver:
+def _build_local_pattern_skill_context_resolver(
+    *,
+    pattern_path: str,
+    settings: Settings,
+) -> SkillContextResolver:
     pattern_builder = XhsPatternContextBuilder(pattern_path=pattern_path)
     return SkillContextResolver(
         builders={
@@ -719,6 +730,7 @@ def _build_local_pattern_skill_context_resolver(*, pattern_path: str) -> SkillCo
                 topic_builder=TopicResearchContextBuilder(allow_fresh_scan=False),
                 pattern_builder=pattern_builder,
             ),
+            "reddit_discussion_scan": RedditDiscussionContextBuilder.from_settings(settings),
         }
     )
 

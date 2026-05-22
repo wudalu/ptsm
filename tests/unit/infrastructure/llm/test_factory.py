@@ -185,6 +185,25 @@ def test_deterministic_backend_prefers_provider_image_for_real_object_visuals() 
     assert draft["image_plan"]["style"] == "photo_reference"
 
 
+def test_deterministic_image_plan_ignores_recent_memory_chat_cues_for_real_visuals() -> None:
+    draft = DeterministicDraftBackend().generate(
+        scene="周六把堆满快递盒的书桌当成发疯现场",
+        planner_prompt="# 发疯文学 Planner\n目标：写一条发疯文学内容。",
+        skill_contents=[
+            "# XHS Image Strategy\n真实物件、空间、材料和手作过程优先 provider_image。",
+            "# Fengkuang Style\n必须包含评论区接龙和可复制疯话。",
+        ],
+        runtime_skill_contents=[
+            "# Recent Account Memory\n"
+            "- recent_1_scene: 领导18:57突然发来一句在吗，明天早会还要我补材料\n"
+            "  body_preview: 群聊弹出来那一秒，我的工牌已经在桌上替我原地离职。"
+        ],
+    )
+
+    assert draft["image_plan"]["backend"] == "provider_image"
+    assert draft["image_plan"]["style"] == "photo_reference"
+
+
 def test_deterministic_backend_sanitizes_meta_scene_and_adapts_weekend_theme() -> None:
     backend = DeterministicDraftBackend()
 
@@ -358,6 +377,29 @@ def test_deterministic_backend_can_follow_world_cup_context() -> None:
         term in combined
         for term in ("稳赚", "下注", "盘口", "预测比分", "内部消息", "官方消息")
     )
+
+
+def test_deterministic_backend_can_follow_reddit_curation_context() -> None:
+    backend = DeterministicDraftBackend()
+
+    draft = backend.generate(
+        scene="从Reddit上AI和心理学英文讨论里选一个适合中文读者的角度",
+        planner_prompt="# Reddit英文讨论转译 Planner\n目标：从 Reddit 英文讨论转成中文小红书内容。",
+        persona_prompt="# Reddit英文精选 Persona\n像 bilingual editor，不是搬运号。",
+        skill_contents=[
+            "# Reddit Curation Style\n必须保留 Reddit 来源边界，翻成中文语境，并给可收藏小结。",
+            "# XHS Reddit Curation Hashtagging\n标签必须包含 `#Reddit`。",
+        ],
+    )
+
+    combined = f"{draft['title']}\n{draft['image_text']}\n{draft['body']}"
+    assert "#Reddit" in draft["hashtags"]
+    assert "Reddit" in draft["body"]
+    assert "英文讨论" in draft["body"]
+    assert "中文" in draft["body"] or "翻成中文" in draft["body"]
+    assert "收藏" in draft["body"]
+    assert "评论区" in draft["body"]
+    assert not any(term in combined for term in ("亲测", "诊断", "治好", "投资建议"))
     assert "发疯文学" not in draft["body"]
 
 

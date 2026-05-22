@@ -93,7 +93,7 @@ def test_run_fengkuang_cli_outputs_image_generation_receipt(
         [
             "run-fengkuang",
             "--scene",
-            "周六社畜躺平",
+            "周六把堆满快递盒的书桌当成发疯现场",
             "--account-id",
             "acct-fk-local",
             "--auto-generate-image",
