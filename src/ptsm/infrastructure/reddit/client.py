@@ -26,6 +26,15 @@ class RedditAccessConfig:
 
 
 @dataclass(frozen=True)
+class RedditPublicJsonConfig:
+    """Read-only public Reddit JSON listing access for low-volume fallback runs."""
+
+    user_agent: str
+    web_base_url: str = REDDIT_WEB_BASE_URL
+    timeout_seconds: float = 10.0
+
+
+@dataclass(frozen=True)
 class RedditDiscussion:
     """Normalized Reddit post fields useful for source-aware content drafting."""
 
@@ -83,14 +92,14 @@ class RedditClient:
                 if sort in _SORTS_WITH_TIME_FILTER:
                     params["t"] = time_filter
                 url = f"{self.config.oauth_base_url.rstrip('/')}/r/{subreddit}/{sort}"
-                response = self._http_client.get(
-                    url,
+                for post in _fetch_listing_posts(
+                    self._http_client,
+                    url=url,
                     headers=headers,
                     params=params,
-                    timeout=self.config.timeout_seconds,
-                )
-                response.raise_for_status()
-                for post in _parse_listing_payload(response.json(), sort=sort):
+                    timeout_seconds=self.config.timeout_seconds,
+                    sort=sort,
+                ):
                     if post.post_id in seen:
                         continue
                     seen.add(post.post_id)
@@ -114,6 +123,74 @@ class RedditClient:
             raise RuntimeError("Reddit access_token missing from OAuth response")
         self._access_token = token
         return token
+
+
+class RedditPublicJsonClient:
+    """Small read-only client for Reddit's public .json listing pages."""
+
+    def __init__(
+        self,
+        *,
+        config: RedditPublicJsonConfig,
+        http_client: Any | None = None,
+    ) -> None:
+        self.config = config
+        self._http_client = http_client or httpx.Client(
+            follow_redirects=True,
+        )
+
+    def fetch_posts(
+        self,
+        *,
+        subreddits: list[str],
+        sorts: list[str],
+        time_filter: str,
+        limit_per_listing: int,
+    ) -> list[RedditDiscussion]:
+        headers = {"User-Agent": self.config.user_agent}
+        posts: list[RedditDiscussion] = []
+        seen: set[str] = set()
+        for subreddit in _clean_subreddits(subreddits):
+            for sort in _clean_sorts(sorts):
+                params: dict[str, object] = {
+                    "limit": min(max(int(limit_per_listing), 1), 100),
+                    "raw_json": 1,
+                }
+                if sort in _SORTS_WITH_TIME_FILTER:
+                    params["t"] = time_filter
+                url = f"{self.config.web_base_url.rstrip('/')}/r/{subreddit}/{sort}.json"
+                for post in _fetch_listing_posts(
+                    self._http_client,
+                    url=url,
+                    headers=headers,
+                    params=params,
+                    timeout_seconds=self.config.timeout_seconds,
+                    sort=sort,
+                ):
+                    if post.post_id in seen:
+                        continue
+                    seen.add(post.post_id)
+                    posts.append(post)
+        return posts
+
+
+def _fetch_listing_posts(
+    http_client: Any,
+    *,
+    url: str,
+    headers: dict[str, str],
+    params: dict[str, object],
+    timeout_seconds: float,
+    sort: str,
+) -> list[RedditDiscussion]:
+    response = http_client.get(
+        url,
+        headers=headers,
+        params=params,
+        timeout=timeout_seconds,
+    )
+    response.raise_for_status()
+    return _parse_listing_payload(response.json(), sort=sort)
 
 
 def _parse_listing_payload(payload: dict[str, Any], *, sort: str) -> list[RedditDiscussion]:

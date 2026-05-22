@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from ptsm.infrastructure.reddit.client import RedditAccessConfig, RedditClient
+from ptsm.infrastructure.reddit.client import (
+    RedditAccessConfig,
+    RedditClient,
+    RedditPublicJsonClient,
+    RedditPublicJsonConfig,
+)
 
 
 class FakeResponse:
@@ -123,3 +128,51 @@ def test_reddit_client_fetches_oauth_listing_and_normalizes_posts() -> None:
     assert http_client.get_calls[0]["params"]["raw_json"] == 1
     assert http_client.get_calls[0]["headers"]["Authorization"] == "Bearer token-123"
     assert http_client.get_calls[0]["headers"]["User-Agent"] == "ptsm-test/0.1 by test"
+
+
+def test_reddit_public_json_client_fetches_listing_without_oauth_token() -> None:
+    http_client = FakeHttpClient(
+        {
+            "data": {
+                "children": [
+                    {
+                        "kind": "t3",
+                        "data": {
+                            "id": "pub123",
+                            "subreddit": "ChatGPT",
+                            "title": "AI workflows are changing office routines",
+                            "selftext": "People compare productivity pressure and tool anxiety.",
+                            "author": "public_user",
+                            "score": 880,
+                            "num_comments": 120,
+                            "upvote_ratio": 0.91,
+                            "created_utc": 1779417700,
+                            "permalink": "/r/ChatGPT/comments/pub123/example/",
+                            "stickied": False,
+                            "over_18": False,
+                        },
+                    },
+                ]
+            }
+        }
+    )
+    client = RedditPublicJsonClient(
+        config=RedditPublicJsonConfig(
+            user_agent="ptsm-test/0.1 (by /u/test)",
+        ),
+        http_client=http_client,
+    )
+
+    posts = client.fetch_posts(
+        subreddits=["ChatGPT"],
+        sorts=["hot"],
+        time_filter="week",
+        limit_per_listing=5,
+    )
+
+    assert [post.post_id for post in posts] == ["pub123"]
+    assert posts[0].source_url == "https://www.reddit.com/r/ChatGPT/comments/pub123/example/"
+    assert http_client.post_calls == []
+    assert http_client.get_calls[0]["url"] == "https://www.reddit.com/r/ChatGPT/hot.json"
+    assert http_client.get_calls[0]["params"] == {"limit": 5, "raw_json": 1}
+    assert http_client.get_calls[0]["headers"]["User-Agent"] == "ptsm-test/0.1 (by /u/test)"

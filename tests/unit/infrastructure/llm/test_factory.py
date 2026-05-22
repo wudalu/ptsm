@@ -403,6 +403,39 @@ def test_deterministic_backend_can_follow_reddit_curation_context() -> None:
     assert "发疯文学" not in draft["body"]
 
 
+def test_deterministic_reddit_draft_uses_selected_runtime_discussion() -> None:
+    backend = DeterministicDraftBackend()
+
+    draft = backend.generate(
+        scene="从Reddit上AI英文讨论里选一个适合中文读者的角度",
+        planner_prompt="# Reddit英文讨论转译 Planner",
+        persona_prompt="# Reddit英文精选 Persona",
+        skill_contents=[
+            "# Reddit Curation Style\n必须保留 Reddit 来源边界，翻成中文语境。",
+            "# XHS Reddit Curation Hashtagging\n标签必须包含 `#Reddit`。",
+        ],
+        runtime_skill_contents=[
+            "# Reddit Discussion Scan Live Context\n"
+            "- status: available\n"
+            "- access_mode: public_json\n\n"
+            "## Selected English discussions\n"
+            "1. r/ChatGPT `this tweet aged in the funniest possible way`\n"
+            "   - Chinese-reader fit: AI/tool anxiety, workplace relevance\n"
+            "   - source_url: https://www.reddit.com/r/ChatGPT/comments/example/\n"
+            "   - excerpt_en: programmers did not disappear; many workflows became AI babysitting and result checking.\n"
+        ],
+    )
+
+    combined = f"{draft['title']}\n{draft['body']}"
+    assert "#Reddit" in draft["hashtags"]
+    assert "this tweet aged in the funniest possible way" in combined
+    assert "AI babysitting" in combined or "AI保姆" in combined
+    assert "r/ChatGPT" in draft["body"]
+    assert "翻成中文" in draft["body"]
+    assert "收藏" in draft["body"]
+    assert "评论区" in draft["body"]
+
+
 def test_deterministic_world_cup_image_plan_prefers_watch_list_card() -> None:
     draft = DeterministicDraftBackend().generate(
         scene="阿根廷和法国决赛前，想写一篇普通球迷也能看懂的赛前看点",

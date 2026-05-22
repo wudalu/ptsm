@@ -17,6 +17,8 @@ from ptsm.infrastructure.reddit.client import (
     RedditAccessConfig,
     RedditClient,
     RedditDiscussion,
+    RedditPublicJsonClient,
+    RedditPublicJsonConfig,
 )
 from ptsm.playbooks.registry import PlaybookDefinition
 from ptsm.skills.loader import LoadedSkill
@@ -160,6 +162,7 @@ class RedditDiscussionContextBuilder:
         *,
         client: RedditDiscussionProvider | None,
         credentials_configured: bool = True,
+        access_mode: str = "oauth",
         subreddits: list[str] | None = None,
         sorts: list[str] | None = None,
         time_filter: str = "day",
@@ -167,6 +170,7 @@ class RedditDiscussionContextBuilder:
     ) -> None:
         self.client = client
         self.credentials_configured = credentials_configured
+        self.access_mode = access_mode
         self.subreddits = subreddits or [
             "OpenAI",
             "ChatGPT",
@@ -185,7 +189,12 @@ class RedditDiscussionContextBuilder:
             and settings.reddit_client_secret
             and settings.reddit_user_agent
         )
-        client: RedditClient | None = None
+        public_json_configured = (
+            settings.reddit_public_json_fallback
+            and _is_usable_reddit_user_agent(settings.reddit_user_agent)
+        )
+        client: RedditClient | RedditPublicJsonClient | None = None
+        access_mode = "missing"
         if configured:
             client = RedditClient(
                 config=RedditAccessConfig(
@@ -194,9 +203,18 @@ class RedditDiscussionContextBuilder:
                     user_agent=settings.reddit_user_agent,
                 )
             )
+            access_mode = "oauth"
+        elif public_json_configured:
+            client = RedditPublicJsonClient(
+                config=RedditPublicJsonConfig(
+                    user_agent=settings.reddit_user_agent,
+                )
+            )
+            access_mode = "public_json"
         return cls(
             client=client,
-            credentials_configured=configured,
+            credentials_configured=configured or public_json_configured,
+            access_mode=access_mode,
             subreddits=_split_csv(settings.reddit_subreddits),
             sorts=_split_csv(settings.reddit_sorts),
             time_filter=settings.reddit_time_filter,
@@ -230,6 +248,7 @@ class RedditDiscussionContextBuilder:
             subreddits=self.subreddits,
             sorts=self.sorts,
             time_filter=self.time_filter,
+            access_mode=self.access_mode,
         )
 
 
@@ -699,6 +718,11 @@ def _split_csv(value: str) -> list[str]:
     return [part.strip() for part in value.split(",") if part.strip()]
 
 
+def _is_usable_reddit_user_agent(value: str) -> bool:
+    normalized = value.strip().lower()
+    return bool(normalized) and "replace-me" not in normalized
+
+
 def _select_reddit_discussions(
     posts: Sequence[RedditDiscussion],
     *,
@@ -746,10 +770,10 @@ def _render_reddit_missing_credentials_context() -> str:
         [
             "# Reddit Discussion Scan Live Context",
             "- status: missing_credentials",
-            "- required_env: REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET, REDDIT_USER_AGENT",
+            "- required_env: REDDIT_USER_AGENT plus REDDIT_PUBLIC_JSON_FALLBACK=true, or REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET for OAuth.",
             "- policy: follow Reddit's Responsible Builder Policy and get explicit Reddit approval before accessing Reddit data through the API.",
-            "- note: read-only Reddit scan is disabled until approved app-only OAuth credentials are configured.",
-            "- operator_action: create a Reddit app with a transparent read-only purpose, set the env vars, then rerun the playbook.",
+            "- note: read-only Reddit scan is disabled until a non-placeholder user agent is configured for public JSON fallback or approved app-only OAuth credentials are configured.",
+            "- operator_action: set REDDIT_USER_AGENT for low-volume public JSON fallback, or create a Reddit app with a transparent read-only purpose and set OAuth env vars.",
             "- 约束：未拿到实时 Reddit 结果时，不要声称这条内容来自最新 Reddit 讨论。",
         ]
     )
@@ -772,10 +796,12 @@ def _render_reddit_discussion_context(
     subreddits: Sequence[str],
     sorts: Sequence[str],
     time_filter: str,
+    access_mode: str = "oauth",
 ) -> str:
     lines = [
         "# Reddit Discussion Scan Live Context",
         "- status: available",
+        f"- access_mode: {access_mode}",
         f"- fetched_at: {date.today().isoformat()}",
         f"- subreddits: {', '.join(subreddits)}",
         f"- sorts: {', '.join(sorts)}",

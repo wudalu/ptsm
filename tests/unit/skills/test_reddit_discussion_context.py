@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from ptsm.config.settings import Settings
 from ptsm.infrastructure.reddit.client import RedditDiscussion
 from ptsm.skills.runtime_context import RedditDiscussionContextBuilder
 
@@ -126,3 +127,18 @@ def test_reddit_discussion_context_reports_missing_credentials() -> None:
     assert "read-only Reddit scan" in context
     assert "Responsible Builder Policy" in context
     assert "explicit Reddit approval" in context
+
+
+def test_reddit_discussion_context_uses_public_json_fallback_without_oauth_credentials() -> None:
+    builder = RedditDiscussionContextBuilder.from_settings(
+        Settings(
+            _env_file=None,
+            REDDIT_CLIENT_ID="",
+            REDDIT_CLIENT_SECRET="",
+            REDDIT_USER_AGENT="ptsm-test/0.1 (by /u/test)",
+            REDDIT_PUBLIC_JSON_FALLBACK=True,
+        )
+    )
+
+    assert builder.credentials_configured is True
+    assert builder.access_mode == "public_json"

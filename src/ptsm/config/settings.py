@@ -64,6 +64,10 @@ class Settings(BaseSettings):
         default="ptsm:reddit-curation:0.1 (by /u/replace-me)",
         validation_alias="REDDIT_USER_AGENT",
     )
+    reddit_public_json_fallback: bool = Field(
+        default=True,
+        validation_alias="REDDIT_PUBLIC_JSON_FALLBACK",
+    )
     reddit_subreddits: str = Field(
         default="OpenAI,ChatGPT,ClaudeAI,ArtificialInteligence,singularity,psychology,AskPsychology,productivity",
         validation_alias="REDDIT_SUBREDDITS",

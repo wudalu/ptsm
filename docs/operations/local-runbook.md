@@ -286,11 +286,14 @@ Reddit英文讨论转译使用 Reddit app-only OAuth 做只读扫描，不需要
 REDDIT_CLIENT_ID=your-client-id
 REDDIT_CLIENT_SECRET=your-client-secret
 REDDIT_USER_AGENT=ptsm:reddit-curation:0.1 (by /u/your_reddit_username)
+REDDIT_PUBLIC_JSON_FALLBACK=true
 REDDIT_SUBREDDITS=OpenAI,ChatGPT,ClaudeAI,ArtificialInteligence,singularity,psychology,AskPsychology,productivity
 REDDIT_SORTS=hot,top
 REDDIT_TIME_FILTER=day
 REDDIT_LIMIT_PER_LISTING=12
 ```
+
+如果 Reddit app 创建被 reCAPTCHA 或审批卡住，可以先只配置 `REDDIT_USER_AGENT` 并保留 `REDDIT_PUBLIC_JSON_FALLBACK=true`。这会读取 `reddit.com/r/<sub>/<sort>.json` public listing 做低频只读 fallback；仍需遵守 Reddit policy、限量请求，并避免把 Reddit 原文长段搬运到小红书。
 
 如果未配置 Reddit env，artifact 的 `runtime_skill_details` 仍会记录 `reddit_discussion_scan`，但 runtime context 会标记 `missing_credentials`。这时可以做离线结构验证，不应把正文当成“最新 Reddit 热帖”。
 

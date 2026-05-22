@@ -20,7 +20,7 @@
 
 ## Requirement Notes
 
-- Reddit data access is read-only. The implementation will use Reddit app-only OAuth (`REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, `REDDIT_USER_AGENT`) and will not require a Reddit username/password for reading public discussions.
+- Reddit data access is read-only. The implementation will prefer Reddit app-only OAuth (`REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, `REDDIT_USER_AGENT`) and will not require a Reddit username/password for reading public discussions. If Reddit app creation is blocked by reCAPTCHA or approval friction, it can use `REDDIT_PUBLIC_JSON_FALLBACK=true` plus a non-placeholder `REDDIT_USER_AGENT` to read Reddit public `.json` listing pages at low volume.
 - If credentials are absent, the runtime context will explicitly say Reddit scan is not configured. Deterministic dry-runs can still pass for local harness, but real “latest Reddit” operation requires the env vars.
 - The generated post must not pretend the author personally experienced the Reddit discussion. It should frame sources as “Reddit英文讨论里...”, translate/adapt the insight, avoid long verbatim Reddit quotes, and include a Chinese-facing comment/save mechanic.
 

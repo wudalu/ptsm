@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 
@@ -12,7 +13,11 @@ def build_contextual_deterministic_draft(
 ) -> dict[str, Any] | None:
     """Return a domain-specific deterministic draft when context is explicit."""
     if _is_reddit_curation_context(scene=scene, extra_context=extra_context):
-        return _build_reddit_curation_draft(scene=scene, feedback=feedback)
+        return _build_reddit_curation_draft(
+            scene=scene,
+            feedback=feedback,
+            runtime_context=runtime_context,
+        )
     if _is_sushi_poetry_context(scene=scene, extra_context=extra_context):
         return _build_sushi_poetry_draft(scene=scene, feedback=feedback)
     if _is_wuxia_context(scene=scene, extra_context=extra_context):
@@ -256,8 +261,54 @@ def _build_human_enrichment_draft(
     }
 
 
-def _build_reddit_curation_draft(*, scene: str, feedback: str) -> dict[str, Any]:
-    if any(keyword in scene.lower() for keyword in ("burnout", "心理", "焦虑", "通知", "attention")):
+def _build_reddit_curation_draft(
+    *,
+    scene: str,
+    feedback: str,
+    runtime_context: str,
+) -> dict[str, Any]:
+    selected = _extract_selected_reddit_discussion(runtime_context)
+    selected_haystack = (
+        f"{selected.get('title', '')} {selected.get('fit', '')} {selected.get('excerpt', '')}"
+        if selected
+        else ""
+    ).lower()
+    if selected and any(
+        keyword in selected_haystack
+        for keyword in ("ai", "chatgpt", "agent", "workflow", "coder", "programmer", "claude")
+    ):
+        title = "Reddit在聊AI保姆化，打工人先看这点"
+        image_text = "不是被AI替代，是开始给AI兜底"
+        source_title = selected["title"]
+        subreddit = selected["subreddit"]
+        body = (
+            f"这次选的是 Reddit 上 r/{subreddit} 的英文讨论「{source_title}」。"
+            "不逐字翻译，翻成中文它更像是在说：程序员和知识工作者没有突然消失，"
+            "而是越来越像在做 AI babysitting，给工具拆任务、查结果、补漏洞、兜底责任。\n"
+            "这个点适合中文读者，是因为很多人已经在工作里同时开着 ChatGPT、Cursor、Claude 或内部工具，"
+            "表面上效率提高了，实际多了一层“我要判断 AI 做得对不对”的隐形劳动。\n"
+            "可收藏小结：能交给 AI 的是重复步骤，不是最终责任；能提速的是初稿，不是判断；"
+            "能省掉的是机械整理，不是来源核查。\n"
+            "评论区想问问，你现在更像是在用 AI，还是在照看 AI？"
+        )
+        hashtags = ["#Reddit", "#AI资讯", "#人工智能", "#效率工具", "#英语阅读"]
+    elif selected:
+        title = "这个Reddit讨论，翻成中文很有共鸣"
+        image_text = "英文讨论背后是普通人的压力"
+        source_title = selected["title"]
+        subreddit = selected["subreddit"]
+        body = (
+            f"这次选的是 Reddit 上 r/{subreddit} 的英文讨论「{source_title}」。"
+            "不逐字翻译，翻成中文它说的是：很多压力不是来自单个事件，"
+            "而是来自长期被提醒、被比较、被要求立刻回应的低控制感。\n"
+            "国内读者容易有共鸣，是因为消息、工作流和社交平台常常挤在同一个手机里，"
+            "人很难真的从任务里退出。\n"
+            "可收藏小结：先问这件事是不是必须现在处理；再问自己能不能给出明确回复时间；"
+            "最后给注意力留一个不被打断的小窗口。\n"
+            "评论区想问问，你更想看 Reddit 上的心理学讨论，还是 AI 工具焦虑讨论？"
+        )
+        hashtags = ["#Reddit", "#心理学", "#情绪管理", "#英语阅读", "#效率工具"]
+    elif any(keyword in scene.lower() for keyword in ("burnout", "心理", "焦虑", "通知", "attention")):
         title = "这个Reddit讨论，像极了消息压力"
         image_text = "英文讨论翻成中文后更扎心"
         body = (
@@ -297,6 +348,35 @@ def _build_reddit_curation_draft(*, scene: str, feedback: str) -> dict[str, Any]
         "body": body,
         "hashtags": hashtags,
     }
+
+
+def _extract_selected_reddit_discussion(runtime_context: str) -> dict[str, str] | None:
+    if "- status: available" not in runtime_context:
+        return None
+    lines = runtime_context.splitlines()
+    for index, line in enumerate(lines):
+        match = re.match(r"^\d+\.\s+r/([^`\s]+)\s+`(.+)`$", line.strip())
+        if not match:
+            continue
+        details = {
+            "subreddit": match.group(1).strip(),
+            "title": match.group(2).strip(),
+            "fit": "",
+            "source_url": "",
+            "excerpt": "",
+        }
+        for detail_line in lines[index + 1 : index + 6]:
+            stripped = detail_line.strip()
+            if stripped.startswith("- Chinese-reader fit:"):
+                details["fit"] = stripped.split(":", 1)[1].strip()
+            elif stripped.startswith("- source_url:"):
+                details["source_url"] = stripped.split(":", 1)[1].strip()
+            elif stripped.startswith("- excerpt_en:"):
+                details["excerpt"] = stripped.split(":", 1)[1].strip()
+            elif re.match(r"^\d+\.\s+r/", stripped):
+                break
+        return details
+    return None
 
 
 def _extract_pattern_hooks(runtime_context: str) -> set[str]:
