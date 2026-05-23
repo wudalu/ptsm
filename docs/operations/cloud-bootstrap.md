@@ -154,6 +154,8 @@ uv run python -m ptsm.bootstrap run-fengkuang \
   --local-image-style wechat_chat
 ```
 
+`wechat_chat` 会生成内容区聊天转录封面，而不是完整手机截图；它不绘制头部、输入栏或头像。需要复刻真实对话时，让正文或 `final_content.image_plan` 提供多行 speaker 文本、`theme`、`chat_title` 和 `chat_times` 等字段。
+
 真实发布模式下，如果未显式传 `--publish-image-path`，且没有传 `--no-auto-generate-image`，PTSM 默认会自动补图。operator 的 `--local-image-style` 优先；否则运行时可根据 `final_content.image_plan` 选择本地截图式封面或 provider image。即梦和百炼同时配置时优先使用即梦。
 
 ## Step 6: Real Publish Prerequisites

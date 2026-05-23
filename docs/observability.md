@@ -2,7 +2,7 @@
 title: PTSM Observability
 status: active
 owner: ptsm
-last_verified: 2026-05-17
+last_verified: 2026-05-23
 source_of_truth: true
 related_paths:
   - src/ptsm/infrastructure/observability/run_store.py
@@ -66,7 +66,7 @@ PTSM 当前的观测性核心是本地文件系统里的 run store 和 artifacts
 - `ptsm harness-evals` 现在还会输出 `skills` 视图，聚合每个 activated skill 的 runs、completed、completion_rate 和 `runtime_context_runs`，用于回答“某个 skill 打开以后运行是否更稳”这类局部问题。
 - `ptsm harness-report` 会把 `doctor`、`gc` 和 `harness-evals` 合成一个本地快照，并支持对 stale docs、gc candidate、run completion rate、plan-run completion rate 做 threshold 检查。
 - `ptsm diagnose-publish` 会把 `doctor`、run logs、artifact metadata 和 `xhs-check-publish` 的结果组合成一次只读诊断，给出 `likely_cause`、`evidence` 和 `next_actions`。
-- real publish 或显式 `--auto-generate-image` 运行现在会把 `image_generation` metadata 落进 artifact，包含 provider、model/style、prompt 或本地渲染输入、`generated_image_paths`，以及从 `runtime_skill_contents` 提炼出的 `runtime_context_summary`；当前 provider 可为 `jimeng`、`bailian` 或本地 `local_note_card`。本地 renderer 的 `style` 会记录为 `xhs_note_card_v1`、`iphone_notes_v1` 或 `wechat_chat_v1`，用于复盘本次封面采用了默认笔记卡、iPhone 记事本或微信聊天记录样式。若草稿或 operator 指定了图片策略，artifact 还会写入 `content_review.image_plan` 和 `image_generation.image_plan`，记录 source、requested_backend、selected_backend、requested_style、role、text_density、max_text_units、cover_text_strategy、reason 和 fallback_reason，便于复盘封面是低密度钩子、保存工具、评论触发还是证据/场景图。
+- real publish 或显式 `--auto-generate-image` 运行现在会把 `image_generation` metadata 落进 artifact，包含 provider、model/style、prompt 或本地渲染输入、`generated_image_paths`，以及从 `runtime_skill_contents` 提炼出的 `runtime_context_summary`；当前 provider 可为 `jimeng`、`bailian` 或本地 `local_note_card`。本地 renderer 的 `style` 会记录为 `xhs_note_card_v1`、`iphone_notes_v1` 或 `wechat_chat_v1`，用于复盘本次封面采用了默认笔记卡、iPhone 记事本或微信聊天记录样式。若草稿或 operator 指定了图片策略，artifact 还会写入 `content_review.image_plan` 和 `image_generation.image_plan`，记录 source、requested_backend、selected_backend、requested_style、role、text_density、max_text_units、cover_text_strategy、reason 和 fallback_reason，便于复盘封面是低密度钩子、保存工具、评论触发还是证据/场景图。`wechat_chat` 本地渲染输入还会保留 `theme`、`chat_title` / `conversation_title`、`chat_times`、`status_time`、`show_avatars` 和结构化/多行聊天内容，方便确认最终图片是内容区聊天转录还是意外回退到默认气泡。
 - real publish 只要最终有图片路径，就会把去水印结果写入 artifact 的 `watermark_removal` 字段，并且发布器收到的是清理后的图片路径；dry-run 只有在 `WATERMARK_REMOVAL_ENABLED=true` 时才记录同一字段。
 - `collect-xhs-patterns` 会把 XHS 原始样本写入 `outputs/artifacts/xhs-pattern-library/samples-*.json`，包含关键词级成功/失败、互动指标、feed identifiers、封面宽高和采集时间；失败关键词留在 `keyword_errors`，不会覆盖已成功样本。
 - `analyze-xhs-patterns` 会把样本蒸馏为 `patterns-*.json` 和 `current.json`。生成链路命中本地 snapshot 时，artifact 和 CLI 响应会写入 `format_patterns_used`，记录 pattern ids、hook archetypes、body structures、image sequences、freshness 和来源 snapshot。

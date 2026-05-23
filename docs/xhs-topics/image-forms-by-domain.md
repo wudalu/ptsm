@@ -2,7 +2,7 @@
 title: XHS Image Forms By Domain
 status: active
 owner: ptsm
-last_verified: 2026-05-19
+last_verified: 2026-05-23
 source_of_truth: false
 related_paths:
   - docs/xhs-topics/index.md
@@ -41,7 +41,7 @@ related_paths:
 
 ## Local Style Selection
 
-- `wechat_chat`: 当正文核心是消息、群聊、可复制回复或评论接龙时使用。`role=comment_prompt`，`max_text_units=2`。
+- `wechat_chat`: 当正文核心是消息、群聊、可复制回复或评论接龙时使用。`role=comment_prompt`，`max_text_units=2`。当前本地 renderer 画的是内容区聊天转录，不画完整手机头部、输入栏或头像；需要像真实对话时，正文或 `image_plan` 应提供结构化 `chat_messages` / `messages`，或 `同事：...`、`我：...` 这类 speaker-prefixed 多行文本。`theme=dark` 和 `chat_times` 可用于复刻深色聊天截图与时间分隔。
 - `iphone_notes`: 当正文核心是可保存工具、三步练习、英语句型或小纸条时使用。`role=save_tool`，`max_text_units=3`。
 - `note_card`: 当正文核心是一句强判断或短金句时使用。`role=cover_hook` 或 `shareable_line`，`max_text_units=1` 到 `2`。
 - `provider_image`: 当用户需要看见空间、物件、材料、人物氛围、过程、设备或界面感时使用。`role=evidence_or_scene`，`max_text_units=0` 到 `1`。

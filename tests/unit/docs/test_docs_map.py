@@ -79,6 +79,13 @@ def test_operations_doc_mentions_plan_runs_command() -> None:
     assert "--auto-generate-image" in doc_text
 
 
+def test_operations_doc_records_required_eval_harness_gate() -> None:
+    doc_text = (DOCS_ROOT / "operations.md").read_text(encoding="utf-8")
+
+    assert "required_failed > 0" in doc_text
+    assert "阻塞" in doc_text
+
+
 def test_operations_docs_include_world_cup_domain_commands() -> None:
     operations_text = (DOCS_ROOT / "operations.md").read_text(encoding="utf-8")
     runbook_text = (DOCS_ROOT / "operations" / "local-runbook.md").read_text(
@@ -186,6 +193,24 @@ def test_docs_cover_xhs_image_strategy_skill_and_active_local_selection() -> Non
     assert "image-forms-by-domain.md" in xhs_index_text
     assert "--local-image-style" in runbook_text
     assert "explicit local override" in runbook_text
+
+
+def test_docs_cover_wechat_local_renderer_transcript_contract() -> None:
+    operations_text = (DOCS_ROOT / "operations.md").read_text(encoding="utf-8")
+    runbook_text = (DOCS_ROOT / "operations" / "local-runbook.md").read_text(
+        encoding="utf-8"
+    )
+    observability_text = (DOCS_ROOT / "observability.md").read_text(encoding="utf-8")
+
+    assert "wechat_chat" in operations_text
+    assert "无头部、无底部、无头像" in runbook_text
+    assert "content-only" in runbook_text
+    assert "theme" in runbook_text
+    assert "chat_title" in runbook_text
+    assert "chat_times" in runbook_text
+    assert "theme" in observability_text
+    assert "chat_title" in observability_text
+    assert "chat_times" in observability_text
 
 
 def test_docs_index_links_core_maps() -> None:

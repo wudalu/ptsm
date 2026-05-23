@@ -18,6 +18,7 @@ related_paths:
   - src/ptsm/application/use_cases/guide_post.py
   - src/ptsm/application/use_cases/collect_xhs_patterns.py
   - src/ptsm/application/use_cases/analyze_xhs_patterns.py
+  - src/ptsm/infrastructure/images/note_card_backend.py
   - src/ptsm/application/use_cases/docs_sync.py
   - src/ptsm/application/use_cases/eval_artifact.py
   - src/ptsm/application/use_cases/harness_check.py
@@ -80,6 +81,7 @@ COOKIES_PATH=cookies/fk-local.json .ptsm/bin/xhs-mcp/xiaohongshu-mcp-darwin-amd6
 - `uv run python -m ptsm.bootstrap run-fengkuang --scene "..." --account-id acct-fk-local`
 - `uv run python -m ptsm.bootstrap run-fengkuang --scene "..." --account-id acct-fk-local --eval`
 - `uv run python -m ptsm.bootstrap run-fengkuang --scene "..." --account-id acct-fk-local --auto-generate-image`
+- `uv run python -m ptsm.bootstrap run-fengkuang --scene "领导18:57发来一句在吗" --account-id acct-fk-local --auto-generate-image --local-image-style wechat_chat`
 - `uv run python -m ptsm.bootstrap run-fengkuang --scene "..." --account-id acct-fk-local --publish-mode mcp-real --auto-generate-image --publish-visibility "仅自己可见"`
 - `uv run python -m ptsm.bootstrap run-fengkuang --scene "..." --account-id acct-fk-local --publish-mode mcp-real --auto-generate-image --publish-visibility "公开" --wait-for-publish-status`
 - `uv run python -m ptsm.bootstrap run-playbook --scene "分析令狐冲的自由人格与当代职场" --account-id acct-wuxia-local --playbook-id wuxia_character_post`
@@ -115,7 +117,7 @@ COOKIES_PATH=cookies/fk-local.json .ptsm/bin/xhs-mcp/xiaohongshu-mcp-darwin-amd6
 - `docs-sync` 会读取 source-of-truth 文档 front matter 里的 `related_paths`，要求相关代码变更至少伴随一个最具体候选文档面的更新。
 - `harness-check` 会串起 `docs-sync`、本地 `harness-report` 和 deterministic `pytest -q`，是本地 pre-push 和 CI 的统一入口。
 - `docs-sync --base-ref ...` 和 `harness-check --base-ref ...` 比较的是 `<base-ref>...HEAD` 的已提交 diff；如果要在 commit 之前预检当前工作树改动，改用 `--changed-path ...` 显式传入。
-- 本地默认 `harness-check` 只把 `docs-sync`、source-of-truth docs freshness 和 deterministic pytest 当成阻塞门禁；`--strict` 会把完整 `harness-report` warning 也变成阻塞。
+- 本地默认 `harness-check` 会把 `docs-sync`、source-of-truth docs freshness、deterministic pytest 和 `.ptsm/evals` 聚合出的 `required_failed > 0` 当成阻塞门禁；`--strict` 会把完整 `harness-report` warning 也变成阻塞。
 - `install-git-hooks` 会写入 `.git/hooks/pre-push`，默认记录 `origin/main` 作为 base ref，并在 push 前先计算 `git merge-base HEAD origin/main`，再执行 `harness-check --base-ref <merge-base-sha>`。
 - `gc` 默认只报告候选项；只有 `--apply` 才会删除本地 harness artifacts。
 - `harness-evals` 只输出本地 JSON 汇总，不负责修改 artifact 或触发修复动作；现在也聚合 `.ptsm/evals` 中的 eval results。
@@ -131,7 +133,7 @@ COOKIES_PATH=cookies/fk-local.json .ptsm/bin/xhs-mcp/xiaohongshu-mcp-darwin-amd6
 - 做 XHS persona 或热梗映射回归时，优先用 dry-run 加 `--eval` 检查 artifact：标题应有具体物件/关系/场景钩子，正文应像真人账号在说话，eval 会通过 `combined_must_not_include_any` 拦截 `首先`、`其次`、`综上`、`本文`、`作为AI` 等模板化或元叙事表达。
 - `guide-post` 是现代心理学发帖前的只读向导：默认走对话式引导，先问具体场景，再建议心理学 lane、机制、非诊断化重构、可保存小工具、评论提示和低密度封面，最后输出 Markdown brief 和可复制的 `run-playbook --publish-mode dry-run` 命令；脚本场景用 `--non-interactive` 输出 JSON。真正生成和发布仍走 `run-playbook`。
 - `run-fengkuang --auto-generate-image` 会在缺少 `--publish-image-path` 时尝试调用已配置的图片后端生成封面；即梦配置优先于百炼配置，真实发布模式下默认也会尝试自动补图。
-- `--no-auto-generate-image` 可以关闭自动补图；`--publish-image-path` 使用手动图片；`--local-image-style note_card|iphone_notes|wechat_chat` 可以主动选择本地截图式封面，即使外部图片 provider 已配置也生效。
+- `--no-auto-generate-image` 可以关闭自动补图；`--publish-image-path` 使用手动图片；`--local-image-style note_card|iphone_notes|wechat_chat` 可以主动选择本地截图式封面，即使外部图片 provider 已配置也生效。当前 `wechat_chat` 是内容区聊天转录封面，不绘制手机头部、底部输入栏或头像；正文或 `final_content.image_plan` 中的 `theme`、`chat_title`、`chat_times` 等本地渲染参数会进入 renderer payload 和 artifact 证据。
 - 真实发布只要最终有图片，就必须经过 `watermark_removal` 后处理；dry-run 图片实验仍可用 `WATERMARK_REMOVAL_ENABLED=true` 选择是否预览去水印结果。
 - 小红书真实发布前，需要先单独启动外部 `xiaohongshu-mcp` 服务；PTSM 默认不会自动拉起 `.ptsm/bin/xhs-mcp/xiaohongshu-mcp-darwin-amd64`。
 - 浏览器动作保留为人工或条件触发，不应成为默认无人值守 gate。

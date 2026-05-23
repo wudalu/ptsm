@@ -58,7 +58,7 @@ Skill 层负责让运行时按请求范围暴露合适的 builtin skills，而�
 ## Strategy Layer
 
 - `xhs_trend_scan` 是当前第一个小红书 research builtin skill，用来在写作前补一层格式/热点参考。
-- `xhs_image_strategy` 是共享的小红书图片策略 skill，用来把正文结构、图片角色和图片生成后端连接起来。它要求草稿可附带 `image_plan`，下游 `run_playbook` 再把该计划解析为本地 renderer 或外部 provider 的实际调用；低密度本地截图会按 `max_text_units` 只渲染少量短句。跨领域图片形式参考见 [`docs/xhs-topics/image-forms-by-domain.md`](xhs-topics/image-forms-by-domain.md)。
+- `xhs_image_strategy` 是共享的小红书图片策略 skill，用来把正文结构、图片角色和图片生成后端连接起来。它要求草稿可附带 `image_plan`，下游 `run_playbook` 再把该计划解析为本地 renderer 或外部 provider 的实际调用；低密度本地截图会按 `max_text_units` 只渲染少量短句。`wechat_chat` 计划如果提供 `theme`、`chat_title`、`chat_times` 或结构化聊天内容，这些字段会保留到本地 renderer payload 和 artifact 证据中。跨领域图片形式参考见 [`docs/xhs-topics/image-forms-by-domain.md`](xhs-topics/image-forms-by-domain.md)。
 - `xhs_human_voice` 是共享的小红书人设策略 skill，用来把温暖、具体、像真人、不格式化这类横向口吻要求放进 skill surface，而不是散落在各个 runtime 分支里。它和领域 style skill 叠加使用：前者规定“像人说话”，后者规定“这个账号说什么、怎么说”。
 - 它现在优先消费本地 `outputs/artifacts/xhs-pattern-library/current.json`。这些结果不会覆盖静态 `SKILL.md` 文本，而是作为独立 `runtime_skill_contents` 参与标题、正文和封面语气生成。如果本地 snapshot 缺失，普通生成会静默跳过动态 context；显式 fresh research 才会尝试 live MCP scan。
 - `xhs_trend_scan` 的 runtime context 不只列热门标题，还会从标题和互动结构推断 `comment_chain`、`save_tool`、`copyable_line`、`identity_conflict` 等内容机制，提示 drafting backend 借鉴“为什么互动”，而不是复写样本标题。

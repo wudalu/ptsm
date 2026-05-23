@@ -65,7 +65,7 @@ This exercises:
 - **Executor**: DeepSeek LLM generates title, image_text, body, hashtags from scene + persona + planner + static skills + local pattern context + recent memory context.
 - **Reflector**: enforces required rules such as `#发疯文学`, configured deterministic quality rules such as rejecting generic fengkuang titles, requiring a comment/copyable mechanic, and blocking mental-health/medical jokes. Light positive closings like `也算` are recommended style, not a mandatory phrase gate. Passes to finalize, or retries up to max_attempts.
 
-Review `content_review`, `content_review.image_plan`, and the final正文. If content and image strategy look good, proceed to real publish.
+Review `content_review`, `content_review.image_plan`, and the final正文. If content and image strategy look good, proceed to real publish. When the planned style is `wechat_chat`, check that the visible text is a short content-only transcript rather than a full phone screenshot.
 
 ### Step 3 — Real Publish
 
@@ -104,7 +104,7 @@ With `--wait-for-publish-status`, PTSM retries `search_feeds` title match for ~8
 
 #### What happens in both paths
 
-1. **Image generation**: Auto-triggered when `publish_mode=mcp-real`, no `--publish-image-path` is provided, and `--no-auto-generate-image` is not set. Operator `--local-image-style` can actively choose `note_card`, `iphone_notes`, or `wechat_chat`; otherwise `final_content.image_plan` from `xhs_image_strategy` can choose `local_social_screenshot` or provider image. If neither the operator nor the LLM chooses a route, PTSM uses the configured image provider when available, then the local renderer. The image prompt incorporates scene, title, image_text, body summary, persona, and runtime trend context, but no hashtags or tag text are added to the image. Output lands in `outputs/generated_images/`.
+1. **Image generation**: Auto-triggered when `publish_mode=mcp-real`, no `--publish-image-path` is provided, and `--no-auto-generate-image` is not set. Operator `--local-image-style` can actively choose `note_card`, `iphone_notes`, or `wechat_chat`; otherwise `final_content.image_plan` from `xhs_image_strategy` can choose `local_social_screenshot` or provider image. If neither the operator nor the LLM chooses a route, PTSM uses the configured image provider when available, then the local renderer. The provider prompt incorporates scene, title, image_text, body summary, persona, and runtime trend context, but no hashtags or tag text are added to the image. Local renderer payloads additionally preserve local screenshot metadata from `final_content.image_plan`, such as `theme`, `chat_title`, and `chat_times`. Output lands in `outputs/generated_images/`.
 
 2. **Watermark removal**: Real publish with any final image path always runs OpenCV Canny edge detection + TELEA inpainting to remove residual watermarks in image corners. Result written to `*-nowm.png` and recorded under `watermark_removal`. Dry-run image experiments only run this step when `WATERMARK_REMOVAL_ENABLED=true`.
 
@@ -179,6 +179,8 @@ PTSM can also use the local Pillow renderer as an explicit local cover path and 
 ```
 
 These local styles render iPhone Notes-like and WeChat chat transcript-like covers from the generated title, `image_text`, body summary, scene, and runtime context. They do not call external image APIs, and artifacts record the effective style as `iphone_notes_v1` or `wechat_chat_v1`. The artifact also records `image_generation.image_plan` so the run can be audited as `llm_image_plan`, `manual_override`, or default provider/local behavior.
+
+`wechat_chat` now renders a content-only chat transcript: 无头部、无底部、无头像, with speaker labels beside the bubbles. It is meant for scenes where the first-screen asset is the actual chat exchange, copyable reply, or comment prompt. The renderer reads explicit structured messages from `chat_messages` / `messages`, or speaker-prefixed body lines such as `同事：刚看见热搜` and `我：我现在啥事都发文字确认`; this prevents a chat cover from collapsing into one generic bubble. `theme=dark` switches the transcript to a dark background, `chat_times` inserts up to three timestamp labels, and `chat_title` / `conversation_title` can label incoming messages when the body uses generic speakers. `status_time`, `unread_count`, and `show_avatars` are preserved in the payload for audit compatibility, but the current content-only renderer does not draw phone chrome or avatar blocks.
 
 ### Watermark Removal
 
