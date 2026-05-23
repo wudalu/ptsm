@@ -384,19 +384,21 @@ def test_deterministic_backend_can_follow_reddit_curation_context() -> None:
 
     draft = backend.generate(
         scene="从Reddit上AI和心理学英文讨论里选一个适合中文读者的角度",
-        planner_prompt="# Reddit英文讨论转译 Planner\n目标：从 Reddit 英文讨论转成中文小红书内容。",
+        planner_prompt="# Reddit英文讨论转译 Planner\n目标：用 Reddit 英文讨论做内部素材，写成中文小红书内容。",
         persona_prompt="# Reddit英文精选 Persona\n像 bilingual editor，不是搬运号。",
         skill_contents=[
-            "# Reddit Curation Style\n必须保留 Reddit 来源边界，翻成中文语境，并给可收藏小结。",
-            "# XHS Reddit Curation Hashtagging\n标签必须包含 `#Reddit`。",
+            "# Reddit Curation Style\nReddit 只作为内部素材来源，成稿不要暴露来源或翻译过程，并给可收藏小结。",
+            "# XHS Reddit Curation Hashtagging\n标签使用中文话题标签，不要包含 `#Reddit`。",
         ],
     )
 
     combined = f"{draft['title']}\n{draft['image_text']}\n{draft['body']}"
-    assert "#Reddit" in draft["hashtags"]
-    assert "Reddit" in draft["body"]
-    assert "英文讨论" in draft["body"]
-    assert "中文" in draft["body"] or "翻成中文" in draft["body"]
+    visible = f"{combined}\n{' '.join(draft['hashtags'])}"
+    assert "#Reddit" not in draft["hashtags"]
+    assert not any(
+        term in visible
+        for term in ("Reddit", "reddit", "r/", "英文讨论", "翻成中文", "这次选的是")
+    )
     assert "收藏" in draft["body"]
     assert "评论区" in draft["body"]
     assert not any(term in combined for term in ("亲测", "诊断", "治好", "投资建议"))
@@ -411,8 +413,8 @@ def test_deterministic_reddit_draft_uses_selected_runtime_discussion() -> None:
         planner_prompt="# Reddit英文讨论转译 Planner",
         persona_prompt="# Reddit英文精选 Persona",
         skill_contents=[
-            "# Reddit Curation Style\n必须保留 Reddit 来源边界，翻成中文语境。",
-            "# XHS Reddit Curation Hashtagging\n标签必须包含 `#Reddit`。",
+            "# Reddit Curation Style\nReddit 只作为内部素材来源，成稿不要暴露来源或翻译过程。",
+            "# XHS Reddit Curation Hashtagging\n标签使用中文话题标签，不要包含 `#Reddit`。",
         ],
         runtime_skill_contents=[
             "# Reddit Discussion Scan Live Context\n"
@@ -426,12 +428,25 @@ def test_deterministic_reddit_draft_uses_selected_runtime_discussion() -> None:
         ],
     )
 
-    combined = f"{draft['title']}\n{draft['body']}"
-    assert "#Reddit" in draft["hashtags"]
-    assert "this tweet aged in the funniest possible way" in combined
+    combined = f"{draft['title']}\n{draft['image_text']}\n{draft['body']}"
+    visible = f"{combined}\n{' '.join(draft['hashtags'])}"
+    assert "#Reddit" not in draft["hashtags"]
+    assert "this tweet aged in the funniest possible way" not in combined
     assert "AI babysitting" in combined or "AI保姆" in combined
-    assert "r/ChatGPT" in draft["body"]
-    assert "翻成中文" in draft["body"]
+    assert not any(
+        term in visible
+        for term in (
+            "Reddit",
+            "reddit",
+            "r/ChatGPT",
+            "r/",
+            "英文讨论",
+            "翻成中文",
+            "这次选的是",
+            "source_url",
+            "reddit.com",
+        )
+    )
     assert "收藏" in draft["body"]
     assert "评论区" in draft["body"]
 
@@ -444,8 +459,8 @@ def test_deterministic_reddit_draft_avoids_latest_claim_when_runtime_missing() -
         planner_prompt="# Reddit英文讨论转译 Planner",
         persona_prompt="# Reddit英文精选 Persona",
         skill_contents=[
-            "# Reddit Curation Style\n必须保留 Reddit 来源边界，翻成中文语境。",
-            "# XHS Reddit Curation Hashtagging\n标签必须包含 `#Reddit`。",
+            "# Reddit Curation Style\nReddit 只作为内部素材来源，成稿不要暴露来源或翻译过程。",
+            "# XHS Reddit Curation Hashtagging\n标签使用中文话题标签，不要包含 `#Reddit`。",
         ],
         runtime_skill_contents=[
             "# Reddit Discussion Scan Live Context\n"
@@ -454,9 +469,13 @@ def test_deterministic_reddit_draft_avoids_latest_claim_when_runtime_missing() -
         ],
     )
 
-    combined = f"{draft['title']}\n{draft['body']}"
-    assert "#Reddit" in draft["hashtags"]
-    assert "Reddit" in draft["body"]
+    combined = f"{draft['title']}\n{draft['image_text']}\n{draft['body']}"
+    visible = f"{combined}\n{' '.join(draft['hashtags'])}"
+    assert "#Reddit" not in draft["hashtags"]
+    assert not any(
+        term in visible
+        for term in ("Reddit", "reddit", "r/", "英文讨论", "翻成中文", "这次选的是")
+    )
     assert "最近" not in combined
     assert "最新" not in combined
     assert "评论区" in draft["body"]

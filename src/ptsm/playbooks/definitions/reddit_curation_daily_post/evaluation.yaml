@@ -40,33 +40,57 @@ node_contracts:
       title_must_not_equal_any:
         - Reddit英文讨论转译
         - 今日Reddit热帖
+        - Reddit在聊AI保姆化，打工人先看这点
+        - 这个Reddit讨论，翻成中文很有共鸣
+        - 这个Reddit讨论，像极了消息压力
+        - Reddit英文讨论里的AI代理话题
       image_text_must_not_equal_any:
         - Reddit热帖
+        - 英文讨论背后是普通人的压力
+        - 英文讨论翻成中文后更扎心
       hashtags_min_count: 3
       hashtags_max_count: 7
       hashtags_must_include_any:
+        - "#热点观察"
+        - "#AI工具"
+        - "#人工智能"
+        - "#心理学"
+        - "#情绪管理"
+        - "#效率工具"
+      hashtags_must_not_include_any:
         - "#Reddit"
       body_min_chars: 220
       body_max_chars: 950
       body_must_include_any:
-        - Reddit
-        - 英文讨论
-        - 中文
+        - AI
+        - 工具
+        - 压力
+        - 消息
         - 评论区
         - 收藏
-      body_must_include_all:
-        - Reddit
-        - 英文讨论
       body_must_include_comment_prompt_any:
         - 评论区
-        - 你更想看
-        - 你会怎么翻
+        - 想问问
+        - 你现在
+        - 你最想
       body_must_include_save_trigger_any:
         - 收藏
         - 可收藏
         - 记住
         - 小结
       body_must_not_include_any:
+        - Reddit
+        - reddit
+        - r/
+        - subreddit
+        - 英文讨论
+        - 翻成中文
+        - 不逐字翻译
+        - 这次选的是
+        - source_url
+        - reddit.com
+        - 热帖来源
+        - 搬运
         - 我在Reddit上看到自己
         - 亲测
         - 诊断
@@ -90,6 +114,14 @@ node_contracts:
         - 作为AI
         - 建议大家
         - 小红书爆款
+        - Reddit
+        - reddit
+        - r/
+        - 英文讨论
+        - 翻成中文
+        - 这次选的是
+        - source_url
+        - reddit.com
 
   reflector:
     allowed_decisions:

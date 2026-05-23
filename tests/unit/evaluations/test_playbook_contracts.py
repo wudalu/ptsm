@@ -140,12 +140,23 @@ class TestPlaybookEvalContract:
         assert contract is not None
         assert contract.suite_id == "reddit_curation_daily_post.default"
         executor_constraints = contract.node_contracts["executor"]["constraints"]
-        assert "#Reddit" in executor_constraints["hashtags_must_include_any"]
-        for term in ["Reddit", "英文讨论", "中文", "评论区", "收藏"]:
+        assert "#Reddit" not in executor_constraints["hashtags_must_include_any"]
+        for tag in ["#AI工具", "#人工智能", "#心理学", "#情绪管理", "#效率工具"]:
+            assert tag in executor_constraints["hashtags_must_include_any"]
+        assert "#Reddit" in executor_constraints["hashtags_must_not_include_any"]
+        for term in ["AI", "工具", "压力", "评论区", "收藏"]:
             assert term in executor_constraints["body_must_include_any"]
         assert "评论区" in executor_constraints["body_must_include_comment_prompt_any"]
         assert "收藏" in executor_constraints["body_must_include_save_trigger_any"]
         for forbidden in [
+            "Reddit",
+            "reddit",
+            "r/",
+            "英文讨论",
+            "翻成中文",
+            "这次选的是",
+            "source_url",
+            "reddit.com",
             "我在Reddit上看到自己",
             "亲测",
             "诊断",

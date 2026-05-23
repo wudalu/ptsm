@@ -29,7 +29,7 @@ Playbook 是 PTSM 的业务编排单元。它把领域、平台、技能需求�
 - `modern_psychology_post` 专门输出现代心理困境观察内容，用第一人称微场景解释心理机制，并要求一个可保存的小工具、例子型评论提示和专业帮助边界；`psychology_safety` 约束诊断、治疗承诺、药物建议和危机处理边界。它现在要求按选题 lane 轮换：职场复盘/低控制感、关系边界/消息压力、数字生活/信息过载、孤独/比较焦虑、情绪调节/恢复练习、热点心理化重构，避免所有候选都退化成“下班复盘一句话”。默认绑定 `acct-psychology-local`。
 - `human_enrichment_daily_post` 专门输出人类丰容 / 日常变量实验内容，用一个具体角落、物件或路线写「原本惯性 -> 一个变量 -> 三步清单 -> 轻量结果 -> 评论区例子」。它要求低成本、非医疗化、非购物清单式表达，并会优先借鉴本地 XHS pattern library 的 hook / 清单 / 轮播结构，而不是普通发帖时实时检索小红书。离线 deterministic 草稿会按桌面/角落、路线/感官、手作/材料流生成不同标题和正文结构。它通过 `content_review.image_form` 暴露 3:4 封面、轮播形式建议、pattern ids 和每页文字约束。默认绑定 `acct-enrichment-local`。
 - `world_cup_daily_post` 专门输出世界杯看球笔记，用普通球迷能懂的赛前看点、赛后复盘、看球清单和评论区讨论组织内容。它要求明确区分 scene 提供的事实和观察角度，禁止赌球、盘口、预测比分、内部消息或官方消息伪装。默认绑定 `acct-world-cup-local`。
-- `reddit_curation_daily_post` 专门输出 Reddit英文讨论转译内容，从英文 Reddit hot/top 讨论里选 AI 热点、心理困境、效率工作流等适合中文读者的角度，要求来源边界、中文语境解释、可收藏小结和评论区方向选择。默认绑定 `acct-reddit-curation-local`。读取最新 Reddit 讨论优先按 Reddit Responsible Builder Policy 为该用途取得 explicit approval，并配置获批 app 的 `REDDIT_CLIENT_ID`、`REDDIT_CLIENT_SECRET` 和 `REDDIT_USER_AGENT`；如果 app 创建暂时受阻，也可用 `REDDIT_PUBLIC_JSON_FALLBACK=true` 和非占位 `REDDIT_USER_AGENT` 走低频只读 public JSON fallback。缺配置时 dry-run 仍可完成，但不能声称来自最新 Reddit 热帖。
+- `reddit_curation_daily_post` 专门把 Reddit 英文 hot/top 讨论作为内部素材，选 AI 热点、心理困境、效率工作流等适合中文读者的角度，改写成自然中文热点帖。默认绑定 `acct-reddit-curation-local`。读者可见标题、封面、正文和标签不暴露 Reddit、subreddit、英文讨论、翻译过程或来源 URL；来源追踪只留在 runtime context / artifact。读取最新 Reddit 讨论优先按 Reddit Responsible Builder Policy 为该用途取得 explicit approval，并配置获批 app 的 `REDDIT_CLIENT_ID`、`REDDIT_CLIENT_SECRET` 和 `REDDIT_USER_AGENT`；如果 app 创建暂时受阻，也可用 `REDDIT_PUBLIC_JSON_FALLBACK=true` 和非占位 `REDDIT_USER_AGENT` 走低频只读 public JSON fallback。缺配置时 dry-run 仍可完成，但不能声称来自最新热点。
 - 九个真实 XHS 内容质量 playbook 都有 playbook-local `evaluation.yaml`，声明 executor 内容质量 judge 为 `required`，并用确定性 node contract 检查领域标签、正文结构、评论提示、收藏触发、实验指令泄漏和跨字段模板化语言。所有 XHS playbook 都会通过 `combined_must_not_include_any` 拦截 `首先`、`其次`、`最后`、`综上`、`本文`、`作为AI`、`建议大家`、`小红书爆款` 这类格式化或元叙事词；重点研究映射 playbook 还会通过 `title_must_include_any` 要求标题保留具体物件、人物、关系或场景钩子。
 - `modern_psychology_post` 的 deterministic fallback 会按场景簇生成不同候选：周日/周一预焦虑、被说想太多后的边界压力、下班后被消息拉回工位、会议尴尬复盘、脑内复盘会、普通回复复盘接龙、睡前短视频/信息过载、孤独/比较焦虑。这样离线实验候选不会因为同属“反刍思维”而退化成同一个标题/封面。
 - `modern_psychology_post` 的图片策略默认使用低密度平实贴图：三栏工具、5 分钟练习、边界句和消息草稿优先 `iphone_notes` / `save_tool`；单句重构可用 `note_card` / `cover_hook`；只有真实聊天对话或消息气泡本身是首屏内容时才用 `wechat_chat`。心理机制解释、专业边界和长正文不应进入封面图。
@@ -73,7 +73,7 @@ Playbook 是 PTSM 的业务编排单元。它把领域、平台、技能需求�
 
 `world_cup_daily_post` 的 `evaluation.yaml` 要求 `#世界杯`、赛前/看点/看球/评论区/清单等内容机制，并禁止 `稳赚`、`下注`、`盘口`、`预测比分`、`内部消息`、`官方消息` 等高风险表达。
 
-`reddit_curation_daily_post` 的 `evaluation.yaml` 要求 `#Reddit`、Reddit/英文讨论来源边界、中文解释、收藏触发和评论区问题，并禁止伪亲历、心理诊断/治愈承诺、投资建议和实验指令泄漏。
+`reddit_curation_daily_post` 的 `evaluation.yaml` 要求中文话题标签、中文热点解释、收藏触发和评论区问题，并禁止 `#Reddit`、Reddit/source URL、subreddit、英文讨论、翻译过程、伪亲历、心理诊断/治愈承诺、投资建议和实验指令泄漏。
 
 ## Routing Rules
 

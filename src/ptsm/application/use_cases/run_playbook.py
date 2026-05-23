@@ -874,6 +874,11 @@ def _build_note_card_image_payload(
     local_image_style: str | None = None,
     image_plan: dict[str, Any] | None = None,
 ) -> str:
+    renderer_options = _local_renderer_options_from_final_content(final_content)
+    renderer_image_plan = _local_renderer_image_plan_payload(
+        final_content,
+        image_plan or {},
+    )
     return json.dumps(
         {
             "style": local_image_style or "xhs_note_card_v1",
@@ -883,7 +888,8 @@ def _build_note_card_image_payload(
             "body": _select_local_image_body(final_content, image_plan or {}),
             "hashtags": list(final_content.get("hashtags", []) or []),
             "runtime_context_summary": runtime_context_summary,
-            "image_plan": _image_generation_decision_metadata(image_plan or {}),
+            "image_plan": renderer_image_plan,
+            **renderer_options,
         },
         ensure_ascii=False,
     )
@@ -903,6 +909,11 @@ def _select_local_image_body(
     image_plan: dict[str, Any],
 ) -> str:
     body = str(final_content.get("body", "") or "")
+    if _uses_wechat_chat_image(final_content, image_plan):
+        chat_body = _select_wechat_chat_body(final_content)
+        if chat_body:
+            return chat_body
+
     if not _uses_low_density_image_copy(image_plan):
         return _truncate_text(" ".join(body.split()), 360)
 
@@ -911,6 +922,141 @@ def _select_local_image_body(
     if short_lines:
         return "\n".join(short_lines[:max_units])
     return ""
+
+
+_LOCAL_RENDERER_IMAGE_PLAN_FIELDS = (
+    "theme",
+    "status_time",
+    "chat_title",
+    "conversation_title",
+    "show_avatars",
+    "chat_times",
+    "unread_count",
+)
+
+
+def _local_renderer_options_from_final_content(
+    final_content: dict[str, Any],
+) -> dict[str, Any]:
+    raw_plan = final_content.get("image_plan")
+    image_plan = raw_plan if isinstance(raw_plan, dict) else {}
+    options: dict[str, Any] = {}
+    for field in _LOCAL_RENDERER_IMAGE_PLAN_FIELDS:
+        if field in final_content and final_content[field] is not None:
+            options[field] = final_content[field]
+        elif field in image_plan and image_plan[field] is not None:
+            options[field] = image_plan[field]
+    return options
+
+
+def _local_renderer_image_plan_payload(
+    final_content: dict[str, Any],
+    image_plan: dict[str, Any],
+) -> dict[str, Any]:
+    raw_plan = final_content.get("image_plan")
+    final_image_plan = raw_plan if isinstance(raw_plan, dict) else {}
+    return {
+        **final_image_plan,
+        **_image_generation_decision_metadata(image_plan),
+    }
+
+
+def _uses_wechat_chat_image(
+    final_content: dict[str, Any],
+    image_plan: dict[str, Any],
+) -> bool:
+    raw_plan = final_content.get("image_plan")
+    final_image_plan = raw_plan if isinstance(raw_plan, dict) else {}
+    candidates = (
+        image_plan.get("requested_style"),
+        image_plan.get("style"),
+        final_image_plan.get("style"),
+    )
+    return any(
+        _normalized_image_plan_value(candidate) in {"wechat_chat", "wechat_chat_v1"}
+        for candidate in candidates
+    )
+
+
+def _select_wechat_chat_body(final_content: dict[str, Any]) -> str:
+    raw_plan = final_content.get("image_plan")
+    image_plan = raw_plan if isinstance(raw_plan, dict) else {}
+    for raw_messages in (
+        final_content.get("chat_messages"),
+        final_content.get("messages"),
+        image_plan.get("chat_messages"),
+        image_plan.get("messages"),
+    ):
+        structured_lines = _structured_chat_message_lines(raw_messages)
+        if structured_lines:
+            return "\n".join(structured_lines[:8])
+
+    body = str(final_content.get("body", "") or "")
+    explicit_lines = [
+        line.strip()
+        for line in body.splitlines()
+        if _looks_like_chat_message_line(line)
+    ]
+    if explicit_lines:
+        return "\n".join(explicit_lines[:8])
+    return ""
+
+
+def _structured_chat_message_lines(raw_messages: object) -> list[str]:
+    if not isinstance(raw_messages, list):
+        return []
+
+    lines: list[str] = []
+    for raw_message in raw_messages:
+        speaker = ""
+        text = ""
+        if isinstance(raw_message, dict):
+            speaker = _first_string_value(
+                raw_message, ("speaker", "sender", "role", "name", "author")
+            )
+            text = _first_string_value(
+                raw_message, ("text", "message", "content", "body")
+            )
+        elif isinstance(raw_message, Sequence) and not isinstance(raw_message, str):
+            values = list(raw_message)
+            if len(values) >= 2:
+                speaker = str(values[0] or "").strip()
+                text = str(values[1] or "").strip()
+        elif isinstance(raw_message, str):
+            text = raw_message.strip()
+
+        if not text:
+            continue
+        if speaker:
+            lines.append(f"{_normalize_chat_speaker_label(speaker)}：{text}")
+        else:
+            lines.append(text)
+    return lines
+
+
+def _first_string_value(payload: dict[str, Any], keys: Sequence[str]) -> str:
+    for key in keys:
+        value = payload.get(key)
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text:
+            return text
+    return ""
+
+
+def _normalize_chat_speaker_label(speaker: str) -> str:
+    value = speaker.strip()
+    lowered = value.lower()
+    if lowered in {"me", "self", "user", "mine"}:
+        return "我"
+    if lowered in {"other", "assistant", "friend", "peer"}:
+        return "对方"
+    return value
+
+
+def _looks_like_chat_message_line(line: str) -> bool:
+    return re.match(r"^\s*[^:：\n]{1,12}\s*[:：]\s*\S+", line) is not None
 
 
 def _uses_low_density_image_copy(image_plan: dict[str, Any]) -> bool:

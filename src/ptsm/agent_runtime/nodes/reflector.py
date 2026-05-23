@@ -62,6 +62,14 @@ def _missing_requirements(
     if required_hashtag and required_hashtag not in hashtags:
         missing.append(f"missing required hashtag {required_hashtag}")
 
+    forbidden_hashtags = _string_list(rules.get("hashtags_must_not_include_any"))
+    present_forbidden_hashtags = [tag for tag in forbidden_hashtags if tag in hashtags]
+    if present_forbidden_hashtags:
+        missing.append(
+            "hashtags_must_not_include_any violated: "
+            + ", ".join(present_forbidden_hashtags)
+        )
+
     required_phrase = str(rules.get("must_include_phrase", "")).strip()
     if required_phrase and required_phrase not in body:
         missing.append(f"missing required phrase {required_phrase}")

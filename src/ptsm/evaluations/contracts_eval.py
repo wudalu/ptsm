@@ -277,6 +277,19 @@ def _constraint_failures(
                     ),
                 }
             )
+        forbidden_any = _string_list(constraints.get("hashtags_must_not_include_any"))
+        present_forbidden = [tag for tag in forbidden_any if tag in hashtags]
+        if present_forbidden:
+            failures.append(
+                {
+                    "path": _field_path(target, "hashtags"),
+                    "value_preview": str(hashtags),
+                    "observation": (
+                        "hashtags_must_not_include_any violated: "
+                        f"found {present_forbidden}"
+                    ),
+                }
+            )
 
     body = payload.get("body")
     if isinstance(body, str):

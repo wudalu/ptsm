@@ -55,6 +55,29 @@ def test_reflector_retries_when_required_hashtag_is_missing() -> None:
     assert "#发疯文学" in result["reflection_feedback"]
 
 
+def test_reflector_retries_when_forbidden_hashtag_is_present() -> None:
+    node = build_reflector_node(max_attempts=2)
+
+    result = node(
+        {
+            "attempt_count": 0,
+            "reflection_prompt": "检查标签",
+            "reflection_rules": {
+                "required_hashtag": "#热点观察",
+                "hashtags_must_not_include_any": ["#Reddit"],
+            },
+            "draft_content": {
+                "body": "AI 工具越多，越需要守住判断边界。评论区想问问，你现在更像是在用 AI，还是在照看 AI？",
+                "hashtags": ["#热点观察", "#Reddit"],
+            },
+        }
+    )
+
+    assert result["reflection_decision"] == "retry"
+    assert result["required_revision"] is True
+    assert "hashtags_must_not_include_any" in result["reflection_feedback"]
+
+
 def test_reflector_retries_generic_fengkuang_title_without_comment_mechanics() -> None:
     node = build_reflector_node(max_attempts=2)
 

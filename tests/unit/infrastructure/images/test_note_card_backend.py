@@ -7,7 +7,9 @@ import cv2
 
 from ptsm.infrastructure.images.note_card_backend import (
     NoteCardImageBackend,
+    _chat_messages_from_payload,
     _select_display_body,
+    _wechat_header_title_from_payload,
 )
 
 
@@ -18,6 +20,47 @@ def _count_wechat_green_pixels(image) -> int:
         & (channels[:, :, 1] > channels[:, :, 2] + 50)
     )
     return int(green_pixels.sum())
+
+
+def _count_dark_pixels(image, *, x1: int, y1: int, x2: int, y2: int) -> int:
+    region = image[y1:y2, x1:x2].astype("int16")
+    dark_pixels = (
+        (region[:, :, 0] < 70)
+        & (region[:, :, 1] < 70)
+        & (region[:, :, 2] < 70)
+    )
+    return int(dark_pixels.sum())
+
+
+def _count_bright_pixels(image, *, x1: int, y1: int, x2: int, y2: int) -> int:
+    region = image[y1:y2, x1:x2].astype("int16")
+    bright_pixels = (
+        (region[:, :, 0] > 245)
+        & (region[:, :, 1] > 245)
+        & (region[:, :, 2] > 245)
+    )
+    return int(bright_pixels.sum())
+
+
+def _count_near_color_pixels(
+    image,
+    *,
+    x1: int,
+    y1: int,
+    x2: int,
+    y2: int,
+    color: tuple[int, int, int],
+    tolerance: int,
+) -> int:
+    # cv2 reads BGR, but all grayscale-ish colors used here have equal channels.
+    region = image[y1:y2, x1:x2].astype("int16")
+    target = color[::-1]
+    near_pixels = (
+        (abs(region[:, :, 0] - target[0]) <= tolerance)
+        & (abs(region[:, :, 1] - target[1]) <= tolerance)
+        & (abs(region[:, :, 2] - target[2]) <= tolerance)
+    )
+    return int(near_pixels.sum())
 
 
 def test_note_card_backend_renders_nonblank_png(tmp_path: Path) -> None:
@@ -202,6 +245,275 @@ def test_note_card_backend_wechat_style_synthesizes_outgoing_bubble(
     assert image is not None
     assert result["style"] == "wechat_chat_v1"
     assert _count_wechat_green_pixels(image) > 5000
+
+
+def test_note_card_backend_wechat_style_omits_phone_header_chrome(
+    tmp_path: Path,
+) -> None:
+    backend = NoteCardImageBackend(width=1080, height=1440)
+
+    result = backend.generate(
+        prompt=json.dumps(
+            {
+                "style": "wechat_chat_v1",
+                "title": "520后劲最大的文案，我选苏轼这句",
+                "image_text": "520别只发我爱你\n但愿人长久。",
+                "image_plan": {
+                    "role": "cover_hook",
+                    "text_density": "low",
+                    "max_text_units": "2",
+                },
+            },
+            ensure_ascii=False,
+        ),
+        output_dir=tmp_path,
+        output_stem="wechat-header-controls",
+    )
+
+    output_path = Path(result["generated_image_paths"][0])
+    image = cv2.imread(str(output_path), cv2.IMREAD_COLOR)
+    assert image is not None
+    assert _count_near_color_pixels(
+        image,
+        x1=0,
+        y1=78,
+        x2=1080,
+        y2=154,
+        color=(237, 237, 237),
+        tolerance=4,
+    ) > 50000
+    assert _count_dark_pixels(image, x1=34, y1=90, x2=90, y2=150) < 80
+    assert _count_dark_pixels(image, x1=965, y1=100, x2=1045, y2=135) < 80
+
+
+def test_note_card_backend_wechat_style_omits_input_bar(tmp_path: Path) -> None:
+    backend = NoteCardImageBackend(width=1080, height=1440)
+
+    result = backend.generate(
+        prompt=json.dumps(
+            {
+                "style": "wechat_chat_v1",
+                "title": "520后劲最大的文案，我选苏轼这句",
+                "image_text": "520别只发我爱你\n但愿人长久。",
+                "image_plan": {
+                    "role": "cover_hook",
+                    "text_density": "low",
+                    "max_text_units": "2",
+                },
+            },
+            ensure_ascii=False,
+        ),
+        output_dir=tmp_path,
+        output_stem="wechat-input-bar",
+    )
+
+    output_path = Path(result["generated_image_paths"][0])
+    image = cv2.imread(str(output_path), cv2.IMREAD_COLOR)
+    assert image is not None
+    assert _count_bright_pixels(image, x1=100, y1=1320, x2=825, y2=1405) < 1000
+    assert _count_dark_pixels(image, x1=25, y1=1335, x2=80, y2=1400) < 80
+    assert _count_dark_pixels(image, x1=865, y1=1335, x2=1015, y2=1400) < 120
+
+
+def test_note_card_backend_wechat_style_omits_voice_button(
+    tmp_path: Path,
+) -> None:
+    backend = NoteCardImageBackend(width=1080, height=1440)
+
+    result = backend.generate(
+        prompt=json.dumps(
+            {
+                "style": "wechat_chat_v1",
+                "title": "520后劲最大的文案，我选苏轼这句",
+                "image_text": "520别只发我爱你\n但愿人长久。",
+                "image_plan": {
+                    "role": "cover_hook",
+                    "text_density": "low",
+                    "max_text_units": "2",
+                },
+            },
+            ensure_ascii=False,
+        ),
+        output_dir=tmp_path,
+        output_stem="wechat-voice-button",
+    )
+
+    output_path = Path(result["generated_image_paths"][0])
+    image = cv2.imread(str(output_path), cv2.IMREAD_COLOR)
+    assert image is not None
+    assert _count_dark_pixels(image, x1=25, y1=1315, x2=100, y2=1385) < 80
+    assert _count_dark_pixels(image, x1=42, y1=1332, x2=78, y2=1368) < 60
+
+
+def test_note_card_backend_wechat_style_renders_dark_theme(tmp_path: Path) -> None:
+    backend = NoteCardImageBackend(width=1080, height=1440)
+
+    result = backend.generate(
+        prompt=json.dumps(
+            {
+                "style": "wechat_chat_v1",
+                "theme": "dark",
+                "title": "520后劲最大的文案，我选苏轼这句",
+                "image_text": "520别只发我爱你\n但愿人长久。",
+                "image_plan": {
+                    "role": "cover_hook",
+                    "text_density": "low",
+                    "max_text_units": "2",
+                },
+            },
+            ensure_ascii=False,
+        ),
+        output_dir=tmp_path,
+        output_stem="wechat-dark-theme",
+    )
+
+    output_path = Path(result["generated_image_paths"][0])
+    image = cv2.imread(str(output_path), cv2.IMREAD_COLOR)
+    assert image is not None
+    assert _count_dark_pixels(image, x1=0, y1=155, x2=1080, y2=1280) > 900000
+    assert _count_dark_pixels(image, x1=0, y1=72, x2=1080, y2=154) > 70000
+    assert _count_dark_pixels(image, x1=0, y1=1285, x2=1080, y2=1440) > 120000
+    assert _count_bright_pixels(image, x1=490, y1=90, x2=590, y2=135) < 100
+
+
+def test_wechat_dark_no_avatar_reference_style_is_content_only_transcript(
+    tmp_path: Path,
+) -> None:
+    backend = NoteCardImageBackend(width=1080, height=1440)
+
+    result = backend.generate(
+        prompt=json.dumps(
+            {
+                "style": "wechat_chat_v1",
+                "theme": "dark",
+                "status_time": "23:22",
+                "chat_title": "sy",
+                "show_avatars": False,
+                "chat_times": ["10:11", "10:27", "10:34"],
+                "body": "\n".join(
+                    [
+                        "同事：刚看见热搜",
+                        "同事：工作留痕的重要性",
+                        "我：我现在啥事都发文字确认",
+                        "同事：我也是，口头说完还要补一句收到",
+                        "我：事要留痕，但心别留疤",
+                    ]
+                ),
+            },
+            ensure_ascii=False,
+        ),
+        output_dir=tmp_path,
+        output_stem="wechat-reference-style",
+    )
+
+    image = cv2.imread(str(Path(result["generated_image_paths"][0])), cv2.IMREAD_COLOR)
+    assert image is not None
+    # The simplified transcript removes phone header/footer chrome.
+    assert _count_near_color_pixels(
+        image,
+        x1=0,
+        y1=0,
+        x2=1080,
+        y2=120,
+        color=(18, 18, 18),
+        tolerance=4,
+    ) > 110000
+    assert _count_near_color_pixels(
+        image,
+        x1=745,
+        y1=1320,
+        x2=815,
+        y2=1395,
+        color=(42, 42, 44),
+        tolerance=8,
+    ) < 300
+    # No avatar squares should be painted in the left gutter.
+    assert _count_bright_pixels(image, x1=24, y1=220, x2=126, y2=1120) < 1200
+
+
+def test_wechat_header_title_avoids_long_post_title() -> None:
+    assert (
+        _wechat_header_title_from_payload(
+            {
+                "title": "520后劲最大的文案，我选苏轼这句",
+                "image_text": "520别只发我爱你\n但愿人长久。",
+            }
+        )
+        == "朋友"
+    )
+    assert (
+        _wechat_header_title_from_payload(
+            {
+                "title": "520后劲最大的文案，我选苏轼这句",
+                "chat_title": "阿晚",
+            }
+        )
+        == "阿晚"
+    )
+
+
+def test_wechat_explicit_body_messages_preserve_speaker_names() -> None:
+    messages = _chat_messages_from_payload(
+        {
+            "style": "wechat_chat_v1",
+            "body": "\n".join(
+                [
+                    "同事：刚看见热搜",
+                    "同事：工作留痕的重要性",
+                    "我：我现在啥事都发文字确认",
+                ]
+            ),
+        }
+    )
+
+    assert messages == [
+        ("同事", "刚看见热搜"),
+        ("同事", "工作留痕的重要性"),
+        ("我", "我现在啥事都发文字确认"),
+    ]
+
+
+def test_wechat_low_density_image_text_does_not_pull_body_summary() -> None:
+    messages = _chat_messages_from_payload(
+        {
+            "style": "wechat_chat_v1",
+            "title": "520后劲最大的文案，我选苏轼这句",
+            "image_text": "520别只发我爱你\n但愿人长久。",
+            "body": (
+                "刷到满屏520文案，礼物、转账、玫瑰花，翻到第10条就开始"
+                "审美疲劳。然后我想起苏轼那句。"
+            ),
+            "image_plan": {
+                "role": "cover_hook",
+                "text_density": "low",
+                "max_text_units": "2",
+            },
+        }
+    )
+
+    assert messages == [
+        ("other", "520别只发我爱你"),
+        ("me", "但愿人长久。"),
+    ]
+
+
+def test_wechat_low_density_final_comma_is_closed_as_sentence() -> None:
+    messages = _chat_messages_from_payload(
+        {
+            "style": "wechat_chat_v1",
+            "image_text": "520别只发我爱你\n但愿人长久，",
+            "image_plan": {
+                "role": "cover_hook",
+                "text_density": "low",
+                "max_text_units": "2",
+            },
+        }
+    )
+
+    assert messages == [
+        ("other", "520别只发我爱你"),
+        ("me", "但愿人长久。"),
+    ]
 
 
 def test_note_card_backend_unknown_style_falls_back_to_note_card(tmp_path: Path) -> None:

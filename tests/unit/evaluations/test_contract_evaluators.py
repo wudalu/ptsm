@@ -201,6 +201,35 @@ class TestPlaybookNodeContract:
         assert result.status == "failed"
         assert "hashtags_must_include_any" in result.reason
 
+    def test_fails_when_forbidden_hashtag_is_present(self):
+        contract = PlaybookEvalContract(
+            suite_id="reddit.default",
+            node_contracts={
+                "executor": {
+                    "required_fields": ["title", "body", "hashtags"],
+                    "constraints": {
+                        "hashtags_must_not_include_any": ["#Reddit"],
+                    },
+                }
+            },
+        )
+        target = _target(
+            phase="executor",
+            target_type="artifact_slice",
+            output_ref={
+                "final_content": {
+                    "title": "AI用顺了以后，人反而更累了",
+                    "body": "AI 工具越多，越需要守住判断边界。",
+                    "hashtags": ["#热点观察", "#Reddit"],
+                }
+            },
+        )
+
+        result = contract_playbook_node_contract(target, contract)
+
+        assert result.status == "failed"
+        assert "hashtags_must_not_include_any" in result.reason
+
     def test_fails_when_forbidden_body_text_is_present(self):
         contract = PlaybookEvalContract(
             suite_id="psych.default",

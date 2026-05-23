@@ -66,12 +66,12 @@ PTSM 当前已支持九个垂直领域（发疯文学、苏轼诗词赏析、武
 - `ExecutionState` 现在携带 `activated_skill_details`、`runtime_skill_details` 和 `memory_hits` 等 observability 字段，记录每个 skill 的元信息（display_name、source_path、resource_type）以及本次回读的账号 lessons，供 artifact 写入、drafting context 和 harness evals 聚合消费。
 - `human_enrichment_daily_post` 以新增 playbook/account/skill/evaluation 资产接入人类丰容实验，不需要 runtime 增加领域分支；它的 artifact `content_review` 会额外写出 `image_form`，供 3:4 封面和轮播式人工 review 使用。
 - `world_cup_daily_post` 以新增 playbook/account/skill/evaluation 资产接入世界杯主题，默认绑定 `acct-world-cup-local`；正文质量约束通过 playbook-local contract 禁止赌球、盘口、预测比分、内部/官方消息伪装等高风险表达，离线 deterministic helper 只服务本地 dry-run 验证。
-- `reddit_curation_daily_post` 以新增 playbook/account/skill/evaluation 资产接入 Reddit英文讨论转译，默认绑定 `acct-reddit-curation-local`。实时来源通过已获批 Reddit app-only OAuth 的 `reddit_discussion_scan` runtime context 读取公开讨论；如果 app 创建被验证码或审批挡住，也可在设置非占位 `REDDIT_USER_AGENT` 后用 `REDDIT_PUBLIC_JSON_FALLBACK=true` 走 Reddit public `.json` 页面做低频只读扫描。缺少 `REDDIT_CLIENT_ID` / `REDDIT_CLIENT_SECRET` / `REDDIT_USER_AGENT` 且没有可用 public JSON fallback 时会写出缺配置/缺权限上下文，不声称已获取最新 Reddit 热帖。
+- `reddit_curation_daily_post` 以新增 playbook/account/skill/evaluation 资产接入 Reddit英文讨论转译，默认绑定 `acct-reddit-curation-local`。实时素材通过已获批 Reddit app-only OAuth 的 `reddit_discussion_scan` runtime context 读取公开讨论；如果 app 创建被验证码或审批挡住，也可在设置非占位 `REDDIT_USER_AGENT` 后用 `REDDIT_PUBLIC_JSON_FALLBACK=true` 走 Reddit public `.json` 页面做低频只读扫描。缺少 `REDDIT_CLIENT_ID` / `REDDIT_CLIENT_SECRET` / `REDDIT_USER_AGENT` 且没有可用 public JSON fallback 时会写出缺配置/缺权限上下文。最终读者可见内容只呈现中文热点帖，不暴露 Reddit、subreddit、英文讨论、翻译过程或来源 URL。
 - `application/services/account_publisher_context.py` 提供 `PublisherContext` 解析：按 account cookie profile > settings defaults > CLI overrides 的优先级决定发布服务器、可见性和 cookie 路径。
 - `side_effect_ledger` 现在支持 `scope_id` 参数，通过 `thread_id/scope_id` 组合键实现多维度的副作用去重，而不仅限于 thread 级别。
 - `harness_evals` 新增 `_aggregate_skill_stats`，按 skill 维度聚合 runs/completed/runtime_context_runs/completion_rate，输出到 harness-report 的 `skills` 字段。
 - evaluation gates 区分 `required` 和 `warning`：deterministic required failures 可以阻塞 local harness；XHS executor content-quality judge 在显式启用 eval 或生成链路配置 judge backend 时使用 `required` gate，但最终发布仍需人工确认。
-- playbook contract evaluator 现在承担通用正文质量硬约束，包括标题/封面反泛化、必需标签、必需/禁用正文词、评论提示、保存触发、正文长度区间和实验指令泄漏；新增约束应优先扩展 `src/ptsm/evaluations/contracts_eval.py`，避免在 runtime 或单个 playbook 中写领域分支。
+- playbook contract evaluator 现在承担通用正文质量硬约束，包括标题/封面反泛化、必需标签、禁用标签、必需/禁用正文词、评论提示、保存触发、正文长度区间和实验指令泄漏；新增约束应优先扩展 `src/ptsm/evaluations/contracts_eval.py`，避免在 runtime 或单个 playbook 中写领域分支。
 - 小红书的人设和真人感现在属于 playbook/skill 资产层：八个 XHS playbook 共享 `xhs_human_voice`，再叠加各自 style、persona、planner 和 reflection 规则；运行时只负责加载这些资产，不为“温暖、有调性、不格式化”新增领域分支。
 - playbook contract evaluator 现在还支持 `title_must_include_any` 和 `combined_must_not_include_any`，用于让标题保留具体物件/场景钩子，并跨标题、封面文案和正文拦截 `首先`、`其次`、`综上`、`作为AI` 这类模板化或元叙事语言。
 

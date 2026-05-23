@@ -39,10 +39,19 @@ def test_run_playbook_cli_outputs_reddit_curation_publish_receipt(
     assert payload["playbook_id"] == "reddit_curation_daily_post"
     assert payload["account"]["account_id"] == "acct-reddit-curation-local"
     assert payload["publish_result"]["status"] == "dry_run"
-    assert "#Reddit" in content["hashtags"]
-    assert "Reddit" in content["body"]
-    assert "英文讨论" in content["body"]
-    assert "中文" in content["body"] or "翻成中文" in content["body"]
+    visible = "\n".join(
+        [
+            content["title"],
+            content["image_text"],
+            content["body"],
+            " ".join(content["hashtags"]),
+        ]
+    )
+    assert "#Reddit" not in content["hashtags"]
+    assert not any(
+        term in visible
+        for term in ("Reddit", "reddit", "r/", "英文讨论", "翻成中文", "这次选的是")
+    )
     assert "收藏" in content["body"]
     assert "评论区" in content["body"]
     assert any(

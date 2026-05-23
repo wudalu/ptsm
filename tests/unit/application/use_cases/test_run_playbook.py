@@ -1266,6 +1266,70 @@ def test_build_note_card_image_payload_includes_local_image_style() -> None:
     assert payload["style"] == "iphone_notes"
 
 
+def test_build_note_card_image_payload_forwards_wechat_chat_options() -> None:
+    payload = json.loads(
+        _build_note_card_image_payload(
+            scene="同事群里聊工作留痕",
+            runtime_context_summary="",
+            final_content={
+                "title": "工作留痕后劲太大",
+                "image_text": "事要留痕，但心别留疤",
+                "body": "\n".join(
+                    [
+                        "同事：刚看见热搜",
+                        "同事：工作留痕的重要性",
+                        "我：我现在啥事都发文字确认",
+                        "同事：我也是，口头说完还要补一句收到",
+                        "我：事要留痕，但心别留疤",
+                    ]
+                ),
+                "hashtags": ["#职场", "#工作留痕"],
+                "image_plan": {
+                    "backend": "local_social_screenshot",
+                    "style": "wechat_chat",
+                    "theme": "dark",
+                    "status_time": "23:22",
+                    "chat_title": "sy",
+                    "show_avatars": False,
+                    "chat_times": ["10:11", "10:27", "10:34"],
+                    "role": "comment_prompt",
+                    "text_density": "low",
+                    "max_text_units": "2",
+                },
+            },
+            local_image_style="wechat_chat",
+            image_plan={
+                "source": "llm_image_plan",
+                "requested_backend": "local_social_screenshot",
+                "selected_backend": "local_note_card",
+                "requested_style": "wechat_chat",
+                "role": "comment_prompt",
+                "text_density": "low",
+                "max_text_units": "2",
+            },
+        )
+    )
+
+    assert payload["style"] == "wechat_chat"
+    assert payload["theme"] == "dark"
+    assert payload["status_time"] == "23:22"
+    assert payload["chat_title"] == "sy"
+    assert payload["show_avatars"] is False
+    assert payload["chat_times"] == ["10:11", "10:27", "10:34"]
+    assert payload["image_plan"]["theme"] == "dark"
+    assert payload["image_plan"]["status_time"] == "23:22"
+    assert payload["image_plan"]["chat_title"] == "sy"
+    assert payload["image_plan"]["show_avatars"] is False
+    assert payload["image_plan"]["chat_times"] == ["10:11", "10:27", "10:34"]
+    assert payload["body"].splitlines() == [
+        "同事：刚看见热搜",
+        "同事：工作留痕的重要性",
+        "我：我现在啥事都发文字确认",
+        "同事：我也是，口头说完还要补一句收到",
+        "我：事要留痕，但心别留疤",
+    ]
+
+
 def test_build_note_card_image_payload_clamps_low_density_tool_body() -> None:
     payload = json.loads(
         _build_note_card_image_payload(

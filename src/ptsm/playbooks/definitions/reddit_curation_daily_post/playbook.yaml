@@ -11,15 +11,30 @@ required_skills:
   - xhs_reddit_curation_hashtagging
 optional_skills: []
 reflection:
-  must_include_phrase: "Reddit"
-  required_hashtag: "#Reddit"
+  must_include_phrase: ""
+  required_hashtag: "#热点观察"
+  hashtags_must_not_include_any:
+    - "#Reddit"
   body_must_include_any:
-    - Reddit
-    - 英文讨论
-    - 中文
+    - AI
+    - 工具
+    - 压力
+    - 消息
     - 评论区
     - 收藏
   body_must_not_include_any:
+    - Reddit
+    - reddit
+    - r/
+    - subreddit
+    - 英文讨论
+    - 翻成中文
+    - 不逐字翻译
+    - 这次选的是
+    - source_url
+    - reddit.com
+    - 热帖来源
+    - 搬运
     - 我在Reddit上看到自己
     - 亲测
     - 诊断
