@@ -6,6 +6,7 @@ platforms:
 required_skills:
   - reddit_discussion_scan
   - xhs_image_strategy
+  - xhs_human_voice
   - reddit_curation_style
   - xhs_reddit_curation_hashtagging
 optional_skills: []

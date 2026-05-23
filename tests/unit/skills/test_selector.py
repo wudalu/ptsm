@@ -31,6 +31,7 @@ def test_selector_returns_request_scoped_surface() -> None:
         "xhs_trend_scan",
         "topic_research",
         "xhs_hashtagging",
+        "xhs_human_voice",
         "xhs_image_strategy",
     ]
     assert "放大具体日常崩溃场景" not in surface.list_summaries()[0].short_description
@@ -63,6 +64,7 @@ def test_selector_returns_sushi_poetry_scoped_surface() -> None:
     assert [item.skill_name for item in surface.list_summaries()] == [
         "xhs_trend_scan",
         "topic_research",
+        "xhs_human_voice",
         "xhs_image_strategy",
         "sushi_poetry_style",
         "xhs_poetry_hashtagging",
@@ -96,6 +98,7 @@ def test_selector_exposes_wuxia_skills() -> None:
     assert "wuxia_commentary_style" in skill_names
     assert "xhs_wuxia_hashtagging" in skill_names
     assert "xhs_trend_scan" in skill_names
+    assert "xhs_human_voice" in skill_names
     assert "xhs_image_strategy" in skill_names
 
 
@@ -125,6 +128,7 @@ def test_selector_exposes_ai_tech_image_strategy() -> None:
     skill_names = {skill.skill_name for skill in surface.list_summaries()}
     assert "ai_tech_style" in skill_names
     assert "ai_tech_hashtagging" in skill_names
+    assert "xhs_human_voice" in skill_names
     assert "xhs_image_strategy" in skill_names
 
 
@@ -141,6 +145,7 @@ def test_selector_exposes_modern_psychology_skills() -> None:
     assert skill_names == [
         "xhs_trend_scan",
         "topic_research",
+        "xhs_human_voice",
         "xhs_image_strategy",
         "psychology_style",
         "psychology_safety",
@@ -173,6 +178,7 @@ def test_selector_exposes_human_enrichment_skills() -> None:
     assert [item.skill_name for item in surface.list_summaries()] == [
         "xhs_trend_scan",
         "topic_research",
+        "xhs_human_voice",
         "xhs_image_strategy",
         "human_enrichment_style",
         "xhs_enrichment_visuals",
@@ -206,6 +212,7 @@ def test_selector_exposes_world_cup_skills() -> None:
     assert [item.skill_name for item in surface.list_summaries()] == [
         "xhs_trend_scan",
         "topic_research",
+        "xhs_human_voice",
         "xhs_image_strategy",
         "world_cup_style",
         "xhs_world_cup_visuals",

@@ -63,6 +63,15 @@ node_contracts:
         - comment_chain
         - save_tool
         - identity_conflict
+      combined_must_not_include_any:
+        - 首先
+        - 其次
+        - 最后
+        - 综上
+        - 本文
+        - 作为AI
+        - 建议大家
+        - 小红书爆款
 
   reflector:
     allowed_decisions:

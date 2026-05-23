@@ -18,6 +18,12 @@ node_contracts:
       title_must_not_equal_any:
         - AI科技资讯
         - 今日AI新闻
+      title_must_include_any:
+        - AI
+        - 普通人
+        - 搭子
+        - 工具
+        - 更新
       image_text_must_not_equal_any:
         - AI又更新了
       hashtags_min_count: 2
@@ -48,6 +54,15 @@ node_contracts:
         - comment_chain
         - save_tool
         - identity_conflict
+      combined_must_not_include_any:
+        - 首先
+        - 其次
+        - 最后
+        - 综上
+        - 本文
+        - 作为AI
+        - 建议大家
+        - 小红书爆款
   finalize:
     required_fields:
       - playbook_id

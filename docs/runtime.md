@@ -2,7 +2,7 @@
 title: PTSM Runtime
 status: active
 owner: ptsm
-last_verified: 2026-05-22
+last_verified: 2026-05-23
 source_of_truth: true
 related_paths:
   - src/ptsm/agent_runtime/runtime.py
@@ -11,6 +11,7 @@ related_paths:
   - src/ptsm/agent_runtime/nodes/planner.py
   - src/ptsm/application/use_cases/run_playbook.py
   - src/ptsm/application/use_cases/runs.py
+  - src/ptsm/evaluations/contracts_eval.py
   - src/ptsm/infrastructure/llm
   - src/ptsm/infrastructure/llm/factory.py
   - src/ptsm/infrastructure/reddit
@@ -47,7 +48,7 @@ related_paths:
 - deterministic / deepseek drafting backend 现在会读取 playbook prompt、playbook persona prompt、静态 scoped skills，以及 planner 注入的 runtime skill contexts，不再只面向发疯文学。
 - `xhs_trend_scan` 的 runtime context 现在优先读取本地 `outputs/artifacts/xhs-pattern-library/current.json` 里的 approved/candidate format patterns；普通 `run-playbook` 不默认实时搜索小红书。只有在显式 fresh research 路径且本地 pattern snapshot 不可用时，才会回退到 live MCP trend scan。`topic_research` 也会在保留 topic-radar 选题上下文的同时追加同一份本地 pattern summary；当 topic-radar artifact 缺失时，它仍可只返回 pattern context。
 - `reddit_discussion_scan` 的 runtime context 服务 `reddit_curation_daily_post`，优先通过已获批的 Reddit app-only OAuth 读取公开英文讨论的 hot/top 列表；当 OAuth app 创建受阻时，可用 `REDDIT_PUBLIC_JSON_FALLBACK=true` 和非占位 `REDDIT_USER_AGENT` 读取 Reddit public `.json` 列表页作为低频只读 fallback。两种路径都会按 AI 工具焦虑、心理/生活压力和工作流相关性筛选适合中文读者的来源。缺少可用 Reddit 环境变量时会注入 `missing_credentials` 上下文，提示配置 public JSON fallback 或按 Reddit Responsible Builder Policy 取得 explicit approval 后配置 `REDDIT_CLIENT_ID`、`REDDIT_CLIENT_SECRET` 和 `REDDIT_USER_AGENT`，并要求生成内容不要声称来自最新 Reddit 讨论。
-- deterministic drafting backend 可以通过小型 contextual draft helper 为特定 playbook 提供离线 dry-run 草稿，供 harness 和 e2e 测试在没有真实 LLM 调用时验证领域硬约束；当前覆盖现代心理学、武侠人物评述、苏轼诗词赏析、AI 科技资讯、每日英语学习、人类丰容实验、世界杯主题和 Reddit英文讨论转译的基础结构。现代心理学 deterministic 分支覆盖职场反刍、关系边界、消息压力、数字生活/信息过载、孤独/比较焦虑等 lane，避免所有离线样例退化成同一标题形状；人类丰容 deterministic 分支覆盖桌面/角落、路线/感官、手作/材料流三类场景；世界杯 deterministic 分支覆盖赛前看点、赛后复盘和看球局/球迷氛围三类场景，并禁止输出赌球、盘口、预测比分或伪装内部消息；Reddit英文讨论转译 deterministic 分支要求来源边界、中文解释、可收藏小结和评论区问题。
+- deterministic drafting backend 可以通过小型 contextual draft helper 为特定 playbook 提供离线 dry-run 草稿，供 harness 和 e2e 测试在没有真实 LLM 调用时验证领域硬约束；当前覆盖现代心理学、武侠人物评述、苏轼诗词赏析、AI 科技资讯、每日英语学习、人类丰容实验、世界杯主题和 Reddit英文讨论转译的基础结构。现代心理学 deterministic 分支覆盖职场反刍、关系边界、消息压力、数字生活/信息过载、孤独/比较焦虑、三明治拒绝法等 lane，避免所有离线样例退化成同一标题形状；人类丰容 deterministic 分支覆盖桌面/角落、路线/感官、手作/材料流、适我主义/新独居角落等场景；发疯文学 deterministic fallback 也覆盖丝瓜汤式沟通和职场物件发疯样例；世界杯 deterministic 分支覆盖赛前看点、赛后复盘和看球局/球迷氛围三类场景，并禁止输出赌球、盘口、预测比分或伪装内部消息；Reddit英文讨论转译 deterministic 分支要求来源边界、中文解释、可收藏小结和评论区问题，并在缺少实时 Reddit context 时避免声称来自最新 Reddit 讨论。
 - 显式注入依赖时，运行时仍兼容 `InMemoryExecutionMemory` 和 `InMemorySaver`。
 - 持久 checkpoint 以 `thread_id` 为键保存；复用同一个 `thread_id` 才能跨进程读取同一条执行线程。
 - 当前 side-effect ledger 只复用成功 publish 结果，不缓存失败 publish 或只读状态检查。
@@ -73,7 +74,7 @@ related_paths:
 - 图片生成 prompt 现在也会读取 artifact `content_review.image_form` 中的图片形式摘要；当人类丰容 playbook 提供轮播式建议时，单张封面生成会保留“原本状态、材料平铺、清单、改变后细节”等视觉提示，并明确 AI 生成图只是氛围参考，不应伪装成真实前后证据。
 - 本地 note-card renderer 生成 3:4 竖版 PNG，使用 final content 的标题、封面语和经过筛选的可见短文字绘制，不调用外部图片 API。默认样式是小红书常见笔记卡片；`xhs_image_strategy` 会让 drafting backend 在 `final_content.image_plan` 中选择 `wechat_chat`、`iphone_notes`、`note_card` 或 `provider_image`，并用 `role`、`text_density`、`max_text_units` 控制封面可见文字量。对 `text_density=low` 或 `role=save_tool/cover_hook/comment_prompt/evidence_or_scene` 的本地截图，运行时和 renderer 都只保留 1 到 3 条短句，避免把整篇正文摘要画成密集小字。现代心理学中三栏、5分钟练习和边界句会优先使用 `iphone_notes` / `save_tool`；只有真实对话、群聊或可复制回复是首屏资产时才走 `wechat_chat`。operator 也可以通过 `--local-image-style iphone_notes` 或 `--local-image-style wechat_chat` 主动覆盖为本地 iPhone 记事本风格或微信聊天记录风格封面。
 - 真实发布只要最终有图片路径，就会强制执行去水印后处理，使用 OpenCV inpainting 检测并移除底角残留水印，处理结果写入 artifact 的 `watermark_removal` 字段。`WATERMARK_REMOVAL_ENABLED=true` 只控制 dry-run 图片实验是否也预览这一步。
-- artifact evaluation 不在 LangGraph 节点内运行；`run_playbook()` 完成 artifact/image/publish/post-publish 后再调用 eval use case，因此 rule/contract evaluator 失败不会改变原始 runtime graph 的控制流。内容质量 LLM judge 是生成链路例外：它在 reflector 内作为重写门使用。
+- artifact evaluation 不在 LangGraph 节点内运行；`run_playbook()` 完成 artifact/image/publish/post-publish 后再调用 eval use case，因此 rule/contract evaluator 失败不会改变原始 runtime graph 的控制流。内容质量 LLM judge 是生成链路例外：它在 reflector 内作为重写门使用。playbook node contract 现在支持 `title_must_include_any` 和 `combined_must_not_include_any`，可在离线 eval 阶段要求标题带具体钩子，并跨 title / image_text / body 拦截模板化、运营腔或 AI 元叙事表达。
 - 当前仍没有远端 state backend；cross-thread lookup 只限本地 execution memory 中最近同账号同 playbook lessons 的轻量回读。
 
 ## Operator Entry Points

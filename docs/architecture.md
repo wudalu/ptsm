@@ -2,7 +2,7 @@
 title: PTSM Architecture
 status: active
 owner: ptsm
-last_verified: 2026-05-22
+last_verified: 2026-05-23
 source_of_truth: true
 related_paths:
   - src/ptsm
@@ -72,6 +72,8 @@ PTSM 当前已支持九个垂直领域（发疯文学、苏轼诗词赏析、武
 - `harness_evals` 新增 `_aggregate_skill_stats`，按 skill 维度聚合 runs/completed/runtime_context_runs/completion_rate，输出到 harness-report 的 `skills` 字段。
 - evaluation gates 区分 `required` 和 `warning`：deterministic required failures 可以阻塞 local harness；XHS executor content-quality judge 在显式启用 eval 或生成链路配置 judge backend 时使用 `required` gate，但最终发布仍需人工确认。
 - playbook contract evaluator 现在承担通用正文质量硬约束，包括标题/封面反泛化、必需标签、必需/禁用正文词、评论提示、保存触发、正文长度区间和实验指令泄漏；新增约束应优先扩展 `src/ptsm/evaluations/contracts_eval.py`，避免在 runtime 或单个 playbook 中写领域分支。
+- 小红书的人设和真人感现在属于 playbook/skill 资产层：八个 XHS playbook 共享 `xhs_human_voice`，再叠加各自 style、persona、planner 和 reflection 规则；运行时只负责加载这些资产，不为“温暖、有调性、不格式化”新增领域分支。
+- playbook contract evaluator 现在还支持 `title_must_include_any` 和 `combined_must_not_include_any`，用于让标题保留具体物件/场景钩子，并跨标题、封面文案和正文拦截 `首先`、`其次`、`综上`、`作为AI` 这类模板化或元叙事语言。
 
 ## Current Design Pressure
 

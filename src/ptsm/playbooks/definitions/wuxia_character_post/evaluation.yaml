@@ -18,6 +18,13 @@ node_contracts:
       title_must_not_equal_any:
         - 武侠人物评述
         - 令狐冲人物分析
+      title_must_include_any:
+        - 令狐冲
+        - 黄蓉
+        - 郭靖
+        - 老款
+        - 边界
+        - 自由
       image_text_must_not_equal_any:
         - 自由不是不负责
       hashtags_min_count: 3
@@ -46,6 +53,15 @@ node_contracts:
         - comment_chain
         - save_tool
         - identity_conflict
+      combined_must_not_include_any:
+        - 首先
+        - 其次
+        - 最后
+        - 综上
+        - 本文
+        - 作为AI
+        - 建议大家
+        - 小红书爆款
   finalize:
     required_fields:
       - playbook_id

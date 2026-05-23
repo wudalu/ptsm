@@ -2,12 +2,13 @@
 title: XHS Vertical Focus
 status: active
 owner: ptsm
-last_verified: 2026-05-17
+last_verified: 2026-05-23
 source_of_truth: false
 related_paths:
   - docs/xhs-topics/index.md
   - docs/playbooks.md
   - docs/skills.md
+  - docs/research/2026-05-23-xhs-viral-meme-product-hooks.md
 ---
 
 # XHS Vertical Focus
@@ -31,6 +32,7 @@ related_paths:
 
 - 2026-05-16 研究记录显示，`#人你该丰容了`、`#家的丰容计划`、零成本丰容、手作心流、Colorwalk、适我主义等方向在小红书生活方式内容里持续升温，详见 [`docs/research/2026-05-16-xhs-new-theme-research.md`](../research/2026-05-16-xhs-new-theme-research.md)。
 - 2026-05-17 的 live MCP 采样计划已落成周期采集方式：定期用 `collect-xhs-patterns` 采集 `人类丰容`、`家的丰容计划`、`低成本改造`、`钩织`、`拼豆` 等关键词，再用 `analyze-xhs-patterns` 生成本地 pattern library，普通生成不实时抓高互动帖子。
+- 2026-05-23 爆品梗调研把 `适我主义`、`新独居`、`手作心流`、`年味角落` 明确映射到现有 `human_enrichment_daily_post`，并要求每条内容落到一个角落、物件、路线、材料或十分钟动作，详见 [`docs/research/2026-05-23-xhs-viral-meme-product-hooks.md`](../research/2026-05-23-xhs-viral-meme-product-hooks.md)。
 - 这个方向天然适合 3:4 竖版封面和轮播：封面、原本状态、小变量/材料平铺、三步清单、改变后细节、评论区提问。
 
 为什么值得做：

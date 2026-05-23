@@ -6,6 +6,7 @@ platforms:
 required_skills:
   - xhs_trend_scan
   - xhs_image_strategy
+  - xhs_human_voice
   - wuxia_commentary_style
   - xhs_wuxia_hashtagging
 optional_skills: []

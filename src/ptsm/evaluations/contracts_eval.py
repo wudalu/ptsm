@@ -215,6 +215,18 @@ def _constraint_failures(
                     "observation": f"title_must_not_equal_any violated: {title}",
                 }
             )
+        required_title_terms = _string_list(constraints.get("title_must_include_any"))
+        if required_title_terms and not any(term in title for term in required_title_terms):
+            failures.append(
+                {
+                    "path": _field_path(target, "title"),
+                    "value_preview": title,
+                    "observation": (
+                        "title_must_include_any violated: "
+                        f"missing one of {required_title_terms}"
+                    ),
+                }
+            )
 
     image_text = payload.get("image_text")
     if isinstance(image_text, str):
@@ -360,6 +372,29 @@ def _constraint_failures(
                     "value_preview": body[:120],
                     "observation": (
                         "body_must_not_include_any violated: "
+                        f"found {present}"
+                    ),
+                }
+            )
+    combined_forbidden = _string_list(constraints.get("combined_must_not_include_any"))
+    if combined_forbidden:
+        combined_text = "\n".join(
+            value
+            for value in (title, image_text, body)
+            if isinstance(value, str)
+        )
+        present = [term for term in combined_forbidden if term in combined_text]
+        if present:
+            failures.append(
+                {
+                    "path": (
+                        "final_content.title/image_text/body"
+                        if target.phase == "executor"
+                        else "title/image_text/body"
+                    ),
+                    "value_preview": combined_text[:120],
+                    "observation": (
+                        "combined_must_not_include_any violated: "
                         f"found {present}"
                     ),
                 }

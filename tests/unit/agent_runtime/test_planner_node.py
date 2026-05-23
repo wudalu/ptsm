@@ -86,6 +86,7 @@ def test_planner_separates_runtime_skill_contexts_from_static_skills() -> None:
                 "xhs_trend_scan",
                 "topic_research",
                 "xhs_image_strategy",
+                "xhs_human_voice",
                 "fengkuang_style",
                 "positive_reframe",
                 "xhs_hashtagging",
