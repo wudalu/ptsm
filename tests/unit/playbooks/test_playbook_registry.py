@@ -6,6 +6,53 @@ from ptsm.accounts.registry import AccountRegistry
 from ptsm.playbooks.registry import PlaybookRegistry
 
 
+XHS_PLAYBOOK_IDS = [
+    "fengkuang_daily_post",
+    "sushi_poetry_daily_post",
+    "wuxia_character_post",
+    "ai_tech_daily_post",
+    "daily_english_post",
+    "modern_psychology_post",
+    "human_enrichment_daily_post",
+    "world_cup_daily_post",
+]
+
+
+def test_all_xhs_playbooks_use_shared_human_voice_skill() -> None:
+    registry = PlaybookRegistry(
+        playbook_root=Path("src/ptsm/playbooks/definitions"),
+    )
+
+    for playbook_id in XHS_PLAYBOOK_IDS:
+        playbook = registry.get(playbook_id)
+
+        assert "xhs_human_voice" in playbook.required_skills
+
+
+def test_key_playbook_prompts_include_viral_hook_research_inputs() -> None:
+    root = Path("src/ptsm/playbooks/definitions")
+
+    fengkuang = "\n".join(
+        (root / "fengkuang_daily_post" / name).read_text(encoding="utf-8")
+        for name in ("planner.md", "persona.md", "reflection.md")
+    )
+    psychology = "\n".join(
+        (root / "modern_psychology_post" / name).read_text(encoding="utf-8")
+        for name in ("planner.md", "persona.md", "reflection.md")
+    )
+    enrichment = "\n".join(
+        (root / "human_enrichment_daily_post" / name).read_text(encoding="utf-8")
+        for name in ("planner.md", "persona.md", "reflection.md")
+    )
+
+    for term in ("丝瓜汤", "高雅", "物件发疯"):
+        assert term in fengkuang
+    for term in ("爱你老己", "三明治拒绝法", "丝瓜汤式沟通"):
+        assert term in psychology
+    for term in ("适我主义", "新独居", "手作心流"):
+        assert term in enrichment
+
+
 def test_playbook_registry_selects_fengkuang_daily_post() -> None:
     registry = PlaybookRegistry(
         playbook_root=Path("src/ptsm/playbooks/definitions"),
@@ -18,6 +65,7 @@ def test_playbook_registry_selects_fengkuang_daily_post() -> None:
         "xhs_trend_scan",
         "topic_research",
         "xhs_image_strategy",
+        "xhs_human_voice",
         "fengkuang_style",
         "positive_reframe",
         "xhs_hashtagging",
@@ -47,6 +95,7 @@ def test_playbook_registry_loads_sushi_poetry_playbook() -> None:
         "xhs_trend_scan",
         "topic_research",
         "xhs_image_strategy",
+        "xhs_human_voice",
         "sushi_poetry_style",
         "xhs_poetry_hashtagging",
     ]
@@ -146,6 +195,7 @@ def test_registry_loads_modern_psychology_playbook() -> None:
         "xhs_trend_scan",
         "topic_research",
         "xhs_image_strategy",
+        "xhs_human_voice",
         "psychology_style",
         "psychology_safety",
         "xhs_psychology_hashtagging",
@@ -185,6 +235,7 @@ def test_registry_loads_human_enrichment_playbook() -> None:
         "xhs_trend_scan",
         "topic_research",
         "xhs_image_strategy",
+        "xhs_human_voice",
         "human_enrichment_style",
         "xhs_enrichment_visuals",
         "xhs_enrichment_hashtagging",
@@ -224,6 +275,7 @@ def test_registry_loads_world_cup_playbook() -> None:
         "xhs_trend_scan",
         "topic_research",
         "xhs_image_strategy",
+        "xhs_human_voice",
         "world_cup_style",
         "xhs_world_cup_visuals",
         "xhs_world_cup_hashtagging",

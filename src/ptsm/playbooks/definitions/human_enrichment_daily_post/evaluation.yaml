@@ -31,6 +31,13 @@ node_contracts:
       - hashtags
     constraints:
       title_max_chars: 30
+      title_must_include_any:
+        - 丰容
+        - 变量
+        - 角落
+        - 书桌
+        - 路线
+        - 材料
       hashtags_min_count: 3
       hashtags_max_count: 7
       hashtags_must_include_any:
@@ -66,6 +73,15 @@ node_contracts:
         - image_brief
         - pattern_id
         - hook_archetypes
+      combined_must_not_include_any:
+        - 首先
+        - 其次
+        - 最后
+        - 综上
+        - 本文
+        - 作为AI
+        - 建议大家
+        - 小红书爆款
 
   reflector:
     allowed_decisions:

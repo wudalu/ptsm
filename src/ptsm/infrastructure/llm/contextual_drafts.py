@@ -165,7 +165,17 @@ def _build_human_enrichment_draft(
     runtime_context: str,
 ) -> dict[str, Any]:
     hooks = _extract_pattern_hooks(runtime_context)
-    if any(keyword in scene for keyword in ("旧毛线", "毛线", "拼豆", "钩织", "材料")):
+    if any(keyword in scene for keyword in ("适我主义", "新独居", "一个人住", "独居")):
+        title = "给床头角落一点适我主义"
+        image_text = "一个人住也能先丰容一厘米"
+        body = (
+            f"{scene}。我不想把新独居写成精致样板间，先让床头角落按自己的节奏舒服一点。\n"
+            "十分钟三步清单：把旧材料平铺出来；只选一个今晚愿意碰的颜色或小物；"
+            "做完放在醒来第一眼能看见的位置。\n"
+            "这不是要把生活改得多漂亮，而是给自己留一个手作心流的小入口。"
+            "评论区交一个你想按适我主义先丰容的角落。"
+        )
+    elif any(keyword in scene for keyword in ("旧毛线", "毛线", "拼豆", "钩织", "材料")):
         title = (
             "这堆旧材料原来这么适合丰容"
             if "process_or_tutorial" in hooks
@@ -397,7 +407,20 @@ def _build_daily_english_draft(*, scene: str, feedback: str) -> dict[str, Any]:
 def _build_modern_psychology_draft(
     *, scene: str, feedback: str, runtime_context: str
 ) -> dict[str, Any]:
-    if any(keyword in scene for keyword in ("短视频", "刷手机", "信息过载", "越刷越空")):
+    if "三明治拒绝法" in scene:
+        body = (
+            f"{scene}，你不是不想帮忙，只是担心一拒绝，关系就会立刻变冷。\n"
+            "三明治拒绝法真正有用的地方，不是把拒绝包装得更漂亮，而是先承认关系，再把边界说清楚。"
+            "不是你冷漠，也不是你必须把所有临时任务都接住。\n"
+            "可以先存一句边界句：我理解这件事很急，但今晚我没法接手；我可以明早帮你看优先级。"
+            "这句话把讨好改成了清楚的下一步。\n"
+            "如果痛苦持续、影响工作学习生活，或出现自伤想法，请尽快寻求专业帮助。"
+            "评论区可以留一个你最难拒绝的场景，我们只练一句低风险版本。"
+        )
+        title = "边界句不是冷漠，是把话说清楚"
+        image_text = "拒绝也可以有温度"
+        hashtags = ["#心理学", "#情绪管理", "#关系边界", "#自我成长"]
+    elif any(keyword in scene for keyword in ("短视频", "刷手机", "信息过载", "越刷越空")):
         body = (
             f"{scene}，手指一直往下滑，身体已经很困了，脑子却像还在等一个能让自己停下来的理由。\n"
             "这更像是信息过载和情绪回避叠在一起：内容越密，大脑越不用马上碰见白天没处理完的感受。"

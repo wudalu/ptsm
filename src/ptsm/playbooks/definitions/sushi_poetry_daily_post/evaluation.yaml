@@ -18,6 +18,12 @@ node_contracts:
       title_must_not_equal_any:
         - 读苏轼时突然读懂了今天
         - 苏轼诗词赏析
+      title_must_include_any:
+        - 苏轼
+        - 这一句
+        - 读
+        - 年味
+        - 节气
       image_text_must_not_equal_any:
         - 把风雨读慢一点
       hashtags_min_count: 2
@@ -46,6 +52,15 @@ node_contracts:
         - comment_chain
         - save_tool
         - identity_conflict
+      combined_must_not_include_any:
+        - 首先
+        - 其次
+        - 最后
+        - 综上
+        - 本文
+        - 作为AI
+        - 建议大家
+        - 小红书爆款
   finalize:
     required_fields:
       - playbook_id

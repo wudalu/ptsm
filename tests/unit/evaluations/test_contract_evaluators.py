@@ -262,6 +262,66 @@ class TestPlaybookNodeContract:
         assert "title_must_not_equal_any" in result.reason
         assert "image_text_must_not_equal_any" in result.reason
 
+    def test_fails_when_title_lacks_required_hook_or_scene_terms(self):
+        contract = PlaybookEvalContract(
+            suite_id="human_voice.default",
+            node_contracts={
+                "executor": {
+                    "required_fields": ["title", "body", "image_text", "hashtags"],
+                    "constraints": {
+                        "title_must_include_any": ["工牌", "群聊", "边界", "丰容"],
+                    },
+                }
+            },
+        )
+        target = _target(
+            phase="executor",
+            target_type="artifact_slice",
+            output_ref={
+                "final_content": {
+                    "title": "今天也要好好生活",
+                    "image_text": "先慢一点",
+                    "body": "今天先写一个具体场景，评论区交一个例子。",
+                    "hashtags": ["#小红书"],
+                }
+            },
+        )
+
+        result = contract_playbook_node_contract(target, contract)
+
+        assert result.status == "failed"
+        assert "title_must_include_any" in result.reason
+
+    def test_fails_when_template_markers_appear_across_title_image_or_body(self):
+        contract = PlaybookEvalContract(
+            suite_id="human_voice.default",
+            node_contracts={
+                "executor": {
+                    "required_fields": ["title", "body", "image_text", "hashtags"],
+                    "constraints": {
+                        "combined_must_not_include_any": ["首先", "综上", "作为AI"],
+                    },
+                }
+            },
+        )
+        target = _target(
+            phase="executor",
+            target_type="artifact_slice",
+            output_ref={
+                "final_content": {
+                    "title": "首先，今天讲一个话题",
+                    "image_text": "先存这句",
+                    "body": "评论区交一个例子。",
+                    "hashtags": ["#小红书"],
+                }
+            },
+        )
+
+        result = contract_playbook_node_contract(target, contract)
+
+        assert result.status == "failed"
+        assert "combined_must_not_include_any" in result.reason
+
     def test_fails_when_comment_prompt_or_save_trigger_is_missing(self):
         contract = PlaybookEvalContract(
             suite_id="quality.default",

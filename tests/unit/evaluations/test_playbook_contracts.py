@@ -7,6 +7,20 @@ import yaml
 from ptsm.evaluations.playbook_contracts import PlaybookEvalContract, load_playbook_eval_contract
 
 
+XHS_PLAYBOOK_IDS = [
+    "fengkuang_daily_post",
+    "sushi_poetry_daily_post",
+    "wuxia_character_post",
+    "ai_tech_daily_post",
+    "daily_english_post",
+    "modern_psychology_post",
+    "human_enrichment_daily_post",
+    "world_cup_daily_post",
+]
+
+FORMULAIC_MARKERS = ["首先", "其次", "最后", "综上", "本文", "作为AI"]
+
+
 class TestPlaybookEvalContract:
     def test_loads_fengkuang_contract(self):
         root = Path(__file__).parent.parent.parent.parent / "src" / "ptsm" / "playbooks" / "definitions"
@@ -118,6 +132,41 @@ class TestPlaybookEvalContract:
         quality_judge = contract.quality_judges["executor_content_quality"]
         assert quality_judge["evaluator_id"] == "llm.executor.content_quality"
         assert quality_judge["gate_level"] == "required"
+
+    def test_all_xhs_contracts_block_formulaic_cross_field_markers(self):
+        root = Path(__file__).parent.parent.parent.parent / "src" / "ptsm" / "playbooks" / "definitions"
+
+        for playbook_id in XHS_PLAYBOOK_IDS:
+            contract = load_playbook_eval_contract(root, playbook_id)
+            assert contract is not None
+            constraints = contract.node_contracts["executor"]["constraints"]
+
+            for marker in FORMULAIC_MARKERS:
+                assert marker in constraints["combined_must_not_include_any"]
+
+    @pytest.mark.parametrize(
+        ("playbook_id", "title_terms"),
+        [
+            ("fengkuang_daily_post", ["工牌", "群聊", "周报", "早会", "下班", "领导", "物件"]),
+            ("modern_psychology_post", ["不是你", "边界", "复盘", "消息", "睡前", "AI"]),
+            ("human_enrichment_daily_post", ["丰容", "变量", "角落", "书桌", "路线", "材料"]),
+            ("ai_tech_daily_post", ["AI", "普通人", "搭子", "工具", "更新"]),
+            ("sushi_poetry_daily_post", ["苏轼", "这一句", "读", "年味", "节气"]),
+            ("wuxia_character_post", ["令狐冲", "黄蓉", "郭靖", "老款", "边界", "自由"]),
+        ],
+    )
+    def test_research_affected_contracts_require_title_hook_terms(
+        self,
+        playbook_id,
+        title_terms,
+    ):
+        root = Path(__file__).parent.parent.parent.parent / "src" / "ptsm" / "playbooks" / "definitions"
+        contract = load_playbook_eval_contract(root, playbook_id)
+        assert contract is not None
+        constraints = contract.node_contracts["executor"]["constraints"]
+
+        for term in title_terms:
+            assert term in constraints["title_must_include_any"]
 
     @pytest.mark.parametrize(
         ("playbook_id", "required_tags", "required_body_terms"),

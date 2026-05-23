@@ -310,7 +310,17 @@ def _build_deterministic_draft(
             "hashtags": hashtags,
         }
 
-    if _is_weekend_rest_scene(scene):
+    if "丝瓜汤" in scene:
+        title = "领导递来丝瓜汤那秒工牌沉默了"
+        image_text = "这碗汤工牌先不喝"
+        body = (
+            f"{scene}，我表面点头，工牌已经在桌上把自己扣成了免打扰。\n"
+            "丝瓜汤式安慰最会让人卡住：问题没解决，情绪还要被安排成“你先降降火”。"
+            "可复制疯话：谢谢关心，但我的工牌现在只想喝下班风。"
+            "评论区接一句你遇到过的丝瓜汤式职场回复，我先替大家写进群聊草稿。"
+        )
+        hashtags = ["#发疯文学", "#打工人日常", "#职场情绪实录"]
+    elif _is_weekend_rest_scene(scene):
         title = "周六躺平回血实录"
         image_text = "今天先躺"
         body = (

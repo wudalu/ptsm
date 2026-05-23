@@ -2,7 +2,7 @@
 title: PTSM Operations
 status: active
 owner: ptsm
-last_verified: 2026-05-19
+last_verified: 2026-05-23
 source_of_truth: true
 related_paths:
   - docs/operations/publish-quickstart.md
@@ -12,6 +12,7 @@ related_paths:
   - docs/operations/topic-radar-runbook.md
   - docs/operations/task-completion-automation.md
   - docs/research/2026-05-15-xhs-content-experiment-log.md
+  - docs/research/2026-05-23-xhs-viral-meme-product-hooks.md
   - src/ptsm/interfaces/cli/main.py
   - src/ptsm/application/use_cases/run_playbook.py
   - src/ptsm/application/use_cases/guide_post.py
@@ -88,6 +89,12 @@ COOKIES_PATH=cookies/fk-local.json .ptsm/bin/xhs-mcp/xiaohongshu-mcp-darwin-amd6
 - `uv run python -m ptsm.bootstrap run-playbook --scene "学一个表示坚持的高级词汇" --account-id acct-daily-english-local --playbook-id daily_english_post`
 - 世界杯主题 dry-run:
   `uv run python -m ptsm.bootstrap run-playbook --scene "阿根廷和法国决赛前，想写一篇普通球迷也能看懂的赛前看点" --account-id acct-world-cup-local --playbook-id world_cup_daily_post`
+- 人设/爆品梗回归 dry-run:
+  `uv run python -m ptsm.bootstrap run-fengkuang --scene "领导递来丝瓜汤式复盘，工牌当场想保持高雅" --account-id acct-fk-local --eval`
+- 人设/爆品梗回归 dry-run:
+  `uv run python -m ptsm.bootstrap run-playbook --scene "同事临时加需求，想练一版三明治拒绝法边界句" --account-id acct-psychology-local --playbook-id modern_psychology_post --eval`
+- 人设/爆品梗回归 dry-run:
+  `uv run python -m ptsm.bootstrap run-playbook --scene "一个人住，想把床头角落改成十分钟适我主义手作位" --account-id acct-enrichment-local --playbook-id human_enrichment_daily_post --eval`
 - `uv run python -m ptsm.bootstrap guide-post`
 - `uv run python -m ptsm.bootstrap guide-post --scene "看到别人周末都在聚会，自己突然觉得很失败" --non-interactive`
 - `uv run python -m ptsm.bootstrap run-playbook --scene "下班后还在复盘会议上说错的那句话" --account-id acct-psychology-local --playbook-id modern_psychology_post`
@@ -118,6 +125,7 @@ COOKIES_PATH=cookies/fk-local.json .ptsm/bin/xhs-mcp/xiaohongshu-mcp-darwin-amd6
 - `--fresh-topic-research` 通过 topic-radar 先扫描平台热点，交互式让用户选题后再生成内容，此时 `--scene` 可选。
 - `collect-xhs-patterns` / `analyze-xhs-patterns` 是周期采集和格式沉淀入口。普通 `run-playbook` 默认只读取本地 pattern snapshot，不会每次发帖都检索实时高互动帖子；需要实验特定 snapshot 时，用 `--format-pattern-path` 覆盖。
 - `run-playbook` 是多 playbook 的通用入口；`run-fengkuang` 只保留给已有发疯文学兼容脚本和习惯命令。
+- 做 XHS persona 或热梗映射回归时，优先用 dry-run 加 `--eval` 检查 artifact：标题应有具体物件/关系/场景钩子，正文应像真人账号在说话，eval 会通过 `combined_must_not_include_any` 拦截 `首先`、`其次`、`综上`、`本文`、`作为AI` 等模板化或元叙事表达。
 - `guide-post` 是现代心理学发帖前的只读向导：默认走对话式引导，先问具体场景，再建议心理学 lane、机制、非诊断化重构、可保存小工具、评论提示和低密度封面，最后输出 Markdown brief 和可复制的 `run-playbook --publish-mode dry-run` 命令；脚本场景用 `--non-interactive` 输出 JSON。真正生成和发布仍走 `run-playbook`。
 - `run-fengkuang --auto-generate-image` 会在缺少 `--publish-image-path` 时尝试调用已配置的图片后端生成封面；即梦配置优先于百炼配置，真实发布模式下默认也会尝试自动补图。
 - `--no-auto-generate-image` 可以关闭自动补图；`--publish-image-path` 使用手动图片；`--local-image-style note_card|iphone_notes|wechat_chat` 可以主动选择本地截图式封面，即使外部图片 provider 已配置也生效。
