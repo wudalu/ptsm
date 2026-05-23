@@ -10,6 +10,7 @@ related_paths:
   - src/ptsm/agent_runtime/nodes
   - src/ptsm/agent_runtime/nodes/planner.py
   - src/ptsm/application/use_cases/run_playbook.py
+  - src/ptsm/application/models.py
   - src/ptsm/application/use_cases/runs.py
   - src/ptsm/evaluations/contracts_eval.py
   - src/ptsm/infrastructure/llm
@@ -42,6 +43,7 @@ related_paths:
 - 当前通用运行时入口是 `build_playbook_workflow()`，`build_fengkuang_workflow()` 只是兼容 wrapper。
 - 运行结果会落到 artifact，并写入本地 run store。
 - `run_playbook()` 默认会在 `.ptsm/agent_runtime/` 下创建持久 execution memory 和 checkpoint。
+- `run_playbook()` 现在支持 caller-aware preflight：当 `PlaybookRequest.caller == "openclaw"` 且目标 playbook 是 `modern_psychology_post` 时，如果没有 `guidance_ack`，会在启动 workflow、创建 run 或执行发布前返回 `topic_guidance_required`。这个只读结果包含可展示给用户的心理学选题方向，不包含内部 research 文档路径或原始来源说明；OpenClaw 确认方向后再带 `--guidance-ack` 重新调用。
 - workflow 会在 drafting 前读取最近 3 条同账号、同 playbook 的 lessons，形成 `# Recent Account Memory` runtime context，提示 drafting backend 避免重复标题形状、开头、热词和收尾。对 `reddit_curation_daily_post`，memory 注入 prompt 前会隐藏旧帖里的 Reddit/source/翻译痕迹，避免历史样例把已废弃的来源披露写法带回新草稿。
 - `run_playbook()` 现在也会在 `.ptsm/agent_runtime/side-effects.json` 下记录成功副作用结果，用于同一 `thread_id` 的安全重放。
 - `run_playbook()` 现在可以在真实发布缺图或显式 `--auto-generate-image` 时生成封面图，默认写到 `outputs/generated_images/`；即梦配置优先于百炼配置。若 `final_content.image_plan.backend` 选择 `local_social_screenshot`，或 operator 传入 `--local-image-style`，即使 provider 已配置也会主动走本地 `local_note_card` PNG renderer。本地 renderer 支持默认笔记卡、iPhone Notes-like 和 WeChat chat-like 三类确定性 3:4 样式。`final_content.image_plan` 还会携带 `role`、`text_density`、`max_text_units`、`cover_text_strategy` 和本地截图参数，让运行时知道这张图是封面钩子、保存工具、评论触发还是证据/场景图；微信聊天截图参数如 `theme`、`chat_title`、`show_avatars`、`chat_times` 和结构化/多行聊天内容会原样进入本地图片 prompt，避免 renderer 退回默认浅色单气泡图。

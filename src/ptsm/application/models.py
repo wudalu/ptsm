@@ -10,6 +10,8 @@ class PlaybookRequest(BaseModel):
     account_id: str = Field(min_length=1)
     platform: str | None = None
     playbook_id: str | None = None
+    caller: str | None = None
+    guidance_ack: bool = False
     publish_mode: str | None = None
     publish_image_paths: list[str] = Field(default_factory=list)
     auto_generate_images: bool | None = None

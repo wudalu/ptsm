@@ -382,6 +382,82 @@ def test_run_playbook_records_format_patterns_used_in_response_and_artifact(
     )
 
 
+def test_run_playbook_requires_topic_guidance_for_openclaw_psychology(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    def fail_if_workflow_starts(**_: object) -> FakeWorkflow:
+        raise AssertionError("workflow should not start before OpenClaw guidance ack")
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        fail_if_workflow_starts,
+        raising=False,
+    )
+
+    result = run_playbook(
+        PlaybookRequest(
+            scene="同事临时加需求，想练一版边界句",
+            account_id="acct-psychology-local",
+            playbook_id="modern_psychology_post",
+            caller="openclaw",
+        ),
+        publisher=SuccessfulPublisher(),
+    )
+
+    assert result["status"] == "topic_guidance_required"
+    assert result["playbook_id"] == "modern_psychology_post"
+    assert result["caller"] == "openclaw"
+    direction_ids = {
+        direction["id"] for direction in result["topic_guidance"]["directions"]
+    }
+    assert "boundary_sandwich_refusal" in direction_ids
+    serialized = json.dumps(result, ensure_ascii=False)
+    assert "docs/research" not in serialized
+    assert "2026-05-23-xhs-viral-meme-product-hooks.md" not in serialized
+    assert '"source"' not in serialized
+    assert not (tmp_path / "runs").exists()
+
+
+def test_run_playbook_allows_openclaw_psychology_after_guidance_ack(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    artifact_path = tmp_path / "artifact.json"
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "modern_psychology_post",
+                "final_content": {"title": "旧标题"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        lambda **_: FakeWorkflow(artifact_path),
+        raising=False,
+    )
+
+    result = run_playbook(
+        PlaybookRequest(
+            scene="同事临时加需求，想练一版三明治拒绝法边界句",
+            account_id="acct-psychology-local",
+            playbook_id="modern_psychology_post",
+            caller="openclaw",
+            guidance_ack=True,
+        ),
+    )
+
+    assert result["status"] == "completed"
+    assert result["playbook_id"] == "modern_psychology_post"
+    assert result["publish_result"]["status"] == "dry_run"
+
+
 def test_run_fengkuang_playbook_reuses_successful_publish_result_for_same_thread(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from ptsm.application.use_cases.guide_post import GuidePostRequest, run_guide_post
@@ -31,6 +33,42 @@ def test_run_guide_post_builds_psychology_brief_with_scene_defaults() -> None:
     assert "run-playbook --scene" in result["run_playbook_command_text"]
     assert any(item["item"] == "第一人称微场景" for item in result["quality_checklist"])
     assert any("危机" in note for note in result["safety_notes"])
+
+
+def test_run_guide_post_returns_productized_topic_directions_without_internal_sources() -> None:
+    result = run_guide_post(
+        GuidePostRequest(
+            scene="同事临时加需求，想练一版边界句",
+        )
+    )
+
+    topic_guidance = result["topic_guidance"]
+    assert topic_guidance["status"] == "available"
+    direction_ids = {direction["id"] for direction in topic_guidance["directions"]}
+    assert {
+        "boundary_sandwich_refusal",
+        "self_compassion_laoji",
+        "loofah_soup_communication",
+        "ai_companion_boundary",
+    } <= direction_ids
+
+    boundary = next(
+        direction
+        for direction in topic_guidance["directions"]
+        if direction["id"] == "boundary_sandwich_refusal"
+    )
+    assert boundary["name"] == "边界感：三明治拒绝法"
+    assert "收藏" in boundary["why_it_may_work"]
+    assert boundary["best_scenes"]
+    assert "责任" in boundary["content_angle"]
+    assert "先确认" in boundary["saveable_tool"]
+    assert "边界句" in boundary["comment_prompt"]
+    assert "万能" in boundary["avoid"]
+
+    serialized = json.dumps(result, ensure_ascii=False)
+    assert "docs/research" not in serialized
+    assert "2026-05-23-xhs-viral-meme-product-hooks.md" not in serialized
+    assert '"source"' not in serialized
 
 
 def test_run_guide_post_rejects_unsupported_playbook() -> None:
