@@ -117,6 +117,29 @@ def test_build_parser_supports_run_playbook_format_pattern_override() -> None:
     assert args.format_pattern_path == Path("outputs/artifacts/xhs-pattern-library/current.json")
 
 
+def test_build_parser_supports_run_playbook_openclaw_guidance_flags() -> None:
+    parser = build_parser()
+
+    args = parser.parse_args(
+        [
+            "run-playbook",
+            "--scene",
+            "同事临时加需求，想练一版边界句",
+            "--account-id",
+            "acct-psychology-local",
+            "--playbook-id",
+            "modern_psychology_post",
+            "--caller",
+            "openclaw",
+            "--guidance-ack",
+        ]
+    )
+
+    assert args.command == "run-playbook"
+    assert args.caller == "openclaw"
+    assert args.guidance_ack is True
+
+
 def test_build_parser_supports_guide_post() -> None:
     parser = build_parser()
 

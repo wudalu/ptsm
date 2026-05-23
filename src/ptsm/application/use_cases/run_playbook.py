@@ -15,6 +15,10 @@ from ptsm.agent_runtime.runtime import (
 )
 from ptsm.application.models import FengkuangRequest, PlaybookRequest
 from ptsm.application.services.side_effect_ledger import SideEffectLedger
+from ptsm.application.use_cases.guide_post import (
+    build_psychology_topic_guidance,
+    resolve_psychology_lane,
+)
 from ptsm.application.use_cases.xhs_login import (
     DEFAULT_XHS_LOGIN_QRCODE_PATH,
     build_xhs_login_instructions,
@@ -234,6 +238,30 @@ def run_playbook(
         platform=resolved_platform,
         playbook_id=request.playbook_id,
     )
+    if _requires_openclaw_psychology_guidance(
+        caller=request.caller,
+        guidance_ack=request.guidance_ack,
+        playbook_id=playbook.playbook_id,
+    ):
+        lane = resolve_psychology_lane(scene=request.scene)
+        return {
+            "scene": request.scene,
+            "platform": resolved_platform,
+            "account_id": request.account_id,
+            "playbook_id": playbook.playbook_id,
+            "status": "topic_guidance_required",
+            "caller": request.caller,
+            "guidance_ack": False,
+            "topic_guidance": build_psychology_topic_guidance(
+                scene=request.scene,
+                lane_name=lane.name,
+            ),
+            "next_step": (
+                "Show topic_guidance.directions to the user, ask them to choose "
+                "or confirm a direction, then call run-playbook again with "
+                "--guidance-ack."
+            ),
+        }
 
     # Topic-radar integration: scan hot topics, let user pick, enrich scene
     topic_selection: dict[str, Any] | None = None
@@ -628,6 +656,19 @@ def run_fengkuang_playbook(
         side_effect_ledger=side_effect_ledger,
         command_name="run-fengkuang",
         eval_enabled=eval_enabled,
+    )
+
+
+def _requires_openclaw_psychology_guidance(
+    *,
+    caller: str | None,
+    guidance_ack: bool,
+    playbook_id: str,
+) -> bool:
+    return (
+        (caller or "").strip().lower() == "openclaw"
+        and playbook_id == "modern_psychology_post"
+        and not guidance_ack
     )
 
 

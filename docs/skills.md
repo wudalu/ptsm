@@ -12,6 +12,7 @@ related_paths:
   - src/ptsm/skills/surface.py
   - src/ptsm/skills/runtime_context.py
   - src/ptsm/skills/builtin
+  - integrations/openclaw/ptsm-xhs-psychology/SKILL.md
   - docs/xhs-topics/index.md
   - docs/research/2026-04-25-skill-routing-and-priority.md
   - docs/research/2026-05-23-xhs-viral-meme-product-hooks.md
@@ -68,6 +69,11 @@ Skill 层负责让运行时按请求范围暴露合适的 builtin skills，而�
 - 运行时动态资源当前主要表现为 `runtime_context` 记录，例如 `xhs_trend_scan` 的本地格式 pattern / 站内热点扫描结果，或 `topic_research` 对当日 topic-radar artifact 与本地 format pattern 的摘要注入。
 - Reddit 动态资源也以 `runtime_context` 记录：`reddit_discussion_scan` 会写出 `available`、`missing_credentials` 或 `unavailable` 状态，artifact 的 `runtime_skill_details` 会记录这次是否真的有 Reddit 来源上下文。
 - 当运行在 deterministic provider 下时，`run_playbook` 只读取本地 XHS pattern snapshot，不触发 live XHS MCP / topic scan；真实 LLM/provider 路径仍按默认 resolver 尝试注入动态上下文。
+
+## OpenClaw Wrapper
+
+- `integrations/openclaw/ptsm-xhs-psychology/SKILL.md` 是外部 OpenClaw 的薄包装说明，不是 PTSM builtin skill，也不参与 `SkillRegistry`。它只负责让 OpenClaw 在心理学小红书内容中先调用 `guide-post`、展示 `topic_guidance.directions`，再带 `--caller openclaw --guidance-ack` 调 `run-playbook`。
+- 心理学热点、爆点和选题方向仍由 PTSM 的 `guide-post` 输出，OpenClaw skill 不复制这些逻辑，也不得向用户展示内部研究路径、原始研究笔记或来源文档。
 
 ## Routing Design
 

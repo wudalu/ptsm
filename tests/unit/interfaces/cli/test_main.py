@@ -241,6 +241,56 @@ def test_run_playbook_cli_passes_generic_request_fields(
     assert captured["thread_id"] == "thread-sushi-001"
 
 
+def test_run_playbook_cli_passes_openclaw_guidance_fields(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run_playbook(
+        request: PlaybookRequest,
+        *,
+        thread_id: str | None = None,
+        **kwargs: object,
+    ) -> dict[str, object]:
+        captured["request"] = request
+        return {
+            "status": "completed",
+            "playbook_id": request.playbook_id,
+            "publish_result": {"status": "dry_run"},
+        }
+
+    monkeypatch.setattr(
+        "ptsm.interfaces.cli.main.run_playbook",
+        fake_run_playbook,
+        raising=False,
+    )
+
+    exit_code = main(
+        [
+            "run-playbook",
+            "--scene",
+            "同事临时加需求，想练一版边界句",
+            "--account-id",
+            "acct-psychology-local",
+            "--playbook-id",
+            "modern_psychology_post",
+            "--caller",
+            "openclaw",
+            "--guidance-ack",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload["status"] == "completed"
+    request = captured["request"]
+    assert isinstance(request, PlaybookRequest)
+    assert request.caller == "openclaw"
+    assert request.guidance_ack is True
+
+
 def test_run_playbook_cli_passes_format_pattern_path(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],

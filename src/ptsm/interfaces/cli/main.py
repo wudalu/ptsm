@@ -96,6 +96,8 @@ def build_parser() -> argparse.ArgumentParser:
     run_playbook_cli.add_argument("--platform")
     run_playbook_cli.add_argument("--account-id", required=True)
     run_playbook_cli.add_argument("--playbook-id")
+    run_playbook_cli.add_argument("--caller")
+    run_playbook_cli.add_argument("--guidance-ack", action="store_true")
     run_playbook_cli.add_argument("--thread-id")
     run_playbook_cli.add_argument("--publish-mode")
     run_playbook_cli.add_argument(
@@ -469,6 +471,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 platform=args.platform,
                 account_id=args.account_id,
                 playbook_id=args.playbook_id,
+                caller=args.caller,
+                guidance_ack=args.guidance_ack,
                 publish_mode=args.publish_mode,
                 publish_image_paths=args.publish_image_path,
                 auto_generate_images=args.auto_generate_image,
