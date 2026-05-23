@@ -184,14 +184,15 @@ class RedditDiscussionContextBuilder:
 
     @classmethod
     def from_settings(cls, settings: Settings) -> "RedditDiscussionContextBuilder":
+        usable_user_agent = _is_usable_reddit_user_agent(settings.reddit_user_agent)
         configured = bool(
             settings.reddit_client_id
             and settings.reddit_client_secret
-            and settings.reddit_user_agent
+            and usable_user_agent
         )
         public_json_configured = (
             settings.reddit_public_json_fallback
-            and _is_usable_reddit_user_agent(settings.reddit_user_agent)
+            and usable_user_agent
         )
         client: RedditClient | RedditPublicJsonClient | None = None
         access_mode = "missing"

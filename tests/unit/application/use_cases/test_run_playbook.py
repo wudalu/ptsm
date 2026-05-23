@@ -10,6 +10,7 @@ from ptsm.application.models import FengkuangRequest, PlaybookRequest
 from ptsm.application.use_cases.run_playbook import (
     _build_image_generation_prompt,
     _build_note_card_image_payload,
+    _build_runtime_skill_context_resolver,
     run_playbook,
     run_fengkuang_playbook,
 )
@@ -1665,6 +1666,31 @@ def test_run_playbook_uses_local_pattern_context_when_deepseek_key_missing(
     assert builders["topic_research"].__class__.__name__ == (
         "PatternAwareTopicResearchContextBuilder"
     )
+    assert builders["reddit_discussion_scan"].__class__.__name__ == (
+        "RedditDiscussionContextBuilder"
+    )
+
+
+def test_runtime_resolver_includes_reddit_scan_for_live_deepseek_runs() -> None:
+    resolver = _build_runtime_skill_context_resolver(
+        Settings.model_construct(
+            default_model_provider="deepseek",
+            deepseek_api_key="sk-test",
+            xhs_pattern_library_path="outputs/artifacts/xhs-pattern-library/current.json",
+            reddit_client_id="client-id",
+            reddit_client_secret="client-secret",
+            reddit_user_agent="ptsm-test/0.1 (by /u/test)",
+            reddit_public_json_fallback=True,
+            reddit_subreddits="OpenAI,ChatGPT",
+            reddit_sorts="hot,top",
+            reddit_time_filter="day",
+            reddit_limit_per_listing=5,
+        )
+    )
+
+    assert resolver is not None
+    builders = getattr(resolver, "_builders")
+    assert "reddit_discussion_scan" in builders
     assert builders["reddit_discussion_scan"].__class__.__name__ == (
         "RedditDiscussionContextBuilder"
     )

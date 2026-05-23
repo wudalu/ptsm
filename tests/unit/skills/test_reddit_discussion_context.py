@@ -142,3 +142,27 @@ def test_reddit_discussion_context_uses_public_json_fallback_without_oauth_crede
 
     assert builder.credentials_configured is True
     assert builder.access_mode == "public_json"
+
+
+def test_reddit_discussion_context_requires_non_placeholder_user_agent_for_oauth() -> None:
+    builder = RedditDiscussionContextBuilder.from_settings(
+        Settings(
+            _env_file=None,
+            REDDIT_CLIENT_ID="client-id",
+            REDDIT_CLIENT_SECRET="client-secret",
+            REDDIT_USER_AGENT="ptsm:reddit-curation:0.1 (by /u/replace-me)",
+            REDDIT_PUBLIC_JSON_FALLBACK=True,
+        )
+    )
+
+    context = builder.build(
+        scene="AI热点",
+        domain="Reddit英文讨论转译",
+        playbook_id="reddit_curation_daily_post",
+    )
+
+    assert builder.credentials_configured is False
+    assert builder.access_mode == "missing"
+    assert context is not None
+    assert "- status: missing_credentials" in context
+    assert "REDDIT_USER_AGENT" in context

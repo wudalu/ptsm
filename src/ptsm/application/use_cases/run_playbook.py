@@ -714,7 +714,15 @@ def _build_runtime_skill_context_resolver(
         )
     if format_pattern_path:
         return build_skill_context_resolver(settings=settings, pattern_path=pattern_path)
-    return None
+    return _build_reddit_skill_context_resolver(settings=settings)
+
+
+def _build_reddit_skill_context_resolver(*, settings: Settings) -> SkillContextResolver:
+    return SkillContextResolver(
+        builders={
+            "reddit_discussion_scan": RedditDiscussionContextBuilder.from_settings(settings),
+        }
+    )
 
 
 def _build_local_pattern_skill_context_resolver(

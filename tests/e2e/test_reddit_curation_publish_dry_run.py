@@ -13,6 +13,8 @@ def test_run_playbook_cli_outputs_reddit_curation_publish_receipt(
     monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
     monkeypatch.delenv("REDDIT_CLIENT_ID", raising=False)
     monkeypatch.delenv("REDDIT_CLIENT_SECRET", raising=False)
+    monkeypatch.delenv("REDDIT_USER_AGENT", raising=False)
+    monkeypatch.delenv("REDDIT_PUBLIC_JSON_FALLBACK", raising=False)
     get_settings.cache_clear()
 
     exit_code = main(

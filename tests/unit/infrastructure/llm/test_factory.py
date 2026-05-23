@@ -436,6 +436,32 @@ def test_deterministic_reddit_draft_uses_selected_runtime_discussion() -> None:
     assert "评论区" in draft["body"]
 
 
+def test_deterministic_reddit_draft_avoids_latest_claim_when_runtime_missing() -> None:
+    backend = DeterministicDraftBackend()
+
+    draft = backend.generate(
+        scene="从Reddit上AI英文讨论里选一个适合中文读者的角度",
+        planner_prompt="# Reddit英文讨论转译 Planner",
+        persona_prompt="# Reddit英文精选 Persona",
+        skill_contents=[
+            "# Reddit Curation Style\n必须保留 Reddit 来源边界，翻成中文语境。",
+            "# XHS Reddit Curation Hashtagging\n标签必须包含 `#Reddit`。",
+        ],
+        runtime_skill_contents=[
+            "# Reddit Discussion Scan Live Context\n"
+            "- status: missing_credentials\n"
+            "- 约束：未拿到实时 Reddit 结果时，不要声称这条内容来自最新 Reddit 讨论。\n"
+        ],
+    )
+
+    combined = f"{draft['title']}\n{draft['body']}"
+    assert "#Reddit" in draft["hashtags"]
+    assert "Reddit" in draft["body"]
+    assert "最近" not in combined
+    assert "最新" not in combined
+    assert "评论区" in draft["body"]
+
+
 def test_deterministic_world_cup_image_plan_prefers_watch_list_card() -> None:
     draft = DeterministicDraftBackend().generate(
         scene="阿根廷和法国决赛前，想写一篇普通球迷也能看懂的赛前看点",
