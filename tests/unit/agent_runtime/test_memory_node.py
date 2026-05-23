@@ -73,3 +73,37 @@ def test_memory_node_returns_empty_hits_when_no_prior_lessons() -> None:
 
     assert result["memory_hits"] == []
     assert result["runtime_skill_contents"] == ["# existing"]
+
+
+def test_memory_node_hides_reddit_source_markers_from_prompt_context() -> None:
+    memory = InMemoryExecutionMemory()
+    namespace = ("accounts", "acct-reddit-curation-local", "lessons")
+    memory.record(
+        namespace=namespace,
+        item={
+            "playbook_id": "reddit_curation_daily_post",
+            "scene": "从Reddit上AI英文讨论里选一个适合中文读者的角度",
+            "title": "这个Reddit讨论，像极了消息压力",
+            "image_text": "英文讨论翻成中文后更扎心",
+            "final_body": "Reddit英文讨论里有个现象很适合翻成中文看。评论区想问问你怎么看。",
+        },
+    )
+
+    node = build_memory_node(execution_memory=memory, max_lessons=3)
+    result = node(
+        {
+            "account_id": "acct-reddit-curation-local",
+            "playbook_id": "reddit_curation_daily_post",
+            "runtime_skill_contents": [],
+            "runtime_skill_details": [],
+        }
+    )
+
+    context = "\n".join(result["runtime_skill_contents"])
+    assert result["memory_hits"][0]["title"] == "这个Reddit讨论，像极了消息压力"
+    assert not any(
+        term in context
+        for term in ("Reddit", "reddit", "r/", "#Reddit", "英文讨论", "翻成中文")
+    )
+    assert "这个热点" in context
+    assert "same internal-source curation scene" in context

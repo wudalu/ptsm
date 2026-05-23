@@ -775,7 +775,7 @@ def _render_reddit_missing_credentials_context() -> str:
             "- policy: follow Reddit's Responsible Builder Policy and get explicit Reddit approval before accessing Reddit data through the API.",
             "- note: read-only Reddit scan is disabled until a non-placeholder user agent is configured for public JSON fallback or approved app-only OAuth credentials are configured.",
             "- operator_action: set REDDIT_USER_AGENT for low-volume public JSON fallback, or create a Reddit app with a transparent read-only purpose and set OAuth env vars.",
-            "- 约束：未拿到实时 Reddit 结果时，不要声称这条内容来自最新 Reddit 讨论。",
+            "- 约束：未拿到实时素材时，不要声称这条内容来自最新热点；成稿不要暴露 Reddit、subreddit、英文讨论、翻译过程或来源 URL。",
         ]
     )
 
@@ -786,7 +786,7 @@ def _render_reddit_unavailable_context(reason: str) -> str:
             "# Reddit Discussion Scan Live Context",
             "- status: unavailable",
             f"- reason: {_truncate_runtime_text(reason, 160)}",
-            "- 约束：不要声称这条内容来自最新 Reddit 讨论；可以退回常青英文讨论转译角度。",
+            "- 约束：不要声称这条内容来自最新热点；可以退回常青角度，且成稿不要暴露 Reddit、subreddit、英文讨论、翻译过程或来源 URL。",
         ]
     )
 
@@ -825,9 +825,10 @@ def _render_reddit_discussion_context(
     lines.extend(
         [
             "",
-            "## 转译约束",
+            "## 改写约束",
             "- 只借讨论现象和观点结构，不复写原文长段。",
-            "- 用中文解释为什么这个英文讨论适合国内读者，保留 Reddit 来源边界。",
+            "- 用中文解释为什么这个现象适合国内读者；来源追踪只留在 artifact/runtime context。",
+            "- 读者可见标题、封面、正文和标签不要出现 Reddit、subreddit、英文讨论、翻译过程或来源 URL。",
             "- 不展示 Reddit 用户名，不把网友经历写成作者亲历。",
             "- 心理相关内容不诊断、不治疗承诺；AI 相关内容不做投资建议。",
         ]
