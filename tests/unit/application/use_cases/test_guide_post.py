@@ -45,12 +45,8 @@ def test_run_guide_post_returns_productized_topic_directions_without_internal_so
     topic_guidance = result["topic_guidance"]
     assert topic_guidance["status"] == "available"
     direction_ids = {direction["id"] for direction in topic_guidance["directions"]}
-    assert {
-        "boundary_sandwich_refusal",
-        "self_compassion_laoji",
-        "loofah_soup_communication",
-        "ai_companion_boundary",
-    } <= direction_ids
+    assert len(direction_ids) == 4
+    assert "boundary_sandwich_refusal" in direction_ids
 
     boundary = next(
         direction
@@ -58,6 +54,8 @@ def test_run_guide_post_returns_productized_topic_directions_without_internal_so
         if direction["id"] == "boundary_sandwich_refusal"
     )
     assert boundary["name"] == "边界感：三明治拒绝法"
+    assert boundary["trend_signal"]
+    assert boundary["viral_hook"]
     assert "收藏" in boundary["why_it_may_work"]
     assert boundary["best_scenes"]
     assert "责任" in boundary["content_angle"]
@@ -69,6 +67,59 @@ def test_run_guide_post_returns_productized_topic_directions_without_internal_so
     assert "docs/research" not in serialized
     assert "2026-05-23-xhs-viral-meme-product-hooks.md" not in serialized
     assert '"source"' not in serialized
+
+
+def test_run_guide_post_varies_topic_directions_by_scene() -> None:
+    boundary_result = run_guide_post(
+        GuidePostRequest(scene="同事临时加需求，想练一版边界句")
+    )
+    ai_result = run_guide_post(
+        GuidePostRequest(scene="晚上只想让 AI 帮我分析关系，结果越聊越空")
+    )
+    comparison_result = run_guide_post(
+        GuidePostRequest(scene="看到别人周末都在聚会，突然觉得自己很失败")
+    )
+
+    boundary_guidance = boundary_result["topic_guidance"]
+    ai_guidance = ai_result["topic_guidance"]
+    comparison_guidance = comparison_result["topic_guidance"]
+
+    boundary_ids = [direction["id"] for direction in boundary_guidance["directions"]]
+    ai_ids = [direction["id"] for direction in ai_guidance["directions"]]
+    comparison_ids = [
+        direction["id"] for direction in comparison_guidance["directions"]
+    ]
+
+    assert ai_result["brief"]["lane"] == "数字生活 / 信息过载"
+    assert len(boundary_ids) == 4
+    assert len(ai_ids) == 4
+    assert len(comparison_ids) == 4
+    assert boundary_ids != ai_ids
+    assert ai_ids != comparison_ids
+
+    assert boundary_guidance["matched_direction_id"] == "boundary_sandwich_refusal"
+    assert ai_guidance["matched_direction_id"] in {
+        "ai_companion_boundary",
+        "ai_overanalysis_stop_rule",
+    }
+    assert comparison_guidance["matched_direction_id"] in {
+        "self_compassion_laoji",
+        "comparison_pause_card",
+    }
+
+    for result in (boundary_result, ai_result, comparison_result):
+        topic_guidance = result["topic_guidance"]
+        assert topic_guidance["directions"][0]["id"] == topic_guidance["matched_direction_id"]
+        for direction in topic_guidance["directions"]:
+            assert direction["trend_signal"]
+            assert direction["viral_hook"]
+
+        serialized = json.dumps(result, ensure_ascii=False)
+        assert "docs/research" not in serialized
+        assert "2026-05-23-xhs-viral-meme-product-hooks.md" not in serialized
+        assert '"source"' not in serialized
+        assert "http://" not in serialized
+        assert "https://" not in serialized
 
 
 def test_run_guide_post_rejects_unsupported_playbook() -> None:

@@ -2,7 +2,7 @@
 title: PTSM Skills
 status: active
 owner: ptsm
-last_verified: 2026-05-23
+last_verified: 2026-05-24
 source_of_truth: true
 related_paths:
   - src/ptsm/skills/contracts.py
@@ -72,8 +72,8 @@ Skill 层负责让运行时按请求范围暴露合适的 builtin skills，而�
 
 ## OpenClaw Wrapper
 
-- `integrations/openclaw/ptsm-xhs-psychology/SKILL.md` 是外部 OpenClaw 的薄包装说明，不是 PTSM builtin skill，也不参与 `SkillRegistry`。它只负责让 OpenClaw 在心理学小红书内容中先调用 `guide-post`、展示 `topic_guidance.directions`，再带 `--caller openclaw --guidance-ack` 调 `run-playbook`。
-- 心理学热点、爆点和选题方向仍由 PTSM 的 `guide-post` 输出，OpenClaw skill 不复制这些逻辑，也不得向用户展示内部研究路径、原始研究笔记或来源文档。
+- `integrations/openclaw/ptsm-xhs-psychology/SKILL.md` 是外部 OpenClaw 的薄包装说明，不是 PTSM builtin skill，也不参与 `SkillRegistry`。它只负责让 OpenClaw 在心理学小红书内容中先调用 `guide-post`、展示返回的 4 个 `topic_guidance.directions`（名称、趋势信号、病毒式 hook、适合场景、保存工具、评论提示和避坑），再带 `--caller openclaw --guidance-ack` 调 `run-playbook`。
+- 心理学热点、爆点和选题方向仍由 PTSM 的 `guide-post` 输出，OpenClaw skill 不复制这些逻辑，也不得向用户展示内部研究路径、原始研究笔记、URL 或来源文档。`guide-post` 普通路径按 scene/lane 从产品化选题库做确定性选择，不默认触发 live XHS / topic-radar 扫描。
 
 ## Routing Design
 

@@ -19,7 +19,7 @@ uv run python -m ptsm.bootstrap guide-post \
   --format json
 ```
 
-2. Show the user only the returned `topic_guidance.directions`: direction name, why it may work, best scenes, content angle, saveable tool, comment prompt, and avoid note.
+2. Show the user only the returned `topic_guidance.directions`: direction name, trend signal, viral hook, why it may work, best scenes, content angle, saveable tool, comment prompt, and avoid note.
 
 3. Ask the user to choose one direction, or pick the best matching direction when the user has already given a clear scene.
 

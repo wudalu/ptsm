@@ -2,7 +2,7 @@
 title: PTSM Playbooks
 status: active
 owner: ptsm
-last_verified: 2026-05-23
+last_verified: 2026-05-24
 source_of_truth: true
 related_paths:
   - src/ptsm/playbooks/registry.py
@@ -26,7 +26,7 @@ Playbook 是 PTSM 的业务编排单元。它把领域、平台、技能需求�
 - `wuxia_character_post` 专门输出长篇武侠人物评述（800-1500字），用当代流行文化视角解读金庸古龙人物。默认绑定 `acct-wuxia-local`。
 - `ai_tech_daily_post` 专门输出 AI/科技资讯速递，结构化拆解科技进展。默认绑定 `acct-ai-tech-local`。
 - `daily_english_post` 是每日英语单词学习内容，陪伴式教育风格。默认绑定 `acct-daily-english-local`。
-- `modern_psychology_post` 专门输出现代心理困境观察内容，用第一人称微场景解释心理机制，并要求一个可保存的小工具、例子型评论提示和专业帮助边界；`psychology_safety` 约束诊断、治疗承诺、药物建议和危机处理边界。它现在要求按选题 lane 轮换：职场复盘/低控制感、关系边界/消息压力、数字生活/信息过载、孤独/比较焦虑、情绪调节/恢复练习、热点心理化重构，避免所有候选都退化成“下班复盘一句话”。`guide-post` 会把当前适合该 playbook 的热点机制产品化成用户可选方向，例如三明治拒绝法、爱你老己、丝瓜汤式沟通和 AI 陪伴边界；OpenClaw caller 必须先展示这些方向，确认后再生成。默认绑定 `acct-psychology-local`。
+- `modern_psychology_post` 专门输出现代心理困境观察内容，用第一人称微场景解释心理机制，并要求一个可保存的小工具、例子型评论提示和专业帮助边界；`psychology_safety` 约束诊断、治疗承诺、药物建议和危机处理边界。它现在要求按选题 lane 轮换：职场复盘/低控制感、关系边界/消息压力、数字生活/信息过载、孤独/比较焦虑、情绪调节/恢复练习、热点心理化重构，避免所有候选都退化成“下班复盘一句话”。`guide-post` 会把当前适合该 playbook 的热点机制产品化成场景相关的 4 个用户可选方向，例如三明治拒绝法、爱你老己、丝瓜汤式沟通、AI 陪伴边界、消息边界、比较暂停卡、睡前信息收口、热点降噪等；每个方向会说明趋势信号和病毒式内容 hook。OpenClaw caller 必须先展示这些方向，确认后再生成。默认绑定 `acct-psychology-local`。
 - `human_enrichment_daily_post` 专门输出人类丰容 / 日常变量实验内容，用一个具体角落、物件或路线写「原本惯性 -> 一个变量 -> 三步清单 -> 轻量结果 -> 评论区例子」。它要求低成本、非医疗化、非购物清单式表达，并会优先借鉴本地 XHS pattern library 的 hook / 清单 / 轮播结构，而不是普通发帖时实时检索小红书。离线 deterministic 草稿会按桌面/角落、路线/感官、手作/材料流生成不同标题和正文结构。它通过 `content_review.image_form` 暴露 3:4 封面、轮播形式建议、pattern ids 和每页文字约束。默认绑定 `acct-enrichment-local`。
 - `world_cup_daily_post` 专门输出世界杯看球笔记，用普通球迷能懂的赛前看点、赛后复盘、看球清单和评论区讨论组织内容。它要求明确区分 scene 提供的事实和观察角度，禁止赌球、盘口、预测比分、内部消息或官方消息伪装。默认绑定 `acct-world-cup-local`。
 - `reddit_curation_daily_post` 专门把 Reddit 英文 hot/top 讨论作为内部素材，选 AI 热点、心理困境、效率工作流等适合中文读者的角度，改写成自然中文热点帖。默认绑定 `acct-reddit-curation-local`。读者可见标题、封面、正文和标签不暴露 Reddit、subreddit、英文讨论、翻译过程或来源 URL；来源追踪只留在 runtime context / artifact。读取最新 Reddit 讨论优先按 Reddit Responsible Builder Policy 为该用途取得 explicit approval，并配置获批 app 的 `REDDIT_CLIENT_ID`、`REDDIT_CLIENT_SECRET` 和 `REDDIT_USER_AGENT`；如果 app 创建暂时受阻，也可用 `REDDIT_PUBLIC_JSON_FALLBACK=true` 和非占位 `REDDIT_USER_AGENT` 走低频只读 public JSON fallback。缺配置时 dry-run 仍可完成，但不能声称来自最新热点。
