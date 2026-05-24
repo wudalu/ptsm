@@ -268,8 +268,10 @@ uv run python -m ptsm.bootstrap run-playbook \
   --playbook-id modern_psychology_post
 
 # Cross-domain topic guidance dry-runs
-# JSON directions include `scene_fit`; when changing the scene, rerun `guide-post`
-# instead of reusing the previous direction set.
+# JSON directions include `selection_policy`, `open_direction_id`, `direction_type`,
+# and `scene_fit`. The public shape is 3 curated directions plus 1 PTSM-returned
+# `open_scene`; when changing the scene, rerun `guide-post` instead of reusing
+# the previous direction set. Publishing/login/browser commands are unchanged.
 uv run python -m ptsm.bootstrap guide-post \
   --playbook-id fengkuang_daily_post \
   --account-id acct-fk-local \

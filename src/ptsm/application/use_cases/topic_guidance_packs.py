@@ -780,7 +780,17 @@ DAILY_ENGLISH_PACK = TopicPack(
             comment_prompt="把你的句子留在评论区，我帮你改得更自然。",
             avoid="不要用老师批改口吻，不要让读者觉得被考试。",
             lane_affinity=("评论区造句",),
-            scene_keywords=("评论区", "造句", "练习", "改句子", "互动", "自然", "替换"),
+            scene_keywords=(
+                "评论区",
+                "造句",
+                "练习",
+                "改句子",
+                "互动",
+                "自然",
+                "替换",
+                "英文回复",
+                "句子",
+            ),
             base_priority=6,
         ),
         TopicDirection(
