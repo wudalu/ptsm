@@ -321,6 +321,35 @@ class TestPlaybookNodeContract:
         assert result.status == "failed"
         assert "title_must_include_any" in result.reason
 
+    def test_fails_when_title_contains_forbidden_generic_marker(self):
+        contract = PlaybookEvalContract(
+            suite_id="title.default",
+            node_contracts={
+                "executor": {
+                    "required_fields": ["title", "body", "hashtags"],
+                    "constraints": {
+                        "title_must_not_include_any": ["实录", "小红书爆款"],
+                    },
+                }
+            },
+        )
+        target = _target(
+            phase="executor",
+            target_type="artifact_slice",
+            output_ref={
+                "final_content": {
+                    "title": "打工人地铁生存实录",
+                    "body": "评论区接一句。",
+                    "hashtags": ["#发疯文学"],
+                }
+            },
+        )
+
+        result = contract_playbook_node_contract(target, contract)
+
+        assert result.status == "failed"
+        assert "title_must_not_include_any" in result.reason
+
     def test_fails_when_template_markers_appear_across_title_image_or_body(self):
         contract = PlaybookEvalContract(
             suite_id="human_voice.default",

@@ -53,6 +53,11 @@ def test_key_playbook_prompts_include_viral_hook_research_inputs() -> None:
     for term in ("适我主义", "新独居", "手作心流"):
         assert term in enrichment
 
+    for prompt_bundle in (fengkuang, psychology, enrichment):
+        assert "正文长度" in prompt_bundle
+        assert "首屏钩子" in prompt_bundle
+        assert "可保存单元" in prompt_bundle
+
 
 def test_playbook_registry_selects_fengkuang_daily_post() -> None:
     registry = PlaybookRegistry(

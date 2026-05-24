@@ -18,6 +18,10 @@ node_contracts:
       title_must_not_equal_any:
         - AI科技资讯
         - 今日AI新闻
+      title_must_not_include_any:
+        - AI科技资讯
+        - 今日AI新闻
+        - 科技速递
       title_must_include_any:
         - AI
         - 普通人
@@ -31,7 +35,7 @@ node_contracts:
       hashtags_must_include_any:
         - "#AI资讯"
       body_min_chars: 220
-      body_max_chars: 900
+      body_max_chars: 650
       body_must_include_any:
         - 是什么
         - 为什么重要

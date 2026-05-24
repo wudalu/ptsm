@@ -44,6 +44,10 @@ node_contracts:
         - 这个Reddit讨论，翻成中文很有共鸣
         - 这个Reddit讨论，像极了消息压力
         - Reddit英文讨论里的AI代理话题
+      title_must_not_include_any:
+        - Reddit
+        - 外网搬运
+        - 英文讨论
       image_text_must_not_equal_any:
         - Reddit热帖
         - 英文讨论背后是普通人的压力
@@ -60,7 +64,7 @@ node_contracts:
       hashtags_must_not_include_any:
         - "#Reddit"
       body_min_chars: 220
-      body_max_chars: 950
+      body_max_chars: 700
       body_must_include_any:
         - AI
         - 工具

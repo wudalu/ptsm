@@ -21,6 +21,30 @@ XHS_PLAYBOOK_IDS = [
 
 FORMULAIC_MARKERS = ["首先", "其次", "最后", "综上", "本文", "作为AI"]
 
+BODY_LENGTH_BANDS = {
+    "fengkuang_daily_post": (120, 380),
+    "modern_psychology_post": (260, 620),
+    "human_enrichment_daily_post": (180, 520),
+    "sushi_poetry_daily_post": (180, 520),
+    "daily_english_post": (180, 520),
+    "ai_tech_daily_post": (220, 650),
+    "world_cup_daily_post": (220, 620),
+    "reddit_curation_daily_post": (220, 700),
+    "wuxia_character_post": (700, 1100),
+}
+
+GENERIC_TITLE_MARKERS = {
+    "fengkuang_daily_post": ["实录", "日常", "今日已疯", "发疯文学"],
+    "modern_psychology_post": ["心理学小知识", "情绪管理干货", "小红书爆款"],
+    "human_enrichment_daily_post": ["治愈生活", "精致日常", "改造分享"],
+    "sushi_poetry_daily_post": ["苏轼诗词赏析", "诗词分享", "读书笔记"],
+    "daily_english_post": ["每日英语单词", "英语学习干货", "万能表达"],
+    "ai_tech_daily_post": ["AI科技资讯", "今日AI新闻", "科技速递"],
+    "world_cup_daily_post": ["世界杯资讯", "比赛分析", "赛报"],
+    "reddit_curation_daily_post": ["Reddit", "外网搬运", "英文讨论"],
+    "wuxia_character_post": ["武侠人物评述", "人物分析", "读书笔记"],
+}
+
 
 class TestPlaybookEvalContract:
     def test_loads_fengkuang_contract(self):
@@ -182,6 +206,28 @@ class TestPlaybookEvalContract:
 
             for marker in FORMULAIC_MARKERS:
                 assert marker in constraints["combined_must_not_include_any"]
+
+    def test_all_xhs_contracts_define_domain_specific_body_length_bands(self):
+        root = Path(__file__).parent.parent.parent.parent / "src" / "ptsm" / "playbooks" / "definitions"
+
+        for playbook_id, (body_min, body_max) in BODY_LENGTH_BANDS.items():
+            contract = load_playbook_eval_contract(root, playbook_id)
+            assert contract is not None
+            constraints = contract.node_contracts["executor"]["constraints"]
+
+            assert constraints["body_min_chars"] == body_min
+            assert constraints["body_max_chars"] == body_max
+
+    def test_all_xhs_contracts_block_generic_title_substrings(self):
+        root = Path(__file__).parent.parent.parent.parent / "src" / "ptsm" / "playbooks" / "definitions"
+
+        for playbook_id, markers in GENERIC_TITLE_MARKERS.items():
+            contract = load_playbook_eval_contract(root, playbook_id)
+            assert contract is not None
+            constraints = contract.node_contracts["executor"]["constraints"]
+
+            for marker in markers:
+                assert marker in constraints["title_must_not_include_any"]
 
     @pytest.mark.parametrize(
         ("playbook_id", "title_terms"),

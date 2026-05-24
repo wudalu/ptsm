@@ -31,6 +31,10 @@ node_contracts:
       - hashtags
     constraints:
       title_max_chars: 30
+      title_must_not_include_any:
+        - 治愈生活
+        - 精致日常
+        - 改造分享
       title_must_include_any:
         - 丰容
         - 变量
@@ -43,6 +47,8 @@ node_contracts:
       hashtags_must_include_any:
         - "#人类丰容计划"
         - "#家的丰容计划"
+      body_min_chars: 180
+      body_max_chars: 520
       body_must_include_any:
         - 变量
         - 微调

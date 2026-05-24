@@ -18,6 +18,10 @@ node_contracts:
       title_must_not_equal_any:
         - 每日英语单词
         - 今日单词
+      title_must_not_include_any:
+        - 每日英语单词
+        - 英语学习干货
+        - 万能表达
       image_text_must_not_equal_any:
         - 学一个单词
       hashtags_min_count: 2
@@ -25,7 +29,7 @@ node_contracts:
       hashtags_must_include_any:
         - "#每日英语"
       body_min_chars: 180
-      body_max_chars: 750
+      body_max_chars: 520
       body_must_include_any:
         - 音标
         - 词性

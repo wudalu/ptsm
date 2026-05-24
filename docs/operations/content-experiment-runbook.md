@@ -37,6 +37,8 @@ Variant labels are operator metadata. They can be written in the experiment log 
 
 When generating several variants for the same account and playbook, keep each returned `artifact_path`. Artifact storage appends a numeric suffix when a run key already exists, so repeated dry-runs should produce separate files instead of overwriting earlier candidates.
 
+For XHS copy experiments, reject variants whose title is only a category label such as `日常`, `实录`, or `干货分享`. The final正文 should still have the four observable moves: first-screen hook, domain substance, saveable unit, and concrete comment handoff. Keep candidates inside their playbook body band before considering publish.
+
 For `modern_psychology_post`, do not reuse six near-identical "反复复盘一句话" scenes. The deterministic fallback now separates meeting replay, boundary pressure, Sunday work-message anxiety, after-work message pullback, brain-in-review-meeting, and ordinary-reply replay. A calibration batch should keep those scene mechanics distinct before publishing.
 
 Example:

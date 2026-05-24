@@ -43,6 +43,11 @@ node_contracts:
         - 会议连环暴击实录
         - 社畜崩溃边缘实录
         - 职场崩溃实录
+      title_must_not_include_any:
+        - 实录
+        - 日常
+        - 今日已疯
+        - 发疯文学
       title_must_include_any:
         - 工牌
         - 群聊
@@ -59,6 +64,8 @@ node_contracts:
       hashtags_max_count: 8
       hashtags_must_include_any:
         - "#发疯文学"
+      body_min_chars: 120
+      body_max_chars: 380
       body_must_include_any:
         - 评论区
         - 接一句

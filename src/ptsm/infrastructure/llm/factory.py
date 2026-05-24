@@ -33,6 +33,64 @@ SCENE_META_PATTERNS = (
     r"请忽略",
 )
 
+XHS_BODY_LENGTH_RULES = (
+    ("120-380", ("Fengkuang Style", "fengkuang_daily_post", "#发疯文学")),
+    (
+        "260-620",
+        (
+            "Psychology Style",
+            "Psychology Safety",
+            "modern_psychology_post",
+            "XHS Psychology Hashtagging",
+        ),
+    ),
+    (
+        "180-520",
+        (
+            "Human Enrichment Style",
+            "human_enrichment_daily_post",
+            "#人类丰容计划",
+        ),
+    ),
+    (
+        "180-520",
+        (
+            "Sushi Poetry Style",
+            "Su Shi Poetry Style",
+            "sushi_poetry_daily_post",
+            "XHS Poetry Hashtagging",
+            "#苏轼",
+        ),
+    ),
+    (
+        "180-520",
+        ("Daily English Style", "Daily English Hashtagging", "daily_english_post", "#每日英语"),
+    ),
+    ("220-650", ("AI Tech Style", "AI Tech Hashtagging", "ai_tech_daily_post", "#AI资讯")),
+    (
+        "220-620",
+        (
+            "World Cup Style",
+            "XHS World Cup Hashtagging",
+            "world_cup_daily_post",
+            "world_cup_style",
+            "#世界杯",
+        ),
+    ),
+    (
+        "220-700",
+        (
+            "Reddit Curation Style",
+            "XHS Reddit Curation Hashtagging",
+            "reddit_curation_daily_post",
+        ),
+    ),
+    (
+        "700-1100",
+        ("Wuxia Commentary Style", "XHS Wuxia Hashtagging", "wuxia_character_post", "#金庸", "#古龙"),
+    ),
+)
+
 
 class DeterministicDraftBackend:
     """Offline-safe drafting backend for development and tests."""
@@ -389,6 +447,12 @@ def _build_deterministic_draft(
         scene=scene,
         runtime_context=runtime_context,
     )
+    body = _ensure_body_min_chars(
+        body,
+        minimum=120,
+        addition="这一刻最累的不是多做一点，而是明明已经下线，还要把自己重新拧回工作模式。",
+        before="评论区",
+    )
 
     if feedback != "无":
         body += "\n不过换个角度想，能把这口气慢慢喘匀、还能给自己留点电，也算今天没白扛。"
@@ -498,7 +562,14 @@ def _repair_json_payload_text(content: str) -> str:
 def _build_deepseek_hard_requirements(*, extra_context: str, runtime_context: str) -> str:
     requirements = [
         "只输出 JSON 对象，不要 Markdown 代码块，不要额外解释。",
+        "标题必须用具体场景、物件、关系或一句原话做入口，再叠加冲突、反差、身份代入或工具感；不得写成泛标题，不要只写“日常”“实录”“干货分享”“小红书爆款”。",
+        "正文必须按首屏钩子 -> 领域要素 -> 可保存单元 -> 评论交接组织：前两句给继续看的理由，中段补齐领域必要信息，至少给一句可收藏/可复制/可照做的单元，结尾问具体例子或接一句。",
     ]
+    body_length_range = _infer_xhs_body_length_range(extra_context)
+    if body_length_range is not None:
+        requirements.append(f"正文长度控制在 {body_length_range} 字。")
+    else:
+        requirements.append("正文不要写成长文，信息量要收住，但必须保留首屏钩子、领域要素、可保存单元和评论交接。")
     if runtime_context.strip() and _extract_runtime_signal(runtime_context, label="主切口"):
         requirements.append("优先参考实时上下文里的主切口和场景张力，只借情绪结构，不复写原题。")
     for hashtag in ("#发疯文学", "#苏轼"):
@@ -521,6 +592,13 @@ def _build_deepseek_hard_requirements(*, extra_context: str, runtime_context: st
     if "苏轼" in extra_context:
         requirements.append("正文必须包含“苏轼”。")
     return " ".join(requirements)
+
+
+def _infer_xhs_body_length_range(extra_context: str) -> str | None:
+    for length_range, markers in XHS_BODY_LENGTH_RULES:
+        if any(marker in extra_context for marker in markers):
+            return length_range
+    return None
 
 
 def _is_fengkuang_context(extra_context: str) -> bool:
@@ -758,6 +836,20 @@ def _extract_hashtags_from_body(body: str) -> list[str]:
 def _strip_trailing_hashtags(body: str) -> str:
     """Remove trailing hashtag block from body text."""
     return re.sub(r"(\s*#[^\s#]+)+\s*$", "", body).rstrip()
+
+
+def _ensure_body_min_chars(
+    body: str,
+    *,
+    minimum: int,
+    addition: str,
+    before: str | None = None,
+) -> str:
+    if len(body) >= minimum:
+        return body
+    if before is not None and before in body:
+        return body.replace(before, f"{addition}{before}", 1)
+    return f"{body}{addition}"
 
 
 def _normalize_hashtags(raw_hashtags: object) -> list[str]:

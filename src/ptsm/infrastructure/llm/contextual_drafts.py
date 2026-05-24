@@ -78,9 +78,8 @@ def _is_wuxia_context(*, scene: str, extra_context: str) -> bool:
 
 
 def _is_world_cup_context(*, scene: str, extra_context: str) -> bool:
-    combined = f"{scene}\n{extra_context}"
-    return any(
-        keyword in combined
+    has_playbook_context = any(
+        keyword in extra_context
         for keyword in (
             "世界杯主题",
             "World Cup Style",
@@ -88,6 +87,13 @@ def _is_world_cup_context(*, scene: str, extra_context: str) -> bool:
             "world_cup_daily_post",
             "world_cup_style",
             "#世界杯",
+        )
+    )
+    if has_playbook_context:
+        return True
+    return any(
+        keyword in scene
+        for keyword in (
             "世界杯",
             "决赛",
             "小组赛",
@@ -113,15 +119,23 @@ def _is_ai_tech_context(*, scene: str, extra_context: str) -> bool:
 
 
 def _is_daily_english_context(*, scene: str, extra_context: str) -> bool:
-    combined = f"{scene}\n{extra_context}"
-    return any(
-        keyword in combined
+    has_playbook_context = any(
+        keyword in extra_context
         for keyword in (
-            "每日英语学习",
             "Daily English Style",
             "Daily English Hashtagging",
+            "daily_english_post",
             "#每日英语",
+        )
+    )
+    if has_playbook_context:
+        return True
+    return any(
+        keyword in scene
+        for keyword in (
+            "每日英语学习",
             "英语表达",
+            "英文表达",
             "音标",
         )
     )
@@ -260,6 +274,12 @@ def _build_human_enrichment_draft(
             "评论区交一个你会先试的日常变量。"
         )
 
+    body = _ensure_body_min_chars(
+        body,
+        minimum=180,
+        addition="如果不想把它变成任务，就只记录一个变化：今天哪个角落让自己愿意多停十秒。",
+        before="评论区",
+    )
     if feedback != "无" and "今天先试" not in body:
         body += "\n今天先试一个最小版本，别把丰容变成新的待办压力。"
 
@@ -478,6 +498,12 @@ def _build_world_cup_draft(*, scene: str, feedback: str) -> dict[str, Any]:
             "评论区想问问，你最想看阿根廷的中场控制，还是法国的反击速度？"
         )
 
+    body = _ensure_body_min_chars(
+        body,
+        minimum=220,
+        addition="如果只想轻松看球，就先抓一个回合和一个换人信号，聊起来会更有画面。",
+        before="评论区",
+    )
     if feedback != "无" and "收藏" not in body:
         body += "\n也可以先存成一张赛前看球清单，开球后按顺序对照。"
 
@@ -678,6 +704,12 @@ def _build_modern_psychology_draft(
         scene=scene,
         runtime_context=runtime_context,
     )
+    body = _ensure_body_min_chars(
+        body,
+        minimum=260,
+        addition="先把这件事写成一句具体问题，会比在脑内反复审判自己更容易停下来。",
+        before="如果痛苦持续",
+    )
 
     if feedback != "无" and "专业帮助" not in body:
         body += "\n如果这些感受持续影响生活，请优先寻求专业帮助。"
@@ -749,3 +781,17 @@ def _avoid_recent_modern_psychology_memory(
                 return candidate
         return candidates[-1]
     return title, f"{image_text}，换个角度存", body
+
+
+def _ensure_body_min_chars(
+    body: str,
+    *,
+    minimum: int,
+    addition: str,
+    before: str | None = None,
+) -> str:
+    if len(body) >= minimum:
+        return body
+    if before is not None and before in body:
+        return body.replace(before, f"{addition}{before}", 1)
+    return f"{body}{addition}"

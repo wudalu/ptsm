@@ -62,8 +62,8 @@ This exercises:
 - **Planner**: selects playbook (`fengkuang_daily_post`) and skills such as `xhs_trend_scan`, `topic_research`, `fengkuang_style`, `positive_reframe`, `xhs_hashtagging`, and `xhs_image_strategy`.
 - **xhs_trend_scan**: loads the local XHS pattern library snapshot when available and injects reusable hook/body/image structures into `runtime_skill_contents`. Ordinary generation does not call live XHS by default; if no snapshot exists, it falls back to static SKILL.md guidance.
 - **Memory**: reads recent same-account, same-playbook lessons and injects a compact anti-repetition context before drafting.
-- **Executor**: DeepSeek LLM generates title, image_text, body, hashtags from scene + persona + planner + static skills + local pattern context + recent memory context.
-- **Reflector**: enforces required rules such as `#发疯文学`, configured deterministic quality rules such as rejecting generic fengkuang titles, requiring a comment/copyable mechanic, and blocking mental-health/medical jokes. Light positive closings like `也算` are recommended style, not a mandatory phrase gate. Passes to finalize, or retries up to max_attempts.
+- **Executor**: DeepSeek LLM generates title, image_text, body, hashtags from scene + persona + planner + static skills + local pattern context + recent memory context. XHS prompts include shared title/body constraints: concrete click hook, four正文 moves, and domain-specific length band.
+- **Reflector**: enforces required rules such as `#发疯文学`, configured deterministic quality rules such as rejecting generic titles, requiring a comment/copyable mechanic, keeping正文 inside the playbook length band, and blocking mental-health/medical jokes. Light positive closings like `也算` are recommended style, not a mandatory phrase gate. Passes to finalize, or retries up to max_attempts.
 
 Review `content_review`, `content_review.image_plan`, and the final正文. If content and image strategy look good, proceed to real publish. When the planned style is `wechat_chat`, check that the visible text is a short content-only transcript rather than a full phone screenshot.
 
@@ -379,7 +379,7 @@ uv run python -m ptsm.bootstrap run-fengkuang \
   --eval
 ```
 
-Eval 会对 artifact 的 planner skill activation、executor final content、reflector decision、image generation、publish result、post-publish checks 和 artifact completeness 分别运行 5 个 rule evaluator（required fields、hashtags、publish mode、dry-run safety）和 2 个 contract evaluator（root fields、skill match）。结果写入 `.ptsm/evals/<eval_run_id>/summary.json` + `results.jsonl`。
+Eval 会对 artifact 的 planner skill activation、executor final content、reflector decision、image generation、publish result、post-publish checks 和 artifact completeness 分别运行 rule evaluator（required fields、hashtags、publish mode、dry-run safety）和 contract evaluator（root fields、skill match、playbook node contract）。XHS playbook node contract 会检查必需标签、标题泛化、正文长度带、保存/评论触发和模板化语言。结果写入 `.ptsm/evals/<eval_run_id>/summary.json` + `results.jsonl`。
 
 ### 手动对已有 artifact 跑 eval
 

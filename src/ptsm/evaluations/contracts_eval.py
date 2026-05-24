@@ -227,6 +227,23 @@ def _constraint_failures(
                     ),
                 }
             )
+        forbidden_title_terms = _string_list(
+            constraints.get("title_must_not_include_any")
+        )
+        present_forbidden_title_terms = [
+            term for term in forbidden_title_terms if term in title
+        ]
+        if present_forbidden_title_terms:
+            failures.append(
+                {
+                    "path": _field_path(target, "title"),
+                    "value_preview": title,
+                    "observation": (
+                        "title_must_not_include_any violated: "
+                        f"found {present_forbidden_title_terms}"
+                    ),
+                }
+            )
 
     image_text = payload.get("image_text")
     if isinstance(image_text, str):

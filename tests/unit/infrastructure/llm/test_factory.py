@@ -979,6 +979,33 @@ def test_factory_deepseek_prompt_requires_fengkuang_mechanics_and_safety() -> No
     assert "心理疾病、治疗、医院、用药" in user_prompt
 
 
+def test_factory_deepseek_prompt_includes_title_body_appeal_requirements() -> None:
+    settings = Settings.model_construct(
+        default_model_provider="deepseek",
+        default_model="deepseek-chat",
+        deepseek_api_key="sk-test",
+        deepseek_model="deepseek-chat",
+        deepseek_base_url="https://api.deepseek.com/v1",
+        deepseek_temperature=0.3,
+        deepseek_max_tokens=1024,
+    )
+
+    backend = build_drafting_backend(settings, chat_model_cls=CapturingChatDeepSeek)
+    backend.generate(
+        scene="下班路上还在反复复盘会议里一句话，越想越尴尬",
+        skill_contents=[
+            "# XHS Human Voice\n标题要有点击动机，正文要有首屏钩子和评论交接。",
+            "# Psychology Style\n现代心理困境观察，补齐心理机制、安全边界和低风险工具。",
+        ],
+    )
+
+    user_prompt = CapturingChatDeepSeek.last_messages[1].content
+    for required in ("首屏钩子", "领域要素", "可保存单元", "评论交接"):
+        assert required in user_prompt
+    assert "260-620" in user_prompt
+    assert "泛标题" in user_prompt
+
+
 def test_factory_puts_runtime_trend_context_in_dedicated_prompt_section() -> None:
     settings = Settings.model_construct(
         default_model_provider="deepseek",

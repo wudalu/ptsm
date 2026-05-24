@@ -31,12 +31,16 @@ node_contracts:
       - hashtags
     constraints:
       title_max_chars: 32
+      title_must_not_include_any:
+        - 世界杯资讯
+        - 比赛分析
+        - 赛报
       hashtags_min_count: 3
       hashtags_max_count: 7
       hashtags_must_include_any:
         - "#世界杯"
       body_min_chars: 220
-      body_max_chars: 900
+      body_max_chars: 620
       body_must_include_any:
         - 赛前
         - 看点

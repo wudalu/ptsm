@@ -40,6 +40,10 @@ node_contracts:
       title_max_chars: 30
       title_must_not_equal_any:
         - "下班后还在复盘那句话"
+      title_must_not_include_any:
+        - "心理学小知识"
+        - "情绪管理干货"
+        - "小红书爆款"
       title_must_include_any:
         - "不是你"
         - "边界"
@@ -54,6 +58,8 @@ node_contracts:
       hashtags_must_include_any:
         - "#心理学"
         - "#情绪管理"
+      body_min_chars: 260
+      body_max_chars: 620
       body_must_include_any:
         - "反刍思维"
         - "低控制感"
