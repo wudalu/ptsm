@@ -7,6 +7,7 @@ import pytest
 from ptsm.application.use_cases.topic_guidance_packs import TOPIC_GUIDANCE_PACKS
 from ptsm.application.use_cases.guide_post import (
     GuidePostRequest,
+    PSYCHOLOGY_TOPIC_DIRECTIONS,
     format_guide_post_markdown,
     run_guide_post,
 )
@@ -114,6 +115,26 @@ def _direction_ids(result: dict[str, object]) -> set[str]:
     return {direction["id"] for direction in guidance["directions"]}
 
 
+def _curated_direction_ids(result: dict[str, object]) -> set[str]:
+    guidance = result["topic_guidance"]
+    assert isinstance(guidance, dict)
+    return {
+        direction["id"]
+        for direction in guidance["directions"]
+        if direction.get("direction_type", "curated") == "curated"
+    }
+
+
+def _open_directions(result: dict[str, object]) -> list[dict[str, object]]:
+    guidance = result["topic_guidance"]
+    assert isinstance(guidance, dict)
+    return [
+        direction
+        for direction in guidance["directions"]
+        if direction.get("direction_type") == "open_scene"
+    ]
+
+
 def test_run_guide_post_builds_psychology_brief_with_scene_defaults() -> None:
     result = run_guide_post(
         GuidePostRequest(
@@ -175,6 +196,55 @@ def test_run_guide_post_returns_productized_topic_directions_without_internal_so
     assert "docs/research" not in serialized
     assert "2026-05-23-xhs-viral-meme-product-hooks.md" not in serialized
     assert '"source"' not in serialized
+
+
+def test_psychology_topic_guidance_returns_curated_plus_open_scene_slot() -> None:
+    result = run_guide_post(
+        GuidePostRequest(scene="朋友半夜把情绪都倒给我，我不知道怎么回")
+    )
+
+    guidance = result["topic_guidance"]
+    directions = guidance["directions"]
+    open_slots = _open_directions(result)
+    curated_ids = {direction.id for direction in PSYCHOLOGY_TOPIC_DIRECTIONS}
+
+    assert guidance["selection_policy"] == "hybrid_curated_plus_open_scene"
+    assert len(directions) == 4
+    assert len(open_slots) == 1
+    assert len(_curated_direction_ids(result)) == 3
+    assert directions[0]["direction_type"] == "curated"
+    assert guidance["matched_direction_id"] == directions[0]["id"]
+    assert guidance["matched_direction_id"] != open_slots[0]["id"]
+    assert guidance["open_direction_id"] == open_slots[0]["id"]
+    assert open_slots[0]["id"] not in curated_ids
+    assert open_slots[0]["scene_fit"].startswith("开放探索")
+    _assert_no_internal_source_leakage(result)
+
+
+def test_generic_topic_guidance_returns_open_scene_slot_for_all_packs() -> None:
+    for playbook_id, pack in TOPIC_GUIDANCE_PACKS.items():
+        result = run_guide_post(
+            GuidePostRequest(
+                playbook_id=playbook_id,
+                account_id=pack.default_account_id,
+                scene=pack.lanes[0].default_scene,
+            )
+        )
+
+        guidance = result["topic_guidance"]
+        open_slots = _open_directions(result)
+        curated_ids = {direction.id for direction in pack.directions}
+
+        assert guidance["selection_policy"] == "hybrid_curated_plus_open_scene"
+        assert len(guidance["directions"]) == 4
+        assert len(open_slots) == 1
+        assert len(_curated_direction_ids(result)) == 3
+        assert guidance["matched_direction_id"] == guidance["directions"][0]["id"]
+        assert guidance["matched_direction_id"] != open_slots[0]["id"]
+        assert guidance["open_direction_id"] == open_slots[0]["id"]
+        assert open_slots[0]["id"] not in curated_ids
+        assert open_slots[0]["scene_fit"].startswith("开放探索")
+        _assert_no_internal_source_leakage(result)
 
 
 def test_format_guide_post_markdown_includes_scene_fit() -> None:
@@ -305,6 +375,7 @@ def test_generic_topic_guidance_varies_direction_sets_by_scene(
     )
 
     assert _direction_ids(first) != _direction_ids(second)
+    assert _curated_direction_ids(first) != _curated_direction_ids(second)
     assert first["topic_guidance"]["directions"][0]["scene_fit"]
     assert second["topic_guidance"]["directions"][0]["scene_fit"]
     _assert_no_internal_source_leakage(first)

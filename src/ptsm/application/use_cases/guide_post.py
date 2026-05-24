@@ -539,6 +539,7 @@ def format_guide_post_markdown(result: dict[str, Any]) -> str:
     brief = result["brief"]
     directions = "\n".join(
         f"- {direction['name']}（trend: {direction['trend_signal']} / "
+        f"type: {direction.get('direction_type', 'curated')} / "
         f"hook: {direction['viral_hook']} / fit: {direction.get('scene_fit', '')}）"
         f"：{direction['content_angle']}"
         for direction in result.get("topic_guidance", {}).get("directions", [])
@@ -622,16 +623,32 @@ def build_psychology_topic_guidance(*, scene: str = "", lane_name: str = "") -> 
         directions=PSYCHOLOGY_TOPIC_DIRECTIONS,
         scene=scene,
         lane_name=lane_name,
+        include_open_slot=True,
+    )
+    curated_directions = [
+        direction
+        for direction in directions
+        if direction.get("direction_type", "curated") == "curated"
+    ]
+    open_direction = next(
+        (
+            direction
+            for direction in directions
+            if direction.get("direction_type") == "open_scene"
+        ),
+        None,
     )
     matched_direction_id = (
-        directions[0]["id"]
-        if directions
+        curated_directions[0]["id"]
+        if curated_directions
         else _match_topic_direction_id(scene=scene, lane_name=lane_name)
     )
     return {
         "status": "available",
         "message": "这条心理学内容建议先从下面选一个方向，再进入生成。",
+        "selection_policy": "hybrid_curated_plus_open_scene",
         "matched_direction_id": matched_direction_id,
+        "open_direction_id": open_direction["id"] if open_direction else "",
         "directions": directions,
     }
 
@@ -646,11 +663,27 @@ def build_topic_guidance(
         directions=pack.directions,
         scene=scene,
         lane_name=lane_name,
+        include_open_slot=True,
+    )
+    curated_directions = [
+        direction
+        for direction in directions
+        if direction.get("direction_type", "curated") == "curated"
+    ]
+    open_direction = next(
+        (
+            direction
+            for direction in directions
+            if direction.get("direction_type") == "open_scene"
+        ),
+        None,
     )
     return {
         "status": "available",
         "message": pack.guidance_message,
-        "matched_direction_id": directions[0]["id"] if directions else "",
+        "selection_policy": "hybrid_curated_plus_open_scene",
+        "matched_direction_id": curated_directions[0]["id"] if curated_directions else "",
+        "open_direction_id": open_direction["id"] if open_direction else "",
         "directions": directions,
     }
 

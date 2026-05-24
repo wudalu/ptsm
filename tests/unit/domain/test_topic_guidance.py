@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from ptsm.domain.topic_guidance import (
     TopicDirection,
     TopicLane,
@@ -174,6 +176,113 @@ def test_select_topic_directions_omits_internal_fields() -> None:
     assert "base_priority" not in direction
     assert "diversity_key" not in direction
     assert direction["scene_fit"]
+
+
+def test_select_topic_directions_can_append_open_scene_slot() -> None:
+    directions = (
+        TopicDirection(
+            id="desk",
+            name="Desk",
+            trend_signal="desk",
+            viral_hook="save",
+            why_it_may_work="desk",
+            best_scenes=("书桌",),
+            content_angle="desk",
+            saveable_tool="tool",
+            comment_prompt="prompt",
+            avoid="avoid",
+            scene_keywords=("书桌",),
+            base_priority=9,
+        ),
+        TopicDirection(
+            id="general",
+            name="General",
+            trend_signal="evergreen",
+            viral_hook="comment",
+            why_it_may_work="general",
+            best_scenes=("general",),
+            content_angle="general",
+            saveable_tool="tool",
+            comment_prompt="prompt",
+            avoid="avoid",
+            base_priority=1,
+        ),
+    )
+
+    result = select_topic_directions(
+        directions=directions,
+        scene="想把书桌角落改成十分钟适我主义手作位",
+        lane_name="一平米角落 / 低成本变量",
+        limit=3,
+        include_open_slot=True,
+    )
+
+    assert [item["id"] for item in result[:2]] == ["desk", "general"]
+    open_slot = result[-1]
+    assert open_slot["direction_type"] == "open_scene"
+    assert open_slot["id"] not in {"desk", "general"}
+    assert open_slot["scene_fit"].startswith("开放探索")
+    assert open_slot["trend_signal"]
+    assert open_slot["viral_hook"]
+    assert open_slot["content_angle"]
+    assert open_slot["saveable_tool"]
+    assert open_slot["comment_prompt"]
+    assert open_slot["avoid"]
+
+    serialized = json.dumps(open_slot, ensure_ascii=False)
+    assert "scene_keywords" not in serialized
+    assert "lane_affinity" not in serialized
+    assert "base_priority" not in serialized
+    assert "diversity_key" not in serialized
+    assert '"source"' not in serialized
+    assert "http://" not in serialized
+    assert "https://" not in serialized
+
+
+def test_open_scene_slot_is_stable_for_same_scene_and_changes_by_scene() -> None:
+    directions = (
+        TopicDirection(
+            id="general",
+            name="General",
+            trend_signal="evergreen",
+            viral_hook="save",
+            why_it_may_work="general",
+            best_scenes=("general",),
+            content_angle="general",
+            saveable_tool="tool",
+            comment_prompt="prompt",
+            avoid="avoid",
+            base_priority=1,
+        ),
+    )
+
+    first = select_topic_directions(
+        directions=directions,
+        scene="朋友半夜把情绪都倒给我，我不知道怎么回",
+        lane_name="关系边界 / 消息压力",
+        limit=2,
+        include_open_slot=True,
+    )
+    second = select_topic_directions(
+        directions=directions,
+        scene="朋友半夜把情绪都倒给我，我不知道怎么回",
+        lane_name="关系边界 / 消息压力",
+        limit=2,
+        include_open_slot=True,
+    )
+    different_scene = select_topic_directions(
+        directions=directions,
+        scene="下班路上想做一次绿色 colorwalk",
+        lane_name="通勤路线 / Colorwalk",
+        limit=2,
+        include_open_slot=True,
+    )
+
+    assert first == second
+    assert first[-1]["direction_type"] == "open_scene"
+    assert different_scene[-1]["direction_type"] == "open_scene"
+    assert first[-1]["id"] != different_scene[-1]["id"]
+    assert first[-1]["name"] != different_scene[-1]["name"]
 
 
 

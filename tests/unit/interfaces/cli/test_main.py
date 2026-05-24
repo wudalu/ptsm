@@ -462,6 +462,13 @@ def test_guide_post_cli_outputs_non_interactive_psychology_brief(
     assert payload["playbook_id"] == "modern_psychology_post"
     assert payload["brief"]["lane"] == "数字生活 / 信息过载"
     assert payload["brief"]["mechanism"] == "信息过载"
+    assert payload["topic_guidance"]["selection_policy"] == "hybrid_curated_plus_open_scene"
+    assert payload["topic_guidance"]["open_direction_id"]
+    assert sum(
+        1
+        for direction in payload["topic_guidance"]["directions"]
+        if direction["direction_type"] == "open_scene"
+    ) == 1
     assert "run-playbook --scene" in payload["run_playbook_command_text"]
 
 
@@ -581,6 +588,7 @@ def test_guide_post_cli_outputs_generic_markdown_for_non_psychology(
     assert "# Topic Guidance Brief" in output
     assert "# Psychology Guidance Brief" not in output
     assert "playbook_id: human_enrichment_daily_post" in output
+    assert "open_scene" in output
     assert "trend:" in output
     assert "hook:" in output
 

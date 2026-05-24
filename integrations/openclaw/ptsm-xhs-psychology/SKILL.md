@@ -21,7 +21,7 @@ uv run python -m ptsm.bootstrap guide-post \
   --format json
 ```
 
-2. Show the user only the returned `topic_guidance.directions`: direction name, `scene_fit`, trend signal, viral hook, why it may work, best scenes, content angle, saveable tool, comment prompt, and avoid note.
+2. Show the user only the returned `topic_guidance.directions`: direction name, `direction_type`, `scene_fit`, trend signal, viral hook, why it may work, best scenes, content angle, saveable tool, comment prompt, and avoid note. When a returned direction has `direction_type: open_scene`, label it as a PTSM-returned open_scene exploration direction.
 
 3. Ask the user to choose one direction, or pick the best matching direction when the user has already given a clear scene.
 
@@ -47,5 +47,6 @@ uv run python -m ptsm.bootstrap run-playbook \
 - 不要展示原始研究笔记。
 - Do not mention hidden research documents, file paths, raw source URLs, or provenance to the user.
 - Do not copy topic logic into this skill; PTSM owns the guidance payload.
+- Do not invent, expand, or replace the PTSM-returned open_scene direction; only display it when it is present in `topic_guidance.directions`.
 - If `run-playbook --caller openclaw` returns `topic_guidance_required`, show the directions and call `run-playbook` again only after direction confirmation with `--guidance-ack`.
 - Keep psychology safety boundaries intact: no diagnosis, no treatment promises, no medication advice, and crisis or persistent impairment should be redirected to professional support.

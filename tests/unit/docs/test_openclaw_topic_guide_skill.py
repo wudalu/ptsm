@@ -62,10 +62,13 @@ def test_openclaw_topic_guide_skill_shows_only_returned_direction_fields() -> No
         "comment prompt",
         "avoid note",
         "scene_fit",
+        "direction_type",
+        "open_scene",
     ):
         assert phrase in text
 
     assert "call `guide-post` again" in text
+    assert "PTSM-returned open_scene" in text
     assert "不要展示内部研究路径" in text
     assert "不要展示原始研究笔记" in text
     assert "raw source URLs" in text

@@ -8,6 +8,7 @@ from typing import Any, Iterable
 TOPIC_DIRECTION_PUBLIC_FIELDS = (
     "id",
     "name",
+    "direction_type",
     "trend_signal",
     "viral_hook",
     "why_it_may_work",
@@ -47,6 +48,7 @@ class TopicDirection:
     scene_keywords: tuple[str, ...] = ()
     base_priority: int = 0
     diversity_key: str = ""
+    direction_type: str = "curated"
 
 
 @dataclass(frozen=True)
@@ -107,6 +109,7 @@ def select_topic_directions(
     scene: str,
     lane_name: str,
     limit: int = 4,
+    include_open_slot: bool = False,
 ) -> list[dict[str, Any]]:
     if limit <= 0:
         return []
@@ -139,17 +142,115 @@ def select_topic_directions(
         )
 
     scored.sort(key=lambda item: (-item.score, item.rotation, item.index))
+    curated_limit = max(limit - 1, 0) if include_open_slot else limit
     selected = _select_diverse_topic_directions(
         scored=scored,
-        limit=limit,
+        limit=curated_limit,
     )
-    return [
+    result = [
         public_topic_direction(
             item.direction,
             scene_fit=_build_scene_fit(item),
         )
         for item in selected
     ]
+    if include_open_slot:
+        open_direction, open_facets = build_open_scene_topic_direction(
+            scene=scene,
+            lane_name=lane_name,
+        )
+        result.append(
+            public_topic_direction(
+                open_direction,
+                scene_fit=_build_open_scene_fit(open_facets),
+            )
+        )
+    return result[:limit]
+
+
+def build_open_scene_topic_direction(
+    *,
+    scene: str,
+    lane_name: str,
+) -> tuple[TopicDirection, tuple[str, ...]]:
+    facets = _extract_scene_facets(scene=scene, lane_name=lane_name)
+    mechanism = _choose_open_scene_mechanism(scene=scene, lane_name=lane_name)
+    label = _open_scene_label(facets=facets, lane_name=lane_name)
+    digest = hashlib.sha256(f"{scene}|{lane_name}|{mechanism}".encode()).hexdigest()[
+        :8
+    ]
+
+    if mechanism == "copyable_line":
+        name = f"开放探索：{label}的一句话切口"
+        trend_signal = "可复制句式 / 评论区改写"
+        viral_hook = "把当前场景变成一句可改写的话"
+        content_angle = f"不套固定候选，直接把“{label}”拆成一条可发送、可收藏、可评论的表达。"
+        saveable_tool = "场景信号 / 最难说的话 / 可替换版本"
+        comment_prompt = "把你最难说的那一句留在评论区，我帮你改成不硬撑的版本。"
+        avoid = "不要泄露真实聊天隐私，不要把边界表达写成攻击或消失。"
+    elif mechanism == "micro_task":
+        name = f"开放探索：{label}的今日小任务"
+        trend_signal = "低成本变量 / 现场参与"
+        viral_hook = "让读者今天就能交作业"
+        content_angle = f"把“{label}”做成一个今天能完成的小任务，而不是只讲抽象观点。"
+        saveable_tool = "原本惯性 / 一个变量 / 今天能试的一步"
+        comment_prompt = "你会把这个小任务换成自己生活里的哪一步？"
+        avoid = "不要写成购物清单、旅游攻略或需要额外成本的挑战。"
+    elif mechanism == "watch_checklist":
+        name = f"开放探索：{label}的普通人看点清单"
+        trend_signal = "看球搭子 / 普通球迷入口"
+        viral_hook = "赛前赛后都能保存的清单"
+        content_angle = f"把“{label}”拆成人话看点、情绪入口和评论区讨论点。"
+        saveable_tool = "比赛语境 / 2 个看点 / 看球前一句话"
+        comment_prompt = "你最想让朋友用人话解释哪个看点？"
+        avoid = "不要写赌球、盘口、预测比分、内部消息或官方消息伪装。"
+    elif mechanism == "tool_handoff":
+        name = f"开放探索：{label}的交接清单"
+        trend_signal = "AI 工具生活化 / 工作流边界"
+        viral_hook = "普通人能照抄的检查表"
+        content_angle = f"把“{label}”写成普通人使用工具前后的交接动作，降低科技感门槛。"
+        saveable_tool = "我要交给工具什么 / 我要检查什么 / 哪一步必须自己确认"
+        comment_prompt = "你最想把哪一步交给工具，但又不太放心？"
+        avoid = "不要夸大工具能力，不给投资、法律、医疗等高风险建议。"
+    elif mechanism == "comment_pattern":
+        name = f"开放探索：{label}的评论区两派观察"
+        trend_signal = "评论区模式 / 中文读者共鸣"
+        viral_hook = "把争论翻成可参与的问题"
+        content_angle = f"不复述原始讨论，直接把“{label}”整理成中文读者能接话的现象。"
+        saveable_tool = "两派观点 / 普通人困惑 / 可讨论问题"
+        comment_prompt = "你更接近哪一派？或者你卡在第三种感受里？"
+        avoid = "不要展示外部链接、原帖、来源路径或把争论写成确定结论。"
+    else:
+        name = f"开放探索：{label}的三格保存卡"
+        trend_signal = "场景重组 / 可保存小工具"
+        viral_hook = "把具体瞬间整理成三格卡片"
+        content_angle = f"围绕“{label}”现场组合一个保存型选题，补足固定候选没有覆盖的细节。"
+        saveable_tool = "我遇到什么 / 我真正需要什么 / 我先试哪一步"
+        comment_prompt = "你会把哪一个细节换成自己的版本？"
+        avoid = "不要把开放探索写成确定结论，也不要越过当前领域的安全边界。"
+
+    return (
+        TopicDirection(
+            id=f"open_scene_{mechanism}_{digest}",
+            name=name,
+            trend_signal=trend_signal,
+            viral_hook=viral_hook,
+            why_it_may_work="它不是从固定候选池里挑选，而是把用户这次给出的具体场景现场重组成一个可测试切口。",
+            best_scenes=(
+                scene.strip() or "用户给出的具体发帖场景",
+                f"{lane_name} 下固定候选还没有完全覆盖的细节场景",
+            ),
+            content_angle=content_angle,
+            saveable_tool=saveable_tool,
+            comment_prompt=comment_prompt,
+            avoid=avoid,
+            lane_affinity=(lane_name,),
+            scene_keywords=facets,
+            diversity_key="open-scene",
+            direction_type="open_scene",
+        ),
+        facets,
+    )
 
 
 def public_topic_direction(
@@ -215,6 +316,8 @@ def _topic_diversity_key(direction: TopicDirection) -> str:
 
 
 def _build_scene_fit(item: _ScoredTopicDirection) -> str:
+    if item.direction.direction_type == "open_scene":
+        return _build_open_scene_fit(item.scene_matches)
     if item.scene_matches:
         terms = "、".join(item.scene_matches[:3])
         return f"匹配当前场景信号：{terms}"
@@ -224,6 +327,137 @@ def _build_scene_fit(item: _ScoredTopicDirection) -> str:
     return "补充视角：给当前场景一个不同表达角度。"
 
 
+def _build_open_scene_fit(facets: tuple[str, ...]) -> str:
+    if facets:
+        terms = "、".join(facets[:3])
+        return f"开放探索：围绕当前场景信号 {terms} 现场组合，不来自固定候选池。"
+    return "开放探索：围绕当前 scene/lane 现场组合，不来自固定候选池。"
+
+
+def _extract_scene_facets(*, scene: str, lane_name: str) -> tuple[str, ...]:
+    text = (scene or "").lower()
+    facets: list[str] = []
+    for keyword in _OPEN_SCENE_KEYWORDS:
+        if keyword.lower() in text and keyword not in facets:
+            facets.append(keyword)
+        if len(facets) >= 3:
+            return tuple(facets)
+
+    lane_head = (lane_name or "").split("/")[0].strip()
+    if lane_head and lane_head not in facets:
+        facets.append(lane_head)
+    return tuple(facets[:3])
+
+
+def _open_scene_label(*, facets: tuple[str, ...], lane_name: str) -> str:
+    if facets:
+        return "、".join(facets[:2])
+    lane_head = (lane_name or "").split("/")[0].strip()
+    return lane_head or "当前场景"
+
+
+def _choose_open_scene_mechanism(*, scene: str, lane_name: str) -> str:
+    text = f"{scene} {lane_name}".lower()
+    if _contains_any(text, ("世界杯", "看球", "比赛", "赛前", "赛后", "决赛")):
+        return "watch_checklist"
+    if _contains_any(text, ("reddit", "外网", "评论区", "两派", "热搜", "热点")):
+        return "comment_pattern"
+    if _contains_any(text, ("ai", "agent", "模型", "工具", "gemini")):
+        return "tool_handoff"
+    if _contains_any(
+        text,
+        (
+            "回复",
+            "消息",
+            "群聊",
+            "拒绝",
+            "边界",
+            "为你好",
+            "英文",
+            "英语",
+            "话",
+        ),
+    ):
+        return "copyable_line"
+    if _contains_any(
+        text,
+        (
+            "书桌",
+            "角落",
+            "床头",
+            "通勤",
+            "下班路",
+            "路线",
+            "colorwalk",
+            "手作",
+            "材料",
+        ),
+    ):
+        return "micro_task"
+    return "save_card"
+
+
+def _contains_any(text: str, keywords: tuple[str, ...]) -> bool:
+    return any(keyword.lower() in text for keyword in keywords)
+
+
 def _stable_topic_rotation(*, scene: str, lane_name: str, direction_id: str) -> int:
     digest = hashlib.sha256(f"{scene}|{lane_name}|{direction_id}".encode()).hexdigest()
     return int(digest[:8], 16)
+
+
+_OPEN_SCENE_KEYWORDS = (
+    "半夜",
+    "睡前",
+    "周末",
+    "下班路",
+    "朋友",
+    "家人",
+    "同事",
+    "伴侣",
+    "领导",
+    "客户",
+    "群聊",
+    "评论区",
+    "消息",
+    "回复",
+    "拒绝",
+    "边界",
+    "为你好",
+    "感受",
+    "AI",
+    "agent",
+    "模型",
+    "工具",
+    "Gemini",
+    "短视频",
+    "朋友圈",
+    "书桌",
+    "角落",
+    "床头",
+    "通勤",
+    "colorwalk",
+    "绿色",
+    "手作",
+    "材料",
+    "世界杯",
+    "看球",
+    "比赛",
+    "赛前",
+    "赛后",
+    "决赛",
+    "英语",
+    "英文",
+    "Reddit",
+    "外网",
+    "热搜",
+    "热点",
+    "会议",
+    "工牌",
+    "丝瓜汤",
+    "苏轼",
+    "定风波",
+    "怀民",
+    "令狐冲",
+    "郭靖",
+)
