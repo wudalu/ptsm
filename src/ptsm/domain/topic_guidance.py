@@ -110,6 +110,8 @@ def select_topic_directions(
     lane_name: str,
     limit: int = 4,
     include_open_slot: bool = False,
+    dynamic_breadth: bool = False,
+    open_candidate_count: int = 3,
 ) -> list[dict[str, Any]]:
     if limit <= 0:
         return []
@@ -142,6 +144,50 @@ def select_topic_directions(
         )
 
     scored.sort(key=lambda item: (-item.score, item.rotation, item.index))
+    if include_open_slot and dynamic_breadth:
+        open_candidates = build_open_scene_topic_directions(
+            scene=scene,
+            lane_name=lane_name,
+            count=max(open_candidate_count, limit - 1),
+        )
+        open_scored: list[_ScoredTopicDirection] = []
+        for offset, (open_direction, open_facets) in enumerate(open_candidates):
+            lane_matches = tuple(
+                affinity
+                for affinity in open_direction.lane_affinity
+                if affinity in lane_text
+            )
+            open_score = open_direction.base_priority
+            open_score += min(len(open_facets), 4) * 8
+            open_score += min(len(lane_matches), 2) * 4
+            if offset == 0:
+                open_score += 2
+            open_scored.append(
+                _ScoredTopicDirection(
+                    score=open_score,
+                    rotation=_stable_topic_rotation(
+                        scene=scene,
+                        lane_name=lane_name,
+                        direction_id=open_direction.id,
+                    ),
+                    index=len(scored) + offset,
+                    direction=open_direction,
+                    scene_matches=open_facets,
+                    lane_matches=lane_matches,
+                )
+            )
+        selected = _select_dynamic_breadth_topic_directions(
+            scored=[*scored, *open_scored],
+            limit=limit,
+        )
+        return [
+            public_topic_direction(
+                item.direction,
+                scene_fit=_build_scene_fit(item),
+            )
+            for item in selected
+        ]
+
     curated_limit = max(limit - 1, 0) if include_open_slot else limit
     selected = _select_diverse_topic_directions(
         scored=scored,
@@ -168,13 +214,47 @@ def select_topic_directions(
     return result[:limit]
 
 
+def build_open_scene_topic_directions(
+    *,
+    scene: str,
+    lane_name: str,
+    count: int = 3,
+) -> tuple[tuple[TopicDirection, tuple[str, ...]], ...]:
+    if count <= 0:
+        return ()
+
+    facets = _extract_scene_facets(scene=scene, lane_name=lane_name)
+    mechanisms = _rank_open_scene_mechanisms(scene=scene, lane_name=lane_name)
+    return tuple(
+        _build_open_scene_topic_direction_for_mechanism(
+            scene=scene,
+            lane_name=lane_name,
+            facets=facets,
+            mechanism=mechanism,
+        )
+        for mechanism in mechanisms[:count]
+    )
+
+
 def build_open_scene_topic_direction(
     *,
     scene: str,
     lane_name: str,
 ) -> tuple[TopicDirection, tuple[str, ...]]:
-    facets = _extract_scene_facets(scene=scene, lane_name=lane_name)
-    mechanism = _choose_open_scene_mechanism(scene=scene, lane_name=lane_name)
+    return build_open_scene_topic_directions(
+        scene=scene,
+        lane_name=lane_name,
+        count=1,
+    )[0]
+
+
+def _build_open_scene_topic_direction_for_mechanism(
+    *,
+    scene: str,
+    lane_name: str,
+    facets: tuple[str, ...],
+    mechanism: str,
+) -> tuple[TopicDirection, tuple[str, ...]]:
     label = _open_scene_label(facets=facets, lane_name=lane_name)
     digest = hashlib.sha256(f"{scene}|{lane_name}|{mechanism}".encode()).hexdigest()[
         :8
@@ -246,7 +326,8 @@ def build_open_scene_topic_direction(
             avoid=avoid,
             lane_affinity=(lane_name,),
             scene_keywords=facets,
-            diversity_key="open-scene",
+            base_priority=7,
+            diversity_key=f"open-scene:{mechanism}",
             direction_type="open_scene",
         ),
         facets,
@@ -311,8 +392,103 @@ def _select_diverse_topic_directions(
     return selected
 
 
+def _select_dynamic_breadth_topic_directions(
+    *,
+    scored: list[_ScoredTopicDirection],
+    limit: int,
+) -> list[_ScoredTopicDirection]:
+    if limit <= 0 or not scored:
+        return []
+
+    ordered = sorted(scored, key=lambda item: (-item.score, item.rotation, item.index))
+    selected: list[_ScoredTopicDirection] = []
+    selected_indexes: set[int] = set()
+
+    first = next(
+        (item for item in ordered if item.direction.direction_type != "open_scene"),
+        ordered[0],
+    )
+    selected.append(first)
+    selected_indexes.add(first.index)
+
+    while len(selected) < limit:
+        remaining = [item for item in ordered if item.index not in selected_indexes]
+        if not remaining:
+            break
+        next_item = min(
+            remaining,
+            key=lambda item: (
+                -_dynamic_breadth_score(item=item, selected=selected),
+                item.rotation,
+                item.index,
+            ),
+        )
+        selected.append(next_item)
+        selected_indexes.add(next_item.index)
+
+    return selected
+
+
+def _dynamic_breadth_score(
+    *,
+    item: _ScoredTopicDirection,
+    selected: list[_ScoredTopicDirection],
+) -> int:
+    score = item.score
+    direction_type = item.direction.direction_type
+    same_type_count = sum(
+        1
+        for selected_item in selected
+        if selected_item.direction.direction_type == direction_type
+    )
+    if direction_type == "curated":
+        score -= same_type_count * 14
+        if same_type_count >= 2:
+            score -= 20
+    elif direction_type == "open_scene":
+        score -= same_type_count * 7
+        if same_type_count == 0:
+            score += 8
+
+    diversity_key = _topic_diversity_key(item.direction)
+    used_diversity_keys = {
+        _topic_diversity_key(selected_item.direction) for selected_item in selected
+    }
+    if diversity_key in used_diversity_keys:
+        score -= 30
+
+    covered_facets = {
+        facet for selected_item in selected for facet in selected_item.scene_matches
+    }
+    item_facets = set(item.scene_matches)
+    if item_facets:
+        score += len(item_facets - covered_facets) * 5
+        score -= len(item_facets & covered_facets) * 2
+
+    mechanism = _open_scene_mechanism(item.direction)
+    if mechanism:
+        used_mechanisms = {
+            selected_mechanism
+            for selected_item in selected
+            if (selected_mechanism := _open_scene_mechanism(selected_item.direction))
+        }
+        if mechanism in used_mechanisms:
+            score -= 25
+
+    return score
+
+
 def _topic_diversity_key(direction: TopicDirection) -> str:
     return direction.diversity_key or direction.id
+
+
+def _open_scene_mechanism(direction: TopicDirection) -> str:
+    if direction.direction_type != "open_scene":
+        return ""
+    prefix = "open_scene_"
+    if not direction.id.startswith(prefix):
+        return ""
+    return direction.id[len(prefix) :].rsplit("_", 1)[0]
 
 
 def _build_scene_fit(item: _ScoredTopicDirection) -> str:
@@ -357,13 +533,21 @@ def _open_scene_label(*, facets: tuple[str, ...], lane_name: str) -> str:
 
 
 def _choose_open_scene_mechanism(*, scene: str, lane_name: str) -> str:
+    return _rank_open_scene_mechanisms(scene=scene, lane_name=lane_name)[0]
+
+
+def _rank_open_scene_mechanisms(*, scene: str, lane_name: str) -> tuple[str, ...]:
     text = f"{scene} {lane_name}".lower()
+    scores = {mechanism: 0 for mechanism in _OPEN_SCENE_MECHANISMS}
     if _contains_any(text, ("世界杯", "看球", "比赛", "赛前", "赛后", "决赛")):
-        return "watch_checklist"
+        scores["watch_checklist"] += 50
+        scores["comment_pattern"] += 12
     if _contains_any(text, ("reddit", "外网", "评论区", "两派", "热搜", "热点")):
-        return "comment_pattern"
+        scores["comment_pattern"] += 50
+        scores["save_card"] += 10
     if _contains_any(text, ("ai", "agent", "模型", "工具", "gemini")):
-        return "tool_handoff"
+        scores["tool_handoff"] += 50
+        scores["save_card"] += 10
     if _contains_any(
         text,
         (
@@ -378,7 +562,9 @@ def _choose_open_scene_mechanism(*, scene: str, lane_name: str) -> str:
             "话",
         ),
     ):
-        return "copyable_line"
+        scores["copyable_line"] += 50
+        scores["comment_pattern"] += 14
+        scores["save_card"] += 10
     if _contains_any(
         text,
         (
@@ -393,8 +579,42 @@ def _choose_open_scene_mechanism(*, scene: str, lane_name: str) -> str:
             "材料",
         ),
     ):
-        return "micro_task"
-    return "save_card"
+        scores["micro_task"] += 50
+        scores["save_card"] += 14
+    if _contains_any(
+        text,
+        (
+            "苏轼",
+            "怀民",
+            "定风波",
+            "诗",
+            "词",
+            "月亮",
+            "旧友",
+            "旧物",
+            "夜里",
+            "半夜",
+        ),
+    ):
+        scores["save_card"] += 24
+        scores["comment_pattern"] += 20
+        scores["copyable_line"] += 16
+        scores["micro_task"] += 10
+
+    scores["save_card"] += 4
+    return tuple(
+        sorted(
+            _OPEN_SCENE_MECHANISMS,
+            key=lambda mechanism: (
+                -scores[mechanism],
+                _stable_topic_rotation(
+                    scene=scene,
+                    lane_name=lane_name,
+                    direction_id=f"open_scene:{mechanism}",
+                ),
+            ),
+        )
+    )
 
 
 def _contains_any(text: str, keywords: tuple[str, ...]) -> bool:
@@ -460,4 +680,14 @@ _OPEN_SCENE_KEYWORDS = (
     "怀民",
     "令狐冲",
     "郭靖",
+)
+
+
+_OPEN_SCENE_MECHANISMS = (
+    "copyable_line",
+    "micro_task",
+    "watch_checklist",
+    "tool_handoff",
+    "comment_pattern",
+    "save_card",
 )

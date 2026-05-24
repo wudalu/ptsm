@@ -462,13 +462,20 @@ def test_guide_post_cli_outputs_non_interactive_psychology_brief(
     assert payload["playbook_id"] == "modern_psychology_post"
     assert payload["brief"]["lane"] == "数字生活 / 信息过载"
     assert payload["brief"]["mechanism"] == "信息过载"
-    assert payload["topic_guidance"]["selection_policy"] == "hybrid_curated_plus_open_scene"
+    assert payload["topic_guidance"]["selection_policy"] == "dynamic_scene_diversity_rerank"
     assert payload["topic_guidance"]["open_direction_id"]
-    assert sum(
+    assert payload["topic_guidance"]["open_direction_ids"]
+    open_count = sum(
         1
         for direction in payload["topic_guidance"]["directions"]
         if direction["direction_type"] == "open_scene"
-    ) == 1
+    )
+    assert open_count >= 1
+    assert payload["topic_guidance"]["direction_type_counts"]["open_scene"] == open_count
+    assert (
+        payload["topic_guidance"]["open_direction_id"]
+        == payload["topic_guidance"]["open_direction_ids"][0]
+    )
     assert "run-playbook --scene" in payload["run_playbook_command_text"]
 
 

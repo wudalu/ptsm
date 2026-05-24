@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 import shlex
 from typing import Any
@@ -17,6 +18,7 @@ SUPPORTED_PLAYBOOK_ID = "modern_psychology_post"
 DEFAULT_ACCOUNT_ID = "acct-psychology-local"
 IMAGE_STYLE_CHOICES = ("note_card", "iphone_notes", "wechat_chat")
 SUPPORTED_PLAYBOOK_IDS = (SUPPORTED_PLAYBOOK_ID, *TOPIC_GUIDANCE_PACKS.keys())
+TOPIC_GUIDANCE_SELECTION_POLICY = "dynamic_scene_diversity_rerank"
 
 
 @dataclass(frozen=True)
@@ -624,32 +626,19 @@ def build_psychology_topic_guidance(*, scene: str = "", lane_name: str = "") -> 
         scene=scene,
         lane_name=lane_name,
         include_open_slot=True,
-    )
-    curated_directions = [
-        direction
-        for direction in directions
-        if direction.get("direction_type", "curated") == "curated"
-    ]
-    open_direction = next(
-        (
-            direction
-            for direction in directions
-            if direction.get("direction_type") == "open_scene"
-        ),
-        None,
-    )
-    matched_direction_id = (
-        curated_directions[0]["id"]
-        if curated_directions
-        else _match_topic_direction_id(scene=scene, lane_name=lane_name)
+        dynamic_breadth=True,
     )
     return {
         "status": "available",
         "message": "这条心理学内容建议先从下面选一个方向，再进入生成。",
-        "selection_policy": "hybrid_curated_plus_open_scene",
-        "matched_direction_id": matched_direction_id,
-        "open_direction_id": open_direction["id"] if open_direction else "",
         "directions": directions,
+        **_topic_guidance_selection_metadata(
+            directions=directions,
+            fallback_matched_direction_id=_match_topic_direction_id(
+                scene=scene,
+                lane_name=lane_name,
+            ),
+        ),
     }
 
 
@@ -664,27 +653,45 @@ def build_topic_guidance(
         scene=scene,
         lane_name=lane_name,
         include_open_slot=True,
+        dynamic_breadth=True,
     )
+    return {
+        "status": "available",
+        "message": pack.guidance_message,
+        "directions": directions,
+        **_topic_guidance_selection_metadata(directions=directions),
+    }
+
+
+def _topic_guidance_selection_metadata(
+    *,
+    directions: list[dict[str, Any]],
+    fallback_matched_direction_id: str = "",
+) -> dict[str, Any]:
     curated_directions = [
         direction
         for direction in directions
         if direction.get("direction_type", "curated") == "curated"
     ]
-    open_direction = next(
-        (
-            direction
-            for direction in directions
-            if direction.get("direction_type") == "open_scene"
-        ),
-        None,
+    open_direction_ids = [
+        direction["id"]
+        for direction in directions
+        if direction.get("direction_type") == "open_scene"
+    ]
+    direction_type_counts = Counter(
+        direction.get("direction_type", "curated") for direction in directions
+    )
+    matched_direction_id = (
+        curated_directions[0]["id"]
+        if curated_directions
+        else (directions[0]["id"] if directions else fallback_matched_direction_id)
     )
     return {
-        "status": "available",
-        "message": pack.guidance_message,
-        "selection_policy": "hybrid_curated_plus_open_scene",
-        "matched_direction_id": curated_directions[0]["id"] if curated_directions else "",
-        "open_direction_id": open_direction["id"] if open_direction else "",
-        "directions": directions,
+        "selection_policy": TOPIC_GUIDANCE_SELECTION_POLICY,
+        "matched_direction_id": matched_direction_id,
+        "open_direction_id": open_direction_ids[0] if open_direction_ids else "",
+        "open_direction_ids": open_direction_ids,
+        "direction_type_counts": dict(direction_type_counts),
     }
 
 
