@@ -26,13 +26,13 @@ Playbook 是 PTSM 的业务编排单元。它把领域、平台、技能需求�
 
 - 当前仓库里有九个真实 playbook：`fengkuang_daily_post`、`sushi_poetry_daily_post`、`wuxia_character_post`、`ai_tech_daily_post`、`daily_english_post`、`modern_psychology_post`、`human_enrichment_daily_post`、`world_cup_daily_post`、`reddit_curation_daily_post`。
 - 九个小红书 playbook 都加载共享 `xhs_image_strategy` 和 `xhs_human_voice`。前者让正文生成阶段可以同时给出图片后端和样式计划；后者把温暖、有调性、像真人、不格式化、少运营腔这些横向 persona 要求放进所有 XHS 内容。两个共享 skill 都与各领域 style / hashtag skill 并列，不替代领域内容约束。
-- `wuxia_character_post` 专门输出长篇武侠人物评述（800-1500字），用当代流行文化视角解读金庸古龙人物。默认绑定 `acct-wuxia-local`。
-- `ai_tech_daily_post` 专门输出 AI/科技资讯速递，结构化拆解科技进展。默认绑定 `acct-ai-tech-local`。
-- `daily_english_post` 是每日英语单词学习内容，陪伴式教育风格。默认绑定 `acct-daily-english-local`。
+- `wuxia_character_post` 专门输出长篇武侠人物评述（800-1500字），用当代流行文化视角解读金庸古龙人物。`guide-post` 会按老款人格、当代职场、主体性/边界、人情债等方向返回 4 个场景相关候选。默认绑定 `acct-wuxia-local`。
+- `ai_tech_daily_post` 专门输出 AI/科技资讯速递，结构化拆解科技进展。`guide-post` 会按模型更新、普通人工作流、工具选择、普通人影响等方向返回 4 个场景相关候选。默认绑定 `acct-ai-tech-local`。
+- `daily_english_post` 是每日英语单词学习内容，陪伴式教育风格。`guide-post` 会按职场表达、情绪词、每日一词、评论区造句等方向返回 4 个场景相关候选。默认绑定 `acct-daily-english-local`。
 - `modern_psychology_post` 专门输出现代心理困境观察内容，用第一人称微场景解释心理机制，并要求一个可保存的小工具、例子型评论提示和专业帮助边界；`psychology_safety` 约束诊断、治疗承诺、药物建议和危机处理边界。它现在要求按选题 lane 轮换：职场复盘/低控制感、关系边界/消息压力、数字生活/信息过载、孤独/比较焦虑、情绪调节/恢复练习、热点心理化重构，避免所有候选都退化成“下班复盘一句话”。`guide-post` 会把当前适合该 playbook 的热点机制产品化成场景相关的 4 个用户可选方向，例如三明治拒绝法、爱你老己、丝瓜汤式沟通、AI 陪伴边界、消息边界、比较暂停卡、睡前信息收口、热点降噪等；每个方向会说明趋势信号和病毒式内容 hook。OpenClaw caller 必须先展示这些方向，确认后再生成。默认绑定 `acct-psychology-local`。
 - `human_enrichment_daily_post` 专门输出人类丰容 / 日常变量实验内容，用一个具体角落、物件或路线写「原本惯性 -> 一个变量 -> 三步清单 -> 轻量结果 -> 评论区例子」。它要求低成本、非医疗化、非购物清单式表达，并会优先借鉴本地 XHS pattern library 的 hook / 清单 / 轮播结构，而不是普通发帖时实时检索小红书。`guide-post` 已支持该 playbook 的本地 topic pack，会按书桌/角落、床头下线、通勤 Colorwalk、手作材料等方向返回 4 个场景相关候选。离线 deterministic 草稿会按桌面/角落、路线/感官、手作/材料流生成不同标题和正文结构。它通过 `content_review.image_form` 暴露 3:4 封面、轮播形式建议、pattern ids 和每页文字约束。默认绑定 `acct-enrichment-local`。
-- `world_cup_daily_post` 专门输出世界杯看球笔记，用普通球迷能懂的赛前看点、赛后复盘、看球清单和评论区讨论组织内容。它要求明确区分 scene 提供的事实和观察角度，禁止赌球、盘口、预测比分、内部消息或官方消息伪装。默认绑定 `acct-world-cup-local`。
-- `reddit_curation_daily_post` 专门把 Reddit 英文 hot/top 讨论作为内部素材，选 AI 热点、心理困境、效率工作流等适合中文读者的角度，改写成自然中文热点帖。默认绑定 `acct-reddit-curation-local`。读者可见标题、封面、正文和标签不暴露 Reddit、subreddit、英文讨论、翻译过程或来源 URL；来源追踪只留在 runtime context / artifact。读取最新 Reddit 讨论优先按 Reddit Responsible Builder Policy 为该用途取得 explicit approval，并配置获批 app 的 `REDDIT_CLIENT_ID`、`REDDIT_CLIENT_SECRET` 和 `REDDIT_USER_AGENT`；如果 app 创建暂时受阻，也可用 `REDDIT_PUBLIC_JSON_FALLBACK=true` 和非占位 `REDDIT_USER_AGENT` 走低频只读 public JSON fallback。缺配置时 dry-run 仍可完成，但不能声称来自最新热点。
+- `world_cup_daily_post` 专门输出世界杯看球笔记，用普通球迷能懂的赛前看点、赛后复盘、看球清单和评论区讨论组织内容。`guide-post` 会按看球清单、球迷情绪、赛前人话看点、赛后复盘等方向返回 4 个场景相关候选。它要求明确区分 scene 提供的事实和观察角度，禁止赌球、盘口、预测比分、内部消息或官方消息伪装。默认绑定 `acct-world-cup-local`。
+- `reddit_curation_daily_post` 专门把 Reddit 英文 hot/top 讨论作为内部素材，选 AI 热点、心理困境、效率工作流等适合中文读者的角度，改写成自然中文热点帖。`guide-post` 会按 AI 工具焦虑、效率工作流、生活压力非诊断观察、中文读者角度等方向返回 4 个场景相关候选，输出仍不展示 raw source URL 或 provenance。默认绑定 `acct-reddit-curation-local`。读者可见标题、封面、正文和标签不暴露 Reddit、subreddit、英文讨论、翻译过程或来源 URL；来源追踪只留在 runtime context / artifact。读取最新 Reddit 讨论优先按 Reddit Responsible Builder Policy 为该用途取得 explicit approval，并配置获批 app 的 `REDDIT_CLIENT_ID`、`REDDIT_CLIENT_SECRET` 和 `REDDIT_USER_AGENT`；如果 app 创建暂时受阻，也可用 `REDDIT_PUBLIC_JSON_FALLBACK=true` 和非占位 `REDDIT_USER_AGENT` 走低频只读 public JSON fallback。缺配置时 dry-run 仍可完成，但不能声称来自最新热点。
 - 九个真实 XHS 内容质量 playbook 都有 playbook-local `evaluation.yaml`，声明 executor 内容质量 judge 为 `required`，并用确定性 node contract 检查领域标签、正文结构、评论提示、收藏触发、实验指令泄漏和跨字段模板化语言。所有 XHS playbook 都会通过 `combined_must_not_include_any` 拦截 `首先`、`其次`、`最后`、`综上`、`本文`、`作为AI`、`建议大家`、`小红书爆款` 这类格式化或元叙事词；重点研究映射 playbook 还会通过 `title_must_include_any` 要求标题保留具体物件、人物、关系或场景钩子。
 - `modern_psychology_post` 的 deterministic fallback 会按场景簇生成不同候选：周日/周一预焦虑、被说想太多后的边界压力、下班后被消息拉回工位、会议尴尬复盘、脑内复盘会、普通回复复盘接龙、睡前短视频/信息过载、孤独/比较焦虑。这样离线实验候选不会因为同属“反刍思维”而退化成同一个标题/封面。
 - `modern_psychology_post` 的图片策略默认使用低密度平实贴图：三栏工具、5 分钟练习、边界句和消息草稿优先 `iphone_notes` / `save_tool`；单句重构可用 `note_card` / `cover_hook`；只有真实聊天对话或消息气泡本身是首屏内容时才用 `wechat_chat`。心理机制解释、专业边界和长正文不应进入封面图。
@@ -64,7 +64,7 @@ Playbook 是 PTSM 的业务编排单元。它把领域、平台、技能需求�
 
 所有小红书 playbook 的 prompt 资产现在都把 2026-05-23 爆品梗调研消化成各自主题的表达方式，而不是简单贴热词：发疯文学优先职场物件、丝瓜汤式沟通和体面外壳/狼狈内核；现代心理学优先爱你老己、三明治拒绝法、AI 陪伴边界和非诊断化边界句；人类丰容优先适我主义、新独居、手作心流和一平米角落；AI 科技、苏轼诗词、武侠人物、每日英语和世界杯也分别以生活搭子、文化力、老款人格、学习搭子、看球搭子这类本账号能承接的语气进入正文。
 
-`guide-post` 的第一批跨领域 topic pack 覆盖 `modern_psychology_post`、`fengkuang_daily_post`、`human_enrichment_daily_post`、`sushi_poetry_daily_post`。它只做发帖前选题引导，不新增 playbook，也不把 live research 接进普通生成；每个 pack 以本地确定性 lane/direction 数据把热点机制产品化为用户可选方向。
+`guide-post` 的跨领域 topic pack 现在覆盖当前九个 playbook：`modern_psychology_post`、`fengkuang_daily_post`、`human_enrichment_daily_post`、`sushi_poetry_daily_post`、`wuxia_character_post`、`ai_tech_daily_post`、`daily_english_post`、`world_cup_daily_post`、`reddit_curation_daily_post`。它只做发帖前选题引导，不新增 playbook，也不把 live research 接进普通生成；每个 pack 以本地确定性 lane/direction 数据把热点机制产品化为用户可选方向。
 
 `fengkuang_daily_post` 的当前 reflection 规则要求 `#发疯文学`，拒绝 `打工人地铁生存实录`、`会议连环暴击实录`、`社畜崩溃边缘实录` 这类泛标题，并要求正文至少出现评论区/接一句/可复制/模板/写在等平台原生机制之一，同时禁止把心理疾病、医院、治疗、用药当笑点。
 
@@ -85,7 +85,7 @@ Playbook 是 PTSM 的业务编排单元。它把领域、平台、技能需求�
 - 账号注册表提供 `account_id -> domain/platform` 基础映射。
 - 请求可以显式指定 `playbook_id`，否则按账号域和平台做默认选择。
 - `acct-fk-local` 默认落到 `fengkuang_daily_post`，`acct-sushi-local` 默认落到 `sushi_poetry_daily_post`，`acct-daily-english-local` 默认落到 `daily_english_post`，`acct-psychology-local` 默认落到 `modern_psychology_post`，`acct-enrichment-local` 默认落到 `human_enrichment_daily_post`，`acct-world-cup-local` 默认落到 `world_cup_daily_post`，`acct-reddit-curation-local` 默认落到 `reddit_curation_daily_post`。
-- `caller=openclaw` 不是新的 playbook 路由条件；它只是在已解析为 `modern_psychology_post` 后启用发帖前选题引导门禁。没有 `guidance_ack` 时返回 `topic_guidance_required`，不会启动生成或发布。发疯文学、人类丰容和苏轼诗词的 OpenClaw 选题顺序由通用 wrapper 引导，runtime 第一阶段不对这些 playbook 增加 hard preflight gate。
+- `caller=openclaw` 不是新的 playbook 路由条件；它只是在已解析为 `modern_psychology_post` 后启用发帖前选题引导门禁。没有 `guidance_ack` 时返回 `topic_guidance_required`，不会启动生成或发布。非心理学 playbook 的 OpenClaw 选题顺序由通用 wrapper 引导，runtime 不对这些 playbook 增加 hard preflight gate。
 - 兼容入口 `run-fengkuang` 仍保留，但多 playbook 场景优先使用通用 `run-playbook`。
 
 ## Related Files

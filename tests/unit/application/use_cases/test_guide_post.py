@@ -7,6 +7,50 @@ import pytest
 from ptsm.application.use_cases.guide_post import GuidePostRequest, run_guide_post
 
 
+NEW_TOPIC_GUIDANCE_CASES = (
+    (
+        "wuxia_character_post",
+        "acct-wuxia-local",
+        "想用令狐冲写一种当代职场里的自由人格",
+        "wuxia_",
+    ),
+    (
+        "ai_tech_daily_post",
+        "acct-ai-tech-local",
+        "Google 发布 Gemini 3，想写普通人能懂的 AI 工具变化",
+        "ai_",
+    ),
+    (
+        "daily_english_post",
+        "acct-daily-english-local",
+        "学一个表示坚持的高级词汇，想配真实职场例句",
+        "english_",
+    ),
+    (
+        "world_cup_daily_post",
+        "acct-world-cup-local",
+        "阿根廷和法国决赛前，想写普通球迷看球清单",
+        "worldcup_",
+    ),
+    (
+        "reddit_curation_daily_post",
+        "acct-reddit-curation-local",
+        "从外网 AI 工具焦虑讨论里选一个适合中文读者的角度",
+        "reddit_",
+    ),
+)
+
+
+def _assert_no_internal_source_leakage(result: dict[str, object]) -> None:
+    serialized = json.dumps(result, ensure_ascii=False)
+    assert "docs/research" not in serialized
+    assert "2026-05-23-xhs-viral-meme-product-hooks.md" not in serialized
+    assert '"source"' not in serialized
+    assert "source_url" not in serialized
+    assert "http://" not in serialized
+    assert "https://" not in serialized
+
+
 def test_run_guide_post_builds_psychology_brief_with_scene_defaults() -> None:
     result = run_guide_post(
         GuidePostRequest(
@@ -197,11 +241,41 @@ def test_guide_post_supports_sushi_poetry_topic_guidance() -> None:
     assert "https://" not in serialized
 
 
+@pytest.mark.parametrize(
+    ("playbook_id", "account_id", "scene", "expected_prefix"),
+    NEW_TOPIC_GUIDANCE_CASES,
+)
+def test_guide_post_supports_remaining_xhs_topic_guidance(
+    playbook_id: str,
+    account_id: str,
+    scene: str,
+    expected_prefix: str,
+) -> None:
+    result = run_guide_post(
+        GuidePostRequest(
+            playbook_id=playbook_id,
+            account_id=account_id,
+            scene=scene,
+        )
+    )
+
+    assert result["status"] == "completed"
+    assert result["playbook_id"] == playbook_id
+    assert result["account_id"] == account_id
+    assert result["brief"]["lane"]
+    assert result["brief"]["scene"] == scene
+    assert result["topic_guidance"]["matched_direction_id"].startswith(expected_prefix)
+    assert len(result["topic_guidance"]["directions"]) == 4
+    assert result["topic_guidance"]["directions"][0]["id"] == result["topic_guidance"]["matched_direction_id"]
+    assert "run-playbook --scene" in result["run_playbook_command_text"]
+    _assert_no_internal_source_leakage(result)
+
+
 def test_run_guide_post_rejects_unsupported_playbook() -> None:
     with pytest.raises(ValueError, match="guide-post supports"):
         run_guide_post(
             GuidePostRequest(
-                playbook_id="world_cup_daily_post",
+                playbook_id="unknown_daily_post",
                 scene="想写一条看球笔记",
             )
         )

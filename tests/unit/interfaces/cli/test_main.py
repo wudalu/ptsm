@@ -491,6 +491,72 @@ def test_guide_post_cli_outputs_non_interactive_human_enrichment_brief(
     assert payload["topic_guidance"]["directions"]
 
 
+@pytest.mark.parametrize(
+    ("playbook_id", "account_id", "scene", "expected_prefix"),
+    (
+        (
+            "wuxia_character_post",
+            "acct-wuxia-local",
+            "想用令狐冲写一种当代职场里的自由人格",
+            "wuxia_",
+        ),
+        (
+            "ai_tech_daily_post",
+            "acct-ai-tech-local",
+            "Google 发布 Gemini 3，想写普通人能懂的 AI 工具变化",
+            "ai_",
+        ),
+        (
+            "daily_english_post",
+            "acct-daily-english-local",
+            "学一个表示坚持的高级词汇，想配真实职场例句",
+            "english_",
+        ),
+        (
+            "world_cup_daily_post",
+            "acct-world-cup-local",
+            "阿根廷和法国决赛前，想写普通球迷看球清单",
+            "worldcup_",
+        ),
+        (
+            "reddit_curation_daily_post",
+            "acct-reddit-curation-local",
+            "从外网 AI 工具焦虑讨论里选一个适合中文读者的角度",
+            "reddit_",
+        ),
+    ),
+)
+def test_guide_post_cli_outputs_non_interactive_new_domain_briefs(
+    playbook_id: str,
+    account_id: str,
+    scene: str,
+    expected_prefix: str,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    exit_code = main(
+        [
+            "guide-post",
+            "--playbook-id",
+            playbook_id,
+            "--account-id",
+            account_id,
+            "--scene",
+            scene,
+            "--non-interactive",
+            "--format",
+            "json",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload["playbook_id"] == playbook_id
+    assert payload["account_id"] == account_id
+    assert payload["topic_guidance"]["matched_direction_id"].startswith(expected_prefix)
+    assert len(payload["topic_guidance"]["directions"]) == 4
+
+
 def test_guide_post_cli_outputs_generic_markdown_for_non_psychology(
     capsys: pytest.CaptureFixture[str],
 ) -> None:

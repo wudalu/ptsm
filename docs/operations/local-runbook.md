@@ -289,6 +289,41 @@ uv run python -m ptsm.bootstrap guide-post \
   --non-interactive \
   --format json
 
+uv run python -m ptsm.bootstrap guide-post \
+  --playbook-id wuxia_character_post \
+  --account-id acct-wuxia-local \
+  --scene "想用令狐冲写一种当代职场里的自由人格" \
+  --non-interactive \
+  --format json
+
+uv run python -m ptsm.bootstrap guide-post \
+  --playbook-id ai_tech_daily_post \
+  --account-id acct-ai-tech-local \
+  --scene "Google 发布 Gemini 3，想写普通人能懂的 AI 工具变化" \
+  --non-interactive \
+  --format json
+
+uv run python -m ptsm.bootstrap guide-post \
+  --playbook-id daily_english_post \
+  --account-id acct-daily-english-local \
+  --scene "学一个表示坚持的高级词汇，想配真实职场例句" \
+  --non-interactive \
+  --format json
+
+uv run python -m ptsm.bootstrap guide-post \
+  --playbook-id world_cup_daily_post \
+  --account-id acct-world-cup-local \
+  --scene "阿根廷和法国决赛前，想写普通球迷看球清单" \
+  --non-interactive \
+  --format json
+
+uv run python -m ptsm.bootstrap guide-post \
+  --playbook-id reddit_curation_daily_post \
+  --account-id acct-reddit-curation-local \
+  --scene "从外网 AI 工具焦虑讨论里选一个适合中文读者的角度" \
+  --non-interactive \
+  --format json
+
 # World Cup dry-run
 uv run python -m ptsm.bootstrap run-playbook \
   --scene "阿根廷和法国决赛前，想写一篇普通球迷也能看懂的赛前看点" \

@@ -24,9 +24,25 @@ def test_openclaw_topic_guide_skill_auto_maps_intent_and_clarifies_ambiguity() -
     text = SKILL_PATH.read_text(encoding="utf-8")
 
     assert "自动" in text
-    assert "fengkuang_daily_post" in text
-    assert "human_enrichment_daily_post" in text
-    assert "sushi_poetry_daily_post" in text
+    for playbook_id in (
+        "fengkuang_daily_post",
+        "human_enrichment_daily_post",
+        "sushi_poetry_daily_post",
+        "wuxia_character_post",
+        "ai_tech_daily_post",
+        "daily_english_post",
+        "world_cup_daily_post",
+        "reddit_curation_daily_post",
+    ):
+        assert playbook_id in text
+    for keyword in (
+        "武侠",
+        "AI",
+        "每日英语",
+        "世界杯",
+        "Reddit",
+    ):
+        assert keyword in text
     assert "ptsm-xhs-psychology" in text
     assert "模糊" in text or "ambiguous" in text
     assert "澄清" in text or "clarification" in text

@@ -75,7 +75,7 @@ repository.
 - local code-rendered social image generation for XHS covers when auto image generation is requested and external image providers are not configured, including deterministic note-card, iPhone Notes-like, and WeChat chat transcript-like layouts
 - first-class XHS image strategy through `xhs_image_strategy` and `final_content.image_plan`, so deterministic dry-runs and artifacts can prove when local social screenshots are selected intentionally instead of only as provider fallback
 - a deterministic, local-first XHS pattern library loop: periodic `collect-xhs-patterns` persists partial MCP samples, `analyze-xhs-patterns` distills them into local format snapshots, and ordinary generation consumes `current.json` without live XHS calls
-- a deterministic, local-first cross-domain `guide-post` harness surface: domain tests cover the generic selector, application tests cover psychology plus the first three non-psychology topic packs, CLI tests cover JSON/Markdown output, and docs tests lock the generic and psychology OpenClaw wrapper contracts
+- a deterministic, local-first cross-domain `guide-post` harness surface: domain tests cover the generic selector, application tests cover all current topic packs, CLI tests cover JSON/Markdown output, and docs tests lock the generic and psychology OpenClaw wrapper contracts
 
 ## New Domain Documentation Completeness
 
