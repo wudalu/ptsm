@@ -21,3 +21,5 @@ def test_openclaw_psychology_skill_documents_two_step_guidance_flow() -> None:
     assert "viral hook" in text
     assert "不要展示内部研究路径" in text
     assert "不要展示原始研究笔记" in text
+    assert "ptsm-xhs-topic-guide" in text
+    assert "psychology-specific wrapper" in text

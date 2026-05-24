@@ -2,7 +2,7 @@
 title: Harness Engineering In PTSM
 status: active
 owner: ptsm
-last_verified: 2026-05-23
+last_verified: 2026-05-24
 source_of_truth: true
 related_paths:
   - README.md
@@ -14,6 +14,11 @@ related_paths:
   - src/ptsm/application/use_cases/eval_artifact.py
   - src/ptsm/application/use_cases/harness_check.py
   - src/ptsm/application/use_cases/install_git_hooks.py
+  - src/ptsm/application/use_cases/guide_post.py
+  - src/ptsm/application/use_cases/topic_guidance_packs.py
+  - src/ptsm/domain/topic_guidance.py
+  - integrations/openclaw/ptsm-xhs-topic-guide/SKILL.md
+  - integrations/openclaw/ptsm-xhs-psychology/SKILL.md
   - src/ptsm/evaluations/contracts_eval.py
   - src/ptsm/playbooks/definitions
 ---
@@ -70,6 +75,7 @@ repository.
 - local code-rendered social image generation for XHS covers when auto image generation is requested and external image providers are not configured, including deterministic note-card, iPhone Notes-like, and WeChat chat transcript-like layouts
 - first-class XHS image strategy through `xhs_image_strategy` and `final_content.image_plan`, so deterministic dry-runs and artifacts can prove when local social screenshots are selected intentionally instead of only as provider fallback
 - a deterministic, local-first XHS pattern library loop: periodic `collect-xhs-patterns` persists partial MCP samples, `analyze-xhs-patterns` distills them into local format snapshots, and ordinary generation consumes `current.json` without live XHS calls
+- a deterministic, local-first cross-domain `guide-post` harness surface: domain tests cover the generic selector, application tests cover psychology plus the first three non-psychology topic packs, CLI tests cover JSON/Markdown output, and docs tests lock the generic and psychology OpenClaw wrapper contracts
 
 ## New Domain Documentation Completeness
 

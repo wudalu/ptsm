@@ -122,11 +122,86 @@ def test_run_guide_post_varies_topic_directions_by_scene() -> None:
         assert "https://" not in serialized
 
 
+def test_guide_post_supports_fengkuang_topic_guidance() -> None:
+    result = run_guide_post(
+        GuidePostRequest(
+            playbook_id="fengkuang_daily_post",
+            account_id="acct-fk-local",
+            scene="领导18:57发来一句在吗，工牌想替我发疯",
+        )
+    )
+
+    assert result["status"] == "completed"
+    assert result["playbook_id"] == "fengkuang_daily_post"
+    assert result["account_id"] == "acct-fk-local"
+    assert result["brief"]["lane"]
+    assert result["topic_guidance"]["matched_direction_id"].startswith("fk_")
+    assert len(result["topic_guidance"]["directions"]) == 4
+    assert "run-playbook --scene" in result["run_playbook_command_text"]
+
+    serialized = json.dumps(result, ensure_ascii=False)
+    assert "docs/research" not in serialized
+    assert "2026-05-23-xhs-viral-meme-product-hooks.md" not in serialized
+    assert '"source"' not in serialized
+    assert "http://" not in serialized
+    assert "https://" not in serialized
+
+
+def test_guide_post_supports_human_enrichment_topic_guidance() -> None:
+    result = run_guide_post(
+        GuidePostRequest(
+            playbook_id="human_enrichment_daily_post",
+            account_id="acct-enrichment-local",
+            scene="想把书桌角落改成十分钟适我主义手作位",
+        )
+    )
+
+    assert result["status"] == "completed"
+    assert result["playbook_id"] == "human_enrichment_daily_post"
+    assert result["account_id"] == "acct-enrichment-local"
+    assert result["brief"]["lane"]
+    assert result["topic_guidance"]["matched_direction_id"].startswith("enrichment_")
+    assert len(result["topic_guidance"]["directions"]) == 4
+    assert "run-playbook --scene" in result["run_playbook_command_text"]
+
+    serialized = json.dumps(result, ensure_ascii=False)
+    assert "docs/research" not in serialized
+    assert "2026-05-23-xhs-viral-meme-product-hooks.md" not in serialized
+    assert '"source"' not in serialized
+    assert "http://" not in serialized
+    assert "https://" not in serialized
+
+
+def test_guide_post_supports_sushi_poetry_topic_guidance() -> None:
+    result = run_guide_post(
+        GuidePostRequest(
+            playbook_id="sushi_poetry_daily_post",
+            account_id="acct-sushi-local",
+            scene="夜里读到怀民亦未寝，想写一种旧友关系",
+        )
+    )
+
+    assert result["status"] == "completed"
+    assert result["playbook_id"] == "sushi_poetry_daily_post"
+    assert result["account_id"] == "acct-sushi-local"
+    assert result["brief"]["lane"]
+    assert result["topic_guidance"]["matched_direction_id"].startswith("sushi_")
+    assert len(result["topic_guidance"]["directions"]) == 4
+    assert "run-playbook --scene" in result["run_playbook_command_text"]
+
+    serialized = json.dumps(result, ensure_ascii=False)
+    assert "docs/research" not in serialized
+    assert "2026-05-23-xhs-viral-meme-product-hooks.md" not in serialized
+    assert '"source"' not in serialized
+    assert "http://" not in serialized
+    assert "https://" not in serialized
+
+
 def test_run_guide_post_rejects_unsupported_playbook() -> None:
-    with pytest.raises(ValueError, match="guide-post only supports"):
+    with pytest.raises(ValueError, match="guide-post supports"):
         run_guide_post(
             GuidePostRequest(
-                playbook_id="sushi_poetry_daily_post",
-                scene="夜里读到定风波",
+                playbook_id="world_cup_daily_post",
+                scene="想写一条看球笔记",
             )
         )

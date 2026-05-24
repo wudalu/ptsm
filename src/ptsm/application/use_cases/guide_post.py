@@ -1,14 +1,22 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import hashlib
 import shlex
 from typing import Any
+
+from ptsm.application.use_cases.topic_guidance_packs import TOPIC_GUIDANCE_PACKS
+from ptsm.domain.topic_guidance import (
+    TopicDirection,
+    TopicPack,
+    resolve_topic_lane,
+    select_topic_directions,
+)
 
 
 SUPPORTED_PLAYBOOK_ID = "modern_psychology_post"
 DEFAULT_ACCOUNT_ID = "acct-psychology-local"
 IMAGE_STYLE_CHOICES = ("note_card", "iphone_notes", "wechat_chat")
+SUPPORTED_PLAYBOOK_IDS = (SUPPORTED_PLAYBOOK_ID, *TOPIC_GUIDANCE_PACKS.keys())
 
 
 @dataclass(frozen=True)
@@ -33,37 +41,6 @@ class PsychologyLane:
     example_scene: str
     keywords: tuple[str, ...]
     image_style: str = "iphone_notes"
-
-
-@dataclass(frozen=True)
-class PsychologyTopicDirection:
-    id: str
-    name: str
-    trend_signal: str
-    viral_hook: str
-    why_it_may_work: str
-    best_scenes: tuple[str, ...]
-    content_angle: str
-    saveable_tool: str
-    comment_prompt: str
-    avoid: str
-    lane_affinity: tuple[str, ...] = ()
-    scene_keywords: tuple[str, ...] = ()
-    base_priority: int = 0
-
-
-TOPIC_DIRECTION_PUBLIC_FIELDS = (
-    "id",
-    "name",
-    "trend_signal",
-    "viral_hook",
-    "why_it_may_work",
-    "best_scenes",
-    "content_angle",
-    "saveable_tool",
-    "comment_prompt",
-    "avoid",
-)
 
 
 PSYCHOLOGY_LANES: tuple[PsychologyLane, ...] = (
@@ -125,8 +102,8 @@ PSYCHOLOGY_LANES: tuple[PsychologyLane, ...] = (
 )
 
 
-PSYCHOLOGY_TOPIC_DIRECTIONS: tuple[PsychologyTopicDirection, ...] = (
-    PsychologyTopicDirection(
+PSYCHOLOGY_TOPIC_DIRECTIONS: tuple[TopicDirection, ...] = (
+    TopicDirection(
         id="boundary_sandwich_refusal",
         name="边界感：三明治拒绝法",
         trend_signal="边界感 / 主体性",
@@ -154,7 +131,7 @@ PSYCHOLOGY_TOPIC_DIRECTIONS: tuple[PsychologyTopicDirection, ...] = (
         ),
         base_priority=8,
     ),
-    PsychologyTopicDirection(
+    TopicDirection(
         id="self_compassion_laoji",
         name="自我关怀：爱你老己",
         trend_signal="爱你老己 / 柔软力",
@@ -173,7 +150,7 @@ PSYCHOLOGY_TOPIC_DIRECTIONS: tuple[PsychologyTopicDirection, ...] = (
         scene_keywords=("失败", "老己", "自己", "审判", "考砸", "没做好", "照顾"),
         base_priority=8,
     ),
-    PsychologyTopicDirection(
+    TopicDirection(
         id="loofah_soup_communication",
         name="无效沟通：丝瓜汤式关心",
         trend_signal="丝瓜汤式沟通 / 活人感",
@@ -192,7 +169,7 @@ PSYCHOLOGY_TOPIC_DIRECTIONS: tuple[PsychologyTopicDirection, ...] = (
         scene_keywords=("关心", "为你好", "想开点", "丝瓜汤", "感受", "安慰", "委屈"),
         base_priority=8,
     ),
-    PsychologyTopicDirection(
+    TopicDirection(
         id="ai_companion_boundary",
         name="数字关系：AI 陪伴边界",
         trend_signal="AI 生活搭子 / AI 人格",
@@ -211,7 +188,7 @@ PSYCHOLOGY_TOPIC_DIRECTIONS: tuple[PsychologyTopicDirection, ...] = (
         scene_keywords=("AI", "ai", "聊天工具", "陪伴", "数字", "越聊越空", "关系问题"),
         base_priority=6,
     ),
-    PsychologyTopicDirection(
+    TopicDirection(
         id="message_boundary_reply_draft",
         name="消息边界：三句不内耗回复",
         trend_signal="边界感 / 可复制句式",
@@ -230,7 +207,7 @@ PSYCHOLOGY_TOPIC_DIRECTIONS: tuple[PsychologyTopicDirection, ...] = (
         scene_keywords=("消息", "回复", "秒回", "已读", "在吗", "催", "客户", "领导"),
         base_priority=3,
     ),
-    PsychologyTopicDirection(
+    TopicDirection(
         id="comparison_pause_card",
         name="比较焦虑：朋友圈高光降噪卡",
         trend_signal="反精致 / 活人感",
@@ -249,7 +226,7 @@ PSYCHOLOGY_TOPIC_DIRECTIONS: tuple[PsychologyTopicDirection, ...] = (
         scene_keywords=("比较", "朋友圈", "聚会", "周末", "别人", "点赞", "同龄人", "高光"),
         base_priority=6,
     ),
-    PsychologyTopicDirection(
+    TopicDirection(
         id="ai_overanalysis_stop_rule",
         name="AI 分析停不下来：三问刹车法",
         trend_signal="AI 生活搭子 / 信息过载",
@@ -268,7 +245,7 @@ PSYCHOLOGY_TOPIC_DIRECTIONS: tuple[PsychologyTopicDirection, ...] = (
         scene_keywords=("AI", "ai", "分析", "关系", "越聊越空", "越问越乱", "聊天记录"),
         base_priority=4,
     ),
-    PsychologyTopicDirection(
+    TopicDirection(
         id="sleep_scroll_closing_ritual",
         name="睡前信息收口：5 分钟下线仪式",
         trend_signal="睡前十分钟 / 低成本恢复",
@@ -287,7 +264,7 @@ PSYCHOLOGY_TOPIC_DIRECTIONS: tuple[PsychologyTopicDirection, ...] = (
         scene_keywords=("睡前", "短视频", "刷", "手机", "熬夜", "信息", "下线", "停不下来"),
         base_priority=5,
     ),
-    PsychologyTopicDirection(
+    TopicDirection(
         id="sunday_work_anxiety_reset",
         name="周日晚预焦虑：把明天缩小一点",
         trend_signal="打工人低控制感 / 周日晚",
@@ -306,7 +283,7 @@ PSYCHOLOGY_TOPIC_DIRECTIONS: tuple[PsychologyTopicDirection, ...] = (
         scene_keywords=("周日", "周一", "明天", "上班", "工作", "会议", "预焦虑"),
         base_priority=5,
     ),
-    PsychologyTopicDirection(
+    TopicDirection(
         id="emotion_grounding_90s",
         name="情绪上头：90 秒落地练习",
         trend_signal="柔软力 / 身体感",
@@ -325,7 +302,7 @@ PSYCHOLOGY_TOPIC_DIRECTIONS: tuple[PsychologyTopicDirection, ...] = (
         scene_keywords=("情绪", "焦虑", "崩溃", "胸口", "呼吸", "紧", "手心", "上头"),
         base_priority=5,
     ),
-    PsychologyTopicDirection(
+    TopicDirection(
         id="hot_search_noise_three_questions",
         name="热搜降噪：别把公共情绪全背回家",
         trend_signal="热点心理化重构 / 信息降噪",
@@ -344,7 +321,7 @@ PSYCHOLOGY_TOPIC_DIRECTIONS: tuple[PsychologyTopicDirection, ...] = (
         scene_keywords=("热搜", "热点", "新闻", "事件", "公共", "刷新", "讨论", "愤怒"),
         base_priority=5,
     ),
-    PsychologyTopicDirection(
+    TopicDirection(
         id="real_support_role_pair",
         name="真实支持系统：谁是你的怀民",
         trend_signal="角色认领 / 关系支持",
@@ -363,7 +340,7 @@ PSYCHOLOGY_TOPIC_DIRECTIONS: tuple[PsychologyTopicDirection, ...] = (
         scene_keywords=("孤独", "半夜", "支持", "被接住", "AI", "ai", "陪伴", "朋友"),
         base_priority=4,
     ),
-    PsychologyTopicDirection(
+    TopicDirection(
         id="office_recovery_without_shopping",
         name="办公室轻恢复：不靠消费的下班信号",
         trend_signal="轻恢复 / 反消费自我关怀",
@@ -414,11 +391,19 @@ def resolve_psychology_lane(
 
 
 def run_guide_post(request: GuidePostRequest) -> dict[str, Any]:
-    if request.playbook_id != SUPPORTED_PLAYBOOK_ID:
-        raise ValueError(
-            f"guide-post only supports {SUPPORTED_PLAYBOOK_ID!r}; got {request.playbook_id!r}"
-        )
+    if request.playbook_id == SUPPORTED_PLAYBOOK_ID:
+        return _run_psychology_guide_post(request)
 
+    pack = TOPIC_GUIDANCE_PACKS.get(request.playbook_id)
+    if pack is None:
+        supported = ", ".join(SUPPORTED_PLAYBOOK_IDS)
+        raise ValueError(
+            f"guide-post supports {supported}; got {request.playbook_id!r}"
+        )
+    return _run_generic_guide_post(request=request, pack=pack)
+
+
+def _run_psychology_guide_post(request: GuidePostRequest) -> dict[str, Any]:
     lane = resolve_psychology_lane(lane=request.lane, scene=request.scene)
     scene = _clean_or_default(request.scene, lane.example_scene)
     mechanism = _clean_or_default(request.mechanism, lane.mechanism)
@@ -452,15 +437,21 @@ def run_guide_post(request: GuidePostRequest) -> dict[str, Any]:
         "safety_boundary": safety_boundary,
     }
     recommended_scene = _build_recommended_scene(brief)
+    account_id = _resolve_account_id(
+        request_account_id=request.account_id,
+        playbook_id=SUPPORTED_PLAYBOOK_ID,
+        default_account_id=DEFAULT_ACCOUNT_ID,
+    )
     command = _build_run_playbook_command(
-        account_id=request.account_id,
+        account_id=account_id,
+        playbook_id=SUPPORTED_PLAYBOOK_ID,
         scene=recommended_scene,
         image_style=image_style,
     )
     return {
         "status": "completed",
         "playbook_id": SUPPORTED_PLAYBOOK_ID,
-        "account_id": request.account_id,
+        "account_id": account_id,
         "brief": brief,
         "topic_guidance": build_psychology_topic_guidance(scene=scene, lane_name=lane.name),
         "recommended_scene": recommended_scene,
@@ -475,17 +466,121 @@ def run_guide_post(request: GuidePostRequest) -> dict[str, Any]:
     }
 
 
+def _run_generic_guide_post(
+    *,
+    request: GuidePostRequest,
+    pack: TopicPack,
+) -> dict[str, Any]:
+    lane = resolve_topic_lane(
+        lanes=pack.lanes,
+        lane=request.lane,
+        scene=request.scene,
+    )
+    scene = _clean_or_default(request.scene, lane.default_scene)
+    save_tool = _clean_or_default(request.save_tool, lane.default_saveable_tool)
+    image_style = _clean_or_default(request.image_style, lane.default_image_style)
+    if image_style not in IMAGE_STYLE_CHOICES:
+        raise ValueError(
+            f"Unknown image style {image_style!r}. Available styles: {', '.join(IMAGE_STYLE_CHOICES)}"
+        )
+    comment_prompt = _clean_or_default(
+        request.comment_prompt,
+        lane.default_comment_prompt,
+    )
+    brief = {
+        "lane": lane.name,
+        "scene": scene,
+        "content_angle": lane.default_content_angle,
+        "save_tool": save_tool,
+        "image_style": image_style,
+        "image_form": {
+            "backend": "local_social_screenshot",
+            "style": image_style,
+            "role": "save_tool" if image_style == "iphone_notes" else "cover_hook",
+            "text_density": "low",
+            "max_text_units": 3,
+        },
+        "comment_prompt": comment_prompt,
+    }
+    recommended_scene = _build_generic_recommended_scene(brief)
+    account_id = _resolve_account_id(
+        request_account_id=request.account_id,
+        playbook_id=pack.playbook_id,
+        default_account_id=pack.default_account_id,
+    )
+    command = _build_run_playbook_command(
+        account_id=account_id,
+        playbook_id=pack.playbook_id,
+        scene=recommended_scene,
+        image_style=image_style,
+    )
+    return {
+        "status": "completed",
+        "playbook_id": pack.playbook_id,
+        "account_id": account_id,
+        "brief": brief,
+        "topic_guidance": build_topic_guidance(
+            pack=pack,
+            scene=scene,
+            lane_name=lane.name,
+        ),
+        "recommended_scene": recommended_scene,
+        "run_playbook_command": command,
+        "run_playbook_command_text": shlex.join(command),
+        "quality_checklist": _build_generic_quality_checklist(),
+        "safety_notes": [
+            "不要展示内部研究路径、原始研究笔记、来源 URL 或 provenance。",
+            "不要把选题引导写成已经完成的生成结果；先确认方向，再 dry-run 生成。",
+        ],
+    }
+
+
 def format_guide_post_markdown(result: dict[str, Any]) -> str:
     brief = result["brief"]
     directions = "\n".join(
-        f"- {direction['name']}（{direction['trend_signal']} / {direction['viral_hook']}）："
-        f"{direction['content_angle']}"
+        f"- {direction['name']}（trend: {direction['trend_signal']} / "
+        f"hook: {direction['viral_hook']}）：{direction['content_angle']}"
         for direction in result.get("topic_guidance", {}).get("directions", [])
     )
     checklist = "\n".join(
         f"- {item['item']}：{item['done_when']}" for item in result["quality_checklist"]
     )
     safety_notes = "\n".join(f"- {note}" for note in result["safety_notes"])
+    if "mechanism" not in brief:
+        return "\n".join(
+            [
+                "# Topic Guidance Brief",
+                "",
+                f"- playbook_id: {result['playbook_id']}",
+                f"- account_id: {result['account_id']}",
+                f"- lane: {brief['lane']}",
+                f"- scene: {brief['scene']}",
+                f"- content_angle: {brief['content_angle']}",
+                f"- save_tool: {brief['save_tool']}",
+                f"- image_style: {brief['image_style']}",
+                f"- comment_prompt: {brief['comment_prompt']}",
+                "",
+                "## Topic Directions",
+                "",
+                directions,
+                "",
+                "## Recommended Scene",
+                "",
+                result["recommended_scene"],
+                "",
+                "## Quality Checklist",
+                "",
+                checklist,
+                "",
+                "## Safety Notes",
+                "",
+                safety_notes,
+                "",
+                "## Dry-run Command",
+                "",
+                f"`{result['run_playbook_command_text']}`",
+            ]
+        )
     return "\n".join(
         [
             "# Psychology Guidance Brief",
@@ -522,7 +617,11 @@ def format_guide_post_markdown(result: dict[str, Any]) -> str:
 
 
 def build_psychology_topic_guidance(*, scene: str = "", lane_name: str = "") -> dict[str, Any]:
-    directions = _select_topic_directions(scene=scene, lane_name=lane_name)
+    directions = select_topic_directions(
+        directions=PSYCHOLOGY_TOPIC_DIRECTIONS,
+        scene=scene,
+        lane_name=lane_name,
+    )
     matched_direction_id = (
         directions[0]["id"]
         if directions
@@ -536,47 +635,28 @@ def build_psychology_topic_guidance(*, scene: str = "", lane_name: str = "") -> 
     }
 
 
-def _select_topic_directions(
+def build_topic_guidance(
     *,
-    scene: str,
-    lane_name: str,
-    limit: int = 4,
-) -> list[dict[str, Any]]:
-    text = f"{lane_name} {scene}"
-    scored: list[tuple[int, int, int, PsychologyTopicDirection]] = []
-    for index, direction in enumerate(PSYCHOLOGY_TOPIC_DIRECTIONS):
-        score = direction.base_priority
-        if any(affinity in lane_name for affinity in direction.lane_affinity):
-            score += 4
-        score += min(_keyword_hits(text, direction.scene_keywords), 4) * 3
-        rotation = _stable_topic_rotation(
-            scene=scene,
-            lane_name=lane_name,
-            direction_id=direction.id,
-        )
-        scored.append((-score, rotation, index, direction))
-
-    scored.sort()
-    return [
-        _public_topic_direction(direction)
-        for _, _, _, direction in scored[: max(limit, 0)]
-    ]
+    pack: TopicPack,
+    scene: str = "",
+    lane_name: str = "",
+) -> dict[str, Any]:
+    directions = select_topic_directions(
+        directions=pack.directions,
+        scene=scene,
+        lane_name=lane_name,
+    )
+    return {
+        "status": "available",
+        "message": pack.guidance_message,
+        "matched_direction_id": directions[0]["id"] if directions else "",
+        "directions": directions,
+    }
 
 
 def _keyword_hits(text: str, keywords: tuple[str, ...]) -> int:
     normalized_text = text.lower()
     return sum(1 for keyword in keywords if keyword.lower() in normalized_text)
-
-
-def _stable_topic_rotation(*, scene: str, lane_name: str, direction_id: str) -> int:
-    digest = hashlib.sha256(f"{scene}|{lane_name}|{direction_id}".encode()).hexdigest()
-    return int(digest[:8], 16)
-
-
-def _public_topic_direction(direction: PsychologyTopicDirection) -> dict[str, Any]:
-    return {
-        field: getattr(direction, field) for field in TOPIC_DIRECTION_PUBLIC_FIELDS
-    }
 
 
 def _match_topic_direction_id(*, scene: str, lane_name: str) -> str:
@@ -614,9 +694,36 @@ def _build_recommended_scene(brief: dict[str, Any]) -> str:
     )
 
 
+def _build_generic_recommended_scene(brief: dict[str, Any]) -> str:
+    return "\n".join(
+        [
+            f"选题lane：{brief['lane']}",
+            f"第一人称微场景：{brief['scene']}",
+            f"内容角度：{brief['content_angle']}",
+            f"可保存小工具：{brief['save_tool']}",
+            f"封面形式：{brief['image_style']}，低密度，只放 1-3 个短文字单元",
+            f"评论提示：{brief['comment_prompt']}",
+        ]
+    )
+
+
+def _resolve_account_id(
+    *,
+    request_account_id: str | None,
+    playbook_id: str,
+    default_account_id: str,
+) -> str:
+    if not request_account_id:
+        return default_account_id
+    if playbook_id != SUPPORTED_PLAYBOOK_ID and request_account_id == DEFAULT_ACCOUNT_ID:
+        return default_account_id
+    return request_account_id
+
+
 def _build_run_playbook_command(
     *,
     account_id: str,
+    playbook_id: str,
     scene: str,
     image_style: str,
 ) -> list[str]:
@@ -632,12 +739,37 @@ def _build_run_playbook_command(
         "--account-id",
         account_id,
         "--playbook-id",
-        SUPPORTED_PLAYBOOK_ID,
+        playbook_id,
         "--publish-mode",
         "dry-run",
         "--auto-generate-image",
         "--local-image-style",
         image_style,
+    ]
+
+
+def _build_generic_quality_checklist() -> list[dict[str, str]]:
+    return [
+        {
+            "item": "具体生活场景",
+            "done_when": "开头能让读者立刻看见一个普通、可代入的瞬间。",
+        },
+        {
+            "item": "一个内容角度",
+            "done_when": "正文围绕一个明确切口展开，不堆多个选题。",
+        },
+        {
+            "item": "可保存结构",
+            "done_when": "给出三步以内、今天能试或能改写的小工具。",
+        },
+        {
+            "item": "评论入口",
+            "done_when": "评论提示让用户补自己的例子、角色或作业。",
+        },
+        {
+            "item": "低密度封面",
+            "done_when": "封面只放 1-3 个短文字单元，不塞长解释。",
+        },
     ]
 
 

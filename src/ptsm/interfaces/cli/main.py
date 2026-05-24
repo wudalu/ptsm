@@ -19,6 +19,7 @@ from ptsm.application.use_cases.docs_sync import run_docs_sync
 from ptsm.application.use_cases.guide_post import (
     GuidePostRequest,
     PSYCHOLOGY_LANES,
+    SUPPORTED_PLAYBOOK_ID,
     format_guide_post_markdown,
     resolve_psychology_lane,
     run_guide_post,
@@ -40,7 +41,9 @@ from ptsm.application.use_cases.xhs_login import (
     run_xhs_login_status,
 )
 from ptsm.application.use_cases.xhs_publish_status import check_xhs_publish_status
+from ptsm.application.use_cases.topic_guidance_packs import TOPIC_GUIDANCE_PACKS
 from ptsm.config.settings import Settings, get_settings
+from ptsm.domain.topic_guidance import resolve_topic_lane
 from ptsm.plan_runner.parser import parse_plan_tasks
 from ptsm.plan_runner.runner import (
     CodexInvocation,
@@ -370,7 +373,15 @@ def _print_guide_post_lane_options() -> None:
         print(f"  {idx}. {option.name}", file=sys.stderr)
 
 
+def _print_topic_lane_options(lanes: Sequence[object]) -> None:
+    for idx, option in enumerate(lanes, 1):
+        print(f"  {idx}. {option.name}", file=sys.stderr)
+
+
 def _collect_guide_post_request(args: argparse.Namespace) -> GuidePostRequest:
+    if args.playbook_id != SUPPORTED_PLAYBOOK_ID:
+        return _collect_generic_guide_post_request(args)
+
     print("我们先把这条现代心理学帖子聊成一个可执行 brief。", file=sys.stderr)
     scene = args.scene
     if scene:
@@ -429,6 +440,58 @@ def _collect_guide_post_request(args: argparse.Namespace) -> GuidePostRequest:
         mechanism=mechanism,
         save_tool=save_tool,
         image_style=image_style,
+        comment_prompt=comment_prompt,
+    )
+
+
+def _collect_generic_guide_post_request(args: argparse.Namespace) -> GuidePostRequest:
+    pack = TOPIC_GUIDANCE_PACKS.get(args.playbook_id)
+    if pack is None:
+        return GuidePostRequest(
+            playbook_id=args.playbook_id,
+            account_id=args.account_id,
+            lane=args.lane,
+            scene=args.scene,
+            image_style=args.image_style,
+            comment_prompt=args.comment_prompt,
+        )
+
+    print("我们先把这条小红书帖子聊成一个可执行选题 brief。", file=sys.stderr)
+    scene = args.scene
+    if scene:
+        print(f"1/3 具体场景：{scene}", file=sys.stderr)
+    else:
+        scene = _prompt_to_stderr("1/3 先说一个具体瞬间或想写的对象： ")
+
+    suggested_lane = resolve_topic_lane(lanes=pack.lanes, scene=scene)
+    print(
+        f"我会先按「{suggested_lane.name}」处理，这样更容易写成清楚的内容切口。",
+        file=sys.stderr,
+    )
+
+    lane = args.lane
+    if lane:
+        print(f"2/3 选题 lane：{lane}", file=sys.stderr)
+    else:
+        print("2/3 如果方向不准，可以输入编号调整；回车接受建议。", file=sys.stderr)
+        _print_topic_lane_options(pack.lanes)
+        selected_lane = _prompt_to_stderr(f"选题 lane [默认：{suggested_lane.name}]: ")
+        lane = selected_lane or suggested_lane.name
+
+    defaults = resolve_topic_lane(lanes=pack.lanes, lane=lane, scene=scene)
+    comment_prompt = args.comment_prompt
+    if comment_prompt is None:
+        comment_prompt = _prompt_to_stderr(
+            f"3/3 评论区建议「{defaults.default_comment_prompt}」。要改就输入，回车接受: "
+        )
+
+    return GuidePostRequest(
+        playbook_id=args.playbook_id,
+        account_id=args.account_id,
+        lane=lane,
+        scene=scene,
+        save_tool=args.save_tool,
+        image_style=args.image_style,
         comment_prompt=comment_prompt,
     )
 

@@ -2,7 +2,7 @@
 title: PTSM Architecture
 status: active
 owner: ptsm
-last_verified: 2026-05-23
+last_verified: 2026-05-24
 source_of_truth: true
 related_paths:
   - src/ptsm
@@ -10,11 +10,14 @@ related_paths:
   - src/ptsm/application/services/account_publisher_context.py
   - src/ptsm/application/services/side_effect_ledger.py
   - src/ptsm/application/use_cases/harness_evals.py
+  - src/ptsm/application/use_cases/guide_post.py
+  - src/ptsm/application/use_cases/topic_guidance_packs.py
   - src/ptsm/application/use_cases/collect_xhs_patterns.py
   - src/ptsm/application/use_cases/analyze_xhs_patterns.py
   - src/ptsm/agent_runtime
   - src/ptsm/agent_runtime/state.py
   - src/ptsm/domain
+  - src/ptsm/domain/topic_guidance.py
   - src/ptsm/evaluations
   - src/ptsm/infrastructure
   - src/ptsm/infrastructure/evaluations
@@ -62,6 +65,7 @@ PTSM 当前已支持九个垂直领域（发疯文学、苏轼诗词赏析、武
 - side-effect replay control 也放在 `application/services + application/use_cases`，避免让 `agent_runtime` 直接承担发布副作用策略。
 - provider-backed image generation 和本地 social screenshot renderer 都留在 `infrastructure`，由 `application/use_cases/run_playbook.py` 在发布前编排调用，避免把外部 API 协议或 Pillow 绘制细节塞进 runtime graph。`final_content.image_plan` 可以让 LLM 主动选择 `local_social_screenshot` 或 `provider_image`；`PlaybookRequest.local_image_style` 是显式本地 override，即使外部 provider 已配置也会走本地 renderer。
 - XHS format pattern library 分成三层：`topic_radar` 负责外部 MCP 采样，`ptsm.domain.xhs_patterns` 定义本地样本和 pattern 领域模型，`ptsm.infrastructure.xhs_patterns` 只做本地 JSON snapshot 存储，`application/use_cases/collect_xhs_patterns.py` / `analyze_xhs_patterns.py` 负责编排 CLI 用例。普通生成只读取本地 snapshot，不直接依赖 live MCP。
+- 跨领域发帖前选题引导同样保持分层：`ptsm.domain.topic_guidance` 定义本地确定性 lane/direction 选择器，`application/use_cases/topic_guidance_packs.py` 保存首批 playbook 的产品化 topic pack，`application/use_cases/guide_post.py` 只编排只读 CLI/OpenClaw 输出。这个路径不属于 `agent_runtime`，不会启动 workflow、创建 run、发布或默认触发 live research。
 - `PlaybookRequest.scene` 在 `--fresh-topic-research` 模式下可为空，由 topic-radar 多平台扫描 + 交互选题后构建 enriched scene 注入工作流，选题结果同时写入 artifact 的 `topic_selection` 字段。
 - `ExecutionState` 现在携带 `activated_skill_details`、`runtime_skill_details` 和 `memory_hits` 等 observability 字段，记录每个 skill 的元信息（display_name、source_path、resource_type）以及本次回读的账号 lessons，供 artifact 写入、drafting context 和 harness evals 聚合消费。
 - `human_enrichment_daily_post` 以新增 playbook/account/skill/evaluation 资产接入人类丰容实验，不需要 runtime 增加领域分支；它的 artifact `content_review` 会额外写出 `image_form`，供 3:4 封面和轮播式人工 review 使用。

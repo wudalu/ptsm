@@ -465,6 +465,60 @@ def test_guide_post_cli_outputs_non_interactive_psychology_brief(
     assert "run-playbook --scene" in payload["run_playbook_command_text"]
 
 
+def test_guide_post_cli_outputs_non_interactive_human_enrichment_brief(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    exit_code = main(
+        [
+            "guide-post",
+            "--playbook-id",
+            "human_enrichment_daily_post",
+            "--account-id",
+            "acct-enrichment-local",
+            "--scene",
+            "想把书桌角落改成十分钟适我主义手作位",
+            "--non-interactive",
+            "--format",
+            "json",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload["playbook_id"] == "human_enrichment_daily_post"
+    assert payload["account_id"] == "acct-enrichment-local"
+    assert payload["topic_guidance"]["directions"]
+
+
+def test_guide_post_cli_outputs_generic_markdown_for_non_psychology(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    exit_code = main(
+        [
+            "guide-post",
+            "--playbook-id",
+            "human_enrichment_daily_post",
+            "--account-id",
+            "acct-enrichment-local",
+            "--scene",
+            "想把书桌角落改成十分钟适我主义手作位",
+            "--non-interactive",
+            "--format",
+            "markdown",
+        ]
+    )
+
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "# Topic Guidance Brief" in output
+    assert "# Psychology Guidance Brief" not in output
+    assert "playbook_id: human_enrichment_daily_post" in output
+    assert "trend:" in output
+    assert "hook:" in output
+
+
 def test_guide_post_cli_prompts_for_missing_fields(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],

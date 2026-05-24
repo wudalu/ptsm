@@ -267,6 +267,28 @@ uv run python -m ptsm.bootstrap run-playbook \
   --account-id acct-psychology-local \
   --playbook-id modern_psychology_post
 
+# Cross-domain topic guidance dry-runs
+uv run python -m ptsm.bootstrap guide-post \
+  --playbook-id fengkuang_daily_post \
+  --account-id acct-fk-local \
+  --scene "领导18:57发来一句在吗，工牌想替我发疯" \
+  --non-interactive \
+  --format json
+
+uv run python -m ptsm.bootstrap guide-post \
+  --playbook-id human_enrichment_daily_post \
+  --account-id acct-enrichment-local \
+  --scene "想把书桌角落改成十分钟适我主义手作位" \
+  --non-interactive \
+  --format json
+
+uv run python -m ptsm.bootstrap guide-post \
+  --playbook-id sushi_poetry_daily_post \
+  --account-id acct-sushi-local \
+  --scene "夜里读到怀民亦未寝，想写一种旧友关系" \
+  --non-interactive \
+  --format json
+
 # World Cup dry-run
 uv run python -m ptsm.bootstrap run-playbook \
   --scene "阿根廷和法国决赛前，想写一篇普通球迷也能看懂的赛前看点" \
@@ -520,6 +542,12 @@ uv run python -m ptsm.bootstrap run-playbook \
   --playbook-id modern_psychology_post
 
 # 人类丰容实验领域
+uv run python -m ptsm.bootstrap guide-post \
+  --playbook-id human_enrichment_daily_post \
+  --account-id acct-enrichment-local \
+  --scene "把书桌改成十分钟手作角" \
+  --non-interactive
+
 uv run python -m ptsm.bootstrap run-playbook \
   --scene "把书桌改成十分钟手作角" \
   --account-id acct-enrichment-local \

@@ -8,6 +8,8 @@ metadata: {"openclaw": {"requires": {"bins": ["uv"]}}}
 
 Use this skill when the user asks OpenClaw to create, prepare, draft, save, or publish a Xiaohongshu post in the psychology domain. Common triggers include 心理学、情绪、焦虑、内耗、边界感、关系、自我关怀、孤独、比较焦虑、AI 陪伴, and similar wording.
 
+For non-psychology XHS playbooks, use `ptsm-xhs-topic-guide`; this file remains the psychology-specific wrapper.
+
 ## Required Flow
 
 1. Call PTSM guidance first. Do not write or publish the post before this step.
