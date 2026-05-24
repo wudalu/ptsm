@@ -539,7 +539,8 @@ def format_guide_post_markdown(result: dict[str, Any]) -> str:
     brief = result["brief"]
     directions = "\n".join(
         f"- {direction['name']}（trend: {direction['trend_signal']} / "
-        f"hook: {direction['viral_hook']}）：{direction['content_angle']}"
+        f"hook: {direction['viral_hook']} / fit: {direction.get('scene_fit', '')}）"
+        f"：{direction['content_angle']}"
         for direction in result.get("topic_guidance", {}).get("directions", [])
     )
     checklist = "\n".join(

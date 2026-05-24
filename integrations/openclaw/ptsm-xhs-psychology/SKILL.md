@@ -21,9 +21,11 @@ uv run python -m ptsm.bootstrap guide-post \
   --format json
 ```
 
-2. Show the user only the returned `topic_guidance.directions`: direction name, trend signal, viral hook, why it may work, best scenes, content angle, saveable tool, comment prompt, and avoid note.
+2. Show the user only the returned `topic_guidance.directions`: direction name, `scene_fit`, trend signal, viral hook, why it may work, best scenes, content angle, saveable tool, comment prompt, and avoid note.
 
 3. Ask the user to choose one direction, or pick the best matching direction when the user has already given a clear scene.
+
+If the user changes the scene, call `guide-post` again with the new scene. Do not reuse previous directions for a different scene.
 
 4. Generate through PTSM only after the direction is chosen or confirmed.
 
