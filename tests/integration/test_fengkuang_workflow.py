@@ -299,7 +299,7 @@ class FeedbackAwareDraftingAgent:
                 "image_text": "我的工牌先替我发疯",
                 "body": (
                     f"{scene}，群聊弹出来那一秒，工牌先替我深呼吸。"
-                    "可复制疯话：收到，但我的电量不支持热更新。"
+                    "我想把这句写在工牌背面：收到，但我的电量不支持热更新。"
                     "评论区接一句你最想写在工牌背面的疯话。"
                 ),
                 "hashtags": ["#发疯文学", "#打工人日常"],
@@ -389,6 +389,6 @@ def test_fengkuang_workflow_regenerates_when_content_quality_judge_fails() -> No
     assert result["attempt_count"] == 2
     assert judge_backend.calls == 2
     assert "Add one reusable copyable line." in str(drafting_agent.feedback_seen[1])
-    assert "可复制疯话" in result["final_content"]["body"]
+    assert "写在工牌背面" in result["final_content"]["body"]
     assert result["content_quality_eval"]["status"] == "passed"
     assert result["content_quality_eval"]["gate_level"] == "required"

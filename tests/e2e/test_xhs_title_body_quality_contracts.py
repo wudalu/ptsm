@@ -9,6 +9,34 @@ from ptsm.interfaces.cli.main import main
 
 
 GENERIC_TITLE_MARKERS = ("日常", "实录", "干货分享", "小红书爆款")
+FUNCTIONAL_LABEL_MARKERS = (
+    "可复制疯话：",
+    "可复制疯话:",
+    "今日可复制疯话：",
+    "可复制通勤疯话：",
+    "可收藏小结：",
+    "可收藏小结:",
+    "可收藏句型：",
+    "可保存单元：",
+    "可保存单元:",
+    "评论交接：",
+    "评论交接:",
+    "可以先收藏清单：",
+    "可收藏看球清单：",
+    "看球清单可以先收藏：",
+    "可保存三步：",
+    "可复制疯话",
+    "今日可复制疯话",
+    "可复制通勤疯话",
+    "可收藏小结",
+    "可收藏句型",
+    "可保存单元",
+    "评论交接",
+    "可以先收藏清单",
+    "可收藏看球清单",
+    "看球清单可以先收藏",
+    "可保存三步",
+)
 
 
 @pytest.mark.parametrize(
@@ -116,5 +144,7 @@ def test_xhs_playbook_dry_runs_fit_title_body_quality_contract(
     assert exit_code == 0
     assert body_min <= len(content["body"]) <= body_max
     assert not any(marker in content["title"] for marker in GENERIC_TITLE_MARKERS)
+    visible = f"{content['title']}\n{content['image_text']}\n{content['body']}"
+    assert not any(marker in visible for marker in FUNCTIONAL_LABEL_MARKERS)
 
     get_settings.cache_clear()

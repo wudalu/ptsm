@@ -162,7 +162,7 @@ def test_reflector_retries_when_content_quality_judge_fails() -> None:
             "draft_content": {
                 "title": "领导18:57发「在吗」那一秒",
                 "image_text": "我的工牌先替我发疯",
-                "body": "可复制疯话：收到，但灵魂已下班。评论区接一句工牌背面的疯话。",
+                "body": "我想把这句写在工牌背面：收到，但灵魂已下班。评论区接一句工牌背面的疯话。",
                 "hashtags": ["#发疯文学"],
             },
         }

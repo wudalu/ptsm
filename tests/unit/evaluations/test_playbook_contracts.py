@@ -20,6 +20,34 @@ XHS_PLAYBOOK_IDS = [
 ]
 
 FORMULAIC_MARKERS = ["首先", "其次", "最后", "综上", "本文", "作为AI"]
+FUNCTIONAL_LABEL_MARKERS = [
+    "可复制疯话：",
+    "可复制疯话:",
+    "今日可复制疯话：",
+    "可复制通勤疯话：",
+    "可收藏小结：",
+    "可收藏小结:",
+    "可收藏句型：",
+    "可保存单元：",
+    "可保存单元:",
+    "评论交接：",
+    "评论交接:",
+    "可以先收藏清单：",
+    "可收藏看球清单：",
+    "看球清单可以先收藏：",
+    "可保存三步：",
+    "可复制疯话",
+    "今日可复制疯话",
+    "可复制通勤疯话",
+    "可收藏小结",
+    "可收藏句型",
+    "可保存单元",
+    "评论交接",
+    "可以先收藏清单",
+    "可收藏看球清单",
+    "看球清单可以先收藏",
+    "可保存三步",
+]
 
 BODY_LENGTH_BANDS = {
     "fengkuang_daily_post": (120, 380),
@@ -205,6 +233,17 @@ class TestPlaybookEvalContract:
             constraints = contract.node_contracts["executor"]["constraints"]
 
             for marker in FORMULAIC_MARKERS:
+                assert marker in constraints["combined_must_not_include_any"]
+
+    def test_all_xhs_contracts_block_visible_functional_labels(self):
+        root = Path(__file__).parent.parent.parent.parent / "src" / "ptsm" / "playbooks" / "definitions"
+
+        for playbook_id in XHS_PLAYBOOK_IDS:
+            contract = load_playbook_eval_contract(root, playbook_id)
+            assert contract is not None
+            constraints = contract.node_contracts["executor"]["constraints"]
+
+            for marker in FUNCTIONAL_LABEL_MARKERS:
                 assert marker in constraints["combined_must_not_include_any"]
 
     def test_all_xhs_contracts_define_domain_specific_body_length_bands(self):

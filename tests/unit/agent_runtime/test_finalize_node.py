@@ -295,7 +295,7 @@ def test_finalize_content_review_detects_domain_save_mechanics(tmp_path: Path) -
             "draft_content": {
                 "title": "这次AI更新，普通人先看这三点",
                 "image_text": "先看能不能真省事",
-                "body": "可以先收藏清单：1. 看它能不能读懂文件。评论区聊聊你会怎么用。",
+                "body": "我会先按这三点收藏：1. 看它能不能读懂文件。评论区聊聊你会怎么用。",
                 "hashtags": ["#AI资讯"],
             },
             "required_revision": False,
@@ -305,7 +305,7 @@ def test_finalize_content_review_detects_domain_save_mechanics(tmp_path: Path) -
             "final_content": {
                 "title": "这次AI更新，普通人先看这三点",
                 "image_text": "先看能不能真省事",
-                "body": "可以先收藏清单：1. 看它能不能读懂文件。评论区聊聊你会怎么用。",
+                "body": "我会先按这三点收藏：1. 看它能不能读懂文件。评论区聊聊你会怎么用。",
                 "hashtags": ["#AI资讯"],
             },
         }
