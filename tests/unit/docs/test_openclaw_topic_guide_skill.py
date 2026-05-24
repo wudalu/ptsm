@@ -61,9 +61,11 @@ def test_openclaw_topic_guide_skill_shows_only_returned_direction_fields() -> No
         "saveable tool",
         "comment prompt",
         "avoid note",
+        "scene_fit",
     ):
         assert phrase in text
 
+    assert "call `guide-post` again" in text
     assert "不要展示内部研究路径" in text
     assert "不要展示原始研究笔记" in text
     assert "raw source URLs" in text

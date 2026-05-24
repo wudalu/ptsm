@@ -64,7 +64,7 @@ Playbook 是 PTSM 的业务编排单元。它把领域、平台、技能需求�
 
 所有小红书 playbook 的 prompt 资产现在都把 2026-05-23 爆品梗调研消化成各自主题的表达方式，而不是简单贴热词：发疯文学优先职场物件、丝瓜汤式沟通和体面外壳/狼狈内核；现代心理学优先爱你老己、三明治拒绝法、AI 陪伴边界和非诊断化边界句；人类丰容优先适我主义、新独居、手作心流和一平米角落；AI 科技、苏轼诗词、武侠人物、每日英语和世界杯也分别以生活搭子、文化力、老款人格、学习搭子、看球搭子这类本账号能承接的语气进入正文。
 
-`guide-post` 的跨领域 topic pack 现在覆盖当前九个 playbook：`modern_psychology_post`、`fengkuang_daily_post`、`human_enrichment_daily_post`、`sushi_poetry_daily_post`、`wuxia_character_post`、`ai_tech_daily_post`、`daily_english_post`、`world_cup_daily_post`、`reddit_curation_daily_post`。它只做发帖前选题引导，不新增 playbook，也不把 live research 接进普通生成；每个 pack 以本地确定性 lane/direction 数据把热点机制产品化为用户可选方向。
+`guide-post` 的跨领域 topic pack 现在覆盖当前九个 playbook：`modern_psychology_post`、`fengkuang_daily_post`、`human_enrichment_daily_post`、`sushi_poetry_daily_post`、`wuxia_character_post`、`ai_tech_daily_post`、`daily_english_post`、`world_cup_daily_post`、`reddit_curation_daily_post`。它只做发帖前选题引导，不新增 playbook，也不把 live research 接进普通生成；每个 pack 以本地确定性 lane/direction 数据把热点机制产品化为用户可选方向。非心理学 pack 的候选池必须大于公开展示的 4 条方向，selector 会把用户 scene 关键词、lane affinity 和 `diversity_key` 分开处理，并在每条公开方向里写出 `scene_fit`，让不同场景获得不同候选集合而不只是同一组方向换顺序。
 
 `fengkuang_daily_post` 的当前 reflection 规则要求 `#发疯文学`，拒绝 `打工人地铁生存实录`、`会议连环暴击实录`、`社畜崩溃边缘实录` 这类泛标题，并要求正文至少出现评论区/接一句/可复制/模板/写在等平台原生机制之一，同时禁止把心理疾病、医院、治疗、用药当笑点。
 

@@ -48,6 +48,103 @@ def test_select_topic_directions_scores_scene_keywords_before_priority() -> None
     assert [item["id"] for item in result] == ["desk", "general"]
 
 
+def test_select_topic_directions_does_not_score_lane_text_as_scene_keyword() -> None:
+    directions = (
+        TopicDirection(
+            id="lane_echo",
+            name="Lane Echo",
+            trend_signal="boundary",
+            viral_hook="save",
+            why_it_may_work="lane echo",
+            best_scenes=("boundary",),
+            content_angle="lane echo",
+            saveable_tool="tool",
+            comment_prompt="prompt",
+            avoid="avoid",
+            scene_keywords=("边界",),
+            base_priority=1,
+        ),
+        TopicDirection(
+            id="neutral",
+            name="Neutral",
+            trend_signal="neutral",
+            viral_hook="comment",
+            why_it_may_work="neutral",
+            best_scenes=("neutral",),
+            content_angle="neutral",
+            saveable_tool="tool",
+            comment_prompt="prompt",
+            avoid="avoid",
+            base_priority=2,
+        ),
+    )
+
+    result = select_topic_directions(
+        directions=directions,
+        scene="朋友半夜把情绪都倒给我，我不知道怎么回",
+        lane_name="关系边界 / 消息压力",
+        limit=2,
+    )
+
+    assert [item["id"] for item in result] == ["neutral", "lane_echo"]
+
+
+def test_select_topic_directions_prefers_unused_diversity_families() -> None:
+    directions = (
+        TopicDirection(
+            id="same_a",
+            name="Same A",
+            trend_signal="same",
+            viral_hook="save",
+            why_it_may_work="same",
+            best_scenes=("same",),
+            content_angle="same",
+            saveable_tool="tool",
+            comment_prompt="prompt",
+            avoid="avoid",
+            diversity_key="same_family",
+            base_priority=10,
+        ),
+        TopicDirection(
+            id="same_b",
+            name="Same B",
+            trend_signal="same",
+            viral_hook="save",
+            why_it_may_work="same",
+            best_scenes=("same",),
+            content_angle="same",
+            saveable_tool="tool",
+            comment_prompt="prompt",
+            avoid="avoid",
+            diversity_key="same_family",
+            base_priority=9,
+        ),
+        TopicDirection(
+            id="other",
+            name="Other",
+            trend_signal="other",
+            viral_hook="comment",
+            why_it_may_work="other",
+            best_scenes=("other",),
+            content_angle="other",
+            saveable_tool="tool",
+            comment_prompt="prompt",
+            avoid="avoid",
+            diversity_key="other_family",
+            base_priority=1,
+        ),
+    )
+
+    result = select_topic_directions(
+        directions=directions,
+        scene="same scene",
+        lane_name="same lane",
+        limit=2,
+    )
+
+    assert [item["id"] for item in result] == ["same_a", "other"]
+
+
 def test_select_topic_directions_omits_internal_fields() -> None:
     result = select_topic_directions(
         directions=(
@@ -75,6 +172,9 @@ def test_select_topic_directions_omits_internal_fields() -> None:
     assert "lane_affinity" not in direction
     assert "scene_keywords" not in direction
     assert "base_priority" not in direction
+    assert "diversity_key" not in direction
+    assert direction["scene_fit"]
+
 
 
 def test_select_topic_directions_is_stable_and_limited() -> None:

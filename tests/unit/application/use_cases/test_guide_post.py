@@ -4,7 +4,12 @@ import json
 
 import pytest
 
-from ptsm.application.use_cases.guide_post import GuidePostRequest, run_guide_post
+from ptsm.application.use_cases.topic_guidance_packs import TOPIC_GUIDANCE_PACKS
+from ptsm.application.use_cases.guide_post import (
+    GuidePostRequest,
+    format_guide_post_markdown,
+    run_guide_post,
+)
 
 
 NEW_TOPIC_GUIDANCE_CASES = (
@@ -41,6 +46,58 @@ NEW_TOPIC_GUIDANCE_CASES = (
 )
 
 
+GENERIC_DIVERSE_TOPIC_CASES = (
+    (
+        "fengkuang_daily_post",
+        "acct-fk-local",
+        "领导18:57发来一句在吗，工牌想替我发疯",
+        "群聊里那句没发出去的话在脑子里加班",
+    ),
+    (
+        "human_enrichment_daily_post",
+        "acct-enrichment-local",
+        "想把书桌角落改成十分钟适我主义手作位",
+        "下班路上想做一次绿色 colorwalk",
+    ),
+    (
+        "sushi_poetry_daily_post",
+        "acct-sushi-local",
+        "夜里读到怀民亦未寝，想写一种旧友关系",
+        "今天被风雨淋得很狼狈，想重读定风波",
+    ),
+    (
+        "wuxia_character_post",
+        "acct-wuxia-local",
+        "想用令狐冲写一种当代职场里的自由人格",
+        "想写郭靖那种慢慢长出来的笨拙可靠",
+    ),
+    (
+        "ai_tech_daily_post",
+        "acct-ai-tech-local",
+        "Google 发布 Gemini 3，想写普通人能懂的 AI 工具变化",
+        "想写 AI agent 自动执行任务时普通人该怎么交接",
+    ),
+    (
+        "daily_english_post",
+        "acct-daily-english-local",
+        "学一个表示坚持的高级词汇，想配真实职场例句",
+        "想学一句委婉拒绝临时会议的英文回复",
+    ),
+    (
+        "world_cup_daily_post",
+        "acct-world-cup-local",
+        "阿根廷和法国决赛前，想写普通球迷看球清单",
+        "朋友约了看球局，想写熬夜前的准备和氛围",
+    ),
+    (
+        "reddit_curation_daily_post",
+        "acct-reddit-curation-local",
+        "从外网 AI 工具焦虑讨论里选一个适合中文读者的角度",
+        "外网评论区吵成两派，想转成中文读者能参与的观察",
+    ),
+)
+
+
 def _assert_no_internal_source_leakage(result: dict[str, object]) -> None:
     serialized = json.dumps(result, ensure_ascii=False)
     assert "docs/research" not in serialized
@@ -49,6 +106,12 @@ def _assert_no_internal_source_leakage(result: dict[str, object]) -> None:
     assert "source_url" not in serialized
     assert "http://" not in serialized
     assert "https://" not in serialized
+
+
+def _direction_ids(result: dict[str, object]) -> set[str]:
+    guidance = result["topic_guidance"]
+    assert isinstance(guidance, dict)
+    return {direction["id"] for direction in guidance["directions"]}
 
 
 def test_run_guide_post_builds_psychology_brief_with_scene_defaults() -> None:
@@ -106,11 +169,24 @@ def test_run_guide_post_returns_productized_topic_directions_without_internal_so
     assert "先确认" in boundary["saveable_tool"]
     assert "边界句" in boundary["comment_prompt"]
     assert "万能" in boundary["avoid"]
+    assert boundary["scene_fit"]
 
     serialized = json.dumps(result, ensure_ascii=False)
     assert "docs/research" not in serialized
     assert "2026-05-23-xhs-viral-meme-product-hooks.md" not in serialized
     assert '"source"' not in serialized
+
+
+def test_format_guide_post_markdown_includes_scene_fit() -> None:
+    result = run_guide_post(
+        GuidePostRequest(scene="朋友半夜把情绪都倒给我，我不知道怎么回")
+    )
+
+    markdown = format_guide_post_markdown(result)
+
+    assert "scene:" in markdown
+    assert "fit:" in markdown
+    assert "匹配当前场景信号" in markdown
 
 
 def test_run_guide_post_varies_topic_directions_by_scene() -> None:
@@ -157,6 +233,7 @@ def test_run_guide_post_varies_topic_directions_by_scene() -> None:
         for direction in topic_guidance["directions"]:
             assert direction["trend_signal"]
             assert direction["viral_hook"]
+            assert direction["scene_fit"]
 
         serialized = json.dumps(result, ensure_ascii=False)
         assert "docs/research" not in serialized
@@ -164,6 +241,74 @@ def test_run_guide_post_varies_topic_directions_by_scene() -> None:
         assert '"source"' not in serialized
         assert "http://" not in serialized
         assert "https://" not in serialized
+
+
+def test_psychology_topic_guidance_does_not_collapse_relationship_scenes() -> None:
+    coworker = run_guide_post(
+        GuidePostRequest(scene="同事临时加需求，想练一版边界句")
+    )
+    friend = run_guide_post(
+        GuidePostRequest(scene="朋友半夜把情绪都倒给我，我不知道怎么回")
+    )
+    invalid_care = run_guide_post(
+        GuidePostRequest(scene="家人总说为你好，但我的感受完全没有被接住")
+    )
+
+    matched_ids = [
+        coworker["topic_guidance"]["matched_direction_id"],
+        friend["topic_guidance"]["matched_direction_id"],
+        invalid_care["topic_guidance"]["matched_direction_id"],
+    ]
+
+    assert matched_ids[0] == "boundary_sandwich_refusal"
+    assert matched_ids[1] in {
+        "real_support_role_pair",
+        "message_boundary_reply_draft",
+        "emotion_grounding_90s",
+    }
+    assert matched_ids[2] == "loofah_soup_communication"
+    assert len(set(matched_ids)) == 3
+
+    for result in (coworker, friend, invalid_care):
+        assert result["topic_guidance"]["directions"][0]["scene_fit"]
+        _assert_no_internal_source_leakage(result)
+
+
+def test_generic_topic_packs_have_larger_candidate_pools_than_public_limit() -> None:
+    for playbook_id, pack in TOPIC_GUIDANCE_PACKS.items():
+        assert len(pack.directions) > 4, playbook_id
+
+
+@pytest.mark.parametrize(
+    ("playbook_id", "account_id", "first_scene", "second_scene"),
+    GENERIC_DIVERSE_TOPIC_CASES,
+)
+def test_generic_topic_guidance_varies_direction_sets_by_scene(
+    playbook_id: str,
+    account_id: str,
+    first_scene: str,
+    second_scene: str,
+) -> None:
+    first = run_guide_post(
+        GuidePostRequest(
+            playbook_id=playbook_id,
+            account_id=account_id,
+            scene=first_scene,
+        )
+    )
+    second = run_guide_post(
+        GuidePostRequest(
+            playbook_id=playbook_id,
+            account_id=account_id,
+            scene=second_scene,
+        )
+    )
+
+    assert _direction_ids(first) != _direction_ids(second)
+    assert first["topic_guidance"]["directions"][0]["scene_fit"]
+    assert second["topic_guidance"]["directions"][0]["scene_fit"]
+    _assert_no_internal_source_leakage(first)
+    _assert_no_internal_source_leakage(second)
 
 
 def test_guide_post_supports_fengkuang_topic_guidance() -> None:
