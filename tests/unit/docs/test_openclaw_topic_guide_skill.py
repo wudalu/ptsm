@@ -67,6 +67,17 @@ def test_openclaw_topic_guide_skill_shows_only_returned_direction_fields() -> No
     ):
         assert phrase in text
 
+    assert "topic_guidance.image_recommendation" in text
+    for phrase in (
+        "recommended_backend",
+        "local_social_screenshot",
+        "provider_image",
+        "model",
+        "local_style",
+        "command_hint",
+    ):
+        assert phrase in text
+
     assert "call `guide-post` again" in text
     assert "PTSM-returned open_scene" in text
     assert "不要展示内部研究路径" in text
@@ -74,6 +85,7 @@ def test_openclaw_topic_guide_skill_shows_only_returned_direction_fields() -> No
     assert "raw source URLs" in text
     assert "provenance" in text
     assert "Do not copy topic logic" in text
+    assert "Do not invent, expand, or replace PTSM-returned image recommendation" in text
     assert "fk_work_object_vent" not in text
     assert "enrichment_desk_corner_variable" not in text
     assert "sushi_role_pair_huimin" not in text

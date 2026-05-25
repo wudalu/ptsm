@@ -271,10 +271,12 @@ uv run python -m ptsm.bootstrap run-playbook \
 
 # Cross-domain topic guidance dry-runs
 # JSON directions include `selection_policy`, `open_direction_ids`, the compatible
-# `open_direction_id`, `direction_type`, `direction_type_counts`, and `scene_fit`.
+# `open_direction_id`, `direction_type`, `direction_type_counts`, `scene_fit`,
+# and `topic_guidance.image_recommendation` for the post-choice image route.
 # The public shape is 4 dynamically reranked PTSM-returned directions; when
 # changing the scene, rerun `guide-post` instead of reusing the previous direction
-# set. Publishing/login/browser commands are unchanged.
+# set. Use the returned `image_recommendation.command_hint` after the direction is
+# confirmed instead of inventing provider/model/local-style choices.
 uv run python -m ptsm.bootstrap guide-post \
   --playbook-id fengkuang_daily_post \
   --account-id acct-fk-local \

@@ -2,7 +2,7 @@
 title: Harness Engineering In PTSM
 status: active
 owner: ptsm
-last_verified: 2026-05-24
+last_verified: 2026-05-25
 source_of_truth: true
 related_paths:
   - README.md
@@ -75,7 +75,7 @@ repository.
 - local code-rendered social image generation for XHS covers when auto image generation is requested and external image providers are not configured, including deterministic note-card, iPhone Notes-like, and WeChat chat transcript-like layouts
 - first-class XHS image strategy through `xhs_image_strategy` and `final_content.image_plan`, so deterministic dry-runs and artifacts can prove when local social screenshots are selected intentionally instead of only as provider fallback
 - a deterministic, local-first XHS pattern library loop: periodic `collect-xhs-patterns` persists partial MCP samples, `analyze-xhs-patterns` distills them into local format snapshots, and ordinary generation consumes `current.json` without live XHS calls
-- a deterministic, local-first cross-domain `guide-post` harness surface: domain tests cover the generic selector, including scene-keyword/lane-affinity separation, diversity-family selection, multiple open-scene candidates, and dynamic breadth reranking; application tests cover all current topic packs, larger-than-display candidate pools, scene-varying direction sets, and the `dynamic_scene_diversity_rerank` contract; CLI tests cover JSON/Markdown output with `direction_type`, `open_direction_ids`, and `direction_type_counts`; docs tests lock the generic and psychology OpenClaw wrapper contracts
+- a deterministic, local-first cross-domain `guide-post` harness surface: domain tests cover the generic selector, including scene-keyword/lane-affinity separation, diversity-family selection, multiple open-scene candidates, and dynamic breadth reranking; application tests cover all current topic packs, larger-than-display candidate pools, scene-varying direction sets, `topic_guidance.image_recommendation`, and the `dynamic_scene_diversity_rerank` contract; CLI tests cover JSON/Markdown output with `direction_type`, `open_direction_ids`, `direction_type_counts`, and image recommendation fields; docs tests lock the generic and psychology OpenClaw wrapper contracts
 
 ## New Domain Documentation Completeness
 

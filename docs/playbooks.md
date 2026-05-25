@@ -2,7 +2,7 @@
 title: PTSM Playbooks
 status: active
 owner: ptsm
-last_verified: 2026-05-24
+last_verified: 2026-05-25
 source_of_truth: true
 related_paths:
   - src/ptsm/playbooks/registry.py
@@ -35,7 +35,7 @@ Playbook 是 PTSM 的业务编排单元。它把领域、平台、技能需求�
 - `reddit_curation_daily_post` 专门把 Reddit 英文 hot/top 讨论作为内部素材，选 AI 热点、心理困境、效率工作流等适合中文读者的角度，改写成自然中文热点帖。`guide-post` 会按 AI 工具焦虑、效率工作流、生活压力非诊断观察、中文读者角度等方向动态返回 4 个场景相关方向，输出仍不展示 raw source URL 或 provenance。默认绑定 `acct-reddit-curation-local`。读者可见标题、封面、正文和标签不暴露 Reddit、subreddit、英文讨论、翻译过程或来源 URL；来源追踪只留在 runtime context / artifact。读取最新 Reddit 讨论优先按 Reddit Responsible Builder Policy 为该用途取得 explicit approval，并配置获批 app 的 `REDDIT_CLIENT_ID`、`REDDIT_CLIENT_SECRET` 和 `REDDIT_USER_AGENT`；如果 app 创建暂时受阻，也可用 `REDDIT_PUBLIC_JSON_FALLBACK=true` 和非占位 `REDDIT_USER_AGENT` 走低频只读 public JSON fallback。缺配置时 dry-run 仍可完成，但不能声称来自最新热点。
 - 九个真实 XHS 内容质量 playbook 都有 playbook-local `evaluation.yaml`，声明 executor 内容质量 judge 为 `required`，并用确定性 node contract 检查领域标签、正文结构、评论提示、收藏触发、实验指令泄漏和跨字段模板化语言。所有 XHS playbook 都会通过 `combined_must_not_include_any` 拦截 `首先`、`其次`、`最后`、`综上`、`本文`、`作为AI`、`建议大家`、`小红书爆款` 这类格式化或元叙事词，通过 `title_must_not_include_any` 拦截 `日常`、`实录`、`干货分享` 等泛标题，并用领域化 `body_min_chars` / `body_max_chars` 控制正文不要过长或过短；重点研究映射 playbook 还会通过 `title_must_include_any` 要求标题保留具体物件、人物、关系或场景钩子。
 - `modern_psychology_post` 的 deterministic fallback 会按场景簇生成不同候选：周日/周一预焦虑、被说想太多后的边界压力、下班后被消息拉回工位、会议尴尬复盘、脑内复盘会、普通回复复盘接龙、睡前短视频/信息过载、孤独/比较焦虑。这样离线实验候选不会因为同属“反刍思维”而退化成同一个标题/封面。
-- `modern_psychology_post` 的图片策略默认使用低密度平实贴图：三栏工具、5 分钟练习、边界句和消息草稿优先 `iphone_notes` / `save_tool`；单句重构可用 `note_card` / `cover_hook`；只有真实聊天对话或消息气泡本身是首屏内容时才用 `wechat_chat`。心理机制解释、专业边界和长正文不应进入封面图。
+- `modern_psychology_post` 的图片策略默认使用低密度平实贴图：三栏工具、5 分钟练习、边界句和消息草稿优先 `iphone_notes` / `save_tool`；单句重构可用 `note_card` / `cover_hook`；只有真实聊天对话或消息气泡本身是首屏内容时才用 `wechat_chat`。心理机制解释、专业边界和长正文不应进入封面图。发帖前 `guide-post` 会把同一规则浓缩成 `topic_guidance.image_recommendation`，供 OpenClaw/Codex 在用户确认选题方向后展示图片生成建议。
 - `PlaybookRegistry` 支持列出定义、按 id 查询，以及按账号选择。
 - `PlaybookDefinition.reflection` 是结构化规则字典，支持必需规则（如 `required_hashtag`、非空 `must_include_phrase`）、可选内容质量规则（如 `title_must_not_equal_any`、`body_must_include_any`、`body_must_not_include_any`）和推荐规则（如 `recommended_phrases`）。推荐词只作为风格提示，不应被 runtime 当成硬门槛。
 - `PlaybookLoader` 负责把 markdown 资产读出来供运行时使用，包括 planner、persona 和 reflection 三类文本输入。
@@ -78,7 +78,7 @@ Playbook 是 PTSM 的业务编排单元。它把领域、平台、技能需求�
 | `reddit_curation_daily_post` | 220-700 chars |
 | `wuxia_character_post` | 700-1100 chars |
 
-`guide-post` 的跨领域 topic pack 现在覆盖当前九个 playbook：`modern_psychology_post`、`fengkuang_daily_post`、`human_enrichment_daily_post`、`sushi_poetry_daily_post`、`wuxia_character_post`、`ai_tech_daily_post`、`daily_english_post`、`world_cup_daily_post`、`reddit_curation_daily_post`。它只做发帖前选题引导，不新增 playbook，也不把 live research 接进普通生成；每个 pack 以本地确定性 lane/direction 数据把热点机制产品化为用户可选方向。非心理学 pack 的候选池必须大于展示数，selector 会把用户 scene 关键词、lane affinity、`diversity_key`、direction source type 和 open-scene mechanism 分开处理，并在每条公开方向里写出 `direction_type` 和 `scene_fit`。公开输出采用 `dynamic_scene_diversity_rerank`：从 curated 候选和多个当前 scene/lane facets 组合出的 `open_scene` 候选中动态选出 4 个方向，让不同场景既有稳定锚点，也不会被固定 curated 槽位锁住。
+`guide-post` 的跨领域 topic pack 现在覆盖当前九个 playbook：`modern_psychology_post`、`fengkuang_daily_post`、`human_enrichment_daily_post`、`sushi_poetry_daily_post`、`wuxia_character_post`、`ai_tech_daily_post`、`daily_english_post`、`world_cup_daily_post`、`reddit_curation_daily_post`。它只做发帖前选题引导，不新增 playbook，也不把 live research 接进普通生成；每个 pack 以本地确定性 lane/direction 数据把热点机制产品化为用户可选方向。非心理学 pack 的候选池必须大于展示数，selector 会把用户 scene 关键词、lane affinity、`diversity_key`、direction source type 和 open-scene mechanism 分开处理，并在每条公开方向里写出 `direction_type` 和 `scene_fit`。公开输出采用 `dynamic_scene_diversity_rerank`：从 curated 候选和多个当前 scene/lane facets 组合出的 `open_scene` 候选中动态选出 4 个方向，让不同场景既有稳定锚点，也不会被固定 curated 槽位锁住。公开 payload 还带 `topic_guidance.image_recommendation`，把选定方向后的封面建议限定为本地社交截图样式或 provider image，不让 wrapper 自己决定模型、provider 或截图形式。
 
 `fengkuang_daily_post` 的当前 reflection 规则要求 `#发疯文学`，拒绝 `打工人地铁生存实录`、`会议连环暴击实录`、`社畜崩溃边缘实录` 这类泛标题，并要求正文至少出现评论区/接一句/可复制/模板/写在等平台原生机制之一，同时禁止把心理疾病、医院、治疗、用药当笑点。
 

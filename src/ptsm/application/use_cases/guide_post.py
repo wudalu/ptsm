@@ -19,6 +19,85 @@ DEFAULT_ACCOUNT_ID = "acct-psychology-local"
 IMAGE_STYLE_CHOICES = ("note_card", "iphone_notes", "wechat_chat")
 SUPPORTED_PLAYBOOK_IDS = (SUPPORTED_PLAYBOOK_ID, *TOPIC_GUIDANCE_PACKS.keys())
 TOPIC_GUIDANCE_SELECTION_POLICY = "dynamic_scene_diversity_rerank"
+IMAGE_RECOMMENDATION_DECISION_STAGE = "after_topic_direction_confirmation"
+PROVIDER_IMAGE_PROVIDER = "bailian"
+PROVIDER_IMAGE_MODEL = "qwen-image-2.0-pro"
+CHAT_IMAGE_KEYWORDS = (
+    "消息",
+    "回复",
+    "聊天",
+    "群聊",
+    "对话",
+    "评论接龙",
+    "接一句",
+    "在吗",
+    "秒回",
+    "已读",
+    "英文回复",
+    "发来",
+    "怎么回",
+)
+SAVE_TOOL_IMAGE_KEYWORDS = (
+    "边界句",
+    "三栏",
+    "清单",
+    "练习",
+    "步骤",
+    "句型",
+    "单词",
+    "词汇",
+    "小任务",
+    "看点清单",
+    "复盘顺序",
+    "保存",
+    "工具",
+    "5 分钟",
+    "5分钟",
+    "三问",
+    "三句",
+)
+NOTE_CARD_IMAGE_KEYWORDS = (
+    "苏轼",
+    "怀民",
+    "定风波",
+    "一句",
+    "金句",
+    "短句",
+    "重构",
+    "判断",
+    "角色",
+)
+PROVIDER_IMAGE_KEYWORDS = (
+    "书桌",
+    "角落",
+    "床头",
+    "材料",
+    "手作",
+    "过程",
+    "完成品",
+    "空间",
+    "物件",
+    "路线",
+    "colorwalk",
+    "球衣",
+    "围巾",
+    "客厅",
+    "设备",
+    "界面",
+    "人物",
+    "姿态",
+    "氛围",
+    "场景",
+    "产品",
+    "食物",
+    "房间",
+    "桌面",
+    "改造",
+)
+VISUAL_EVIDENCE_PLAYBOOK_IDS = (
+    "human_enrichment_daily_post",
+    "wuxia_character_post",
+)
 
 
 @dataclass(frozen=True)
@@ -438,24 +517,37 @@ def _run_psychology_guide_post(request: GuidePostRequest) -> dict[str, Any]:
         "comment_prompt": comment_prompt,
         "safety_boundary": safety_boundary,
     }
-    recommended_scene = _build_recommended_scene(brief)
     account_id = _resolve_account_id(
         request_account_id=request.account_id,
         playbook_id=SUPPORTED_PLAYBOOK_ID,
         default_account_id=DEFAULT_ACCOUNT_ID,
     )
+    topic_guidance = build_psychology_topic_guidance(
+        scene=scene,
+        lane_name=lane.name,
+        brief=brief,
+    )
+    image_recommendation = topic_guidance["image_recommendation"]
+    recommended_scene = _build_recommended_scene(
+        brief,
+        image_recommendation=image_recommendation,
+    )
     command = _build_run_playbook_command(
         account_id=account_id,
         playbook_id=SUPPORTED_PLAYBOOK_ID,
         scene=recommended_scene,
-        image_style=image_style,
+        image_style=(
+            str(image_recommendation["local_style"])
+            if image_recommendation["recommended_backend"] == "local_social_screenshot"
+            else None
+        ),
     )
     return {
         "status": "completed",
         "playbook_id": SUPPORTED_PLAYBOOK_ID,
         "account_id": account_id,
         "brief": brief,
-        "topic_guidance": build_psychology_topic_guidance(scene=scene, lane_name=lane.name),
+        "topic_guidance": topic_guidance,
         "recommended_scene": recommended_scene,
         "run_playbook_command": command,
         "run_playbook_command_text": shlex.join(command),
@@ -504,28 +596,38 @@ def _run_generic_guide_post(
         },
         "comment_prompt": comment_prompt,
     }
-    recommended_scene = _build_generic_recommended_scene(brief)
     account_id = _resolve_account_id(
         request_account_id=request.account_id,
         playbook_id=pack.playbook_id,
         default_account_id=pack.default_account_id,
     )
+    topic_guidance = build_topic_guidance(
+        pack=pack,
+        scene=scene,
+        lane_name=lane.name,
+        brief=brief,
+    )
+    image_recommendation = topic_guidance["image_recommendation"]
+    recommended_scene = _build_generic_recommended_scene(
+        brief,
+        image_recommendation=image_recommendation,
+    )
     command = _build_run_playbook_command(
         account_id=account_id,
         playbook_id=pack.playbook_id,
         scene=recommended_scene,
-        image_style=image_style,
+        image_style=(
+            str(image_recommendation["local_style"])
+            if image_recommendation["recommended_backend"] == "local_social_screenshot"
+            else None
+        ),
     )
     return {
         "status": "completed",
         "playbook_id": pack.playbook_id,
         "account_id": account_id,
         "brief": brief,
-        "topic_guidance": build_topic_guidance(
-            pack=pack,
-            scene=scene,
-            lane_name=lane.name,
-        ),
+        "topic_guidance": topic_guidance,
         "recommended_scene": recommended_scene,
         "run_playbook_command": command,
         "run_playbook_command_text": shlex.join(command),
@@ -550,6 +652,9 @@ def format_guide_post_markdown(result: dict[str, Any]) -> str:
         f"- {item['item']}：{item['done_when']}" for item in result["quality_checklist"]
     )
     safety_notes = "\n".join(f"- {note}" for note in result["safety_notes"])
+    image_recommendation = _format_image_recommendation(
+        result.get("topic_guidance", {}).get("image_recommendation")
+    )
     if "mechanism" not in brief:
         return "\n".join(
             [
@@ -567,6 +672,10 @@ def format_guide_post_markdown(result: dict[str, Any]) -> str:
                 "## Topic Directions",
                 "",
                 directions,
+                "",
+                "## Image Recommendation",
+                "",
+                image_recommendation,
                 "",
                 "## Recommended Scene",
                 "",
@@ -601,6 +710,10 @@ def format_guide_post_markdown(result: dict[str, Any]) -> str:
             "",
             directions,
             "",
+            "## Image Recommendation",
+            "",
+            image_recommendation,
+            "",
             "## Recommended Scene",
             "",
             result["recommended_scene"],
@@ -620,7 +733,32 @@ def format_guide_post_markdown(result: dict[str, Any]) -> str:
     )
 
 
-def build_psychology_topic_guidance(*, scene: str = "", lane_name: str = "") -> dict[str, Any]:
+def _format_image_recommendation(recommendation: Any) -> str:
+    if not isinstance(recommendation, dict):
+        return "- status: unavailable"
+    return "\n".join(
+        [
+            f"- decision_stage: {recommendation['decision_stage']}",
+            f"- recommended_backend: {recommendation['recommended_backend']}",
+            f"- local_style: {recommendation['local_style']}",
+            f"- provider: {recommendation['provider']}",
+            f"- model: {recommendation['model']}",
+            f"- role: {recommendation['role']}",
+            f"- text_density: {recommendation['text_density']}",
+            f"- max_text_units: {recommendation['max_text_units']}",
+            f"- reason: {recommendation['reason']}",
+            f"- command_hint: `{recommendation['command_hint']}`",
+            f"- fallback: {recommendation['fallback']}",
+        ]
+    )
+
+
+def build_psychology_topic_guidance(
+    *,
+    scene: str = "",
+    lane_name: str = "",
+    brief: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     directions = select_topic_directions(
         directions=PSYCHOLOGY_TOPIC_DIRECTIONS,
         scene=scene,
@@ -639,6 +777,12 @@ def build_psychology_topic_guidance(*, scene: str = "", lane_name: str = "") -> 
                 lane_name=lane_name,
             ),
         ),
+        "image_recommendation": _build_image_recommendation(
+            playbook_id=SUPPORTED_PLAYBOOK_ID,
+            scene=scene,
+            lane_name=lane_name,
+            brief=brief or {},
+        ),
     }
 
 
@@ -647,6 +791,7 @@ def build_topic_guidance(
     pack: TopicPack,
     scene: str = "",
     lane_name: str = "",
+    brief: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     directions = select_topic_directions(
         directions=pack.directions,
@@ -660,7 +805,138 @@ def build_topic_guidance(
         "message": pack.guidance_message,
         "directions": directions,
         **_topic_guidance_selection_metadata(directions=directions),
+        "image_recommendation": _build_image_recommendation(
+            playbook_id=pack.playbook_id,
+            scene=scene,
+            lane_name=lane_name,
+            brief=brief or {},
+        ),
     }
+
+
+def _build_image_recommendation(
+    *,
+    playbook_id: str,
+    scene: str,
+    lane_name: str,
+    brief: dict[str, Any],
+) -> dict[str, Any]:
+    signal_text = " ".join(
+        str(value)
+        for value in (
+            scene,
+            lane_name,
+            brief.get("save_tool", ""),
+            brief.get("mechanism", ""),
+        )
+        if value
+    )
+    if _contains_any(scene, CHAT_IMAGE_KEYWORDS):
+        return _local_image_recommendation(
+            style="wechat_chat",
+            role="comment_prompt",
+            max_text_units=2,
+            reason="这个方向的首屏资产是消息、对话或可复制回复，用微信聊天截图更容易触发评论接龙。",
+        )
+    if _needs_provider_image(playbook_id=playbook_id, signal_text=signal_text):
+        return _provider_image_recommendation()
+    if _contains_any(signal_text, SAVE_TOOL_IMAGE_KEYWORDS):
+        return _local_image_recommendation(
+            style="iphone_notes",
+            role="save_tool",
+            max_text_units=3,
+            reason="这个方向需要用户保存边界句、步骤或工具卡，用 iPhone 备忘录式截图更清楚。",
+        )
+    if _contains_any(signal_text, NOTE_CARD_IMAGE_KEYWORDS):
+        return _local_image_recommendation(
+            style="note_card",
+            role="cover_hook",
+            max_text_units=2,
+            reason="这个方向适合把一句强判断或短重构放在封面上，用笔记卡保持低密度。",
+        )
+
+    image_form = brief.get("image_form")
+    style = _normalize_local_image_style(
+        image_form.get("style") if isinstance(image_form, dict) else None,
+        brief.get("image_style"),
+    )
+    if style == "wechat_chat":
+        return _local_image_recommendation(
+            style=style,
+            role="comment_prompt",
+            max_text_units=2,
+            reason="沿用当前 playbook 的本地聊天截图样式，只保留少量对话或评论入口。",
+        )
+    if style == "iphone_notes":
+        return _local_image_recommendation(
+            style=style,
+            role="save_tool",
+            max_text_units=3,
+            reason="沿用当前 playbook 的本地备忘录样式，把选定方向收束成可保存工具卡。",
+        )
+    return _local_image_recommendation(
+        style="note_card",
+        role="cover_hook",
+        max_text_units=2,
+        reason="当前方向不依赖真实空间或物件证据，用低密度笔记卡承接封面钩子。",
+    )
+
+
+def _needs_provider_image(*, playbook_id: str, signal_text: str) -> bool:
+    if playbook_id in VISUAL_EVIDENCE_PLAYBOOK_IDS:
+        return True
+    return _contains_any(signal_text, PROVIDER_IMAGE_KEYWORDS)
+
+
+def _provider_image_recommendation() -> dict[str, Any]:
+    return {
+        "status": "available",
+        "decision_stage": IMAGE_RECOMMENDATION_DECISION_STAGE,
+        "recommended_backend": "provider_image",
+        "local_style": "",
+        "provider": PROVIDER_IMAGE_PROVIDER,
+        "model": PROVIDER_IMAGE_MODEL,
+        "role": "evidence_or_scene",
+        "text_density": "low",
+        "max_text_units": 1,
+        "reason": "这个方向需要看见空间、物件、材料、人物或场景证据，用 LLM/provider 图片更适合做视觉氛围。",
+        "command_hint": "--auto-generate-image",
+        "fallback": "如果没有 provider 配置，退回 --local-image-style note_card，只保留一个短判断，避免伪装真实证据。",
+    }
+
+
+def _local_image_recommendation(
+    *,
+    style: str,
+    role: str,
+    max_text_units: int,
+    reason: str,
+) -> dict[str, Any]:
+    return {
+        "status": "available",
+        "decision_stage": IMAGE_RECOMMENDATION_DECISION_STAGE,
+        "recommended_backend": "local_social_screenshot",
+        "local_style": style,
+        "provider": "",
+        "model": "",
+        "role": role,
+        "text_density": "low",
+        "max_text_units": max_text_units,
+        "reason": reason,
+        "command_hint": f"--local-image-style {style}",
+        "fallback": "如果选定方向最终改成空间、物件、材料、人物或过程证据，再改用 --auto-generate-image。",
+    }
+
+
+def _normalize_local_image_style(*values: object) -> str:
+    for value in values:
+        if isinstance(value, str) and value in IMAGE_STYLE_CHOICES:
+            return value
+    return "note_card"
+
+
+def _contains_any(text: str, keywords: tuple[str, ...]) -> bool:
+    return any(keyword.lower() in text.lower() for keyword in keywords)
 
 
 def _topic_guidance_selection_metadata(
@@ -720,7 +996,11 @@ def _clean_or_default(value: str | None, default: str) -> str:
     return stripped or default
 
 
-def _build_recommended_scene(brief: dict[str, Any]) -> str:
+def _build_recommended_scene(
+    brief: dict[str, Any],
+    *,
+    image_recommendation: dict[str, Any] | None = None,
+) -> str:
     return "\n".join(
         [
             f"选题lane：{brief['lane']}",
@@ -728,23 +1008,44 @@ def _build_recommended_scene(brief: dict[str, Any]) -> str:
             f"心理机制：{brief['mechanism']}",
             f"非诊断化重构：{brief['reframe']}",
             f"可保存小工具：{brief['save_tool']}",
-            f"封面形式：{brief['image_style']}，低密度，只放 1-3 个短文字单元",
+            f"封面形式：{_image_recommendation_scene_summary(image_recommendation, brief)}",
             f"评论提示：{brief['comment_prompt']}",
             f"专业边界：{brief['safety_boundary']}",
         ]
     )
 
 
-def _build_generic_recommended_scene(brief: dict[str, Any]) -> str:
+def _build_generic_recommended_scene(
+    brief: dict[str, Any],
+    *,
+    image_recommendation: dict[str, Any] | None = None,
+) -> str:
     return "\n".join(
         [
             f"选题lane：{brief['lane']}",
             f"第一人称微场景：{brief['scene']}",
             f"内容角度：{brief['content_angle']}",
             f"可保存小工具：{brief['save_tool']}",
-            f"封面形式：{brief['image_style']}，低密度，只放 1-3 个短文字单元",
+            f"封面形式：{_image_recommendation_scene_summary(image_recommendation, brief)}",
             f"评论提示：{brief['comment_prompt']}",
         ]
+    )
+
+
+def _image_recommendation_scene_summary(
+    recommendation: dict[str, Any] | None,
+    brief: dict[str, Any],
+) -> str:
+    if not recommendation:
+        return f"{brief['image_style']}，低密度，只放 1-3 个短文字单元"
+    if recommendation["recommended_backend"] == "provider_image":
+        return (
+            f"provider_image（{recommendation['provider']} / {recommendation['model']}），"
+            f"{recommendation['role']}，低密度，最多 {recommendation['max_text_units']} 个短文字单元"
+        )
+    return (
+        f"{recommendation['local_style']}，{recommendation['role']}，"
+        f"低密度，最多 {recommendation['max_text_units']} 个短文字单元"
     )
 
 
@@ -766,9 +1067,9 @@ def _build_run_playbook_command(
     account_id: str,
     playbook_id: str,
     scene: str,
-    image_style: str,
+    image_style: str | None,
 ) -> list[str]:
-    return [
+    command = [
         "uv",
         "run",
         "python",
@@ -784,9 +1085,10 @@ def _build_run_playbook_command(
         "--publish-mode",
         "dry-run",
         "--auto-generate-image",
-        "--local-image-style",
-        image_style,
     ]
+    if image_style:
+        command.extend(["--local-image-style", image_style])
+    return command
 
 
 def _build_generic_quality_checklist() -> list[dict[str, str]]:

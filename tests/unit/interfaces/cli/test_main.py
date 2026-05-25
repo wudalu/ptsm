@@ -476,6 +476,17 @@ def test_guide_post_cli_outputs_non_interactive_psychology_brief(
         payload["topic_guidance"]["open_direction_id"]
         == payload["topic_guidance"]["open_direction_ids"][0]
     )
+    image_recommendation = payload["topic_guidance"]["image_recommendation"]
+    assert image_recommendation["status"] == "available"
+    assert (
+        image_recommendation["decision_stage"]
+        == "after_topic_direction_confirmation"
+    )
+    assert image_recommendation["recommended_backend"] in {
+        "local_social_screenshot",
+        "provider_image",
+    }
+    assert image_recommendation["command_hint"]
     assert "run-playbook --scene" in payload["run_playbook_command_text"]
 
 
@@ -503,6 +514,10 @@ def test_guide_post_cli_outputs_non_interactive_human_enrichment_brief(
     assert payload["playbook_id"] == "human_enrichment_daily_post"
     assert payload["account_id"] == "acct-enrichment-local"
     assert payload["topic_guidance"]["directions"]
+    assert (
+        payload["topic_guidance"]["image_recommendation"]["recommended_backend"]
+        == "provider_image"
+    )
 
 
 @pytest.mark.parametrize(
@@ -598,6 +613,8 @@ def test_guide_post_cli_outputs_generic_markdown_for_non_psychology(
     assert "open_scene" in output
     assert "trend:" in output
     assert "hook:" in output
+    assert "## Image Recommendation" in output
+    assert "provider_image" in output
 
 
 def test_guide_post_cli_prompts_for_missing_fields(

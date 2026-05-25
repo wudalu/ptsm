@@ -2,7 +2,7 @@
 title: XHS Image Forms By Domain
 status: active
 owner: ptsm
-last_verified: 2026-05-23
+last_verified: 2026-05-25
 source_of_truth: false
 related_paths:
   - docs/xhs-topics/index.md
@@ -17,6 +17,8 @@ related_paths:
 这份文档回答一个运行时策略问题：不同领域的小红书封面应该采用什么图片形式，且尽量简单。
 
 核心结论：封面图不是正文截图。它只承担一个任务：让用户一眼知道“我为什么要点开、保存或评论”。因此图片先定 `role`，再定 `text_density`，最后才定 `backend/style`。
+
+`guide-post` 会在 `topic_guidance.image_recommendation` 中把这些规则提前变成选题确认后的操作建议：本地截图返回 `recommended_backend=local_social_screenshot` 和 `local_style`，外部图返回 `recommended_backend=provider_image`、`provider=bailian`、`model=qwen-image-2.0-pro` 和 `command_hint=--auto-generate-image`。OpenClaw/Codex wrapper 只展示该 payload，不自行决定模型或样式。
 
 ## Shared Defaults
 

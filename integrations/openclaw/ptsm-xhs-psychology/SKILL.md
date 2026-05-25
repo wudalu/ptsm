@@ -27,7 +27,11 @@ uv run python -m ptsm.bootstrap guide-post \
 
 If the user changes the scene, call `guide-post` again with the new scene. Do not reuse previous directions for a different scene.
 
-4. Generate through PTSM only after the direction is chosen or confirmed.
+4. After the topic direction is chosen or confirmed, show only the returned `topic_guidance.image_recommendation`: `recommended_backend`, `local_style`, `provider`, `model`, `role`, `text_density`, `max_text_units`, `reason`, `command_hint`, and `fallback`.
+
+If `recommended_backend` is `provider_image`, describe it as an LLM/provider image recommendation and use the returned `provider` and `model`. If `recommended_backend` is `local_social_screenshot`, describe the returned local style such as `wechat_chat`, `iphone_notes`, or `note_card`. Do not add extra image styles, providers, or model names.
+
+5. Generate through PTSM only after the direction is chosen or confirmed.
 
 ```bash
 uv run python -m ptsm.bootstrap run-playbook \
@@ -39,7 +43,7 @@ uv run python -m ptsm.bootstrap run-playbook \
   --publish-mode dry-run
 ```
 
-5. Real publishing requires the user's explicit publish intent and the normal PTSM publish flags. Prefer dry-run first.
+6. Real publishing requires the user's explicit publish intent and the normal PTSM publish flags. Prefer dry-run first.
 
 ## Guardrails
 
@@ -48,5 +52,6 @@ uv run python -m ptsm.bootstrap run-playbook \
 - Do not mention hidden research documents, file paths, raw source URLs, or provenance to the user.
 - Do not copy topic logic into this skill; PTSM owns the guidance payload.
 - Do not invent, expand, or replace PTSM-returned open_scene direction(s); only display them when they are present in `topic_guidance.directions`.
+- Do not invent, expand, or replace PTSM-returned image recommendation; only display `topic_guidance.image_recommendation` when PTSM returns it.
 - If `run-playbook --caller openclaw` returns `topic_guidance_required`, show the directions and call `run-playbook` again only after direction confirmation with `--guidance-ack`.
 - Keep psychology safety boundaries intact: no diagnosis, no treatment promises, no medication advice, and crisis or persistent impairment should be redirected to professional support.

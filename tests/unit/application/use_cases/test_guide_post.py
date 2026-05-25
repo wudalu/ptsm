@@ -135,6 +135,16 @@ def _open_directions(result: dict[str, object]) -> list[dict[str, object]]:
     ]
 
 
+def _image_recommendation(result: dict[str, object]) -> dict[str, object]:
+    guidance = result["topic_guidance"]
+    assert isinstance(guidance, dict)
+    recommendation = guidance["image_recommendation"]
+    assert isinstance(recommendation, dict)
+    assert recommendation["status"] == "available"
+    assert recommendation["decision_stage"] == "after_topic_direction_confirmation"
+    return recommendation
+
+
 def test_run_guide_post_builds_psychology_brief_with_scene_defaults() -> None:
     result = run_guide_post(
         GuidePostRequest(
@@ -198,6 +208,70 @@ def test_run_guide_post_returns_productized_topic_directions_without_internal_so
     assert '"source"' not in serialized
 
 
+def test_psychology_topic_guidance_recommends_wechat_for_message_reply_assets() -> None:
+    result = run_guide_post(
+        GuidePostRequest(scene="朋友半夜发来一大段消息，我想写一版不被掏空的回复")
+    )
+
+    recommendation = _image_recommendation(result)
+
+    assert recommendation["recommended_backend"] == "local_social_screenshot"
+    assert recommendation["local_style"] == "wechat_chat"
+    assert recommendation["provider"] == ""
+    assert recommendation["model"] == ""
+    assert recommendation["role"] == "comment_prompt"
+    assert recommendation["text_density"] == "low"
+    assert recommendation["max_text_units"] == 2
+    assert recommendation["command_hint"] == "--local-image-style wechat_chat"
+    assert "消息" in recommendation["reason"] or "回复" in recommendation["reason"]
+    assert "wechat_chat" in result["recommended_scene"]
+    _assert_no_internal_source_leakage(result)
+
+
+def test_psychology_topic_guidance_recommends_notes_for_boundary_tools() -> None:
+    result = run_guide_post(
+        GuidePostRequest(scene="同事临时加需求，想练一版边界句")
+    )
+
+    recommendation = _image_recommendation(result)
+
+    assert recommendation["recommended_backend"] == "local_social_screenshot"
+    assert recommendation["local_style"] == "iphone_notes"
+    assert recommendation["provider"] == ""
+    assert recommendation["model"] == ""
+    assert recommendation["role"] == "save_tool"
+    assert recommendation["max_text_units"] == 3
+    assert recommendation["command_hint"] == "--local-image-style iphone_notes"
+    assert "边界句" in recommendation["reason"] or "工具卡" in recommendation["reason"]
+    assert "iphone_notes" in result["recommended_scene"]
+    _assert_no_internal_source_leakage(result)
+
+
+def test_generic_topic_guidance_recommends_provider_for_visual_evidence_domains() -> None:
+    result = run_guide_post(
+        GuidePostRequest(
+            playbook_id="human_enrichment_daily_post",
+            account_id="acct-enrichment-local",
+            scene="想把书桌角落改成十分钟适我主义手作位",
+        )
+    )
+
+    recommendation = _image_recommendation(result)
+
+    assert recommendation["recommended_backend"] == "provider_image"
+    assert recommendation["local_style"] == ""
+    assert recommendation["provider"] == "bailian"
+    assert recommendation["model"] == "qwen-image-2.0-pro"
+    assert recommendation["role"] == "evidence_or_scene"
+    assert recommendation["text_density"] == "low"
+    assert recommendation["max_text_units"] <= 1
+    assert recommendation["command_hint"] == "--auto-generate-image"
+    assert "空间" in recommendation["reason"] or "物件" in recommendation["reason"]
+    assert "provider_image" in result["recommended_scene"]
+    assert "qwen-image-2.0-pro" in result["recommended_scene"]
+    _assert_no_internal_source_leakage(result)
+
+
 def test_psychology_topic_guidance_returns_dynamic_open_scene_directions() -> None:
     result = run_guide_post(
         GuidePostRequest(scene="朋友半夜把情绪都倒给我，我不知道怎么回")
@@ -248,6 +322,7 @@ def test_generic_topic_guidance_returns_dynamic_open_scene_metadata_for_all_pack
         assert guidance["open_direction_id"] == open_slots[0]["id"]
         assert guidance["direction_type_counts"]["open_scene"] == len(open_slots)
         assert guidance["direction_type_counts"]["curated"] == len(_curated_direction_ids(result))
+        assert _image_recommendation(result)["command_hint"]
         assert open_slots[0]["id"] not in curated_ids
         assert open_slots[0]["scene_fit"].startswith("开放探索")
         _assert_no_internal_source_leakage(result)
@@ -310,6 +385,9 @@ def test_format_guide_post_markdown_includes_scene_fit() -> None:
     assert "scene:" in markdown
     assert "fit:" in markdown
     assert "匹配当前场景信号" in markdown
+    assert "## Image Recommendation" in markdown
+    assert "after_topic_direction_confirmation" in markdown
+    assert "--local-image-style" in markdown
 
 
 def test_run_guide_post_varies_topic_directions_by_scene() -> None:
