@@ -239,6 +239,91 @@ def test_select_topic_directions_can_append_open_scene_slot() -> None:
     assert "https://" not in serialized
 
 
+def test_select_topic_directions_dynamic_breadth_does_not_reserve_curated_slots() -> None:
+    directions = (
+        TopicDirection(
+            id="primary_huimin",
+            name="Primary Huimin",
+            trend_signal="role-pair",
+            viral_hook="comment",
+            why_it_may_work="primary",
+            best_scenes=("怀民",),
+            content_angle="primary",
+            saveable_tool="tool",
+            comment_prompt="prompt",
+            avoid="avoid",
+            scene_keywords=("怀民", "夜里"),
+            diversity_key="role_pair",
+            base_priority=9,
+        ),
+        TopicDirection(
+            id="same_family_huimin",
+            name="Same Family Huimin",
+            trend_signal="role-pair",
+            viral_hook="comment",
+            why_it_may_work="same",
+            best_scenes=("怀民",),
+            content_angle="same",
+            saveable_tool="tool",
+            comment_prompt="prompt",
+            avoid="avoid",
+            scene_keywords=("怀民", "朋友"),
+            diversity_key="role_pair",
+            base_priority=8,
+        ),
+        TopicDirection(
+            id="old_friend",
+            name="Old Friend",
+            trend_signal="old-friend",
+            viral_hook="save",
+            why_it_may_work="old",
+            best_scenes=("旧友",),
+            content_angle="old",
+            saveable_tool="tool",
+            comment_prompt="prompt",
+            avoid="avoid",
+            scene_keywords=("旧友", "朋友"),
+            diversity_key="old_friend",
+            base_priority=7,
+        ),
+        TopicDirection(
+            id="city_night",
+            name="City Night",
+            trend_signal="night",
+            viral_hook="scene",
+            why_it_may_work="night",
+            best_scenes=("夜路",),
+            content_angle="night",
+            saveable_tool="tool",
+            comment_prompt="prompt",
+            avoid="avoid",
+            scene_keywords=("夜路", "月亮"),
+            diversity_key="city_night",
+            base_priority=6,
+        ),
+    )
+
+    result = select_topic_directions(
+        directions=directions,
+        scene="夜里读到怀民亦未寝，想写一种旧友关系",
+        lane_name="怀民关系 / 角色认领",
+        limit=4,
+        include_open_slot=True,
+        dynamic_breadth=True,
+        open_candidate_count=3,
+    )
+
+    open_slots = [item for item in result if item["direction_type"] == "open_scene"]
+    curated_slots = [item for item in result if item["direction_type"] == "curated"]
+
+    assert len(result) == 4
+    assert result[0]["id"] == "primary_huimin"
+    assert len(open_slots) >= 2
+    assert len(curated_slots) <= 2
+    assert len({item["id"] for item in open_slots}) == len(open_slots)
+    assert len({item["name"] for item in open_slots}) == len(open_slots)
+
+
 def test_open_scene_slot_is_stable_for_same_scene_and_changes_by_scene() -> None:
     directions = (
         TopicDirection(

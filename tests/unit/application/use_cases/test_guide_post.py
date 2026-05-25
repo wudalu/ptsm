@@ -198,7 +198,7 @@ def test_run_guide_post_returns_productized_topic_directions_without_internal_so
     assert '"source"' not in serialized
 
 
-def test_psychology_topic_guidance_returns_curated_plus_open_scene_slot() -> None:
+def test_psychology_topic_guidance_returns_dynamic_open_scene_directions() -> None:
     result = run_guide_post(
         GuidePostRequest(scene="朋友半夜把情绪都倒给我，我不知道怎么回")
     )
@@ -208,20 +208,23 @@ def test_psychology_topic_guidance_returns_curated_plus_open_scene_slot() -> Non
     open_slots = _open_directions(result)
     curated_ids = {direction.id for direction in PSYCHOLOGY_TOPIC_DIRECTIONS}
 
-    assert guidance["selection_policy"] == "hybrid_curated_plus_open_scene"
+    assert guidance["selection_policy"] == "dynamic_scene_diversity_rerank"
     assert len(directions) == 4
-    assert len(open_slots) == 1
-    assert len(_curated_direction_ids(result)) == 3
+    assert len(open_slots) >= 1
+    assert len(_curated_direction_ids(result)) <= 2
     assert directions[0]["direction_type"] == "curated"
     assert guidance["matched_direction_id"] == directions[0]["id"]
     assert guidance["matched_direction_id"] != open_slots[0]["id"]
+    assert guidance["open_direction_ids"] == [slot["id"] for slot in open_slots]
     assert guidance["open_direction_id"] == open_slots[0]["id"]
+    assert guidance["direction_type_counts"]["open_scene"] == len(open_slots)
+    assert guidance["direction_type_counts"]["curated"] == len(_curated_direction_ids(result))
     assert open_slots[0]["id"] not in curated_ids
     assert open_slots[0]["scene_fit"].startswith("开放探索")
     _assert_no_internal_source_leakage(result)
 
 
-def test_generic_topic_guidance_returns_open_scene_slot_for_all_packs() -> None:
+def test_generic_topic_guidance_returns_dynamic_open_scene_metadata_for_all_packs() -> None:
     for playbook_id, pack in TOPIC_GUIDANCE_PACKS.items():
         result = run_guide_post(
             GuidePostRequest(
@@ -235,16 +238,66 @@ def test_generic_topic_guidance_returns_open_scene_slot_for_all_packs() -> None:
         open_slots = _open_directions(result)
         curated_ids = {direction.id for direction in pack.directions}
 
-        assert guidance["selection_policy"] == "hybrid_curated_plus_open_scene"
+        assert guidance["selection_policy"] == "dynamic_scene_diversity_rerank"
         assert len(guidance["directions"]) == 4
-        assert len(open_slots) == 1
-        assert len(_curated_direction_ids(result)) == 3
+        assert len(open_slots) >= 1
+        assert 1 <= len(_curated_direction_ids(result)) <= 3
         assert guidance["matched_direction_id"] == guidance["directions"][0]["id"]
         assert guidance["matched_direction_id"] != open_slots[0]["id"]
+        assert guidance["open_direction_ids"] == [slot["id"] for slot in open_slots]
         assert guidance["open_direction_id"] == open_slots[0]["id"]
+        assert guidance["direction_type_counts"]["open_scene"] == len(open_slots)
+        assert guidance["direction_type_counts"]["curated"] == len(_curated_direction_ids(result))
         assert open_slots[0]["id"] not in curated_ids
         assert open_slots[0]["scene_fit"].startswith("开放探索")
         _assert_no_internal_source_leakage(result)
+
+
+def test_sushi_topic_guidance_same_lane_scene_changes_do_not_keep_fixed_curated_anchors() -> None:
+    scenes = (
+        "夜里读到怀民亦未寝，想写一种旧友关系",
+        "半夜一个人走在城市夜路上，突然想起怀民亦未寝",
+        "下班路上看到月亮，想写苏轼和一个没联系很久的人",
+    )
+
+    results = [
+        run_guide_post(
+            GuidePostRequest(
+                playbook_id="sushi_poetry_daily_post",
+                account_id="acct-sushi-local",
+                scene=scene,
+            )
+        )
+        for scene in scenes
+    ]
+
+    direction_id_sets = [
+        tuple(direction["id"] for direction in result["topic_guidance"]["directions"])
+        for result in results
+    ]
+    curated_id_sets = [
+        tuple(
+            direction["id"]
+            for direction in result["topic_guidance"]["directions"]
+            if direction["direction_type"] == "curated"
+        )
+        for result in results
+    ]
+    fixed_curated_set = {
+        "sushi_role_pair_huimin",
+        "sushi_city_night_walk",
+        "sushi_old_friend_note",
+    }
+
+    assert len(set(direction_id_sets)) > 1
+    assert len(set(curated_id_sets)) > 1
+    for result, curated_ids in zip(results, curated_id_sets, strict=True):
+        guidance = result["topic_guidance"]
+        open_slots = _open_directions(result)
+        assert guidance["selection_policy"] == "dynamic_scene_diversity_rerank"
+        assert guidance["direction_type_counts"]["curated"] <= 2
+        assert len(open_slots) >= 1
+        assert set(curated_ids) != fixed_curated_set
 
 
 def test_format_guide_post_markdown_includes_scene_fit() -> None:
