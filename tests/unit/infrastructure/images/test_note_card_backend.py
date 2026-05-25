@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import cv2
+from PIL import ImageDraw
 
 from ptsm.infrastructure.images.note_card_backend import (
     NoteCardImageBackend,
@@ -91,6 +92,35 @@ def test_note_card_backend_renders_nonblank_png(tmp_path: Path) -> None:
     assert image is not None
     assert image.shape == (1440, 1080)
     assert int(image.min()) < int(image.max())
+
+
+def test_note_card_backend_does_not_draw_local_branding_footer(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    drawn_texts: list[str] = []
+    original_text = ImageDraw.ImageDraw.text
+
+    def capture_text(self, xy, text, *args, **kwargs):
+        drawn_texts.append(str(text))
+        return original_text(self, xy, text, *args, **kwargs)
+
+    monkeypatch.setattr(ImageDraw.ImageDraw, "text", capture_text)
+
+    NoteCardImageBackend(width=540, height=720).generate(
+        prompt=json.dumps(
+            {
+                "title": "周日晚上怕周一消息，不是你没用",
+                "image_text": "脑子提前打卡上班",
+                "body": "可以先存一个 5分钟落地练习。",
+            },
+            ensure_ascii=False,
+        ),
+        output_dir=tmp_path,
+        output_stem="cover",
+    )
+
+    assert "Generated locally by PTSM" not in drawn_texts
 
 
 def test_note_card_backend_falls_back_to_prompt_text_when_json_is_invalid(

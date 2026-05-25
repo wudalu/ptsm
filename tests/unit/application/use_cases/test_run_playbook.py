@@ -888,6 +888,59 @@ def test_run_fengkuang_playbook_generates_image_for_real_publish_when_missing(
     assert artifact["image_generation"]["generated_image_paths"] == [str(generated_path)]
 
 
+def test_run_fengkuang_generated_provider_records_no_watermark_policy(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    artifact_path = tmp_path / "artifact.json"
+    generated_path = tmp_path / "provider-generated.png"
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "fengkuang_daily_post",
+                "final_content": {"title": "旧标题"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    publisher = CapturingPublisher()
+    image_backend = CapturingImageBackend(generated_path)
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_fengkuang_workflow",
+        lambda **_: FakeWorkflow(artifact_path),
+    )
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_image_backend",
+        lambda _settings: image_backend,
+    )
+    _patch_passthrough_watermark_remover(monkeypatch)
+    monkeypatch.chdir(tmp_path)
+
+    result = run_fengkuang_playbook(
+        FengkuangRequest(
+            scene="周六社畜躺平",
+            platform="xiaohongshu",
+            account_id="acct-fk-local",
+            auto_generate_images=True,
+        ),
+        publisher=publisher,
+    )
+
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+
+    assert result["image_generation"]["watermark_policy"]["source"] == "ptsm_generated_image"
+    assert (
+        result["image_generation"]["watermark_policy"]["requested"]
+        == "no_provider_watermark"
+    )
+    assert (
+        artifact["image_generation"]["watermark_policy"]
+        == result["image_generation"]["watermark_policy"]
+    )
+
+
 def test_run_fengkuang_playbook_prefers_manual_image_paths(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -1322,6 +1375,54 @@ def test_run_fengkuang_playbook_local_image_style_forces_local_even_when_provide
     assert result["image_generation"]["image_plan"]["source"] == "manual_override"
     assert result["image_generation"]["image_plan"]["selected_backend"] == "local_note_card"
     assert publisher.received_image_paths
+
+
+def test_run_fengkuang_local_renderer_records_no_watermark_policy(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    artifact_path = tmp_path / "artifact.json"
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "fengkuang_daily_post",
+                "final_content": {"title": "旧标题"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    publisher = CapturingPublisher()
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_fengkuang_workflow",
+        lambda **_: FakeWorkflow(artifact_path),
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = run_fengkuang_playbook(
+        FengkuangRequest(
+            scene="周一早上领导连发三个在吗",
+            platform="xiaohongshu",
+            account_id="acct-fk-local",
+            auto_generate_images=True,
+            local_image_style="iphone_notes",
+        ),
+        publisher=publisher,
+    )
+
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+
+    assert result["image_generation"]["provider"] == "local_note_card"
+    assert result["image_generation"]["watermark_policy"]["provider"] == "local_note_card"
+    assert (
+        result["image_generation"]["watermark_policy"]["requested"]
+        == "no_provider_watermark"
+    )
+    assert (
+        artifact["image_generation"]["watermark_policy"]
+        == result["image_generation"]["watermark_policy"]
+    )
 
 
 def test_build_note_card_image_payload_includes_local_image_style() -> None:

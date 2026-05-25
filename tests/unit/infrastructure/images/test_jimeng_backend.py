@@ -263,6 +263,71 @@ def test_jimeng_backend_persists_base64_result(
     assert result["source_url"] is None
 
 
+def test_jimeng_backend_records_no_watermark_policy(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    calls: list[object] = []
+
+    def fake_urlopen(request, timeout: int = 0):
+        calls.append(request)
+        action = parse_qs(urlparse(request.full_url).query).get("Action", [""])[0]
+        if action == "CVSync2AsyncSubmitTask":
+            return DummyResponse(
+                json.dumps(
+                    {
+                        "code": 10000,
+                        "data": {"task_id": "task-789"},
+                    }
+                ).encode("utf-8")
+            )
+        if action == "CVSync2AsyncGetResult":
+            return DummyResponse(
+                json.dumps(
+                    {
+                        "code": 10000,
+                        "data": {
+                            "status": "done",
+                            "binary_data_base64": [
+                                base64.b64encode(b"fake-jpeg").decode("ascii")
+                            ],
+                        },
+                    }
+                ).encode("utf-8")
+            )
+        raise AssertionError(f"unexpected request URL: {request.full_url}")
+
+    monkeypatch.setattr(
+        "ptsm.infrastructure.images.jimeng_backend.urlopen",
+        fake_urlopen,
+    )
+
+    backend = JimengImageBackend(
+        api_key="ak-test",
+        secret_key="sk-test",
+        base_url="https://visual.volcengineapi.com",
+        model="jimeng_t2i_v40",
+        width=1536,
+        height=2048,
+        poll_interval_seconds=0,
+        max_poll_attempts=1,
+    )
+
+    result = backend.generate(
+        prompt="周六社畜躺平封面",
+        output_dir=tmp_path,
+        output_stem="weekend-flat",
+    )
+
+    submit_body = json.loads(calls[0].data.decode("utf-8"))
+    req_json = json.loads(submit_body["req_json"])
+
+    assert req_json["return_url"] is True
+    assert req_json["logo_info"]["add_logo"] is False
+    assert result["watermark_policy"]["requested"] == "no_provider_watermark"
+    assert result["watermark_policy"]["provider_controls"]["logo_info.add_logo"] is False
+
+
 def _header(request: object, name: str) -> str | None:
     headers = getattr(request, "headers")
     for key, value in headers.items():

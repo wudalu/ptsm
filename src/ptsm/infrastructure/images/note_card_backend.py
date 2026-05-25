@@ -81,8 +81,6 @@ class NoteCardImageBackend:
         title_font = _load_font(int(58 * scale), bold=True)
         subtitle_font = _load_font(int(42 * scale), bold=True)
         body_font = _load_font(int(32 * scale), bold=False)
-        meta_font = _load_font(int(26 * scale), bold=False)
-
         draw.text((x, y), "Notes", fill=(193, 143, 58), font=nav_font)
         draw.text(
             (self.width - x - int(90 * scale), y),
@@ -149,13 +147,6 @@ class NoteCardImageBackend:
                 max_lines=10,
             )
 
-        footer = "Generated locally by PTSM"
-        draw.text(
-            (x, self.height - margin - int(48 * scale)),
-            footer,
-            fill=(170, 163, 150),
-            font=meta_font,
-        )
         return image
 
     def _render_iphone_notes(self, payload: dict[str, Any]) -> Image.Image:

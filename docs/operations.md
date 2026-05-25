@@ -2,7 +2,7 @@
 title: PTSM Operations
 status: active
 owner: ptsm
-last_verified: 2026-05-24
+last_verified: 2026-05-25
 source_of_truth: true
 related_paths:
   - docs/operations/publish-quickstart.md
@@ -151,7 +151,7 @@ COOKIES_PATH=cookies/fk-local.json .ptsm/bin/xhs-mcp/xiaohongshu-mcp-darwin-amd6
 - 心理学 `guide-post` 保留更丰富的六步 brief：先问具体场景，再建议心理学 lane、机制、非诊断化重构、可保存小工具、评论提示和低密度封面；非心理学交互只问具体场景、可选 lane 和评论提示覆盖，避免把心理学机制问题套到其他领域。
 - OpenClaw 心理学集成使用 `integrations/openclaw/ptsm-xhs-psychology/SKILL.md` 作为薄 wrapper：先调用 `guide-post` 展示 `topic_guidance.directions`、`direction_type` 和 `scene_fit`，用户确认方向后再调用 `run-playbook --caller openclaw --guidance-ack`。如果 OpenClaw 直接调用 `run-playbook --caller openclaw` 生成 `modern_psychology_post` 且没有 `--guidance-ack`，PTSM 会返回 `topic_guidance_required`，不会启动 workflow、写 run 或发布。
 - OpenClaw 非心理学 XHS 集成使用 `integrations/openclaw/ptsm-xhs-topic-guide/SKILL.md`。该 wrapper 自动把发疯文学、人类丰容、苏轼诗词、武侠人物、AI科技、每日英语、世界杯和 Reddit英文讨论转译意图映射到对应 playbook；意图模糊时先问一个短澄清问题；方向确认后再 dry-run 生成。如果用户更换场景，wrapper 必须重新调用 `guide-post`，不要沿用上一轮方向。wrapper 只能展示 PTSM-returned `open_scene` 方向，不能自己发明开放方向。非心理学没有 runtime hard preflight gate，因此 `run-playbook --caller openclaw` 不会因为缺少非心理学 guidance ack 而被拒绝。
-- `run-fengkuang --auto-generate-image` 会在缺少 `--publish-image-path` 时尝试调用已配置的图片后端生成封面；即梦配置优先于百炼配置，真实发布模式下默认也会尝试自动补图。
+- `run-fengkuang --auto-generate-image` 会在缺少 `--publish-image-path` 时尝试调用已配置的图片后端生成封面；即梦配置优先于百炼配置，真实发布模式下默认也会尝试自动补图。PTSM 生成图会请求源头不加 provider 水印，并在 artifact 的 `image_generation.watermark_policy` 里记录 `no_provider_watermark` 和具体 provider controls。
 - `--no-auto-generate-image` 可以关闭自动补图；`--publish-image-path` 使用手动图片；`--local-image-style note_card|iphone_notes|wechat_chat` 可以主动选择本地截图式封面，即使外部图片 provider 已配置也生效。当前 `wechat_chat` 是内容区聊天转录封面，不绘制手机头部、底部输入栏或头像；正文或 `final_content.image_plan` 中的 `theme`、`chat_title`、`chat_times` 等本地渲染参数会进入 renderer payload 和 artifact 证据。
 - 真实发布只要最终有图片，就必须经过 `watermark_removal` 后处理；dry-run 图片实验仍可用 `WATERMARK_REMOVAL_ENABLED=true` 选择是否预览去水印结果。
 - 小红书真实发布前，需要先单独启动外部 `xiaohongshu-mcp` 服务；PTSM 默认不会自动拉起 `.ptsm/bin/xhs-mcp/xiaohongshu-mcp-darwin-amd64`。

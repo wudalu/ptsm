@@ -2,7 +2,7 @@
 title: PTSM Architecture
 status: active
 owner: ptsm
-last_verified: 2026-05-24
+last_verified: 2026-05-25
 source_of_truth: true
 related_paths:
   - src/ptsm
@@ -63,7 +63,7 @@ PTSM 当前已支持九个垂直领域（发疯文学、苏轼诗词赏析、武
 - composed operator snapshots such as `harness-report` 也留在 `application/use_cases`，只读复用现有 harness surfaces，而不是新增 orchestration service。
 - single-case diagnostics such as `diagnose-publish` 同样留在 `application/use_cases`，通过组合 `doctor`、logs 和 artifact readers 来输出归因，而不是把诊断逻辑塞进 publisher 或 CLI。
 - side-effect replay control 也放在 `application/services + application/use_cases`，避免让 `agent_runtime` 直接承担发布副作用策略。
-- provider-backed image generation 和本地 social screenshot renderer 都留在 `infrastructure`，由 `application/use_cases/run_playbook.py` 在发布前编排调用，避免把外部 API 协议或 Pillow 绘制细节塞进 runtime graph。`final_content.image_plan` 可以让 LLM 主动选择 `local_social_screenshot` 或 `provider_image`；`PlaybookRequest.local_image_style` 是显式本地 override，即使外部 provider 已配置也会走本地 renderer。
+- provider-backed image generation 和本地 social screenshot renderer 都留在 `infrastructure`，由 `application/use_cases/run_playbook.py` 在发布前编排调用，避免把外部 API 协议或 Pillow 绘制细节塞进 runtime graph。image backend 负责声明生成图的 no-watermark provider controls，并把 `watermark_policy` 返回给应用层；`run_playbook()` 只做归一化和 artifact 持久化。`final_content.image_plan` 可以让 LLM 主动选择 `local_social_screenshot` 或 `provider_image`；`PlaybookRequest.local_image_style` 是显式本地 override，即使外部 provider 已配置也会走本地 renderer。
 - XHS format pattern library 分成三层：`topic_radar` 负责外部 MCP 采样，`ptsm.domain.xhs_patterns` 定义本地样本和 pattern 领域模型，`ptsm.infrastructure.xhs_patterns` 只做本地 JSON snapshot 存储，`application/use_cases/collect_xhs_patterns.py` / `analyze_xhs_patterns.py` 负责编排 CLI 用例。普通生成只读取本地 snapshot，不直接依赖 live MCP。
 - 跨领域发帖前选题引导同样保持分层：`ptsm.domain.topic_guidance` 定义本地确定性 lane/direction 选择器、多个 open-scene candidate composer 和动态 diversity reranker，`application/use_cases/topic_guidance_packs.py` 保存非心理学 playbook 的产品化 topic pack，心理学方向仍由 `application/use_cases/guide_post.py` 的专业边界 brief 组合；`guide_post.py` 只编排只读 CLI/OpenClaw 输出。selector 把用户 scene 关键词、lane affinity、direction source type、diversity family 和 open-scene mechanism 分开处理，并在公开方向中写出 `scene_fit`；`guide-post` 对当前九个 playbook 返回 4 个由 `selection_policy == "dynamic_scene_diversity_rerank"` 选出的场景相关方向，不再保留固定 curated 槽位。`open_scene` 方向由当前 scene/lane facets 和可复用内容机制本地组合，不来自固定候选池，也不触发 live research。这个路径不属于 `agent_runtime`，不会启动 workflow、创建 run 或发布。
 - `PlaybookRequest.scene` 在 `--fresh-topic-research` 模式下可为空，由 topic-radar 多平台扫描 + 交互选题后构建 enriched scene 注入工作流，选题结果同时写入 artifact 的 `topic_selection` 字段。

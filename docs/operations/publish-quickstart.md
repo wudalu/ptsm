@@ -22,6 +22,8 @@
 
 真实发布如果没有 `--publish-image-path` 且没有 `--no-auto-generate-image`，默认会自动补图。图片路由由运行时决定：operator 的 `--local-image-style` 优先；正文里的 `final_content.image_plan` 可要求 `local_social_screenshot` 或 provider image；没有策略时再按已配置的图片 provider 或本地 renderer 选择。
 
+系统生成图会请求源头不加 provider 水印，并在 artifact 的 `image_generation.watermark_policy.requested` 里记录 `no_provider_watermark`。这不替代真实发布的最终图片清理，只是避免我们自己生成的图片先带上水印。
+
 `wechat_chat` 现在是内容区聊天转录封面，不是完整手机截图：不画头部、输入栏或头像。适合真实聊天、群聊、可复制回复和评论触发；检查 artifact 时看 `image_generation.image_plan` 里的 `theme`、`chat_title`、`chat_times` 等字段是否符合预期。
 
 ### 3. 去水印
@@ -34,6 +36,7 @@
 - `content_review.image_plan`
 - `image_generation`
 - `image_generation.image_plan`
+- `image_generation.watermark_policy`
 - `watermark_removal`
 - `publish_result`
 - `post_publish_checks`

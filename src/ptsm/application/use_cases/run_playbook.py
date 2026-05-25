@@ -32,6 +32,7 @@ from ptsm.infrastructure.artifacts.file_store import FileArtifactStore
 from ptsm.infrastructure.memory.store import ExecutionMemoryStore
 from ptsm.infrastructure.images.factory import build_image_backend
 from ptsm.infrastructure.images.note_card_backend import NoteCardImageBackend
+from ptsm.infrastructure.images.watermark_policy import generated_no_watermark_policy
 from ptsm.infrastructure.images.watermark_remover import WatermarkRemover
 from ptsm.infrastructure.publishers.contracts import Publisher
 from ptsm.infrastructure.publishers.factory import build_publisher
@@ -444,6 +445,9 @@ def run_playbook(
                     or image_generation.get("image_paths")
                     or []
                 )
+
+        if image_generation is not None:
+            _ensure_generated_image_watermark_policy(image_generation)
 
         watermark_removal = None
         if _should_remove_watermark(
@@ -864,6 +868,16 @@ def _watermark_removal_policy(
     if watermark_removal_enabled:
         return "enabled_by_settings"
     return "disabled"
+
+
+def _ensure_generated_image_watermark_policy(image_generation: dict[str, Any]) -> None:
+    if image_generation.get("watermark_policy"):
+        return
+    provider = str(image_generation.get("provider") or "unknown")
+    image_generation["watermark_policy"] = generated_no_watermark_policy(
+        provider,
+        {"runtime_policy": "generated_images_request_no_provider_watermark"},
+    )
 
 
 def _build_image_generation_prompt(

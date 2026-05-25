@@ -10,6 +10,8 @@ import time
 from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
 
+from ptsm.infrastructure.images.watermark_policy import generated_no_watermark_policy
+
 
 class JimengImageBackend:
     """Volcengine Jimeng text-to-image backend."""
@@ -67,6 +69,10 @@ class JimengImageBackend:
             "image_paths": image_paths,
             "generated_image_paths": image_paths,
             "source_url": source_url,
+            "watermark_policy": generated_no_watermark_policy(
+                self.provider_name,
+                {"logo_info.add_logo": False},
+            ),
         }
 
     def _submit_task(self, *, prompt: str) -> str:

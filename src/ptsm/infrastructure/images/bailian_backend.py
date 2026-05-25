@@ -4,6 +4,11 @@ import json
 from pathlib import Path
 from urllib.request import Request, urlopen
 
+from ptsm.infrastructure.images.watermark_policy import (
+    generated_no_watermark_policy,
+    merge_no_watermark_negative_prompt,
+)
+
 
 class BailianImageBackend:
     """DashScope/Bailian-backed text-to-image backend."""
@@ -23,7 +28,7 @@ class BailianImageBackend:
         self._base_url = base_url.rstrip("/")
         self._model = model
         self._size = size
-        self._negative_prompt = negative_prompt
+        self._negative_prompt = merge_no_watermark_negative_prompt(negative_prompt)
 
     def generate(
         self,
@@ -45,6 +50,13 @@ class BailianImageBackend:
             "image_paths": image_paths,
             "generated_image_paths": image_paths,
             "source_url": image_url,
+            "watermark_policy": generated_no_watermark_policy(
+                self.provider_name,
+                {
+                    "watermark": False,
+                    "negative_prompt": self._negative_prompt,
+                },
+            ),
         }
 
     def _submit_qwen_request(self, *, prompt: str) -> str:
@@ -103,4 +115,3 @@ class BailianImageBackend:
             if isinstance(item, dict) and isinstance(item.get("image"), str):
                 return item["image"]
         raise ValueError("Bailian image response missing generated image URL")
-

@@ -2,7 +2,7 @@
 title: PTSM Cloud Bootstrap
 status: active
 owner: ptsm
-last_verified: 2026-05-17
+last_verified: 2026-05-25
 source_of_truth: true
 related_paths:
   - README.md
@@ -88,6 +88,8 @@ PIC_MODEL_BASE_URL=https://dashscope.aliyuncs.com/api/v1
 PIC_MODEL_MODEL=qwen-image-2.0-pro
 PIC_MODEL_SIZE=1104*1472
 ```
+
+系统自动生成的图片会请求源头不加 provider 水印：即梦使用 `logo_info.add_logo=false`，百炼使用 `watermark=false` 并保留水印/logo negative prompt。发布 artifact 的 `image_generation.watermark_policy.requested` 应为 `no_provider_watermark`；真实发布仍会对最终图片执行 `watermark_removal` 作为防御性清理。
 
 完整字段定义见 [`src/ptsm/config/settings.py`](../../src/ptsm/config/settings.py)。
 

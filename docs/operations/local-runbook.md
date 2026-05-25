@@ -169,6 +169,8 @@ PIC_MODEL_SIZE=1104*1472
 
 When both are configured, Jimeng is used first.
 
+Generated images request no provider watermark at source. Jimeng submits `logo_info.add_logo=false`; Bailian submits `watermark=false` and keeps no-watermark/logo terms in the negative prompt even when `PIC_MODEL_NEGATIVE_PROMPT` is overridden. The local renderer also avoids PTSM branding/footer text on the final image. Check `image_generation.watermark_policy.requested=no_provider_watermark` in the artifact to confirm the generated image path used this policy.
+
 ### Local Renderer Styles
 
 PTSM can also use the local Pillow renderer as an explicit local cover path and write 3:4 PNGs under `outputs/generated_images/`. The default style is `note_card`, which records `image_generation.style=xhs_note_card_v1`. The shared `xhs_image_strategy` skill may set `final_content.image_plan.backend=local_social_screenshot` to choose this path automatically. For dry-runs or private tests that need a more native social screenshot shape, pass one of these as an explicit local override, even when Jimeng or Bailian is configured:

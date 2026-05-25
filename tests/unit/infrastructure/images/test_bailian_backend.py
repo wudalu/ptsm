@@ -104,3 +104,66 @@ def test_bailian_backend_posts_qwen_request_and_downloads_image(
     assert result["model"] == "qwen-image-2.0-pro"
     assert result["source_url"] == "https://example.com/generated.png"
     assert Path(result["image_paths"][0]).exists()
+
+
+def test_bailian_backend_enforces_no_watermark_policy(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    calls: list[object] = []
+
+    def fake_urlopen(request, timeout: int = 0):
+        calls.append(request)
+        full_url = request.full_url if hasattr(request, "full_url") else request
+        if full_url.endswith("/generation"):
+            return DummyResponse(
+                json.dumps(
+                    {
+                        "output": {
+                            "choices": [
+                                {
+                                    "message": {
+                                        "content": [
+                                            {
+                                                "image": "https://example.com/generated.png",
+                                            }
+                                        ]
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ).encode("utf-8")
+            )
+        if full_url == "https://example.com/generated.png":
+            return DummyResponse(b"fake-png-bytes")
+        raise AssertionError(f"unexpected request URL: {full_url}")
+
+    monkeypatch.setattr(
+        "ptsm.infrastructure.images.bailian_backend.urlopen",
+        fake_urlopen,
+    )
+
+    backend = BailianImageBackend(
+        api_key="sk-image-test",
+        base_url="https://dashscope.aliyuncs.com/api/v1",
+        model="qwen-image-2.0-pro",
+        size="1104*1472",
+        negative_prompt="不要模糊",
+    )
+
+    result = backend.generate(
+        prompt="周六社畜躺平封面",
+        output_dir=tmp_path,
+        output_stem="weekend-flat",
+    )
+
+    body = json.loads(calls[0].data.decode("utf-8"))
+    negative_prompt = body["parameters"]["negative_prompt"]
+
+    assert body["parameters"]["watermark"] is False
+    assert "不要模糊" in negative_prompt
+    assert "水印" in negative_prompt
+    assert "logo" in negative_prompt.lower()
+    assert result["watermark_policy"]["requested"] == "no_provider_watermark"
+    assert result["watermark_policy"]["provider_controls"]["watermark"] is False

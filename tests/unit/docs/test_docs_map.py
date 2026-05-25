@@ -167,7 +167,10 @@ def test_docs_cover_image_generation_provider_paths() -> None:
     assert "PIC_MODEL_API_KEY" in runbook_text
     assert "JIMENG_API_KEY" in runbook_text
     assert "JIMENG_SECRET_KEY" in runbook_text
+    assert "no provider watermark" in runbook_text
     assert "outputs/generated_images" in observability_text
+    assert "watermark_policy" in observability_text
+    assert "no_provider_watermark" in observability_text
 
 
 def test_docs_cover_xhs_image_strategy_skill_and_active_local_selection() -> None:
