@@ -315,3 +315,62 @@ def test_finalize_content_review_detects_domain_save_mechanics(tmp_path: Path) -
     assert review["quality_signals"]["save_trigger"] is True
     assert review["generation_logic"]["save_strategy"] == "已包含可复制或可保存元素"
     assert "建议补充可复制句、模板、三栏工具或可截图清单。" not in review["review_notes"]
+
+
+def test_finalize_content_review_detects_psychology_role_and_save_triggers(
+    tmp_path: Path,
+) -> None:
+    finalize = build_finalize_node(
+        execution_memory=InMemoryExecutionMemory(),
+        artifact_store=FileArtifactStore(base_dir=tmp_path / "artifacts"),
+    )
+
+    body = (
+        "他3小时没回消息，我已经想好分手后猫归谁了。"
+        "我会先写下来：事实=对方原话；猜测=我脑补了什么；下一步=明天确认。"
+        "如果痛苦持续、影响工作学习生活，请尽快寻求专业帮助。"
+        "你是哪派：A.写完小作文秒删 B.发了又后悔？"
+    )
+
+    result = finalize(
+        {
+            "account_id": "acct-psychology-local",
+            "playbook_id": "modern_psychology_post",
+            "drafting_provider": "deterministic",
+            "selected_playbook": "modern_psychology_post",
+            "candidate_skills": ["psychology_style"],
+            "activated_skills": ["psychology_style"],
+            "activated_skill_details": [{"skill_name": "psychology_style"}],
+            "runtime_skill_details": [],
+            "runtime_skill_contents": [],
+            "planner_prompt": "# planner",
+            "persona_prompt": "# persona",
+            "reflection_prompt": "# reflection",
+            "reflection_rules": {"required_hashtag": "#心理学"},
+            "attempt_count": 1,
+            "draft_content": {
+                "title": "他3小时没回，我已经分好猫了",
+                "image_text": "先分清原话和脑补",
+                "body": body,
+                "hashtags": ["#心理学"],
+            },
+            "required_revision": False,
+            "reflection_decision": "finalize",
+            "reflection_feedback": "",
+            "scene": "他3小时没回消息",
+            "final_content": {
+                "title": "他3小时没回，我已经分好猫了",
+                "image_text": "先分清原话和脑补",
+                "body": body,
+                "hashtags": ["#心理学"],
+            },
+        }
+    )
+
+    review = result["content_review"]
+    assert review["quality_signals"]["comment_trigger"] is True
+    assert review["quality_signals"]["save_trigger"] is True
+    assert review["generation_logic"]["interaction_strategy"] == "已包含评论或角色认领提示"
+    assert review["generation_logic"]["save_strategy"] == "已包含可复制或可保存元素"
+    assert "建议补充评论或角色认领提示。" not in review["review_notes"]
+    assert "建议补充可复制句、模板、三栏工具或可截图清单。" not in review["review_notes"]

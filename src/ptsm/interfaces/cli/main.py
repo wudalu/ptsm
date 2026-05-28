@@ -417,7 +417,7 @@ def _collect_guide_post_request(args: argparse.Namespace) -> GuidePostRequest:
     save_tool = args.save_tool
     if save_tool is None:
         save_tool = _prompt_to_stderr(
-            f"4/6 给读者一个可保存的小工具，建议「{defaults.save_tool}」。要改就输入，回车接受: "
+            f"4/6 给读者一个可保存动作或小工具，建议「{defaults.save_tool}」。要改就输入，回车接受: "
         )
 
     image_style = args.image_style
@@ -429,7 +429,7 @@ def _collect_guide_post_request(args: argparse.Namespace) -> GuidePostRequest:
     comment_prompt = args.comment_prompt
     if comment_prompt is None:
         comment_prompt = _prompt_to_stderr(
-            f"6/6 评论区要让用户给例子，建议「{defaults.comment_prompt}」。要改就输入，回车接受: "
+            f"6/6 评论区要有角色认领或 A/B 入口，建议「{defaults.comment_prompt}」。要改就输入，回车接受: "
         )
 
     return GuidePostRequest(

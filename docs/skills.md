@@ -2,7 +2,7 @@
 title: PTSM Skills
 status: active
 owner: ptsm
-last_verified: 2026-05-25
+last_verified: 2026-05-28
 source_of_truth: true
 related_paths:
   - src/ptsm/skills/contracts.py
@@ -55,7 +55,7 @@ Skill 层负责让运行时按请求范围暴露合适的 builtin skills，而�
 - `wuxia_commentary_style` / `xhs_wuxia_hashtagging` 只服务 `wuxia_character_post`，现在要求当代切口、人物出处、原文佐证、可截图判断和评论区人物讨论，并可把“老款人格”、主体性和边界感转成角色理解，而不是把人物压成热词标签
 - `ai_tech_style` / `ai_tech_hashtagging` 只服务 `ai_tech_daily_post`，现在要求 3 秒核心信息、是什么/为什么重要/普通人影响、收藏清单、评论区使用反馈和非投资建议边界；语气是普通人 AI 生活搭子和工作流实践者，不是发布会通稿
 - `daily_english_style` / `daily_english_hashtagging` 只服务 `daily_english_post`，现在要求真实场景例句、音标/词性/翻译、可收藏句型、评论区造句，避免词典式和课堂作业腔
-- `psychology_style` / `psychology_safety` / `xhs_psychology_hashtagging` 只服务 `modern_psychology_post`，其中 `psychology_style` 要求“第一人称微场景 -> 心理机制 -> 非诊断化重构 -> 可保存小工具 -> 例子型评论 -> 专业边界”，并把选题轮换到职场复盘、关系边界、数字生活、孤独比较、情绪调节和热点心理化重构六类 lane；可使用爱你老己、三明治拒绝法、丝瓜汤式沟通和 AI 陪伴边界，但必须落回具体关系/消息/睡前/边界场景。`psychology_safety` 约束不诊断、不治疗承诺、不提供药物建议，并在严重风险场景引导专业帮助。该领域的图片策略默认低密度：工具型内容优先 `iphone_notes` / `save_tool`，单句重构用 `note_card`，真实聊天对话才用 `wechat_chat`。
+- `psychology_style` / `psychology_safety` / `xhs_psychology_hashtagging` 只服务 `modern_psychology_post`，其中 `psychology_style` 要求标题只写一个具体生活瞬间，不出现心理学术语、机制名或 `不是你...` 破梗；正文按“具体瞬间 -> 场景继续推进 -> 一句轻机制 -> 自然保存动作或可选小工具 -> 角色/阵营/填空式评论入口 -> 专业边界”组织，目标 350-550 字，硬上限 580 字。机制名最多轻量出现一次，且要等场景铺开后再出现；工具卡不是每篇必塞，只有真能截图/复用时才给。选题仍轮换到职场复盘、关系边界、数字生活、孤独比较、情绪调节和热点心理化重构六类 lane；可使用爱你老己、三明治拒绝法、丝瓜汤式沟通和 AI 陪伴边界，但必须落回具体关系/消息/睡前/边界场景。`psychology_safety` 约束不诊断、不治疗承诺、不提供药物建议，并在严重风险场景引导专业帮助。该领域的图片策略默认低密度：工具型内容优先 `iphone_notes` / `save_tool`，单句重构用 `note_card`，真实聊天对话才用 `wechat_chat`。
 - `human_enrichment_style` / `xhs_enrichment_visuals` / `xhs_enrichment_hashtagging` 只服务 `human_enrichment_daily_post`。其中 `human_enrichment_style` 要求“具体角落/物件 -> 原本惯性 -> 一个低成本变量 -> 三步清单 -> 评论区例子”，并能借鉴本地 pattern library 的 `sudden_realization`、`you_should_enrich`、`before_after_contrast`、`saveable_list`、`process_or_tutorial` 结构，以及 2026-05-23 研究里的适我主义、新独居、手作心流和一平米节庆角落，但禁止复写样本标题；`xhs_enrichment_visuals` 编码 3:4 竖版封面、每页文字约束和轮播图形式，`xhs_enrichment_hashtagging` 要求 `#人类丰容计划` 等搜索友好标签。
 - `world_cup_style` / `xhs_world_cup_visuals` / `xhs_world_cup_hashtagging` 只服务 `world_cup_daily_post`。其中 `world_cup_style` 要求“比赛语境 -> 普通球迷入口 -> 2 到 3 个看点 -> 看球清单 -> 赛事情绪 -> 评论区问题”，禁止赌球、盘口、下注、预测比分和内部/官方消息伪装；`xhs_world_cup_visuals` 约束 3:4 赛前看点卡、看球清单、赛后复盘和球迷氛围图；`xhs_world_cup_hashtagging` 要求 `#世界杯` 等搜索友好标签。
 - `reddit_discussion_scan` / `reddit_curation_style` / `xhs_reddit_curation_hashtagging` 只服务 `reddit_curation_daily_post`。其中 `reddit_discussion_scan` 读取已获批 Reddit app-only OAuth 的公开 hot/top 英文讨论，或在 app 创建受阻时用 `REDDIT_PUBLIC_JSON_FALLBACK=true` 和非占位 `REDDIT_USER_AGENT` 走低频只读 public JSON fallback；它优先筛选 AI 工具焦虑、心理/生活压力和工作流切口。缺少 `REDDIT_CLIENT_ID`、`REDDIT_CLIENT_SECRET`、`REDDIT_USER_AGENT` 且没有可用 fallback 时会注入缺配置/缺权限上下文。`reddit_curation_style` 要求“外网热点素材 -> 中文读者能懂的现象 -> 共鸣解释 -> 自然可保存的小结 -> 评论区问题”，读者可见标题、封面、正文和标签不暴露 Reddit、subreddit、英文讨论、翻译过程、来源 URL 或“可收藏小结：”这类内部标签；`xhs_reddit_curation_hashtagging` 要求 `#热点观察` 等中文话题标签，并禁止 `#Reddit`。

@@ -228,7 +228,19 @@ def _build_content_review(state: ExecutionState) -> dict[str, object]:
     image_text = str(final_content.get("image_text", "")).strip()
     body = str(final_content.get("body", "")).strip()
     combined = f"{title}\n{image_text}\n{body}"
-    comment_trigger = any(term in body for term in ("评论区", "接一句", "你最", "哪类瞬间"))
+    comment_trigger = any(
+        term in body
+        for term in (
+            "评论区",
+            "接一句",
+            "你最",
+            "哪类瞬间",
+            "哪派",
+            "A.",
+            "B.",
+            "____",
+        )
+    )
     save_trigger = any(
         term in combined
         for term in (
@@ -238,10 +250,16 @@ def _build_content_review(state: ExecutionState) -> dict[str, object]:
             "金句",
             "话术",
             "事实 / 猜测 / 下一步",
+            "事实=",
+            "猜测=",
+            "下一步=",
             "三栏",
             "5分钟",
             "边界句",
             "消息草稿",
+            "写下来",
+            "备忘录",
+            "存下来",
             "收藏",
             "收藏清单",
             "可收藏",
@@ -284,7 +302,7 @@ def _build_content_review(state: ExecutionState) -> dict[str, object]:
     else:
         notes.append("本次未配置 LLM 内容质量门，只使用确定性规则和人工 review。")
     if not comment_trigger:
-        notes.append("建议补充评论区接龙或例子收集问题。")
+        notes.append("建议补充评论或角色认领提示。")
     if not save_trigger:
         notes.append("建议补充可复制句、模板、三栏工具或可截图清单。")
     if safety_risks:
@@ -306,9 +324,9 @@ def _build_content_review(state: ExecutionState) -> dict[str, object]:
                 "标题负责点出点击冲突，封面文案负责给用户一眼能截图/转发的句子"
             ),
             "interaction_strategy": (
-                "已包含评论区例子/接龙提示"
+                "已包含评论或角色认领提示"
                 if comment_trigger
-                else "缺少评论区例子/接龙提示"
+                else "缺少评论或角色认领提示"
             ),
             "save_strategy": (
                 "已包含可复制或可保存元素"

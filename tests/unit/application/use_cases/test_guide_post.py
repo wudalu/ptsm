@@ -170,6 +170,8 @@ def test_run_guide_post_builds_psychology_brief_with_scene_defaults() -> None:
     assert "--local-image-style" in result["run_playbook_command"]
     assert "run-playbook --scene" in result["run_playbook_command_text"]
     assert any(item["item"] == "第一人称微场景" for item in result["quality_checklist"])
+    assert any(item["item"] == "角色认领评论" for item in result["quality_checklist"])
+    assert not any(item["item"] == "例子型评论" for item in result["quality_checklist"])
     assert any("危机" in note for note in result["safety_notes"])
 
 

@@ -54,7 +54,7 @@ FUNCTIONAL_LABEL_MARKERS = (
             "下班路上还在反复复盘会议里一句话，越想越尴尬",
             "acct-psychology-local",
             260,
-            620,
+            580,
         ),
         (
             "human_enrichment_daily_post",

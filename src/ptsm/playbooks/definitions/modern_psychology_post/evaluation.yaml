@@ -44,13 +44,13 @@ node_contracts:
         - "心理学小知识"
         - "情绪管理干货"
         - "小红书爆款"
-      title_must_include_any:
         - "不是你"
-        - "边界"
-        - "复盘"
-        - "消息"
-        - "睡前"
-        - "AI"
+        - "反刍思维"
+        - "低控制感"
+        - "边界压力"
+        - "情绪调节"
+        - "灾难化思维"
+        - "心理机制"
       image_text_must_not_equal_any:
         - "脑子还没下班"
       hashtags_min_count: 3
@@ -59,7 +59,7 @@ node_contracts:
         - "#心理学"
         - "#情绪管理"
       body_min_chars: 260
-      body_max_chars: 620
+      body_max_chars: 580
       body_must_include_any:
         - "反刍思维"
         - "低控制感"
@@ -68,9 +68,10 @@ node_contracts:
       body_must_include_all:
         - "专业帮助"
       body_must_include_comment_prompt_any:
-        - "评论区"
-        - "你最"
-        - "哪类瞬间"
+        - "哪派"
+        - "A."
+        - "B."
+        - "____"
       body_must_include_save_trigger_any:
         - "事实 / 猜测 / 下一步"
         - "三栏"
@@ -78,6 +79,9 @@ node_contracts:
         - "边界句"
         - "消息草稿"
         - "模板"
+        - "存"
+        - "写下来"
+        - "备忘录"
       body_must_not_include_any:
         - "诊断"
         - "你就是抑郁症"

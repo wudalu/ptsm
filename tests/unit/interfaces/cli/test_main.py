@@ -472,6 +472,9 @@ def test_guide_post_cli_outputs_non_interactive_psychology_brief(
     )
     assert open_count >= 1
     assert payload["topic_guidance"]["direction_type_counts"]["open_scene"] == open_count
+    checklist_items = {item["item"] for item in payload["quality_checklist"]}
+    assert "角色认领评论" in checklist_items
+    assert "例子型评论" not in checklist_items
     assert (
         payload["topic_guidance"]["open_direction_id"]
         == payload["topic_guidance"]["open_direction_ids"][0]
@@ -640,6 +643,8 @@ def test_guide_post_cli_prompts_for_missing_fields(
     assert exit_code == 0
     assert "我们先把这条现代心理学帖子聊成一个可执行 brief" in captured.err
     assert "回车接受建议" in captured.err
+    assert "评论区要让用户给例子" not in captured.err
+    assert "角色认领或 A/B 入口" in captured.err
     assert "# Psychology Guidance Brief" in captured.out
     assert "lane: 孤独 / 比较焦虑" in captured.out
     assert "mechanism: 比较焦虑" in captured.out

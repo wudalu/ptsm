@@ -51,7 +51,7 @@ FUNCTIONAL_LABEL_MARKERS = [
 
 BODY_LENGTH_BANDS = {
     "fengkuang_daily_post": (120, 380),
-    "modern_psychology_post": (260, 620),
+    "modern_psychology_post": (260, 580),
     "human_enrichment_daily_post": (180, 520),
     "sushi_poetry_daily_post": (180, 520),
     "daily_english_post": (180, 520),
@@ -142,8 +142,14 @@ class TestPlaybookEvalContract:
         assert "变体要求" in executor_constraints["body_must_not_include_any"]
         assert "save_tool" in executor_constraints["body_must_not_include_any"]
         assert "专业帮助" in executor_constraints["body_must_include_all"]
-        assert "评论区" in executor_constraints["body_must_include_comment_prompt_any"]
-        assert "三栏" in executor_constraints["body_must_include_save_trigger_any"]
+        assert executor_constraints["body_max_chars"] == 580
+        assert not executor_constraints.get("title_must_include_any")
+        for term in ["不是你", "反刍思维", "低控制感", "边界压力", "情绪调节", "灾难化思维"]:
+            assert term in executor_constraints["title_must_not_include_any"]
+        for prompt in ["哪派", "A.", "B.", "____"]:
+            assert prompt in executor_constraints["body_must_include_comment_prompt_any"]
+        for trigger in ["存", "写下来", "备忘录"]:
+            assert trigger in executor_constraints["body_must_include_save_trigger_any"]
         assert (
             contract.quality_judges["executor_content_quality"]["evaluator_id"]
             == "llm.executor.content_quality"
@@ -272,7 +278,6 @@ class TestPlaybookEvalContract:
         ("playbook_id", "title_terms"),
         [
             ("fengkuang_daily_post", ["工牌", "群聊", "周报", "早会", "下班", "领导", "物件"]),
-            ("modern_psychology_post", ["不是你", "边界", "复盘", "消息", "睡前", "AI"]),
             ("human_enrichment_daily_post", ["丰容", "变量", "角落", "书桌", "路线", "材料"]),
             ("ai_tech_daily_post", ["AI", "普通人", "搭子", "工具", "更新"]),
             ("sushi_poetry_daily_post", ["苏轼", "这一句", "读", "年味", "节气"]),

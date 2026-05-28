@@ -18,6 +18,11 @@ reflection:
   body_must_include_any:
     - 评论区
     - 事实 / 猜测 / 下一步
+    - 事实=
+    - 存
+    - 写下来
+    - 备忘录
+    - 哪派
     - 三栏
     - 5分钟
     - 边界句
@@ -38,6 +43,14 @@ reflection:
     - comment_chain
     - save_tool
     - identity_conflict
+  title_must_not_include_any:
+    - 不是你
+    - 反刍思维
+    - 低控制感
+    - 边界压力
+    - 情绪调节
+    - 灾难化思维
+    - 心理机制
 max_attempts: 3
 drafting_model: deepseek-v4-pro
 trend_keywords:

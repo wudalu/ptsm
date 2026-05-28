@@ -595,15 +595,22 @@ def test_deterministic_modern_psychology_draft_has_mini_tool_and_example_prompt(
     combined = f"{draft['title']}\n{draft['image_text']}\n{draft['body']}"
     assert draft["title"] != "下班后还在复盘那句话"
     assert draft["image_text"] != "脑子还没下班"
+    assert 350 <= len(draft["body"]) <= 580
+    assert not any(
+        term in draft["title"]
+        for term in ("不是你", "反刍思维", "低控制感", "边界压力", "灾难化思维", "心理机制")
+    )
     assert "下班路上还在反复复盘会议里一句话" in draft["body"]
     assert draft["body"].index("下班路上还在反复复盘会议里一句话") < draft[
         "body"
     ].index("反刍思维")
-    assert any(term in combined for term in ("不是你太敏感", "不是你想太多"))
-    assert any(tool in draft["body"] for tool in ("事实 / 猜测 / 下一步", "三栏"))
+    assert draft["body"].index("反刍思维") >= 120
+    assert draft["body"].count("反刍思维") <= 1
+    assert "不是你" not in combined
+    assert "这不是" not in combined
+    assert any(tool in draft["body"] for tool in ("写下来", "备忘录", "存"))
     assert "专业帮助" in draft["body"]
-    assert "评论区" in draft["body"]
-    assert any(prompt in draft["body"] for prompt in ("你最容易", "哪类瞬间"))
+    assert any(prompt in draft["body"] for prompt in ("哪派", "A.", "B.", "____"))
     assert any(tag in draft["hashtags"] for tag in ("#心理学", "#情绪管理"))
     assert not any(term in combined for term in ("诊断", "治好焦虑", "治愈抑郁", "用药"))
 
@@ -623,24 +630,26 @@ def test_deterministic_modern_psychology_draft_avoids_recent_memory_title() -> N
             "# Recent Account Memory\n"
             "Avoid repeating recent account posts:\n"
             "- recent_1_scene: 下班路上还在反复复盘会议里一句话，越想越尴尬\n"
-            "  title: 下班路上复盘会议，不是你在小题大做\n"
-            "  image_text: 先分清原话和脑补\n"
+            "  title: 会议那句话，我在脑子里改到第七版\n"
+            "  image_text: 把脑补写到猜测栏\n"
             "  body_preview: 下班路上还在反复复盘会议里一句话，越想越尴尬，路灯都亮了，脑子还在把会议那一秒拖回进度条。\n"
             "- recent_1_scene: 下班路上还在反复复盘会议里一句话，越想越尴尬\n"
-            "  title: 会议那句话反复倒带，不是你太敏感\n"
-            "  image_text: 把猜测放回事实栏\n"
+            "  title: 下班路上，我又把会议拖回进度条\n"
+            "  image_text: 先分清原话和脑补\n"
             "  body_preview: 下班路上还在反复复盘会议里一句话，越想越尴尬，身体已经离开会议室，脑子还在给那句话反复加字幕。"
         ],
     )
 
-    assert draft["title"] != "会议那句话反复倒带，不是你太敏感"
-    assert draft["title"] != "下班路上复盘会议，不是你在小题大做"
-    assert draft["image_text"] != "把猜测放回事实栏"
+    assert draft["title"] != "会议那句话，我在脑子里改到第七版"
+    assert draft["title"] != "下班路上，我又把会议拖回进度条"
+    assert draft["image_text"] != "把脑补写到猜测栏"
     assert draft["image_text"] != "先分清原话和脑补"
     assert "给那句话反复加字幕" not in draft["body"]
     assert "反刍思维" in draft["body"]
-    assert "事实 / 猜测 / 下一步" in draft["body"]
-    assert "评论区" in draft["body"]
+    assert draft["body"].count("反刍思维") <= 1
+    assert "不是你" not in f"{draft['title']}\n{draft['body']}"
+    assert any(trigger in draft["body"] for trigger in ("写下来", "备忘录", "存"))
+    assert any(prompt in draft["body"] for prompt in ("哪派", "A.", "B.", "____"))
 
 
 def test_deterministic_modern_psychology_draft_varies_by_scene_mechanic() -> None:
