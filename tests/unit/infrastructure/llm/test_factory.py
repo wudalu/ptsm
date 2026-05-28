@@ -615,6 +615,50 @@ def test_deterministic_modern_psychology_draft_has_mini_tool_and_example_prompt(
     assert not any(term in combined for term in ("诊断", "治好焦虑", "治愈抑郁", "用药"))
 
 
+def test_deterministic_modern_psychology_draft_keeps_romantic_waiting_scene_out_of_work_reply_mode() -> None:
+    backend = DeterministicDraftBackend()
+
+    draft = backend.generate(
+        scene="他3小时没回消息，我已经想好分手后猫归谁了",
+        planner_prompt="# 现代心理困境观察 Planner\n目标：具体生活瞬间，一句轻机制，非诊断化边界。",
+        persona_prompt="# Modern Psychology Persona\n像一个有心理学素养但不下诊断的真人账号。",
+        skill_contents=[
+            "# Psychology Style\n亲密关系等待消息要写不确定感，不要写成职场回复模板。",
+            "# Psychology Safety\n禁止诊断化表达，必须提示专业帮助边界。",
+            "# XHS Psychology Hashtagging\n标签必须包含 `#心理学` 或 `#情绪管理`。",
+        ],
+    )
+
+    combined = f"{draft['title']}\n{draft['image_text']}\n{draft['body']}"
+    assert "3小时" in draft["title"] or "猫" in draft["title"]
+    assert not any(
+        term in draft["title"]
+        for term in ("不是你", "反刍思维", "低控制感", "边界压力", "关系不确定感", "心理机制")
+    )
+    assert "他3小时没回消息，我已经想好分手后猫归谁了" in draft["body"]
+    assert all(term in draft["body"] for term in ("事实", "脑补", "我需要"))
+    assert "不确定感" in draft["body"]
+    assert draft["body"].count("关系不确定感") <= 1
+    assert draft["body"].index("不确定感") >= 120
+    assert 350 <= len(draft["body"]) <= 580
+    assert "专业帮助" in draft["body"]
+    assert any(prompt in draft["body"] for prompt in ("哪派", "A.", "B.", "____"))
+    assert any(tag in draft["hashtags"] for tag in ("#心理学", "#情绪管理"))
+    assert not any(
+        term in combined
+        for term in (
+            "你这边",
+            "多久能回",
+            "我现在不方便",
+            "处理",
+            "优先级",
+            "工位",
+            "客户",
+            "领导",
+        )
+    )
+
+
 def test_deterministic_modern_psychology_draft_avoids_recent_memory_title() -> None:
     backend = DeterministicDraftBackend()
 

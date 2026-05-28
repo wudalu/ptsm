@@ -2,7 +2,7 @@
 title: PTSM Operations
 status: active
 owner: ptsm
-last_verified: 2026-05-28
+last_verified: 2026-05-29
 source_of_truth: true
 related_paths:
   - docs/operations/publish-quickstart.md
@@ -149,6 +149,7 @@ COOKIES_PATH=cookies/fk-local.json .ptsm/bin/xhs-mcp/xiaohongshu-mcp-darwin-amd6
 - 做 XHS persona 或热梗映射回归时，优先用 dry-run 加 `--eval` 检查 artifact：标题应有具体物件/关系/场景钩子并避开 `日常`、`实录`、`干货分享` 这类泛标题；正文应按 `首屏钩子 -> 领域要素 -> 可保存单元 -> 评论交接` 组织并落在对应 playbook 的长度带内。现代心理学还要额外检查标题不出现心理机制名或 `不是你` 破梗，正文控制在 260-580 字，用一句轻机制服务场景，用 `哪派`、`A.` / `B.` 或 `____` 这类认领入口替代泛泛问经历。eval 会通过 `title_must_not_include_any`、body length band 和 `combined_must_not_include_any` 拦截泛标题、过长/过短正文、`首先`、`其次`、`综上`、`本文`、`作为AI` 等模板化或元叙事表达，也会拦截 `可复制疯话`、`可收藏小结`、`可保存单元`、`评论交接` 等读者可见的内部功能标签。
 - `guide-post` 是小红书发帖前的只读选题向导：支持当前九个 playbook：`modern_psychology_post`、`fengkuang_daily_post`、`human_enrichment_daily_post`、`sushi_poetry_daily_post`、`wuxia_character_post`、`ai_tech_daily_post`、`daily_english_post`、`world_cup_daily_post`、`reddit_curation_daily_post`。默认走对话式引导；脚本场景用 `--non-interactive` 输出 JSON。JSON 和 Markdown 都包含场景相关的 4 个 `topic_guidance.directions`，把本地热点/爆点机制产品化为用户可选方向；输出带 `selection_policy == "dynamic_scene_diversity_rerank"`、`open_direction_ids`、兼容字段 `open_direction_id` 和 `direction_type_counts`。selector 从 curated 候选和多个 PTSM 本地组合的 `open_scene` 候选中动态选择方向，scene 关键词只来自用户输入，lane affinity 只来自选题 lane，并用 diversity family、direction source type 和 open-scene mechanism 避免不同场景只得到同一组固定锚点。每个方向带 `direction_type`、`scene_fit`、`trend_signal`、`viral_hook`、适合场景、内容角度、保存工具、评论提示和避坑。输出还带 `topic_guidance.image_recommendation`，用于用户确认方向后选择图片方式：本地截图会给出 `--local-image-style wechat_chat|iphone_notes|note_card`，provider 图会给出 `--auto-generate-image`、`provider=bailian` 和 `model=qwen-image-2.0-pro`。输出不包含 research 文件路径、原始来源说明、URL 或 provenance。普通 `guide-post` 不默认运行 live XHS / topic-radar 扫描。真正生成和发布仍走 `run-playbook`。
 - 心理学 `guide-post` 保留更丰富的六步 brief：先问具体场景，再建议心理学 lane、机制、非诊断化重构、可保存动作、角色/阵营/填空式评论提示和低密度封面；生成时机制用于服务场景，不应前置成标题破梗。非心理学交互只问具体场景、可选 lane 和评论提示覆盖，避免把心理学机制问题套到其他领域。
+- 对 `他3小时没回消息，我已经想好分手后猫归谁了` 这类亲密关系等待消息场景，心理学 `guide-post` 应返回 `亲密关系 / 不确定感` 和 `事实 / 脑补 / 我需要什么`，封面推荐 `--local-image-style iphone_notes`；不要把它作为职场协作式消息边界回复来生成。
 - OpenClaw 心理学集成使用 `integrations/openclaw/ptsm-xhs-psychology/SKILL.md` 作为薄 wrapper：先调用 `guide-post` 展示 `topic_guidance.directions`、`direction_type` 和 `scene_fit`，用户确认方向后再调用 `run-playbook --caller openclaw --guidance-ack`。如果 OpenClaw 直接调用 `run-playbook --caller openclaw` 生成 `modern_psychology_post` 且没有 `--guidance-ack`，PTSM 会返回 `topic_guidance_required`，不会启动 workflow、写 run 或发布。
 - OpenClaw 非心理学 XHS 集成使用 `integrations/openclaw/ptsm-xhs-topic-guide/SKILL.md`。该 wrapper 自动把发疯文学、人类丰容、苏轼诗词、武侠人物、AI科技、每日英语、世界杯和 Reddit英文讨论转译意图映射到对应 playbook；意图模糊时先问一个短澄清问题；方向确认后再 dry-run 生成。如果用户更换场景，wrapper 必须重新调用 `guide-post`，不要沿用上一轮方向。wrapper 只能展示 PTSM-returned `open_scene` 方向，不能自己发明开放方向。非心理学没有 runtime hard preflight gate，因此 `run-playbook --caller openclaw` 不会因为缺少非心理学 guidance ack 而被拒绝。
 - `run-fengkuang --auto-generate-image` 会在缺少 `--publish-image-path` 时尝试调用已配置的图片后端生成封面；即梦配置优先于百炼配置，真实发布模式下默认也会尝试自动补图。PTSM 生成图会请求源头不加 provider 水印，并在 artifact 的 `image_generation.watermark_policy` 里记录 `no_provider_watermark` 和具体 provider controls。

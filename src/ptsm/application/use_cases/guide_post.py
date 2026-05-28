@@ -94,6 +94,19 @@ PROVIDER_IMAGE_KEYWORDS = (
     "桌面",
     "改造",
 )
+RELATIONSHIP_UNCERTAINTY_IMAGE_KEYWORDS = (
+    "亲密关系 / 不确定感",
+    "关系不确定感",
+    "事实 / 脑补 / 我需要什么",
+    "分手",
+    "猫归谁",
+    "没回消息",
+    "不回消息",
+    "3小时",
+    "挽留",
+    "复合",
+    "冷淡",
+)
 VISUAL_EVIDENCE_PLAYBOOK_IDS = (
     "human_enrichment_daily_post",
     "wuxia_character_post",
@@ -133,6 +146,25 @@ PSYCHOLOGY_LANES: tuple[PsychologyLane, ...] = (
         comment_prompt="你是哪派：A.写完小作文秒删 B.发了又后悔？",
         example_scene="下班后还在反复复盘白天会议里说错的一句话",
         keywords=("工作", "职场", "会议", "领导", "老板", "下班", "复盘", "工位"),
+    ),
+    PsychologyLane(
+        name="亲密关系 / 不确定感",
+        mechanism="关系不确定感",
+        reframe="先把事实、脑补和真正想确认的需要分开放，别急着把沉默写成结局。",
+        save_tool="事实 / 脑补 / 我需要什么",
+        comment_prompt="你是哪派：A.没回就脑补到分手 B.忍住不问但越想越多？",
+        example_scene="他3小时没回消息，我已经想好分手后猫归谁了",
+        keywords=(
+            "分手",
+            "猫归谁",
+            "没回消息",
+            "不回消息",
+            "3小时",
+            "伴侣",
+            "挽留",
+            "复合",
+            "冷淡",
+        ),
     ),
     PsychologyLane(
         name="关系边界 / 消息压力",
@@ -287,6 +319,35 @@ PSYCHOLOGY_TOPIC_DIRECTIONS: tuple[TopicDirection, ...] = (
         lane_affinity=("关系边界", "职场复盘"),
         scene_keywords=("消息", "回复", "秒回", "已读", "在吗", "催", "客户", "领导"),
         base_priority=3,
+    ),
+    TopicDirection(
+        id="relationship_uncertainty_waiting_message",
+        name="亲密关系：没回消息后的脑内分手剧场",
+        trend_signal="关系不确定感 / 角色认领",
+        viral_hook="从没回消息演到分手后猫归谁",
+        why_it_may_work="强场景有自嘲和关系认领感，读者容易在评论区认领自己是哪种等消息的人。",
+        best_scenes=(
+            "他3小时没回消息，我已经想好分手后猫归谁了",
+            "对方突然冷淡，我已经在脑内排练分手",
+            "发完消息没人回，越等越想确认自己是不是被丢下",
+        ),
+        content_angle="写等消息时不确定感如何把一个安静手机补成分手剧本，而不是教人发职场协作式边界句。",
+        saveable_tool="事实 / 脑补 / 我需要什么",
+        comment_prompt="你是哪派：A.没回就脑补到分手 B.忍住不问但越想越多？",
+        avoid="不要写成职场回复、处理时间或催对方秒回；也不要默认对方有错或把不回消息病理化。",
+        lane_affinity=("亲密关系", "关系边界"),
+        scene_keywords=(
+            "分手",
+            "猫归谁",
+            "没回消息",
+            "不回消息",
+            "3小时",
+            "伴侣",
+            "挽留",
+            "复合",
+            "冷淡",
+        ),
+        base_priority=9,
     ),
     TopicDirection(
         id="comparison_pause_card",
@@ -831,6 +892,16 @@ def _build_image_recommendation(
         )
         if value
     )
+    if playbook_id == SUPPORTED_PLAYBOOK_ID and _contains_any(
+        signal_text,
+        RELATIONSHIP_UNCERTAINTY_IMAGE_KEYWORDS,
+    ):
+        return _local_image_recommendation(
+            style="iphone_notes",
+            role="save_tool",
+            max_text_units=3,
+            reason="这个方向要把亲密关系里的事实、脑补和需要分开放，用 iPhone 备忘录式工具卡比聊天截图更准确。",
+        )
     if _contains_any(scene, CHAT_IMAGE_KEYWORDS):
         return _local_image_recommendation(
             style="wechat_chat",
@@ -978,6 +1049,11 @@ def _keyword_hits(text: str, keywords: tuple[str, ...]) -> int:
 
 def _match_topic_direction_id(*, scene: str, lane_name: str) -> str:
     text = f"{lane_name} {scene}"
+    if any(
+        keyword in text
+        for keyword in ("分手", "猫归谁", "没回消息", "不回消息", "3小时", "复合")
+    ):
+        return "relationship_uncertainty_waiting_message"
     if any(keyword in text for keyword in ("拒绝", "边界", "同事", "朋友", "家人", "责任")):
         return "boundary_sandwich_refusal"
     if any(keyword in text for keyword in ("失败", "老己", "自己", "比较", "审判")):

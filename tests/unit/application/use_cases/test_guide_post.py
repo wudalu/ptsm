@@ -230,6 +230,40 @@ def test_psychology_topic_guidance_recommends_wechat_for_message_reply_assets() 
     _assert_no_internal_source_leakage(result)
 
 
+def test_psychology_topic_guidance_routes_romantic_waiting_to_uncertainty() -> None:
+    result = run_guide_post(
+        GuidePostRequest(scene="他3小时没回消息，我已经想好分手后猫归谁了")
+    )
+
+    brief = result["brief"]
+    assert brief["lane"] == "亲密关系 / 不确定感"
+    assert brief["mechanism"] == "关系不确定感"
+    assert brief["save_tool"] == "事实 / 脑补 / 我需要什么"
+
+    guidance = result["topic_guidance"]
+    assert (
+        guidance["matched_direction_id"]
+        == "relationship_uncertainty_waiting_message"
+    )
+    assert guidance["directions"][0]["id"] == guidance["matched_direction_id"]
+    assert guidance["directions"][0]["id"] != "message_boundary_reply_draft"
+    assert "事实 / 脑补 / 我需要什么" in guidance["directions"][0]["saveable_tool"]
+    assert "职场" in guidance["directions"][0]["avoid"]
+
+    recommendation = _image_recommendation(result)
+    assert recommendation["recommended_backend"] == "local_social_screenshot"
+    assert recommendation["local_style"] == "iphone_notes"
+    assert recommendation["role"] == "save_tool"
+    assert recommendation["command_hint"] == "--local-image-style iphone_notes"
+
+    assert "事实 / 脑补 / 我需要什么" in result["recommended_scene"]
+    assert not any(
+        term in result["recommended_scene"]
+        for term in ("我现在不方便", "我会在什么时间处理", "处理")
+    )
+    _assert_no_internal_source_leakage(result)
+
+
 def test_psychology_topic_guidance_recommends_notes_for_boundary_tools() -> None:
     result = run_guide_post(
         GuidePostRequest(scene="同事临时加需求，想练一版边界句")
