@@ -26,6 +26,8 @@ def run_collect_xhs_patterns(
     settings: Settings | None = None,
     xhs_platform: Any | None = None,
     collected_at: str | None = None,
+    skip_login_check: bool = False,
+    tool_timeout_seconds: float | None = None,
 ) -> dict[str, Any]:
     keyword_list = _normalize_keywords(keywords)
     collected_at = collected_at or datetime.now(timezone.utc).isoformat()
@@ -40,6 +42,8 @@ def run_collect_xhs_patterns(
             samples=[],
             keyword_errors={},
             artifact_path=output_path,
+            login_check_skipped=skip_login_check,
+            tool_timeout_seconds=tool_timeout_seconds,
         )
         _write_artifact(result, output_path)
         return result
@@ -57,6 +61,8 @@ def run_collect_xhs_patterns(
             output_path=output_path,
             collected_at=collected_at,
             delay_seconds=delay_seconds,
+            skip_login_check=skip_login_check,
+            tool_timeout_seconds=tool_timeout_seconds,
         )
     )
     return result
@@ -71,6 +77,8 @@ async def _collect_async(
     output_path: Path,
     collected_at: str,
     delay_seconds: float,
+    skip_login_check: bool,
+    tool_timeout_seconds: float | None,
 ) -> dict[str, Any]:
     samples: list[XhsSample] = []
     keyword_errors: dict[str, str] = {}
@@ -84,12 +92,14 @@ async def _collect_async(
             samples=[],
             keyword_errors={},
             artifact_path=output_path,
+            login_check_skipped=skip_login_check,
+            tool_timeout_seconds=tool_timeout_seconds,
         )
         _write_artifact(result, output_path)
         return result
 
     check_login = getattr(platform, "check_login", None)
-    if callable(check_login):
+    if callable(check_login) and not skip_login_check:
         try:
             is_logged_in, _qr = await check_login()
         except Exception as exc:
@@ -105,13 +115,20 @@ async def _collect_async(
                 samples=[],
                 keyword_errors=keyword_errors or {"_login": "login required"},
                 artifact_path=output_path,
+                login_check_skipped=skip_login_check,
+                tool_timeout_seconds=tool_timeout_seconds,
             )
             _write_artifact(result, output_path)
             return result
 
     for index, keyword in enumerate(keywords):
         try:
-            feeds = await platform.search_feeds(keyword, limit=sample_limit_per_keyword)
+            feeds = await _search_feeds(
+                platform=platform,
+                keyword=keyword,
+                limit=sample_limit_per_keyword,
+                timeout_seconds=tool_timeout_seconds,
+            )
             for feed in feeds:
                 samples.append(
                     normalize_xhs_sample(
@@ -131,6 +148,8 @@ async def _collect_async(
             samples=samples,
             keyword_errors=keyword_errors,
             artifact_path=output_path,
+            login_check_skipped=skip_login_check,
+            tool_timeout_seconds=tool_timeout_seconds,
         )
         _write_artifact(result, output_path)
         if delay_seconds > 0 and index < len(keywords) - 1:
@@ -166,6 +185,8 @@ def _build_result(
     samples: list[XhsSample],
     keyword_errors: dict[str, str],
     artifact_path: Path,
+    login_check_skipped: bool = False,
+    tool_timeout_seconds: float | None = None,
 ) -> dict[str, Any]:
     successful_keywords = _successful_keywords(samples)
     failed_keywords = list(keyword_errors)
@@ -183,11 +204,34 @@ def _build_result(
             "live_source": "xiaohongshu-mcp",
             "collected_at": collected_at,
             "lane": lane,
+            "login_check_skipped": login_check_skipped,
+            "tool_timeout_seconds": tool_timeout_seconds,
         },
         "samples": [sample.to_dict() for sample in samples],
         "keyword_errors": dict(keyword_errors),
     }
     return payload
+
+
+async def _search_feeds(
+    *,
+    platform: Any,
+    keyword: str,
+    limit: int,
+    timeout_seconds: float | None,
+) -> Any:
+    if timeout_seconds is None:
+        return await platform.search_feeds(keyword, limit=limit)
+    try:
+        return await platform.search_feeds(
+            keyword,
+            limit=limit,
+            timeout=timeout_seconds,
+        )
+    except TypeError as exc:
+        if "timeout" not in str(exc):
+            raise
+        return await platform.search_feeds(keyword, limit=limit)
 
 
 def _write_artifact(result: dict[str, Any], output_path: Path) -> None:

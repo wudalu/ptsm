@@ -36,6 +36,34 @@ class PartiallyFailingXhs:
         ]
 
 
+class SlowLoginButSearchableXhs:
+    def __init__(self) -> None:
+        self.check_login_calls = 0
+        self.search_calls: list[tuple[str, int]] = []
+
+    async def check_login(self):
+        self.check_login_calls += 1
+        raise TimeoutError("login probe timed out")
+
+    async def search_feeds(self, keyword: str, limit: int = 20):
+        self.search_calls.append((keyword, limit))
+        return [
+            FeedItem(
+                feed_id=f"note-{keyword}",
+                title=f"{keyword}是今天的恢复入口",
+                author="作者B",
+                likes=200,
+                comments=10,
+                shares=8,
+                collects=60,
+                xsec_token=f"token-{keyword}",
+                cover_width=1080,
+                cover_height=1440,
+                has_cover_url=True,
+            )
+        ]
+
+
 def test_collect_xhs_patterns_preserves_partial_successes(tmp_path: Path) -> None:
     fake_xhs = PartiallyFailingXhs()
 
@@ -70,3 +98,29 @@ def test_collect_xhs_patterns_preserves_partial_successes(tmp_path: Path) -> Non
     assert artifact["collection_metadata"]["sample_limit_per_keyword"] == 3
     assert artifact["collection_metadata"]["live_source"] == "xiaohongshu-mcp"
     assert len(artifact["samples"]) == 2
+
+
+def test_collect_xhs_patterns_can_skip_slow_login_check(tmp_path: Path) -> None:
+    fake_xhs = SlowLoginButSearchableXhs()
+
+    result = run_collect_xhs_patterns(
+        lane="xhs_domain_opportunity",
+        keywords=["睡眠恢复"],
+        sample_limit_per_keyword=3,
+        output_dir=tmp_path,
+        xhs_platform=fake_xhs,
+        delay_seconds=0,
+        collected_at="2026-05-30T00:00:00Z",
+        skip_login_check=True,
+        tool_timeout_seconds=70,
+    )
+
+    assert result["status"] == "completed"
+    assert fake_xhs.check_login_calls == 0
+    assert fake_xhs.search_calls == [("睡眠恢复", 3)]
+    assert result["collection_metadata"]["login_check_skipped"] is True
+    assert result["collection_metadata"]["tool_timeout_seconds"] == 70
+
+    artifact = json.loads(Path(result["artifact_path"]).read_text(encoding="utf-8"))
+    assert artifact["collection_metadata"]["login_check_skipped"] is True
+    assert artifact["collection_metadata"]["tool_timeout_seconds"] == 70

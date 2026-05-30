@@ -220,6 +220,8 @@ def test_run_playbook_cli_passes_generic_request_fields(
             "仅自己可见",
             "--open-browser-if-needed",
             "--wait-for-publish-status",
+            "--topic-direction-id",
+            "sushi_red_cliff_big_view",
         ]
     )
 
@@ -238,6 +240,7 @@ def test_run_playbook_cli_passes_generic_request_fields(
     assert request.publish_visibility == "仅自己可见"
     assert request.open_browser_if_needed is True
     assert request.wait_for_publish_status is True
+    assert request.topic_direction_id == "sushi_red_cliff_big_view"
     assert captured["thread_id"] == "thread-sushi-001"
 
 
@@ -396,6 +399,9 @@ def test_collect_xhs_patterns_cli_dispatches_to_use_case(
             "--dry-run",
             "--delay-seconds",
             "0",
+            "--skip-login-check",
+            "--tool-timeout-seconds",
+            "70",
         ]
     )
 
@@ -407,6 +413,51 @@ def test_collect_xhs_patterns_cli_dispatches_to_use_case(
     assert captured["keywords"] == "人类丰容,家的丰容计划"
     assert captured["sample_limit_per_keyword"] == 8
     assert captured["dry_run"] is True
+    assert captured["skip_login_check"] is True
+    assert captured["tool_timeout_seconds"] == 70.0
+
+
+def test_xhs_domain_opportunity_cli_dispatches_to_use_case(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_scan(**kwargs: object) -> dict[str, object]:
+        captured.update(kwargs)
+        return {"status": "completed", "recommendations": []}
+
+    monkeypatch.setattr(
+        "ptsm.interfaces.cli.main.run_xhs_domain_opportunity",
+        fake_scan,
+    )
+
+    exit_code = main(
+        [
+            "xhs-domain-opportunity",
+            "--keywords",
+            "睡眠恢复,轻养生,人类丰容",
+            "--sample-limit-per-keyword",
+            "5",
+            "--output-dir",
+            "outputs/artifacts/xhs-domain-opportunity",
+            "--delay-seconds",
+            "0",
+            "--skip-login-check",
+            "--tool-timeout-seconds",
+            "70",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload["status"] == "completed"
+    assert captured["keywords"] == "睡眠恢复,轻养生,人类丰容"
+    assert captured["sample_limit_per_keyword"] == 5
+    assert captured["delay_seconds"] == 0
+    assert captured["skip_login_check"] is True
+    assert captured["tool_timeout_seconds"] == 70.0
 
 
 def test_analyze_xhs_patterns_cli_dispatches_to_use_case(

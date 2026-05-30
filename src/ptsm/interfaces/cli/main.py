@@ -35,6 +35,9 @@ from ptsm.application.use_cases.run_events import run_run_events
 from ptsm.application.use_cases.runs import run_runs
 from ptsm.application.use_cases.run_playbook import run_fengkuang_playbook, run_playbook
 from ptsm.application.use_cases.xhs_browser import open_xhs_browser
+from ptsm.application.use_cases.xhs_domain_opportunity import (
+    run_xhs_domain_opportunity,
+)
 from ptsm.application.use_cases.xhs_login import (
     DEFAULT_XHS_LOGIN_QRCODE_PATH,
     run_xhs_login_qrcode,
@@ -101,6 +104,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_playbook_cli.add_argument("--playbook-id")
     run_playbook_cli.add_argument("--caller")
     run_playbook_cli.add_argument("--guidance-ack", action="store_true")
+    run_playbook_cli.add_argument("--topic-direction-id")
     run_playbook_cli.add_argument("--thread-id")
     run_playbook_cli.add_argument("--publish-mode")
     run_playbook_cli.add_argument(
@@ -271,6 +275,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
     collect_xhs_patterns.add_argument("--dry-run", action="store_true")
     collect_xhs_patterns.add_argument("--delay-seconds", type=float, default=1.0)
+    collect_xhs_patterns.add_argument("--skip-login-check", action="store_true")
+    collect_xhs_patterns.add_argument("--tool-timeout-seconds", type=float)
+
+    xhs_domain_opportunity = subparsers.add_parser("xhs-domain-opportunity")
+    xhs_domain_opportunity.add_argument("--keywords", required=True)
+    xhs_domain_opportunity.add_argument("--lane", default="xhs_domain_opportunity")
+    xhs_domain_opportunity.add_argument("--sample-limit-per-keyword", type=int, default=5)
+    xhs_domain_opportunity.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path("outputs/artifacts/xhs-domain-opportunity"),
+    )
+    xhs_domain_opportunity.add_argument("--delay-seconds", type=float, default=0.8)
+    xhs_domain_opportunity.add_argument("--skip-login-check", action="store_true")
+    xhs_domain_opportunity.add_argument("--tool-timeout-seconds", type=float)
 
     analyze_xhs_patterns = subparsers.add_parser("analyze-xhs-patterns")
     analyze_xhs_patterns.add_argument("--sample-path", type=Path, required=True)
@@ -536,6 +555,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 playbook_id=args.playbook_id,
                 caller=args.caller,
                 guidance_ack=args.guidance_ack,
+                topic_direction_id=args.topic_direction_id,
                 publish_mode=args.publish_mode,
                 publish_image_paths=args.publish_image_path,
                 auto_generate_images=args.auto_generate_image,
@@ -586,6 +606,21 @@ def main(argv: Sequence[str] | None = None) -> int:
             output_dir=args.output_dir,
             dry_run=args.dry_run,
             delay_seconds=args.delay_seconds,
+            skip_login_check=args.skip_login_check,
+            tool_timeout_seconds=args.tool_timeout_seconds,
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "xhs-domain-opportunity":
+        result = run_xhs_domain_opportunity(
+            keywords=args.keywords,
+            lane=args.lane,
+            sample_limit_per_keyword=args.sample_limit_per_keyword,
+            output_dir=args.output_dir,
+            delay_seconds=args.delay_seconds,
+            skip_login_check=args.skip_login_check,
+            tool_timeout_seconds=args.tool_timeout_seconds,
         )
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0

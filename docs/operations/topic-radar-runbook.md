@@ -111,7 +111,42 @@ topic-radar scan --platforms xiaohongshu --keywords "情绪疗愈,修复系手�
 
 用指定关键词替换默认关键词搜索，每个关键词都会搜索一次，结果合并。XHS `raw_trending` 会保留 `feed_id`、`xsec_token`、作者和互动数，后续可以直接拿来跑 `topic-radar teardown`。
 
-### Step 5 — Post Teardown
+### Step 5 — Domain Opportunity Scan
+
+当问题是“现有领域里哪些更容易出爆款、是否要加新领域”时，不要直接把一批
+关键词塞进 `guide-post`。先运行 PTSM 的领域机会对比命令：
+
+```bash
+uv run python -m ptsm.bootstrap xhs-domain-opportunity \
+  --keywords "睡眠恢复,轻养生,人类丰容,苏轼,世界杯" \
+  --sample-limit-per-keyword 5 \
+  --output-dir outputs/artifacts/xhs-domain-opportunity
+```
+
+如果本地 `xiaohongshu-mcp` 登录预检很慢但确认账号可用，可以显式跳过登录预检并
+延长 tool timeout：
+
+```bash
+uv run python -m ptsm.bootstrap xhs-domain-opportunity \
+  --keywords "睡眠恢复,轻养生,人类丰容,苏轼,世界杯" \
+  --sample-limit-per-keyword 3 \
+  --skip-login-check \
+  --tool-timeout-seconds 70
+```
+
+输出：
+
+- `outputs/artifacts/xhs-domain-opportunity/domain-opportunity-<date>.json`
+- `outputs/artifacts/xhs-domain-opportunity/domain-opportunity-<date>.md`
+
+解读规则：
+
+- 这是搜索级证据，不是全站热榜，也不是详情/评论拆解。
+- 分数使用 `likes + comments * 4 + collects * 2 + shares * 6`，用于同批关键词之间的方向性比较。
+- `new_domain_candidate` 表示值得进入新领域计划，不表示可以跳过完整 playbook/skill/harness 文档面。
+- 普通 `guide-post` 和 `run-playbook` 不会因为这个命令存在而默认 live-scan；发帖仍优先读取本地 topic pack 和 pattern snapshot。
+
+### Step 6 — Post Teardown
 
 对单篇高互动帖子做结构拆解：
 

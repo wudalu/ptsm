@@ -365,6 +365,7 @@ def test_run_playbook_records_format_patterns_used_in_response_and_artifact(
             scene="把书桌改成十分钟手作角",
             account_id="acct-enrichment-local",
             playbook_id="human_enrichment_daily_post",
+            topic_direction_id="enrichment_desk_corner_variable",
         ),
         publisher=SuccessfulPublisher(),
     )
@@ -377,6 +378,12 @@ def test_run_playbook_records_format_patterns_used_in_response_and_artifact(
         "human_enrichment.sudden_realization.001"
     ]
     assert artifact["format_patterns_used"] == result["format_patterns_used"]
+    assert artifact["topic_selection"]["topic_direction_id"] == (
+        "enrichment_desk_corner_variable"
+    )
+    assert result["topic_selection"]["topic_direction_id"] == (
+        "enrichment_desk_corner_variable"
+    )
     assert result["run"]["runtime_skill_details"][0]["content_preview"] == (
         "# XHS Format Pattern Library Context"
     )

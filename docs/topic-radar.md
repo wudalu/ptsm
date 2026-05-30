@@ -2,12 +2,13 @@
 title: Topic Radar
 status: active
 owner: ptsm
-last_verified: 2026-05-17
+last_verified: 2026-05-30
 source_of_truth: true
 related_paths:
   - src/topic_radar
   - src/ptsm/application/use_cases/collect_xhs_patterns.py
   - src/ptsm/application/use_cases/analyze_xhs_patterns.py
+  - src/ptsm/application/use_cases/xhs_domain_opportunity.py
   - src/ptsm/domain/xhs_patterns.py
   - src/ptsm/infrastructure/xhs_patterns
   - docs/index.md
@@ -32,6 +33,12 @@ topic-radar scan --mcp-check              # 仅检查 MCP 健康
 
 # 单帖拆解
 topic-radar teardown <feed_id> --xsec-token <token>
+
+# PTSM 领域机会对比，只读搜索级采样
+uv run python -m ptsm.bootstrap xhs-domain-opportunity \
+  --keywords "睡眠恢复,轻养生,人类丰容,苏轼,世界杯" \
+  --sample-limit-per-keyword 5 \
+  --output-dir outputs/artifacts/xhs-domain-opportunity
 ```
 
 ## 架构
@@ -103,6 +110,29 @@ HTTP 500、timeout 或登录波动时，会把已成功关键词的样本先落�
 
 最新可用 snapshot 写入 `outputs/artifacts/xhs-pattern-library/current.json`。
 普通 `run-playbook` 只读取这个本地 snapshot，不会默认实时搜索小红书。
+
+## XHS Domain Opportunity Scan
+
+`xhs-domain-opportunity` 是 PTSM 的只读领域机会对比 surface，用来回答
+“哪些候选领域更值得开新线或加子线”。它和普通 `guide-post` 不同：
+
+- `xhs-domain-opportunity` 面向 operator，按一组关键词做 bounded `search_feeds`，
+  计算 `likes + comments * 4 + collects * 2 + shares * 6`，再映射到现有
+  playbook、候选 sublane 或新领域建议。
+- `guide-post` 面向发帖前选题确认，默认只读本地 topic pack，不触发 live XHS
+  搜索，不展示原始来源或 provenance。
+- 普通 `run-playbook` 仍不默认 live-scan；要么消费本地 pattern snapshot，要么由
+  operator 显式运行 fresh research / domain opportunity scan 后再选择方向。
+- `integrations/openclaw/ptsm-xhs-domain-opportunity/SKILL.md` 是 Codex/OpenClaw 的薄 wrapper，只调用这个 CLI 并读取生成 brief，不复制评分或映射逻辑。
+
+输出产物：
+
+- `outputs/artifacts/xhs-domain-opportunity/domain-opportunity-<date>.json`
+- `outputs/artifacts/xhs-domain-opportunity/domain-opportunity-<date>.md`
+
+JSON 会保留搜索级样本的标题、互动指标和 feed identifiers，便于追溯；Markdown
+brief 只展示 top domain、playbook fit、新领域候选和 workflow notes，不默认暴露
+feed id 或 token。
 
 ## 分析能力
 

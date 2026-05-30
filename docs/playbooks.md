@@ -2,7 +2,7 @@
 title: PTSM Playbooks
 status: active
 owner: ptsm
-last_verified: 2026-05-29
+last_verified: 2026-05-30
 source_of_truth: true
 related_paths:
   - src/ptsm/playbooks/registry.py
@@ -99,7 +99,7 @@ Playbook 是 PTSM 的业务编排单元。它把领域、平台、技能需求�
 - 账号注册表提供 `account_id -> domain/platform` 基础映射。
 - 请求可以显式指定 `playbook_id`，否则按账号域和平台做默认选择。
 - `acct-fk-local` 默认落到 `fengkuang_daily_post`，`acct-sushi-local` 默认落到 `sushi_poetry_daily_post`，`acct-daily-english-local` 默认落到 `daily_english_post`，`acct-psychology-local` 默认落到 `modern_psychology_post`，`acct-enrichment-local` 默认落到 `human_enrichment_daily_post`，`acct-world-cup-local` 默认落到 `world_cup_daily_post`，`acct-reddit-curation-local` 默认落到 `reddit_curation_daily_post`。
-- `caller=openclaw` 不是新的 playbook 路由条件；它只是在已解析为 `modern_psychology_post` 后启用发帖前选题引导门禁。没有 `guidance_ack` 时返回 `topic_guidance_required`，不会启动生成或发布。非心理学 playbook 的 OpenClaw 选题顺序由通用 wrapper 引导，runtime 不对这些 playbook 增加 hard preflight gate。
+- `caller=openclaw` 不是新的 playbook 路由条件；它只是在已解析为 `modern_psychology_post` 后启用发帖前选题引导门禁。没有 `guidance_ack` 时返回 `topic_guidance_required`，不会启动生成或发布。非心理学 playbook 的 OpenClaw 选题顺序由通用 wrapper 引导，runtime 不对这些 playbook 增加 hard preflight gate。确认后的 `topic_direction_id` 只作为 artifact/run 元数据持久化，不参与 playbook 选择。
 - 兼容入口 `run-fengkuang` 仍保留，但多 playbook 场景优先使用通用 `run-playbook`。
 
 ## Related Files

@@ -12,6 +12,7 @@ class PlaybookRequest(BaseModel):
     playbook_id: str | None = None
     caller: str | None = None
     guidance_ack: bool = False
+    topic_direction_id: str | None = None
     publish_mode: str | None = None
     publish_image_paths: list[str] = Field(default_factory=list)
     auto_generate_images: bool | None = None

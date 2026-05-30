@@ -16,6 +16,7 @@ def test_openclaw_topic_guide_skill_documents_generic_two_step_flow() -> None:
     assert "run-playbook" in text
     assert text.index("guide-post") < text.index("run-playbook")
     assert "--caller openclaw" in text
+    assert "--topic-direction-id" in text
     assert "--publish-mode dry-run" in text
     assert "--playbook-id" in text
 

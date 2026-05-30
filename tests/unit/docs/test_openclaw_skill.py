@@ -17,6 +17,7 @@ def test_openclaw_psychology_skill_documents_two_step_guidance_flow() -> None:
     assert text.index("guide-post") < text.index("run-playbook")
     assert "--caller openclaw" in text
     assert "--guidance-ack" in text
+    assert "--topic-direction-id" in text
     assert "trend signal" in text
     assert "viral hook" in text
     assert "scene_fit" in text

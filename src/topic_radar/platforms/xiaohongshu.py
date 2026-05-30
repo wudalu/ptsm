@@ -91,10 +91,18 @@ class XiaohongshuPlatform:
             pass
         return False, qr_data
 
-    async def search_feeds(self, keyword: str, limit: int = 20) -> list[FeedItem]:
+    async def search_feeds(
+        self,
+        keyword: str,
+        limit: int = 20,
+        timeout: float = 20.0,
+    ) -> list[FeedItem]:
         try:
             payload = await self._client.invoke_tool(
-                "xiaohongshu", "search_feeds", {"keyword": keyword}
+                "xiaohongshu",
+                "search_feeds",
+                {"keyword": keyword},
+                timeout=timeout,
             )
         except (KeyError, ConnectionError, OSError, asyncio.TimeoutError, ExceptionGroup) as exc:
             raise PlatformUnavailable(self.platform_name, str(exc)) from exc

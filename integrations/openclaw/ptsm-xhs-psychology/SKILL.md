@@ -31,7 +31,7 @@ If the user changes the scene, call `guide-post` again with the new scene. Do no
 
 If `recommended_backend` is `provider_image`, describe it as an LLM/provider image recommendation and use the returned `provider` and `model`. If `recommended_backend` is `local_social_screenshot`, describe the returned local style such as `wechat_chat`, `iphone_notes`, or `note_card`. Do not add extra image styles, providers, or model names.
 
-5. Generate through PTSM only after the direction is chosen or confirmed.
+5. Generate through PTSM only after the direction is chosen or confirmed. Pass the chosen direction's id as `--topic-direction-id`.
 
 ```bash
 uv run python -m ptsm.bootstrap run-playbook \
@@ -40,6 +40,7 @@ uv run python -m ptsm.bootstrap run-playbook \
   --scene "<confirmed psychology direction and concrete scene>" \
   --account-id acct-psychology-local \
   --playbook-id modern_psychology_post \
+  --topic-direction-id "<chosen direction id>" \
   --publish-mode dry-run
 ```
 

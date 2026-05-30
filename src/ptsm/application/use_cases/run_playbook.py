@@ -199,6 +199,20 @@ def _build_enriched_scene(selection: dict[str, Any]) -> str:
     return "\n".join(parts)
 
 
+def _topic_selection_metadata(
+    topic_selection: dict[str, Any] | None,
+    topic_direction_id: str | None,
+) -> dict[str, Any] | None:
+    if topic_selection is None and not topic_direction_id:
+        return None
+
+    metadata = dict(topic_selection or {})
+    if topic_direction_id:
+        metadata["topic_direction_id"] = topic_direction_id
+        metadata.setdefault("source", "guide-post")
+    return metadata
+
+
 def run_playbook(
     request: PlaybookRequest,
     *,
@@ -365,7 +379,13 @@ def run_playbook(
         result,
         pattern_path=request.format_pattern_path or settings.xhs_pattern_library_path,
     )
+    topic_selection_metadata = _topic_selection_metadata(
+        topic_selection,
+        request.topic_direction_id,
+    )
     result["format_patterns_used"] = format_patterns_used
+    if topic_selection_metadata is not None:
+        result["topic_selection"] = topic_selection_metadata
     run_store.append_event(
         run.run_id,
         event="workflow_completed",
@@ -543,20 +563,20 @@ def run_playbook(
                     idempotency_key=publish_idempotency_key,
                     result=publish_result,
                 )
-        artifact_store.merge(
-            result["artifact_path"],
-            {
-                "scene": request.scene,
-                "platform": request.platform,
-                "account": account.to_dict(),
-                "publish_mode": publish_mode,
-                "publish_result": publish_result,
-                "image_generation": image_generation,
-                "watermark_removal": watermark_removal,
-                "format_patterns_used": format_patterns_used,
-                "run": run.to_dict(),
-            },
-        )
+        artifact_update = {
+            "scene": request.scene,
+            "platform": request.platform,
+            "account": account.to_dict(),
+            "publish_mode": publish_mode,
+            "publish_result": publish_result,
+            "image_generation": image_generation,
+            "watermark_removal": watermark_removal,
+            "format_patterns_used": format_patterns_used,
+            "run": run.to_dict(),
+        }
+        if topic_selection_metadata is not None:
+            artifact_update["topic_selection"] = topic_selection_metadata
+        artifact_store.merge(result["artifact_path"], artifact_update)
 
     if result["status"] == "completed" and result.get("artifact_path"):
         artifact_path = Path(result["artifact_path"])
@@ -609,6 +629,7 @@ def run_playbook(
             "activated_skill_details": list(result.get("activated_skill_details") or []),
             "runtime_skill_details": list(result.get("runtime_skill_details") or []),
             "format_patterns_used": format_patterns_used,
+            "topic_selection": topic_selection_metadata,
         },
     )
 
@@ -630,8 +651,8 @@ def run_playbook(
         "run": run_summary,
         "eval": eval_result,
     }
-    if topic_selection is not None:
-        response["topic_selection"] = topic_selection
+    if topic_selection_metadata is not None:
+        response["topic_selection"] = topic_selection_metadata
     return response
 
 
