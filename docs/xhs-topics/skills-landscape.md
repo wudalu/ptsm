@@ -2,12 +2,13 @@
 title: XHS Skills Landscape
 status: active
 owner: ptsm
-last_verified: 2026-04-23
+last_verified: 2026-05-30
 source_of_truth: false
 related_paths:
   - docs/xhs-topics/index.md
   - docs/skills.md
   - docs/research/xhs-mcp-spike.md
+  - docs/research/2026-05-30-xhs-domain-opportunity-and-workflow-review.md
   - src/ptsm/skills/builtin
   - src/ptsm/skills/builtin/xhs_trend_scan/SKILL.md
   - src/ptsm/infrastructure/publishers/xiaohongshu_mcp_publisher.py
@@ -96,7 +97,25 @@ related_paths:
 
 ## What PTSM Has Built And Should Build Next
 
-基于当前 repo 结构，最值得补的不是“万能 skill”，而是 3 个边界明确的 builtin skills。
+基于当前 repo 结构，最值得补的不是“万能 skill”，而是边界明确的 PTSM-owned research surfaces。2026-05-30 领域机会复核显示，人工临时探针可以拿到跨领域搜索级证据，但不应该长期靠 ad hoc 脚本；下一步应把 domain opportunity scan 产品化成 use case/artifact，再决定是否加新的 playbook。
+
+### `xhs_domain_opportunity` `next`
+
+职责：
+
+- 输入一组候选领域关键词
+- 调用 bounded `search_feeds`
+- 用 PTSM 现有 engagement score 汇总每个关键词的 top sample、top score、保存/评论/分享信号
+- 映射到现有 playbook、候选 sublane 或新领域建议
+- 输出 JSON artifact 和 Markdown brief
+
+为什么适合现在做：
+
+- 它直接服务“哪些领域更容易出爆款”的运营问题。
+- 它能把 `轻养生 / 睡眠恢复 / 办公室恢复` 这类新候选从直觉变成可复核证据。
+- 它不需要直接改变普通 `run-playbook`，也不会让生成流程依赖实时 XHS。
+
+这个能力应放在 PTSM application/use case 层，不应塞进 OpenClaw skill。OpenClaw wrapper 只展示 PTSM 已返回的方向、图片建议和后续命令。
 
 ### `xhs_trend_scan` `landed`
 

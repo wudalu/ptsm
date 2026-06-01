@@ -347,7 +347,12 @@ def public_topic_direction(
 
 def _keyword_hits(text: str, keywords: tuple[str, ...]) -> int:
     normalized_text = text.lower()
-    return sum(1 for keyword in keywords if keyword.lower() in normalized_text)
+    return sum(
+        1
+        for keyword in keywords
+        if keyword.lower() in normalized_text
+        and not _is_keyword_negated(normalized_text, keyword)
+    )
 
 
 def _matched_keywords(text: str, keywords: tuple[str, ...]) -> tuple[str, ...]:
@@ -356,6 +361,18 @@ def _matched_keywords(text: str, keywords: tuple[str, ...]) -> tuple[str, ...]:
         keyword
         for keyword in keywords
         if keyword and keyword.lower() in normalized_text
+        and not _is_keyword_negated(normalized_text, keyword)
+    )
+
+
+def _is_keyword_negated(normalized_text: str, keyword: str) -> bool:
+    compact_text = "".join(normalized_text.split())
+    compact_keyword = "".join(keyword.lower().split())
+    if not compact_keyword:
+        return False
+    return any(
+        f"{prefix}{compact_keyword}" in compact_text
+        for prefix in _NEGATED_KEYWORD_PREFIXES
     )
 
 
@@ -443,10 +460,10 @@ def _dynamic_breadth_score(
     )
     if direction_type == "curated":
         score -= same_type_count * 14
-        if same_type_count >= 2:
+        if same_type_count >= 3:
             score -= 20
     elif direction_type == "open_scene":
-        score -= same_type_count * 7
+        score -= same_type_count * 14
         if same_type_count == 0:
             score += 8
 
@@ -585,13 +602,24 @@ def _rank_open_scene_mechanisms(*, scene: str, lane_name: str) -> tuple[str, ...
         text,
         (
             "苏轼",
+            "东坡",
             "怀民",
             "定风波",
+            "赤壁",
+            "赤壁赋",
+            "黄州",
+            "被贬",
+            "东坡肉",
+            "荔枝",
             "诗",
             "词",
             "月亮",
+            "中秋",
+            "水调歌头",
             "旧友",
             "旧物",
+            "旷达",
+            "自救",
             "夜里",
             "半夜",
         ),
@@ -675,6 +703,24 @@ _OPEN_SCENE_KEYWORDS = (
     "会议",
     "工牌",
     "丝瓜汤",
+    "黄州",
+    "被贬",
+    "低谷",
+    "旷达",
+    "自救",
+    "重新开始",
+    "赤壁",
+    "赤壁赋",
+    "大江",
+    "大月",
+    "江月",
+    "东坡肉",
+    "荔枝",
+    "滋味",
+    "烟火",
+    "水调歌头",
+    "中秋",
+    "但愿人长久",
     "苏轼",
     "定风波",
     "怀民",
@@ -690,4 +736,18 @@ _OPEN_SCENE_MECHANISMS = (
     "tool_handoff",
     "comment_pattern",
     "save_card",
+)
+
+_NEGATED_KEYWORD_PREFIXES = (
+    "不要再写",
+    "不要写",
+    "不想写",
+    "别再写",
+    "别写",
+    "不再写",
+    "不要再",
+    "不要",
+    "不想",
+    "别再",
+    "别",
 )

@@ -411,6 +411,84 @@ def test_sushi_topic_guidance_same_lane_scene_changes_do_not_keep_fixed_curated_
         assert set(curated_ids) != fixed_curated_set
 
 
+@pytest.mark.parametrize(
+    ("scene", "expected_lane_fragment", "expected_matched_direction_id"),
+    (
+        (
+            "想写赤壁赋和人在低谷时看大江大月，不要再写怀民",
+            "赤壁大江",
+            "sushi_red_cliff_big_view",
+        ),
+        (
+            "想写东坡肉、荔枝和苏轼把日子过成有滋味的生活感",
+            "烟火饮食",
+            "sushi_food_life_taste",
+        ),
+        (
+            "被贬黄州以后还能重新开始，想写苏轼的旷达和自救",
+            "黄州自救",
+            "sushi_huangzhou_restart",
+        ),
+    ),
+)
+def test_sushi_topic_guidance_expands_beyond_huimin_default(
+    scene: str,
+    expected_lane_fragment: str,
+    expected_matched_direction_id: str,
+) -> None:
+    result = run_guide_post(
+        GuidePostRequest(
+            playbook_id="sushi_poetry_daily_post",
+            account_id="acct-sushi-local",
+            scene=scene,
+        )
+    )
+
+    guidance = result["topic_guidance"]
+    first_direction = guidance["directions"][0]
+
+    assert expected_lane_fragment in result["brief"]["lane"]
+    assert "怀民关系" not in result["brief"]["lane"]
+    assert guidance["matched_direction_id"] == expected_matched_direction_id
+    assert first_direction["id"] == expected_matched_direction_id
+    assert first_direction["direction_type"] == "curated"
+    assert "怀民" not in first_direction["name"]
+    assert "怀民" not in first_direction["scene_fit"]
+    if "不要再写怀民" in scene:
+        assert "sushi_role_pair_huimin" not in [
+            direction["id"] for direction in guidance["directions"]
+        ]
+    assert not any(
+        direction["name"].startswith("开放探索：怀民")
+        for direction in guidance["directions"]
+    )
+
+
+def test_sushi_topic_guidance_generic_prompt_surfaces_multiple_curated_families() -> None:
+    result = run_guide_post(
+        GuidePostRequest(
+            playbook_id="sushi_poetry_daily_post",
+            account_id="acct-sushi-local",
+            scene="想做一期苏轼主题，先给我几个不同切口",
+        )
+    )
+
+    curated_ids = [
+        direction["id"]
+        for direction in result["topic_guidance"]["directions"]
+        if direction["direction_type"] == "curated"
+    ]
+
+    assert result["brief"]["lane"] == "黄州自救 / 低谷重启"
+    assert len(curated_ids) >= 3
+    assert {
+        "sushi_huangzhou_restart",
+        "sushi_red_cliff_big_view",
+        "sushi_food_life_taste",
+    } <= set(curated_ids)
+    assert "sushi_role_pair_huimin" not in curated_ids
+
+
 def test_format_guide_post_markdown_includes_scene_fit() -> None:
     result = run_guide_post(
         GuidePostRequest(scene="朋友半夜把情绪都倒给我，我不知道怎么回")

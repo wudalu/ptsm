@@ -318,8 +318,8 @@ def test_select_topic_directions_dynamic_breadth_does_not_reserve_curated_slots(
 
     assert len(result) == 4
     assert result[0]["id"] == "primary_huimin"
-    assert len(open_slots) >= 2
-    assert len(curated_slots) <= 2
+    assert len(open_slots) >= 1
+    assert len(curated_slots) <= 3
     assert len({item["id"] for item in open_slots}) == len(open_slots)
     assert len({item["name"] for item in open_slots}) == len(open_slots)
 

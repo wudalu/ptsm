@@ -2,13 +2,14 @@
 title: XHS Vertical Focus
 status: active
 owner: ptsm
-last_verified: 2026-05-23
+last_verified: 2026-05-30
 source_of_truth: false
 related_paths:
   - docs/xhs-topics/index.md
   - docs/playbooks.md
   - docs/skills.md
   - docs/research/2026-05-23-xhs-viral-meme-product-hooks.md
+  - docs/research/2026-05-30-xhs-domain-opportunity-and-workflow-review.md
 ---
 
 # XHS Vertical Focus
@@ -23,6 +24,19 @@ related_paths:
 - 能连续产出，而不是只能蹭一次事件
 - 能通过 `search_feeds -> get_feed_detail` 形成可重复分析链
 - 能和现有或可预见的 playbook 语气对接
+
+## 2026-05-30 Live Probe Update
+
+2026-05-30 用本地 `xiaohongshu-mcp` 做了一轮只读搜索级探针，覆盖现有与候选领域关键词：`人类丰容`、`修复系手作`、`普通人用AI`、`轻养生`、`睡眠恢复`、`宠物户外`、`文博非遗`、`情绪疗愈`、`发疯文学`、`苏轼`、`武侠`、`每日英语`、`世界杯`。默认 `collect-xhs-patterns` 因 MCP 登录预检慢/500 失败；一次性探针用更长 timeout 直接调用 `search_feeds` 成功返回每个关键词前 5 条搜索结果。
+
+这次结果不等于全站榜单，但给当前优先级一个清晰信号：
+
+- `世界杯` 因小红书 2026-05-28 官宣成为 2026 美加墨世界杯持权转播商出现极强短期热度，适合现有 `world_cup_daily_post` 立刻做内容日历。
+- `情绪疗愈`、`睡眠恢复`、`轻养生` 是最强的常青机会，其中睡眠/轻养生是最清晰的新领域候选。
+- `每日英语`、`文博非遗`、`人类丰容`、`苏轼` 都有较强保存/文化/分享信号，适合继续优化现有 playbook。
+- `武侠` 在这次搜索级样本中热度最低，应保留为深度小众域，不作为新增投入优先级。
+
+完整证据、样本分数和 workflow 建议见 [`docs/research/2026-05-30-xhs-domain-opportunity-and-workflow-review.md`](../research/2026-05-30-xhs-domain-opportunity-and-workflow-review.md)。
 
 ## Recommended Focus Lanes
 
@@ -164,17 +178,20 @@ related_paths:
 
 ## PTSM First Batch Recommendation
 
-如果现在只选 2 到 3 条线先做，建议顺序是：
+如果现在只选 2 到 3 条线先做，建议顺序更新为：
 
-1. 人类丰容 / 零成本日常变量实验
-2. 修复系手作 / 情绪疗愈
-3. AI 效率 / 普通人用 AI / 知识种草
+1. 轻养生 / 睡眠恢复 / 办公室恢复
+2. 人类丰容 / 零成本日常变量实验
+3. 修复系手作 / 情绪疗愈
 
 原因：
 
 - 这三条都能连续产出。
-- 它们和当前 playbook 的语气距离最近。
-- 它们最容易沉淀成可复用的 research skill，而不是只适合人工追热点。
+- 睡眠恢复和轻养生在 2026-05-30 live probe 中有最强常青互动信号，且能自然接入心理学安全边界、人类丰容低成本动作和发疯后的修复线。
+- 人类丰容和修复系手作和当前 playbook 的语气距离最近，视觉证据、保存清单和评论交作业都清楚。
+- 这三条最容易沉淀成可复用的 research skill，而不是只适合人工追热点。
+
+`世界杯` 应作为 2026-05-28 权益新闻后的短期专项机会，由现有 `world_cup_daily_post` 承接，不计入常青 first batch。`AI 效率 / 普通人用 AI` 仍值得做，但本轮排在轻养生/睡眠恢复之后，原因是泛关键词 live score 中等，后续应靠更具体的工具/工作流关键词重新采样。
 
 ## How To Use This List
 

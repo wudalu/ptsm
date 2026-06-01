@@ -26,6 +26,7 @@ Playbook 是 PTSM 的业务编排单元。它把领域、平台、技能需求�
 
 - 当前仓库里有九个真实 playbook：`fengkuang_daily_post`、`sushi_poetry_daily_post`、`wuxia_character_post`、`ai_tech_daily_post`、`daily_english_post`、`modern_psychology_post`、`human_enrichment_daily_post`、`world_cup_daily_post`、`reddit_curation_daily_post`。
 - 九个小红书 playbook 都加载共享 `xhs_image_strategy` 和 `xhs_human_voice`。前者让正文生成阶段可以同时给出图片后端和样式计划；后者把温暖、有调性、像真人、不格式化、少运营腔这些横向 persona 要求放进所有 XHS 内容。两个共享 skill 都与各领域 style / hashtag skill 并列，不替代领域内容约束。
+- `sushi_poetry_daily_post` 专门输出苏轼诗词赏析短帖，用当代生活瞬间接住诗词情绪。`guide-post` 会按黄州自救、赤壁大江、烟火饮食、怀民关系、旧友旧物、中秋月亮、节气小动作、定风波坏天气等方向动态返回 4 个场景相关方向；泛苏轼 scene 默认走黄州自救这类宽入口，不再把未命中的场景锁到怀民。默认绑定 `acct-sushi-local`。
 - `wuxia_character_post` 专门输出长篇武侠人物评述（800-1500字），用当代流行文化视角解读金庸古龙人物。`guide-post` 会按老款人格、当代职场、主体性/边界、人情债等方向动态返回 4 个场景相关方向，方向可来自 curated 候选或 PTSM 本地组合的 `open_scene`。默认绑定 `acct-wuxia-local`。
 - `ai_tech_daily_post` 专门输出 AI/科技资讯速递，结构化拆解科技进展。`guide-post` 会按模型更新、普通人工作流、工具选择、普通人影响等方向动态返回 4 个场景相关方向，方向可来自 curated 候选或 PTSM 本地组合的 `open_scene`。默认绑定 `acct-ai-tech-local`。
 - `daily_english_post` 是每日英语单词学习内容，陪伴式教育风格。`guide-post` 会按职场表达、情绪词、每日一词、评论区造句等方向动态返回 4 个场景相关方向，方向可来自 curated 候选或 PTSM 本地组合的 `open_scene`。默认绑定 `acct-daily-english-local`。
@@ -62,7 +63,7 @@ Playbook 是 PTSM 的业务编排单元。它把领域、平台、技能需求�
 
 `playbook.yaml` 的 `reflection` 字段可以包含非字符串值，例如 `recommended_phrases`、`title_must_not_equal_any`、`body_must_include_any`、`body_must_not_include_any` 列表。runtime reflector 会强制必需项和明确配置的 deterministic quality rules；如果某个 playbook 只是建议使用某类收束词，应该放在推荐字段或 markdown 标准里，避免把所有输出锁成同一个句式。
 
-所有小红书 playbook 的 prompt 资产现在都把 2026-05-23 爆品梗调研消化成各自主题的表达方式，而不是简单贴热词：发疯文学优先职场物件、丝瓜汤式沟通和体面外壳/狼狈内核；现代心理学优先具体生活瞬间、轻机制、角色认领和非诊断化边界，可承接爱你老己、三明治拒绝法和 AI 陪伴边界，但不能把标题写成心理学科普；人类丰容优先适我主义、新独居、手作心流和一平米角落；AI 科技、苏轼诗词、武侠人物、每日英语和世界杯也分别以生活搭子、文化力、老款人格、学习搭子、看球搭子这类本账号能承接的语气进入正文。
+所有小红书 playbook 的 prompt 资产现在都把 2026-05-23 爆品梗调研消化成各自主题的表达方式，而不是简单贴热词：发疯文学优先职场物件、丝瓜汤式沟通和体面外壳/狼狈内核；现代心理学优先具体生活瞬间、轻机制、角色认领和非诊断化边界，可承接爱你老己、三明治拒绝法和 AI 陪伴边界，但不能把标题写成心理学科普；人类丰容优先适我主义、新独居、手作心流和一平米角落；苏轼诗词既可承接怀民角色认领，也要覆盖黄州自救、赤壁大江、东坡烟火、月亮想念、节气仪式和定风波重读；AI 科技、武侠人物、每日英语和世界杯也分别以生活搭子、老款人格、学习搭子、看球搭子这类本账号能承接的语气进入正文。
 
 所有 XHS playbook 共享同一条标题/正文组织合同：标题最多 22 字、优先 12-18 字，要用具体场景、物件、关系或一句原话叠加冲突、反差、身份代入、工具感或戏剧张力，不能只写栏目名；正文按 `首屏钩子 -> 领域要素 -> 可保存单元 -> 评论交接` 组织，但读者可见正文不能直接露出“可复制疯话”“可收藏小结”“可保存单元”“评论交接”这类内部功能标签。当前正文长度带如下：
 

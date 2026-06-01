@@ -52,7 +52,7 @@ Skill 层负责让运行时按请求范围暴露合适的 builtin skills，而�
 - `xhs_image_strategy` 服务当前所有 `xiaohongshu` playbook，负责让 drafting backend 输出可选 `final_content.image_plan`：先声明图片 `role`、`text_density`、`max_text_units` 和 `cover_text_strategy`，再在微信聊天记录、iPhone 记事本或笔记卡这类文字原生首屏适合时选择 `local_social_screenshot`，在真实物件、空间、材料、手作过程和生活氛围图更重要时选择 `provider_image`。它只做策略决策，不直接生成图片。
 - `xhs_human_voice` 服务当前所有 `xiaohongshu` playbook，是共享 persona 与结构约束：内容要先像真人账号，再像内容账号；标题要短，优先 12-18 字、最多 22 字，并由具体场景、物件、关系或一句原话叠加冲突、身份、工具感、反差或戏剧张力，避免 `日常`、`实录`、`干货分享` 这类泛标题；正文按 `首屏钩子 -> 领域要素 -> 可保存单元 -> 评论交接` 组织，并按领域控制长度；避免公文、讲义、通稿、AI 总结和 `首先`/`其次`/`综上` 这类格式化标记，也不能把 `可复制疯话`、`可收藏小结`、`可保存单元`、`评论交接` 等内部功能标签直接露给读者。
 - `fengkuang_style` / `positive_reframe` / `xhs_hashtagging` 只服务 `fengkuang_daily_post`。这些 skills 现在把“具体职场物件或社交对象 + 可复制疯话/模板 + 评论区接龙 + 非医疗化安全边界”作为生成要求，并可借 2026-05-23 研究里的高雅外壳/狼狈内核、丝瓜汤式沟通和物件发疯机制；`也算`、`至少`、`还能` 只作为轻量缓冲词库，不再是固定结尾。
-- `sushi_poetry_style` / `xhs_poetry_hashtagging` 只服务 `sushi_poetry_daily_post`，现在要求“生活瞬间 -> 苏轼词句 -> 可收藏小纸条 -> 评论区共读”，并可借文化力、非遗、手作、节气和年味角落做当代入口，避免讲义腔和百科腔
+- `sushi_poetry_style` / `xhs_poetry_hashtagging` 只服务 `sushi_poetry_daily_post`，现在要求“生活瞬间 -> 苏轼词句 -> 可收藏小纸条 -> 评论区共读”，并可借黄州自救、赤壁大江、东坡烟火、怀民关系、旧友旧物、中秋月亮、节气和定风波做当代入口，避免只回到怀民，也避免讲义腔和百科腔
 - `wuxia_commentary_style` / `xhs_wuxia_hashtagging` 只服务 `wuxia_character_post`，现在要求当代切口、人物出处、原文佐证、可截图判断和评论区人物讨论，并可把“老款人格”、主体性和边界感转成角色理解，而不是把人物压成热词标签
 - `ai_tech_style` / `ai_tech_hashtagging` 只服务 `ai_tech_daily_post`，现在要求 3 秒核心信息、是什么/为什么重要/普通人影响、收藏清单、评论区使用反馈和非投资建议边界；语气是普通人 AI 生活搭子和工作流实践者，不是发布会通稿
 - `daily_english_style` / `daily_english_hashtagging` 只服务 `daily_english_post`，现在要求真实场景例句、音标/词性/翻译、可收藏句型、评论区造句，避免词典式和课堂作业腔
