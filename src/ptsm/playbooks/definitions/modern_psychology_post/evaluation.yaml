@@ -37,7 +37,32 @@ node_contracts:
       - image_text
       - hashtags
     constraints:
-      title_max_chars: 30
+      title_max_chars: 22
+      title_must_include_tension_any:
+        - 那一秒
+        - 那秒
+        - 那句
+        - 不是
+        - 不代表
+        - 不想
+        - 不急
+        - 不能
+        - 别
+        - 却
+        - 反而
+        - 突然
+        - 原来
+        - 为什么
+        - 到底
+        - 值不值
+        - 被
+        - 最累
+        - 先别
+        - 救
+        - 硬仗
+        - 冷场
+        - 改到
+        - 拖回
       title_must_not_equal_any:
         - "下班后还在复盘那句话"
       title_must_not_include_any:

@@ -2,7 +2,7 @@
 title: PTSM Operations
 status: active
 owner: ptsm
-last_verified: 2026-05-30
+last_verified: 2026-06-01
 source_of_truth: true
 related_paths:
   - docs/operations/publish-quickstart.md
@@ -148,7 +148,7 @@ COOKIES_PATH=cookies/fk-local.json .ptsm/bin/xhs-mcp/xiaohongshu-mcp-darwin-amd6
 - `collect-xhs-patterns` / `analyze-xhs-patterns` 是周期采集和格式沉淀入口。普通 `run-playbook` 默认只读取本地 pattern snapshot，不会每次发帖都检索实时高互动帖子；需要实验特定 snapshot 时，用 `--format-pattern-path` 覆盖。
 - `reddit_curation_daily_post` 会在 `reddit_discussion_scan` skill 激活时尝试读取 Reddit 英文讨论作为内部素材。按 Reddit Responsible Builder Policy，读取 Reddit API 前需要为该用途取得 explicit approval，并保持透明、限量、只读、不规避限制、不做 Reddit 数据商业化或 AI 训练。配置已获批 app 的 `REDDIT_CLIENT_ID`、`REDDIT_CLIENT_SECRET` 和 `REDDIT_USER_AGENT` 后会用 OAuth 形成真实最新 Reddit runtime context；如果 app 创建受验证码阻塞，可先设置 `REDDIT_PUBLIC_JSON_FALLBACK=true` 和非占位 `REDDIT_USER_AGENT`，用 Reddit public `.json` 页面低频只读扫描。未配置时 dry-run 会完成但上下文标记为 `missing_credentials`。读者可见成稿只呈现中文热点帖，不暴露 Reddit、subreddit、英文讨论、翻译过程或来源 URL。
 - `run-playbook` 是多 playbook 的通用入口；`run-fengkuang` 只保留给已有发疯文学兼容脚本和习惯命令。
-- 做 XHS persona 或热梗映射回归时，优先用 dry-run 加 `--eval` 检查 artifact：标题应有具体物件/关系/场景钩子并避开 `日常`、`实录`、`干货分享` 这类泛标题；正文应按 `首屏钩子 -> 领域要素 -> 可保存单元 -> 评论交接` 组织并落在对应 playbook 的长度带内。现代心理学还要额外检查标题不出现心理机制名或 `不是你` 破梗，正文控制在 260-580 字，用一句轻机制服务场景，用 `哪派`、`A.` / `B.` 或 `____` 这类认领入口替代泛泛问经历。eval 会通过 `title_must_not_include_any`、body length band 和 `combined_must_not_include_any` 拦截泛标题、过长/过短正文、`首先`、`其次`、`综上`、`本文`、`作为AI` 等模板化或元叙事表达，也会拦截 `可复制疯话`、`可收藏小结`、`可保存单元`、`评论交接` 等读者可见的内部功能标签。
+- 做 XHS persona 或热梗映射回归时，优先用 dry-run 加 `--eval` 检查 artifact：标题应在 22 字以内，有具体物件/关系/场景钩子，并出现冲突、反差或戏剧张力 cue，同时避开 `日常`、`实录`、`干货分享` 这类泛标题；正文应按 `首屏钩子 -> 领域要素 -> 可保存单元 -> 评论交接` 组织并落在对应 playbook 的长度带内。现代心理学还要额外检查标题不出现心理机制名或 `不是你` 破梗，正文控制在 260-580 字，用一句轻机制服务场景，用 `哪派`、`A.` / `B.` 或 `____` 这类认领入口替代泛泛问经历。eval 会通过 `title_max_chars`、`title_must_include_tension_any`、`title_must_not_include_any`、body length band 和 `combined_must_not_include_any` 拦截过长/平淡标题、泛标题、过长/过短正文、`首先`、`其次`、`综上`、`本文`、`作为AI` 等模板化或元叙事表达，也会拦截 `可复制疯话`、`可收藏小结`、`可保存单元`、`评论交接` 等读者可见的内部功能标签。
 - `guide-post` 是小红书发帖前的只读选题向导：支持当前九个 playbook：`modern_psychology_post`、`fengkuang_daily_post`、`human_enrichment_daily_post`、`sushi_poetry_daily_post`、`wuxia_character_post`、`ai_tech_daily_post`、`daily_english_post`、`world_cup_daily_post`、`reddit_curation_daily_post`。默认走对话式引导；脚本场景用 `--non-interactive` 输出 JSON。JSON 和 Markdown 都包含场景相关的 4 个 `topic_guidance.directions`，把本地热点/爆点机制产品化为用户可选方向；输出带 `selection_policy == "dynamic_scene_diversity_rerank"`、`open_direction_ids`、兼容字段 `open_direction_id` 和 `direction_type_counts`。selector 从 curated 候选和多个 PTSM 本地组合的 `open_scene` 候选中动态选择方向，scene 关键词只来自用户输入，lane affinity 只来自选题 lane，并用 diversity family、direction source type 和 open-scene mechanism 避免不同场景只得到同一组固定锚点。每个方向带 `direction_type`、`scene_fit`、`trend_signal`、`viral_hook`、适合场景、内容角度、保存工具、评论提示和避坑。输出还带 `topic_guidance.image_recommendation`，用于用户确认方向后选择图片方式：本地截图会给出 `--local-image-style wechat_chat|iphone_notes|note_card`，provider 图会给出 `--auto-generate-image`、`provider=bailian` 和 `model=qwen-image-2.0-pro`。输出不包含 research 文件路径、原始来源说明、URL 或 provenance。普通 `guide-post` 不默认运行 live XHS / topic-radar 扫描。真正生成和发布仍走 `run-playbook`。
 - 心理学 `guide-post` 保留更丰富的六步 brief：先问具体场景，再建议心理学 lane、机制、非诊断化重构、可保存动作、角色/阵营/填空式评论提示和低密度封面；生成时机制用于服务场景，不应前置成标题破梗。非心理学交互只问具体场景、可选 lane 和评论提示覆盖，避免把心理学机制问题套到其他领域。
 - 对 `他3小时没回消息，我已经想好分手后猫归谁了` 这类亲密关系等待消息场景，心理学 `guide-post` 应返回 `亲密关系 / 不确定感` 和 `事实 / 脑补 / 我需要什么`，封面推荐 `--local-image-style iphone_notes`；不要把它作为职场协作式消息边界回复来生成。

@@ -379,7 +379,7 @@ def _build_deterministic_draft(
         )
         hashtags = ["#发疯文学", "#打工人日常", "#职场情绪实录"]
     elif _is_weekend_rest_scene(scene):
-        title = "周六躺平回血实录"
+        title = "周六躺平，脑子却在加班"
         image_text = "今天先躺"
         body = (
             f"谁懂，周六本来想靠{scene}给自己回口血，结果人是躺下了，脑子还在加班续命。\n"
@@ -431,7 +431,7 @@ def _build_deterministic_draft(
         )
         hashtags = ["#发疯文学", "#打工人日常", "#职场情绪实录"]
     else:
-        title = "今天这口气先写在工牌背面"
+        title = "这口气被我写在工牌背面"
         image_text = "收到，但灵魂已下班"
         body = (
             f"今日份发疯现场：{scene}。\n"
@@ -473,12 +473,12 @@ def _avoid_recent_memory_title(
     if _is_commute_scene(scene):
         return "地铁门关上那秒我先下线", "灵魂请下一站下车"
     if _is_meeting_scene(scene):
-        return "会议室把我循环播放到没电", "点头模式已开启"
+        return "我被会议室循环播放到没电", "点头模式已开启"
     if _is_weekend_rest_scene(scene):
-        return "周末回血失败现场", "躺着也在耗电"
+        return "周末回血失败，脑子却在加班", "躺着也在耗电"
     if _is_after_hours_leader_scene(scene):
         return "18:57那句在吗把工牌点燃了", "我的工牌先替我发疯"
-    return "今天换个地方发疯", image_text
+    return "这口气被我换个地方写下", image_text
 
 
 def _is_sushi_poetry_context(*, scene: str, extra_context: str) -> bool:
@@ -562,7 +562,9 @@ def _repair_json_payload_text(content: str) -> str:
 def _build_deepseek_hard_requirements(*, extra_context: str, runtime_context: str) -> str:
     requirements = [
         "只输出 JSON 对象，不要 Markdown 代码块，不要额外解释。",
-        "标题必须用具体场景、物件、关系或一句原话做入口，再叠加冲突、反差、身份代入或工具感；不得写成泛标题，不要只写“日常”“实录”“干货分享”“小红书爆款”。",
+        "标题最多 22 个字符，优先 12-18 字；必须用具体场景、物件、关系或一句原话做入口，再叠加冲突、反差、身份代入、工具感或戏剧张力。"
+        "优先使用“那一秒”“不是”“别”“却”“反而”“突然”“原来”“为什么”“到底”“值不值”“被”“最累”等钩子；"
+        "不得写成泛标题，不要只写“日常”“实录”“干货分享”“小红书爆款”。",
         "正文必须按首屏钩子 -> 领域要素 -> 可保存单元 -> 评论交接组织：前两句给继续看的理由，中段补齐领域必要信息，至少给一句可收藏/可复制/可照做的单元，结尾问具体例子或接一句。",
         "不要把内部功能标签直接写进正文，例如“可复制疯话”“可收藏小结”“可收藏句型”“可保存单元”“评论交接”“可收藏看球清单”“可保存三步”，不管有没有冒号都不要露出；把这些功能改写成自然句子。",
     ]

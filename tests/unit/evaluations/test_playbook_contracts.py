@@ -73,6 +73,33 @@ GENERIC_TITLE_MARKERS = {
     "wuxia_character_post": ["武侠人物评述", "人物分析", "读书笔记"],
 }
 
+TITLE_TENSION_MARKERS = [
+    "那一秒",
+    "那秒",
+    "那句",
+    "不是",
+    "不代表",
+    "不想",
+    "不急",
+    "不能",
+    "别",
+    "却",
+    "反而",
+    "突然",
+    "原来",
+    "为什么",
+    "到底",
+    "值不值",
+    "被",
+    "最累",
+    "先别",
+    "救",
+    "硬仗",
+    "冷场",
+    "改到",
+    "拖回",
+]
+
 
 class TestPlaybookEvalContract:
     def test_loads_fengkuang_contract(self):
@@ -84,7 +111,8 @@ class TestPlaybookEvalContract:
         assert "executor" in contract.node_contracts
         assert "finalize" in contract.node_contracts
         constraints = contract.node_contracts["executor"].get("constraints", {})
-        assert constraints.get("title_max_chars") == 30
+        assert constraints.get("title_max_chars") == 22
+        assert "那一秒" in constraints["title_must_include_tension_any"]
         assert "打工人地铁生存实录" in constraints["title_must_not_equal_any"]
         assert "今日已疯" in constraints["image_text_must_not_equal_any"]
         assert "评论区" in constraints["body_must_include_comment_prompt_any"]
@@ -273,6 +301,18 @@ class TestPlaybookEvalContract:
 
             for marker in markers:
                 assert marker in constraints["title_must_not_include_any"]
+
+    def test_all_xhs_contracts_require_compact_dramatic_titles(self):
+        root = Path(__file__).parent.parent.parent.parent / "src" / "ptsm" / "playbooks" / "definitions"
+
+        for playbook_id in XHS_PLAYBOOK_IDS:
+            contract = load_playbook_eval_contract(root, playbook_id)
+            assert contract is not None
+            constraints = contract.node_contracts["executor"]["constraints"]
+
+            assert constraints["title_max_chars"] <= 22
+            for marker in TITLE_TENSION_MARKERS:
+                assert marker in constraints["title_must_include_tension_any"]
 
     @pytest.mark.parametrize(
         ("playbook_id", "title_terms"),

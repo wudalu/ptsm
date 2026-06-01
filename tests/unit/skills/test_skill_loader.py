@@ -33,7 +33,7 @@ def test_skill_loader_reads_shared_xhs_human_voice_skill() -> None:
     assert "具体场景" in loaded.content
     for rule in ("首屏钩子", "领域要素", "可保存单元", "评论交接"):
         assert rule in loaded.content
-    for title_rule in ("冲突", "身份", "工具", "泛标题"):
+    for title_rule in ("12-18", "22", "冲突", "反差", "戏剧", "身份", "工具", "泛标题"):
         assert title_rule in loaded.content
 
 

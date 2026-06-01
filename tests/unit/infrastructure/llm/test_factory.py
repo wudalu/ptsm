@@ -1056,6 +1056,10 @@ def test_factory_deepseek_prompt_includes_title_body_appeal_requirements() -> No
     for required in ("首屏钩子", "领域要素", "可保存单元", "评论交接"):
         assert required in user_prompt
     assert "260-620" in user_prompt
+    assert "22" in user_prompt
+    assert "12-18" in user_prompt
+    for title_cue in ("那一秒", "反差", "戏剧"):
+        assert title_cue in user_prompt
     assert "泛标题" in user_prompt
 
 

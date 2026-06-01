@@ -2,7 +2,7 @@
 title: PTSM Architecture
 status: active
 owner: ptsm
-last_verified: 2026-05-30
+last_verified: 2026-06-01
 source_of_truth: true
 related_paths:
   - src/ptsm
@@ -78,8 +78,8 @@ PTSM 当前已支持九个垂直领域（发疯文学、苏轼诗词赏析、武
 - evaluation gates 区分 `required` 和 `warning`：deterministic required failures 可以阻塞 local harness；XHS executor content-quality judge 在显式启用 eval 或生成链路配置 judge backend 时使用 `required` gate，但最终发布仍需人工确认。
 - playbook contract evaluator 现在承担通用正文质量硬约束，包括标题/封面反泛化、必需标签、禁用标签、必需/禁用正文词、评论提示、保存触发、正文长度区间和实验指令泄漏；新增约束应优先扩展 `src/ptsm/evaluations/contracts_eval.py`，避免在 runtime 或单个 playbook 中写领域分支。
 - 小红书的人设和真人感现在属于 playbook/skill 资产层：九个 XHS playbook 共享 `xhs_human_voice`，再叠加各自 style、persona、planner 和 reflection 规则；运行时只负责加载这些资产，不为“温暖、有调性、不格式化”新增领域分支。
-- 标题吸引力和正文组织也保持在资产/合同层：`xhs_human_voice` 定义具体标题钩子、四段正文动作和领域长度纪律，playbook-local `evaluation.yaml` 用 `title_must_not_include_any` 与 body length band 做确定性约束，DeepSeek / deterministic drafting backend 只读取这些要求，不新增领域 orchestration 分支。
-- playbook contract evaluator 现在还支持 `title_must_include_any`、`title_must_not_include_any`、body length band 和 `combined_must_not_include_any`，用于让标题保留具体物件/场景钩子、拦截泛标题，并跨标题、封面文案和正文拦截 `首先`、`其次`、`综上`、`作为AI` 这类模板化或元叙事语言。
+- 标题吸引力和正文组织也保持在资产/合同层：`xhs_human_voice` 定义 12-18 字优先、最多 22 字的短标题纪律，要求具体标题钩子叠加冲突、反差或戏剧张力；playbook-local `evaluation.yaml` 用 `title_max_chars`、`title_must_include_tension_any`、`title_must_not_include_any` 与 body length band 做确定性约束，DeepSeek / deterministic drafting backend 只读取这些要求，不新增领域 orchestration 分支。
+- playbook contract evaluator 现在还支持 `title_must_include_any`、`title_must_include_tension_any`、`title_must_not_include_any`、body length band 和 `combined_must_not_include_any`，用于让标题保留具体物件/场景钩子、限制在短标题上限内、拦截泛标题，并跨标题、封面文案和正文拦截 `首先`、`其次`、`综上`、`作为AI` 这类模板化或元叙事语言。
 
 ## Current Design Pressure
 

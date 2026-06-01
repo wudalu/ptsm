@@ -227,6 +227,18 @@ def _constraint_failures(
                     ),
                 }
             )
+        tension_terms = _string_list(constraints.get("title_must_include_tension_any"))
+        if tension_terms and not any(term in title for term in tension_terms):
+            failures.append(
+                {
+                    "path": _field_path(target, "title"),
+                    "value_preview": title,
+                    "observation": (
+                        "title_must_include_tension_any violated: "
+                        f"missing one of {tension_terms}"
+                    ),
+                }
+            )
         forbidden_title_terms = _string_list(
             constraints.get("title_must_not_include_any")
         )

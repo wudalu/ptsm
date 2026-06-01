@@ -9,6 +9,32 @@ from ptsm.interfaces.cli.main import main
 
 
 GENERIC_TITLE_MARKERS = ("日常", "实录", "干货分享", "小红书爆款")
+DRAMATIC_TITLE_CUES = (
+    "那一秒",
+    "那秒",
+    "那句",
+    "不是",
+    "不代表",
+    "不想",
+    "不急",
+    "不能",
+    "别",
+    "却",
+    "反而",
+    "突然",
+    "原来",
+    "为什么",
+    "到底",
+    "值不值",
+    "被",
+    "最累",
+    "先别",
+    "救",
+    "硬仗",
+    "冷场",
+    "改到",
+    "拖回",
+)
 FUNCTIONAL_LABEL_MARKERS = (
     "可复制疯话：",
     "可复制疯话:",
@@ -143,6 +169,8 @@ def test_xhs_playbook_dry_runs_fit_title_body_quality_contract(
 
     assert exit_code == 0
     assert body_min <= len(content["body"]) <= body_max
+    assert len(content["title"]) <= 22
+    assert any(cue in content["title"] for cue in DRAMATIC_TITLE_CUES)
     assert not any(marker in content["title"] for marker in GENERIC_TITLE_MARKERS)
     visible = f"{content['title']}\n{content['image_text']}\n{content['body']}"
     assert not any(marker in visible for marker in FUNCTIONAL_LABEL_MARKERS)

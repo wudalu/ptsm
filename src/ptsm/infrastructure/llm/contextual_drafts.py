@@ -202,7 +202,7 @@ def _build_human_enrichment_draft(
 ) -> dict[str, Any]:
     hooks = _extract_pattern_hooks(runtime_context)
     if any(keyword in scene for keyword in ("适我主义", "新独居", "一个人住", "独居")):
-        title = "给床头角落一点适我主义"
+        title = "床头这一角，先别再亏待我"
         image_text = "一个人住也能先丰容一厘米"
         body = (
             f"{scene}。我不想把新独居写成精致样板间，先让床头角落按自己的节奏舒服一点。\n"
@@ -215,7 +215,7 @@ def _build_human_enrichment_draft(
         title = (
             "这堆旧材料原来这么适合丰容"
             if "process_or_tutorial" in hooks
-            else "给旧材料一个十分钟丰容流程"
+            else "旧材料别扔，先救这一角"
         )
         image_text = "旧材料也能变新鲜"
         body = (
@@ -229,7 +229,7 @@ def _build_human_enrichment_draft(
         title = (
             "突然意识到路线也需要丰容"
             if "sudden_realization" in hooks
-            else "给常走路线加一个低成本变量"
+            else "常走那条路，突然不无聊了"
         )
         image_text = "换一条路也算丰容"
         body = (
@@ -243,7 +243,7 @@ def _build_human_enrichment_draft(
         title = (
             "突然意识到书桌也需要丰容"
             if "sudden_realization" in hooks
-            else "给书桌加一个零成本变量"
+            else "书桌乱到我先救这一角"
         )
         image_text = "今天先丰容这个角落"
         body = (
@@ -254,7 +254,7 @@ def _build_human_enrichment_draft(
             "评论区交一个你想先丰容的角落，我来收集零成本版本。"
         )
     elif any(keyword in scene for keyword in ("窗台", "玄关", "床头", "角落")):
-        title = "这个小角落先丰容一厘米"
+        title = "这个角落，先别再当仓库"
         image_text = "给生活留一点新鲜感"
         body = (
             f"{scene}。今天不做大改造，只给它加一个看得见的小变量。\n"
@@ -264,7 +264,7 @@ def _build_human_enrichment_draft(
             "评论区交一个你家最想先微调的角落。"
         )
     else:
-        title = "今天先试一个日常变量"
+        title = "日子太顺手，就先救一厘米"
         image_text = "低成本丰容一下"
         body = (
             f"{scene}。我想先做一个很小的人类丰容实验，不靠大购物，也不假装人生马上焕新。\n"
@@ -465,7 +465,7 @@ def _build_wuxia_draft(*, scene: str, feedback: str) -> dict[str, Any]:
 
 def _build_world_cup_draft(*, scene: str, feedback: str) -> dict[str, Any]:
     if any(keyword in scene for keyword in ("赛后", "终场", "点球", "逆转", "加时")):
-        title = "这场世界杯赛后先复盘三件事"
+        title = "终场哨响后，别只盯比分"
         image_text = "终场后别急着只看比分"
         body = (
             f"{scene}。这类世界杯赛后内容，普通球迷可以先别急着把情绪压成一句输赢，"
@@ -476,7 +476,7 @@ def _build_world_cup_draft(*, scene: str, feedback: str) -> dict[str, Any]:
             "评论区想问问，你赛后最想复盘的是哪一个回合，还是哪位球员的选择？"
         )
     elif any(keyword in scene for keyword in ("朋友", "宿舍", "酒吧", "客厅", "熬夜", "看球局")):
-        title = "世界杯看球局先存这份清单"
+        title = "看球局冷场，就聊这三秒"
         image_text = "普通球迷也能聊起来"
         body = (
             f"{scene}。世界杯好看的地方不只是强强对话，也有一群人一起等开球的赛事情绪。"
@@ -487,7 +487,7 @@ def _build_world_cup_draft(*, scene: str, feedback: str) -> dict[str, Any]:
             "评论区说说你看球时最在意氛围、球星，还是最后十分钟的心跳。"
         )
     else:
-        title = "这场世界杯赛前，普通球迷看三点"
+        title = "世界杯开球前，别只猜输赢"
         image_text = "先看懂对位再开球"
         body = (
             f"{scene}。赛前不用把自己逼成战术分析师，普通球迷先抓三个看点就够了："
@@ -532,7 +532,7 @@ def _build_ai_tech_draft(*, scene: str, feedback: str) -> dict[str, Any]:
     if feedback != "无" and "#AI资讯" not in body:
         body += "\n这条更适合放在 #AI资讯 方向里做工具观察。"
     return {
-        "title": "这次AI更新，普通人先看这三点",
+        "title": "AI更新来了，普通人先别急",
         "image_text": "别只看热闹，先看能不能真省事",
         "body": body,
         "hashtags": ["#AI资讯", "#人工智能", "#效率工具", "#科技观察"],
@@ -678,7 +678,7 @@ def _build_modern_psychology_draft(
             "下一步=明天要不要轻轻确认一次。如果痛苦持续、影响工作学习生活，或出现自伤想法，请尽快寻求专业帮助。\n"
             "你是哪派：A.写完小作文秒删 B.发了又后悔？"
         )
-        title = "会议那句话，我在脑子里改到第七版"
+        title = "会议那句话，我改到第七版"
         image_text = "把脑补写到猜测栏"
         hashtags = ["#心理学", "#情绪管理", "#职场焦虑", "#反刍思维"]
     elif any(keyword in scene for keyword in ("脑内", "白天的自己", "复盘会")):
@@ -776,7 +776,7 @@ def _avoid_recent_modern_psychology_memory(
                 ),
             ),
             (
-                "会议后的回放键，可以先暂停一下",
+                "会议回放键，先别再按了",
                 "事实先坐前排",
                 (
                     f"{scene}，人已经在回家路上，脑子却把会议室重新开了一遍灯。"
@@ -789,7 +789,7 @@ def _avoid_recent_modern_psychology_memory(
                 ),
             ),
             (
-                "一句会议回音，不用想成判决书",
+                "一句会议回音，别想成判决书",
                 "把脑补写到猜测栏",
                 (
                     f"{scene}，那句话像在脑子里开了循环播放，我已经给它写出三种最坏版本。"

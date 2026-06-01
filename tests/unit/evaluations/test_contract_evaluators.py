@@ -321,6 +321,36 @@ class TestPlaybookNodeContract:
         assert result.status == "failed"
         assert "title_must_include_any" in result.reason
 
+    def test_fails_when_title_lacks_required_tension_marker(self):
+        contract = PlaybookEvalContract(
+            suite_id="human_voice.default",
+            node_contracts={
+                "executor": {
+                    "required_fields": ["title", "body", "image_text", "hashtags"],
+                    "constraints": {
+                        "title_must_include_tension_any": ["那一秒", "不是", "别", "却"],
+                    },
+                }
+            },
+        )
+        target = _target(
+            phase="executor",
+            target_type="artifact_slice",
+            output_ref={
+                "final_content": {
+                    "title": "今天也要好好生活",
+                    "image_text": "先慢一点",
+                    "body": "今天先写一个具体场景，评论区交一个例子。",
+                    "hashtags": ["#小红书"],
+                }
+            },
+        )
+
+        result = contract_playbook_node_contract(target, contract)
+
+        assert result.status == "failed"
+        assert "title_must_include_tension_any" in result.reason
+
     def test_fails_when_title_contains_forbidden_generic_marker(self):
         contract = PlaybookEvalContract(
             suite_id="title.default",
