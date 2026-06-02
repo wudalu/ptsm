@@ -2,7 +2,7 @@
 title: PTSM Architecture
 status: active
 owner: ptsm
-last_verified: 2026-06-01
+last_verified: 2026-06-02
 source_of_truth: true
 related_paths:
   - src/ptsm
@@ -80,6 +80,7 @@ PTSM 当前已支持九个垂直领域（发疯文学、苏轼诗词赏析、武
 - 小红书的人设和真人感现在属于 playbook/skill 资产层：九个 XHS playbook 共享 `xhs_human_voice`，再叠加各自 style、persona、planner 和 reflection 规则；运行时只负责加载这些资产，不为“温暖、有调性、不格式化”新增领域分支。
 - 标题吸引力和正文组织也保持在资产/合同层：`xhs_human_voice` 定义 12-18 字优先、最多 22 字的短标题纪律，要求具体标题钩子叠加冲突、反差或戏剧张力；playbook-local `evaluation.yaml` 用 `title_max_chars`、`title_must_include_tension_any`、`title_must_not_include_any` 与 body length band 做确定性约束，DeepSeek / deterministic drafting backend 只读取这些要求，不新增领域 orchestration 分支。
 - playbook contract evaluator 现在还支持 `title_must_include_any`、`title_must_include_tension_any`、`title_must_not_include_any`、body length band 和 `combined_must_not_include_any`，用于让标题保留具体物件/场景钩子、限制在短标题上限内、拦截泛标题，并跨标题、封面文案和正文拦截 `首先`、`其次`、`综上`、`作为AI` 这类模板化或元叙事语言。
+- `modern_psychology_post` 的浏览/点赞优化仍放在既有心理学资产层：睡眠恢复、轻养生、办公室恢复被建模为现代心理学子线实验，由 `guide-post`、`psychology_style`、playbook prompt 和 deterministic dry-run helper 承接，不新增 domain/playbook/runtime 分支。2026-06-02 的 XHS domain opportunity live scan 因本地 MCP 缺少 `search_feeds` 没有采到样本，所以这条子线只按弱证据推进为本地可验证实验，不声称已完成趋势排名。
 
 ## Current Design Pressure
 

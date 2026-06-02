@@ -2,7 +2,7 @@
 title: PTSM Operations
 status: active
 owner: ptsm
-last_verified: 2026-06-01
+last_verified: 2026-06-02
 source_of_truth: true
 related_paths:
   - docs/operations/publish-quickstart.md
@@ -109,6 +109,7 @@ COOKIES_PATH=cookies/fk-local.json .ptsm/bin/xhs-mcp/xiaohongshu-mcp-darwin-amd6
 - `uv run python -m ptsm.bootstrap guide-post`
 - `uv run python -m ptsm.bootstrap guide-post --scene "看到别人周末都在聚会，自己突然觉得很失败" --non-interactive`
 - `uv run python -m ptsm.bootstrap guide-post --scene "他3小时没回消息，我已经想好分手后猫归谁了" --non-interactive --format json`
+- `uv run python -m ptsm.bootstrap guide-post --scene "睡眠恢复和轻养生很火，想写办公室下班后的5分钟恢复" --non-interactive --format json`
 - `uv run python -m ptsm.bootstrap guide-post --playbook-id fengkuang_daily_post --account-id acct-fk-local --scene "领导18:57发来一句在吗，工牌想替我发疯" --non-interactive --format json`
 - `uv run python -m ptsm.bootstrap guide-post --playbook-id human_enrichment_daily_post --account-id acct-enrichment-local --scene "想把书桌角落改成十分钟适我主义手作位" --non-interactive --format json`
 - `uv run python -m ptsm.bootstrap guide-post --playbook-id sushi_poetry_daily_post --account-id acct-sushi-local --scene "夜里读到怀民亦未寝，想写一种旧友关系" --non-interactive --format json`
@@ -121,6 +122,7 @@ COOKIES_PATH=cookies/fk-local.json .ptsm/bin/xhs-mcp/xiaohongshu-mcp-darwin-amd6
 - `uv run python -m ptsm.bootstrap run-playbook --caller openclaw --scene "他3小时没回消息，我已经想好分手后猫归谁了" --account-id acct-psychology-local --playbook-id modern_psychology_post --publish-mode dry-run`
 - `uv run python -m ptsm.bootstrap run-playbook --caller openclaw --guidance-ack --scene "他3小时没回消息，我已经想好分手后猫归谁了" --account-id acct-psychology-local --playbook-id modern_psychology_post --publish-mode dry-run`
 - `uv run python -m ptsm.bootstrap run-playbook --scene "凌晨两点，我还在改白天会议那句话" --account-id acct-psychology-local --playbook-id modern_psychology_post`
+- `uv run python -m ptsm.bootstrap run-playbook --scene "办公室下班后还是很紧绷，想写一个睡眠恢复和轻养生的5分钟下班信号" --account-id acct-psychology-local --playbook-id modern_psychology_post --eval --publish-mode dry-run`
 - `uv run python -m ptsm.bootstrap run-fengkuang --fresh-topic-research --account-id acct-fk-local`
 - `uv run python -m ptsm.bootstrap run-playbook --fresh-topic-research --account-id acct-psychology-local --playbook-id modern_psychology_post`
 - `uv run python -m ptsm.bootstrap run-fengkuang --fresh-topic-research --account-id acct-fk-local --auto-generate-image --publish-mode mcp-real --publish-visibility "仅自己可见"`
@@ -154,6 +156,7 @@ COOKIES_PATH=cookies/fk-local.json .ptsm/bin/xhs-mcp/xiaohongshu-mcp-darwin-amd6
 - 苏轼 `guide-post` 不把未命中的 scene 默认解释为怀民。泛苏轼、黄州/被贬/旷达、赤壁/大江大月、东坡肉/荔枝/烟火气、中秋月亮、节气和定风波场景应返回对应 lane 和 curated anchor；怀民仍作为明确关系场景的一类候选。
 - 心理学 `guide-post` 保留更丰富的六步 brief：先问具体场景，再建议心理学 lane、机制、非诊断化重构、可保存动作、角色/阵营/填空式评论提示和低密度封面；生成时机制用于服务场景，不应前置成标题破梗。非心理学交互只问具体场景、可选 lane 和评论提示覆盖，避免把心理学机制问题套到其他领域。
 - 对 `他3小时没回消息，我已经想好分手后猫归谁了` 这类亲密关系等待消息场景，心理学 `guide-post` 应返回 `亲密关系 / 不确定感` 和 `事实 / 脑补 / 我需要什么`，封面推荐 `--local-image-style iphone_notes`；不要把它作为职场协作式消息边界回复来生成。
+- 对 `睡眠恢复和轻养生很火，想写办公室下班后的5分钟恢复` 这类增长子线场景，心理学 `guide-post` 应返回 `睡眠恢复 / 轻养生`、`sleep_recovery_shutdown_card` 和 `5 分钟下班信号`，封面推荐 `--local-image-style iphone_notes`；这是 `modern_psychology_post` 的子线实验，不是新养生 playbook，也不能写成医疗、营养或治疗建议。2026-06-02 的 live opportunity scan 因 MCP 缺少 `search_feeds` 没有真实样本，不能把这条子线称为已验证趋势排名。
 - OpenClaw 心理学集成使用 `integrations/openclaw/ptsm-xhs-psychology/SKILL.md` 作为薄 wrapper：先调用 `guide-post` 展示 `topic_guidance.directions`、`direction_type` 和 `scene_fit`，用户确认方向后再调用 `run-playbook --caller openclaw --guidance-ack --topic-direction-id <chosen id>`。如果 OpenClaw 直接调用 `run-playbook --caller openclaw` 生成 `modern_psychology_post` 且没有 `--guidance-ack`，PTSM 会返回 `topic_guidance_required`，不会启动 workflow、写 run 或发布。
 - OpenClaw 非心理学 XHS 集成使用 `integrations/openclaw/ptsm-xhs-topic-guide/SKILL.md`。该 wrapper 自动把发疯文学、人类丰容、苏轼诗词、武侠人物、AI科技、每日英语、世界杯和 Reddit英文讨论转译意图映射到对应 playbook；意图模糊时先问一个短澄清问题；方向确认后再 dry-run 生成，并把确认的方向 id 作为 `--topic-direction-id` 传给 `run-playbook`。如果用户更换场景，wrapper 必须重新调用 `guide-post`，不要沿用上一轮方向。wrapper 只能展示 PTSM-returned `open_scene` 方向，不能自己发明开放方向。非心理学没有 runtime hard preflight gate，因此 `run-playbook --caller openclaw` 不会因为缺少非心理学 guidance ack 而被拒绝。
 - OpenClaw/Codex 领域机会分析使用 `integrations/openclaw/ptsm-xhs-domain-opportunity/SKILL.md` 作为薄 wrapper：当用户想比较小红书领域、寻找新增 PTSM 领域或评估 playbook 覆盖缺口时，先调用 `xhs-domain-opportunity` CLI 生成 JSON/Markdown brief，再按 `existing_playbook_fit`、`sublane_first`、`new_domain_candidate` 给下一步建议。该 wrapper 不生成、不发布、不复制 PTSM scoring，也不展示原始 feed id/token。

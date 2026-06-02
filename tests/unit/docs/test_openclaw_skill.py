@@ -31,6 +31,9 @@ def test_openclaw_psychology_skill_documents_two_step_guidance_flow() -> None:
     assert "model" in text
     assert "Do not invent, expand, or replace PTSM-returned image recommendation" in text
     assert "call `guide-post` again" in text
+    assert "睡眠恢复" in text
+    assert "轻养生" in text
+    assert "PTSM-returned psychology sublane" in text
     assert "不要展示内部研究路径" in text
     assert "不要展示原始研究笔记" in text
     assert "ptsm-xhs-topic-guide" in text

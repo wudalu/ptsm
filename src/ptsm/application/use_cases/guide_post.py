@@ -203,6 +203,26 @@ PSYCHOLOGY_LANES: tuple[PsychologyLane, ...] = (
         keywords=("情绪", "焦虑", "崩溃", "呼吸", "恢复", "失眠", "身体", "紧绷"),
     ),
     PsychologyLane(
+        name="睡眠恢复 / 轻养生",
+        mechanism="身体收口",
+        reframe="身体没有立刻松下来，不代表你矫情；它只是还没收到下班和入睡的信号。",
+        save_tool="5 分钟下班信号：关入口、松肩颈、写明天第一步",
+        comment_prompt="你最需要哪种下班信号：A.身体放松 B.脑子停机 C.手机下线？",
+        example_scene="办公室下班后还是很紧绷，想写一个睡眠恢复和轻养生的5分钟下班信号",
+        keywords=(
+            "睡眠恢复",
+            "轻养生",
+            "办公室恢复",
+            "下班信号",
+            "疲惫",
+            "睡前",
+            "下线",
+            "紧绷",
+            "5分钟",
+            "5 分钟",
+        ),
+    ),
+    PsychologyLane(
         name="热点心理化重构",
         mechanism="情绪触发",
         reframe="公共事件可以触发很多旧感受，但我们不需要把任何人简单贴成病理标签。",
@@ -402,9 +422,41 @@ PSYCHOLOGY_TOPIC_DIRECTIONS: tuple[TopicDirection, ...] = (
         saveable_tool="5 分钟收口：关入口、写担心、留明天第一步",
         comment_prompt="你睡前最想先收口的是：A.短视频 B.聊天 C.搜索？",
         avoid="不要把熬夜都归因于懒，也不要给失眠治疗承诺。",
-        lane_affinity=("数字生活", "情绪调节"),
+        lane_affinity=("数字生活", "情绪调节", "睡眠恢复", "轻养生"),
         scene_keywords=("睡前", "短视频", "刷", "手机", "熬夜", "信息", "下线", "停不下来"),
         base_priority=5,
+    ),
+    TopicDirection(
+        id="sleep_recovery_shutdown_card",
+        name="睡眠恢复：办公室下班信号卡",
+        trend_signal="轻养生 / 办公室恢复",
+        viral_hook="5 分钟低成本恢复卡",
+        why_it_may_work="睡眠和轻养生有常青需求，5 分钟下班信号能把收藏动作、身体感和职场场景连起来。",
+        best_scenes=(
+            "办公室下班后身体还很紧绷，回家也睡不踏实",
+            "想写睡眠恢复，但不想做医疗建议或养生玄学",
+            "下班后还像在工位上，想给身体一个停机信号",
+        ),
+        content_angle="不是教人立刻睡好，而是把身体从工作模式轻轻带回生活模式。",
+        saveable_tool="5 分钟下班信号：关入口、松肩颈、写明天第一步",
+        comment_prompt="你最需要哪种下班信号：A.身体放松 B.脑子停机 C.手机下线？",
+        avoid="不要承诺改善睡眠，不给医疗、营养、药物或治疗建议。",
+        lane_affinity=("睡眠恢复", "轻养生", "情绪调节", "职场复盘"),
+        scene_keywords=(
+            "睡眠恢复",
+            "轻养生",
+            "办公室",
+            "办公室恢复",
+            "下班信号",
+            "5分钟",
+            "5 分钟",
+            "疲惫",
+            "紧绷",
+            "睡前",
+            "下线",
+        ),
+        base_priority=9,
+        diversity_key="sleep-recovery-tool",
     ),
     TopicDirection(
         id="sunday_work_anxiety_reset",
@@ -497,7 +549,7 @@ PSYCHOLOGY_TOPIC_DIRECTIONS: tuple[TopicDirection, ...] = (
         saveable_tool="3 个不花钱下班信号：换姿势、洗杯子、走慢 5 分钟",
         comment_prompt="你今天想给自己哪个下班信号____",
         avoid="不要把低成本动作写成治愈承诺，也不要羞辱正常消费。",
-        lane_affinity=("职场复盘", "情绪调节"),
+        lane_affinity=("职场复盘", "情绪调节", "睡眠恢复", "轻养生"),
         scene_keywords=("下班", "工位", "办公室", "消费", "购物", "恢复", "照顾自己"),
         base_priority=4,
     ),
@@ -1062,6 +1114,18 @@ def _match_topic_direction_id(*, scene: str, lane_name: str) -> str:
         return "loofah_soup_communication"
     if any(keyword in text for keyword in ("AI", "ai", "聊天工具", "陪伴", "数字")):
         return "ai_companion_boundary"
+    if any(
+        keyword in text
+        for keyword in (
+            "睡眠恢复",
+            "轻养生",
+            "办公室恢复",
+            "下班信号",
+            "5分钟",
+            "5 分钟",
+        )
+    ):
+        return "sleep_recovery_shutdown_card"
     return "boundary_sandwich_refusal"
 
 

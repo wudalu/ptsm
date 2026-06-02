@@ -14,6 +14,20 @@ PSYCHOLOGY_TITLE_FORBIDDEN = (
     "灾难化思维",
     "心理机制",
 )
+DRAMATIC_TITLE_CUES = (
+    "那一秒",
+    "不是",
+    "别",
+    "却",
+    "反而",
+    "突然",
+    "原来",
+    "被",
+    "最累",
+    "先别",
+    "救",
+    "拖回",
+)
 
 
 def test_run_playbook_cli_outputs_modern_psychology_publish_receipt(
@@ -134,5 +148,47 @@ def test_run_playbook_cli_outputs_sandwich_refusal_boundary_tool(
     assert any(prompt in content["body"] for prompt in ("哪派", "A.", "B.", "____"))
     assert "#心理学" in content["hashtags"]
     assert not any(term in combined for term in ("诊断", "治好焦虑", "用药"))
+
+    get_settings.cache_clear()
+
+
+def test_run_playbook_cli_outputs_sleep_recovery_growth_sublane(
+    capsys, monkeypatch
+) -> None:
+    monkeypatch.setenv("DEFAULT_LLM_PROVIDER", "deterministic")
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    get_settings.cache_clear()
+
+    exit_code = main(
+        [
+            "run-playbook",
+            "--scene",
+            "办公室下班后还是很紧绷，想写一个睡眠恢复和轻养生的5分钟下班信号",
+            "--account-id",
+            "acct-psychology-local",
+            "--playbook-id",
+            "modern_psychology_post",
+            "--thread-id",
+            "thread-modern-psychology-sleep-recovery",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    content = payload["final_content"]
+    combined = f"{content['title']}\n{content['image_text']}\n{content['body']}"
+
+    assert exit_code == 0
+    assert len(content["title"]) <= 22
+    assert any(cue in content["title"] for cue in DRAMATIC_TITLE_CUES)
+    assert 350 <= len(content["body"]) <= 580
+    assert any(signal in content["body"] for signal in ("睡眠恢复", "轻养生", "下班信号"))
+    assert any(tool in content["body"] for tool in ("5分钟", "5 分钟", "下班信号"))
+    assert any(prompt in content["body"] for prompt in ("哪派", "A.", "B.", "____"))
+    assert "专业帮助" in content["body"]
+    assert any(tag in content["hashtags"] for tag in ("#心理学", "#情绪管理"))
+    assert not any(term in content["title"] for term in PSYCHOLOGY_TITLE_FORBIDDEN)
+    assert not any(term in combined for term in ("诊断", "治好焦虑", "治愈抑郁", "用药"))
+    assert not any(term in content["body"] for term in ("原话", "脑补", "审判", "扣分"))
+    assert not any(term in content["body"] for term in ("保证立刻", "改善睡眠", "治疗睡眠"))
 
     get_settings.cache_clear()

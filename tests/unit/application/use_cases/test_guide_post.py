@@ -264,6 +264,33 @@ def test_psychology_topic_guidance_routes_romantic_waiting_to_uncertainty() -> N
     _assert_no_internal_source_leakage(result)
 
 
+def test_psychology_topic_guidance_routes_sleep_recovery_growth_sublane() -> None:
+    result = run_guide_post(
+        GuidePostRequest(scene="睡眠恢复和轻养生很火，想写办公室下班后的5分钟恢复")
+    )
+
+    brief = result["brief"]
+    assert brief["lane"] == "睡眠恢复 / 轻养生"
+
+    guidance = result["topic_guidance"]
+    assert guidance["matched_direction_id"] == "sleep_recovery_shutdown_card"
+    first_direction = guidance["directions"][0]
+    assert first_direction["id"] == "sleep_recovery_shutdown_card"
+    assert "睡眠恢复" in first_direction["name"] or "办公室恢复" in first_direction["name"]
+    assert "5 分钟" in first_direction["saveable_tool"] or "下班信号" in first_direction["saveable_tool"]
+    assert any(
+        marker in first_direction["comment_prompt"]
+        for marker in ("A.", "B.", "____")
+    )
+
+    recommendation = _image_recommendation(result)
+    assert recommendation["recommended_backend"] == "local_social_screenshot"
+    assert recommendation["local_style"] == "iphone_notes"
+    assert recommendation["role"] == "save_tool"
+
+    _assert_no_internal_source_leakage(result)
+
+
 def test_psychology_topic_guidance_recommends_notes_for_boundary_tools() -> None:
     result = run_guide_post(
         GuidePostRequest(scene="同事临时加需求，想练一版边界句")

@@ -696,6 +696,62 @@ def test_deterministic_modern_psychology_draft_avoids_recent_memory_title() -> N
     assert any(prompt in draft["body"] for prompt in ("哪派", "A.", "B.", "____"))
 
 
+def test_deterministic_modern_psychology_sleep_recovery_avoids_recent_memory_title() -> None:
+    backend = DeterministicDraftBackend()
+
+    def generate_with_memory(extra_memory: str = "") -> dict[str, object]:
+        return backend.generate(
+            scene="办公室下班后还是很紧绷，想写一个睡眠恢复和轻养生的5分钟下班信号",
+            planner_prompt="# 现代心理困境观察 Planner",
+            persona_prompt="# Modern Psychology Persona",
+            skill_contents=[
+                "# Psychology Style\n睡眠恢复和轻养生只作为心理学子线，写身体收口和低成本动作。",
+                "# Psychology Safety\n不要写医疗养生建议、治疗承诺或睡眠改善保证。",
+            ],
+            runtime_skill_contents=[
+                (
+                    "# Recent Account Memory\n"
+                    "Avoid repeating recent account posts:\n"
+                    "- recent_1_scene: 办公室下班后还是很紧绷，想写一个睡眠恢复和轻养生的5分钟下班信号\n"
+                    "  title: 下班后身体被拖回工位\n"
+                    "  image_text: 5分钟给身体下班信号\n"
+                    "  body_preview: 办公室下班后还是很紧绷，想写一个睡眠恢复和轻养生的5分钟下班信号，我人已经离开工位。\n"
+                    f"{extra_memory}"
+                )
+            ],
+        )
+
+    first_draft = generate_with_memory()
+    second_draft = generate_with_memory(
+        "- recent_2_scene: 办公室下班后还是很紧绷，想写一个睡眠恢复和轻养生的5分钟下班信号\n"
+        "  title: 洗完澡，我还被工位拽着\n"
+        "  image_text: 先给身体一个收工键\n"
+        "  body_preview: 洗完澡坐到床边，肩膀还是像没退出工作群。\n"
+    )
+
+    assert first_draft["title"] != "下班后身体被拖回工位"
+    assert first_draft["image_text"] != "5分钟给身体下班信号"
+    assert second_draft["title"] not in (
+        "下班后身体被拖回工位",
+        first_draft["title"],
+    )
+    assert second_draft["image_text"] not in (
+        "5分钟给身体下班信号",
+        first_draft["image_text"],
+    )
+
+    for draft in (first_draft, second_draft):
+        combined = f"{draft['title']}\n{draft['image_text']}\n{draft['body']}"
+        assert "身体收口" in draft["body"]
+        assert "情绪调节" in draft["body"]
+        assert any(term in draft["body"] for term in ("睡眠恢复", "轻养生", "下班信号"))
+        assert any(term in draft["body"] for term in ("5分钟", "5 分钟", "备忘录"))
+        assert "专业帮助" in draft["body"]
+        assert 350 <= len(draft["body"]) <= 580
+        assert not any(term in combined for term in ("诊断", "改善睡眠", "治疗睡眠", "用药"))
+        assert not any(term in draft["body"] for term in ("原话", "脑补", "审判", "扣分"))
+
+
 def test_deterministic_modern_psychology_draft_varies_by_scene_mechanic() -> None:
     backend = DeterministicDraftBackend()
     skill_contents = [
