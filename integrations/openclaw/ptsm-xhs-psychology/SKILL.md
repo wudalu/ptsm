@@ -1,12 +1,12 @@
 ---
 name: ptsm-xhs-psychology
-description: 当用户想发布小红书心理学、情绪、关系边界、焦虑、内耗、自我关怀或 AI 陪伴边界类内容时，先调用 PTSM 的心理学选题引导，再生成或发布。
+description: 当用户想发布、复盘或优化小红书心理学、情绪、关系边界、焦虑、内耗、自我关怀、睡眠恢复、AI 陪伴类内容，或想提高相关内容浏览/点赞时，先调用 PTSM 心理学选题引导或指标复盘入口。
 metadata: {"openclaw": {"requires": {"bins": ["uv"]}}}
 ---
 
 # PTSM XHS Psychology
 
-Use this skill when the user asks OpenClaw to create, prepare, draft, save, or publish a Xiaohongshu post in the psychology domain. Common triggers include 心理学、情绪、焦虑、内耗、边界感、关系、自我关怀、孤独、比较焦虑、睡眠恢复、轻养生、办公室恢复、AI 陪伴, and similar wording.
+Use this skill when the user asks OpenClaw to create, prepare, draft, save, publish, review, or optimize a Xiaohongshu post in the psychology domain. Common triggers include 心理学、情绪、焦虑、内耗、边界感、关系、自我关怀、孤独、比较焦虑、睡眠恢复、轻养生、办公室恢复、AI 陪伴, 提高浏览量、提高点赞、数据复盘, and similar wording.
 
 For non-psychology XHS playbooks, use `ptsm-xhs-topic-guide`; this file remains the psychology-specific wrapper.
 
@@ -48,6 +48,31 @@ uv run python -m ptsm.bootstrap run-playbook \
 
 6. Real publishing requires the user's explicit publish intent and the normal PTSM publish flags. Prefer dry-run first.
 
+7. If the user asks to improve views/likes, review post performance, or compare psychology topic choices after publishing, use the local post metrics loop instead of inventing performance data. Record only user-provided or artifact-backed metrics, then compare psychology topics and image styles:
+
+```bash
+uv run python -m ptsm.bootstrap xhs-record-metrics \
+  --artifact "<outputs/artifacts/.../artifact.json>" \
+  --checkpoint 24h \
+  --views <views> \
+  --likes <likes> \
+  --collects <collects> \
+  --comments <comments> \
+  --shares <shares>
+
+uv run python -m ptsm.bootstrap xhs-metrics-report \
+  --playbook-id modern_psychology_post \
+  --checkpoint 24h \
+  --group-by topic_direction_id
+
+uv run python -m ptsm.bootstrap xhs-metrics-report \
+  --playbook-id modern_psychology_post \
+  --checkpoint 24h \
+  --group-by image_style
+```
+
+Treat groups with fewer than 3 posts as early signals. Use the report to choose the next PTSM-returned psychology direction or image recommendation; do not claim a direction is proven until real metrics support it.
+
 ## Guardrails
 
 - 不要展示内部研究路径。
@@ -57,5 +82,6 @@ uv run python -m ptsm.bootstrap run-playbook \
 - Do not invent, expand, or replace PTSM-returned open_scene direction(s); only display them when they are present in `topic_guidance.directions`.
 - Do not invent, expand, or replace PTSM-returned psychology sublane direction(s), including 睡眠恢复、轻养生 or 办公室恢复; only display them when PTSM returns them.
 - Do not invent, expand, or replace PTSM-returned image recommendation; only display `topic_guidance.image_recommendation` when PTSM returns it.
+- Do not invent views, likes, saves, comments, shares, interaction rates, or uplift claims. Use `xhs-record-metrics` / `xhs-metrics-report` only with real supplied metrics.
 - If `run-playbook --caller openclaw` returns `topic_guidance_required`, show the directions and call `run-playbook` again only after direction confirmation with `--guidance-ack`.
 - Keep psychology safety boundaries intact: no diagnosis, no treatment promises, no medication advice, and crisis or persistent impairment should be redirected to professional support.

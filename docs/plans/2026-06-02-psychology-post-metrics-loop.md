@@ -212,6 +212,8 @@ Expected: PASS.
 - Modify: `docs/operations.md`
 - Modify: `docs/operations/content-experiment-runbook.md`
 - Modify: `docs/harness-engineering.md` if tests or gates are documented there
+- Modify: `docs/skills.md`
+- Modify: `integrations/openclaw/ptsm-xhs-psychology/SKILL.md`
 - Update external operator skill: `/Users/wudalu/.codex/skills/ptsm-xhs-psychology/SKILL.md`
 
 **Step 1: Update docs**
@@ -223,7 +225,7 @@ Document:
 - `xhs-metrics-report` aggregates records by topic direction, image style, checkpoint, account, or playbook
 - reports are local evidence and do not prove a strategy until enough comparable posts exist
 - for psychology, use `--playbook-id modern_psychology_post --checkpoint 24h --group-by topic_direction_id` to compare directions such as `sleep_recovery_shutdown_card`
-- the psychology Codex skill should route "提高浏览量/点赞" and post-publish review requests to the metrics loop instead of inventing performance claims
+- the repo OpenClaw skill and local Codex psychology skill should route "提高浏览量/点赞" and post-publish review requests to the metrics loop instead of inventing performance claims
 
 **Step 2: Run docs checks**
 
