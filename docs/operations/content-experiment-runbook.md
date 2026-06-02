@@ -2,11 +2,12 @@
 title: XHS Content Experiment Runbook
 status: active
 owner: ptsm
-last_verified: 2026-05-17
+last_verified: 2026-06-02
 source_of_truth: true
 related_paths:
   - docs/research/2026-05-15-xhs-content-experiment-log.md
   - docs/plans/2026-05-15-xhs-content-quality-improvement.md
+  - src/ptsm/application/use_cases/xhs_post_metrics.py
   - src/ptsm/playbooks/definitions
   - src/ptsm/skills/builtin
   - outputs/artifacts
@@ -70,6 +71,37 @@ Use the same score proxy from topic-radar triage:
 interaction_score = likes + collects*2 + comments*4 + shares*6
 interaction_rate = interaction_score / views
 ```
+
+Record the numbers through the local metrics loop instead of only writing free-form notes:
+
+```bash
+uv run python -m ptsm.bootstrap xhs-record-metrics \
+  --artifact outputs/artifacts/<artifact>.json \
+  --checkpoint 24h \
+  --views 1000 \
+  --likes 80 \
+  --collects 60 \
+  --comments 8 \
+  --shares 2 \
+  --decision keep \
+  --notes "collects close to likes"
+```
+
+For psychology readouts, compare the confirmed PTSM direction ids and image styles:
+
+```bash
+uv run python -m ptsm.bootstrap xhs-metrics-report \
+  --playbook-id modern_psychology_post \
+  --checkpoint 24h \
+  --group-by topic_direction_id
+
+uv run python -m ptsm.bootstrap xhs-metrics-report \
+  --playbook-id modern_psychology_post \
+  --checkpoint 24h \
+  --group-by image_style
+```
+
+The metrics store is `outputs/artifacts/xhs-post-metrics/metrics.jsonl`. Reports mark any group with fewer than 3 posts as `needs_more_data`; treat those as early signals, not proof that a topic direction or cover style wins.
 
 ## Readout Rules
 

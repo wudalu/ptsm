@@ -12,6 +12,7 @@ related_paths:
   - docs/plans/2026-04-20-harness-enforcement.md
   - src/ptsm/application/use_cases/docs_sync.py
   - src/ptsm/application/use_cases/eval_artifact.py
+  - src/ptsm/application/use_cases/xhs_post_metrics.py
   - src/ptsm/application/use_cases/harness_check.py
   - src/ptsm/application/use_cases/install_git_hooks.py
   - src/ptsm/application/use_cases/guide_post.py
@@ -79,6 +80,7 @@ repository.
 - a deterministic, local-first cross-domain `guide-post` harness surface: domain tests cover the generic selector, including scene-keyword/lane-affinity separation, diversity-family selection, multiple open-scene candidates, and dynamic breadth reranking; application tests cover all current topic packs, larger-than-display candidate pools, scene-varying direction sets, `topic_guidance.image_recommendation`, and the `dynamic_scene_diversity_rerank` contract; CLI tests cover JSON/Markdown output with `direction_type`, `open_direction_ids`, `direction_type_counts`, and image recommendation fields; run-playbook tests cover `topic_direction_id` persistence into response/artifact metadata; docs tests lock the generic, psychology, and domain-opportunity OpenClaw wrapper contracts
 - a modern psychology relationship-uncertainty regression harness: unit tests now lock `他3小时没回消息，我已经想好分手后猫归谁了` to `亲密关系 / 不确定感`, `relationship_uncertainty_waiting_message`, `iphone_notes`, and deterministic copy that uses `事实 / 脑补 / 我需要什么` rather than workplace reply wording
 - a modern psychology growth-sublane regression harness: unit tests now lock sleep recovery/light-wellness scenes to `睡眠恢复 / 轻养生`, `sleep_recovery_shutdown_card`, and `iphone_notes` save-tool guidance; e2e deterministic dry-run tests require a short tension title, 350-580 char body, 5-minute shutdown/save tool, role/camp comment prompt, and professional-help boundary without medical wellness claims
+- a local XHS post metrics loop: unit tests lock artifact-linked `xhs-record-metrics` rows, score/rate calculation, checkpoint validation, and `xhs-metrics-report` grouping by psychology topic direction or image style, so growth claims can be tied to recorded views/likes/collects/comments/shares rather than dry-run quality alone
 
 ## New Domain Documentation Completeness
 

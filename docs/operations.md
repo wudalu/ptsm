@@ -28,6 +28,7 @@ related_paths:
   - src/ptsm/infrastructure/images/note_card_backend.py
   - src/ptsm/application/use_cases/docs_sync.py
   - src/ptsm/application/use_cases/eval_artifact.py
+  - src/ptsm/application/use_cases/xhs_post_metrics.py
   - src/ptsm/application/use_cases/harness_check.py
   - src/ptsm/application/use_cases/install_git_hooks.py
   - .github/workflows/harness.yml
@@ -79,6 +80,9 @@ COOKIES_PATH=cookies/fk-local.json .ptsm/bin/xhs-mcp/xiaohongshu-mcp-darwin-amd6
 - `uv run python -m ptsm.bootstrap eval-artifact --artifact outputs/artifacts/<artifact>.json`
 - `uv run python -m ptsm.bootstrap diagnose-publish --artifact outputs/artifacts/<artifact>.json`
 - `uv run python -m ptsm.bootstrap diagnose-publish --run-id <run_id>`
+- `uv run python -m ptsm.bootstrap xhs-record-metrics --artifact outputs/artifacts/<artifact>.json --checkpoint 24h --views 1000 --likes 80 --collects 60 --comments 8 --shares 2 --decision keep`
+- `uv run python -m ptsm.bootstrap xhs-metrics-report --playbook-id modern_psychology_post --checkpoint 24h --group-by topic_direction_id`
+- `uv run python -m ptsm.bootstrap xhs-metrics-report --playbook-id modern_psychology_post --checkpoint 24h --group-by image_style`
 - `uv run python -m ptsm.bootstrap logs --run-id <run_id>`
 - `uv run python -m ptsm.bootstrap logs --artifact outputs/artifacts/<artifact>.json`
 - `uv run python -m ptsm.bootstrap runs --account-id <account_id> --status completed`
@@ -147,6 +151,7 @@ COOKIES_PATH=cookies/fk-local.json .ptsm/bin/xhs-mcp/xiaohongshu-mcp-darwin-amd6
 - 每个完成的 playbook artifact 和 CLI JSON 响应都会包含 `content_review`，用于人工确认生成逻辑、质量信号和发布前风险；review 不是自动发布批准。当前人审闭环通过 operator 阅读该说明并在对话中要求调整完成，不需要独立 review 操作台。
 - `eval-artifact` 可对已有 artifact 独立跑 eval，不依赖运行时。
 - `diagnose-publish` 是对单次发布问题的只读诊断入口，适合排查 “为什么没法自动确认已发布” 或 “为什么发布后状态不明确”。
+- `xhs-record-metrics` / `xhs-metrics-report` 是内容实验的本地指标回收入口。前者把已发布帖子的 `2h`、`24h` 或 `72h` 浏览、点赞、收藏、评论、分享追加到 `outputs/artifacts/xhs-post-metrics/metrics.jsonl`；后者按方向、封面样式、checkpoint、账号或 playbook 聚合。心理学增长实验优先用 `--playbook-id modern_psychology_post --checkpoint 24h --group-by topic_direction_id` 比较 `sleep_recovery_shutdown_card` 等方向。少于 3 条记录的 group 只作为早期信号，不应直接改 prompt。
 - `--fresh-topic-research` 通过 topic-radar 先扫描平台热点，交互式让用户选题后再生成内容，此时 `--scene` 可选。
 - `collect-xhs-patterns` / `analyze-xhs-patterns` 是周期采集和格式沉淀入口。普通 `run-playbook` 默认只读取本地 pattern snapshot，不会每次发帖都检索实时高互动帖子；需要实验特定 snapshot 时，用 `--format-pattern-path` 覆盖。
 - `reddit_curation_daily_post` 会在 `reddit_discussion_scan` skill 激活时尝试读取 Reddit 英文讨论作为内部素材。按 Reddit Responsible Builder Policy，读取 Reddit API 前需要为该用途取得 explicit approval，并保持透明、限量、只读、不规避限制、不做 Reddit 数据商业化或 AI 训练。配置已获批 app 的 `REDDIT_CLIENT_ID`、`REDDIT_CLIENT_SECRET` 和 `REDDIT_USER_AGENT` 后会用 OAuth 形成真实最新 Reddit runtime context；如果 app 创建受验证码阻塞，可先设置 `REDDIT_PUBLIC_JSON_FALLBACK=true` 和非占位 `REDDIT_USER_AGENT`，用 Reddit public `.json` 页面低频只读扫描。未配置时 dry-run 会完成但上下文标记为 `missing_credentials`。读者可见成稿只呈现中文热点帖，不暴露 Reddit、subreddit、英文讨论、翻译过程或来源 URL。

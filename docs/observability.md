@@ -2,11 +2,12 @@
 title: PTSM Observability
 status: active
 owner: ptsm
-last_verified: 2026-05-25
+last_verified: 2026-06-02
 source_of_truth: true
 related_paths:
   - src/ptsm/infrastructure/observability/run_store.py
   - src/ptsm/infrastructure/evaluations/eval_store.py
+  - src/ptsm/application/use_cases/xhs_post_metrics.py
   - src/ptsm/application/use_cases/diagnose_publish.py
   - src/ptsm/application/use_cases/eval_artifact.py
   - src/ptsm/application/use_cases/logs.py
@@ -39,6 +40,7 @@ PTSM 当前的观测性核心是本地文件系统里的 run store 和 artifacts
 - `outputs/artifacts/xhs-pattern-library/samples-*.json`
 - `outputs/artifacts/xhs-pattern-library/patterns-*.json`
 - `outputs/artifacts/xhs-pattern-library/current.json`
+- `outputs/artifacts/xhs-post-metrics/metrics.jsonl`
 - `outputs/generated_images/*`
 - `.ptsm/evals/<eval_run_id>/summary.json`
 - `.ptsm/evals/<eval_run_id>/results.jsonl`
@@ -79,11 +81,13 @@ PTSM 当前的观测性核心是本地文件系统里的 run store 和 artifacts
 - `EvalStore` 的 summary source 现在记录 run/account/platform/playbook scope metadata，便于 scoped harness views 只聚合相关 eval runs。
 - `harness-evals` 现在聚合并报告 eval results：eval run 总数、按 status 和 suite 分布、按 passed/failed/warnings/errors 汇总，并区分 `required_failed` 和 `warning_failed`。
 - `harness-report` 支持 `max_required_eval_failures` 阈值检查，可在 CI 或本地 gate 中对确定性 evaluator 失败做门槛控制。
+- `xhs-record-metrics` 会把人工或只读收集到的小红书单帖表现追加到 `outputs/artifacts/xhs-post-metrics/metrics.jsonl`。记录会读取原始 run artifact，带上 `playbook_id`、`account_id`、`topic_selection.topic_direction_id`、标题、封面文案、图片样式、发布标识和 `2h` / `24h` / `72h` checkpoint，并计算 `interaction_score = likes + collects*2 + comments*4 + shares*6`、`interaction_rate` 和 `like_rate`。
+- `xhs-metrics-report` 会按 `topic_direction_id`、`image_style`、`checkpoint`、`account_id` 或 `playbook_id` 聚合 metrics JSONL。它是本地实验读数，不自动证明选题胜出；少于 3 条的 group 标记为 `needs_more_data`。
 
 ## Current Limits
 
 - 只有轻量聚合分析层，还没有时序报表或 dashboard。
-- 没有跨账号指标报表。
+- 只有本地 JSONL 级 post metrics 汇总，还没有跨账号 dashboard 或自动趋势告警。
 - 没有 traces/metrics dashboard。
 - 现在已经比“纯文件可读”更进一步，但还不是 fully agent-queryable observability surface。
 - 现在的 cleanup 仍是人工触发 CLI，不是后台定时回收。
@@ -103,6 +107,7 @@ PTSM 当前的观测性核心是本地文件系统里的 run store 和 artifacts
 - harness evals: [`src/ptsm/application/use_cases/harness_evals.py`](../src/ptsm/application/use_cases/harness_evals.py)
 - harness report: [`src/ptsm/application/use_cases/harness_report.py`](../src/ptsm/application/use_cases/harness_report.py)
 - publish diagnostics: [`src/ptsm/application/use_cases/diagnose_publish.py`](../src/ptsm/application/use_cases/diagnose_publish.py)
+- post metrics loop: [`src/ptsm/application/use_cases/xhs_post_metrics.py`](../src/ptsm/application/use_cases/xhs_post_metrics.py)
 - image backend: [`src/ptsm/infrastructure/images/`](../src/ptsm/infrastructure/images/)
 - 日志读取: [`src/ptsm/application/use_cases/logs.py`](../src/ptsm/application/use_cases/logs.py)
 - 事件查询: [`src/ptsm/application/use_cases/run_events.py`](../src/ptsm/application/use_cases/run_events.py)

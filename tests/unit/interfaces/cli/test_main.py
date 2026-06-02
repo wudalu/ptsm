@@ -334,6 +334,107 @@ def test_run_playbook_cli_passes_format_pattern_path(
     )
 
 
+def test_xhs_record_metrics_cli_passes_fields(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_record_xhs_post_metrics(**kwargs: object) -> dict[str, object]:
+        captured.update(kwargs)
+        return {"status": "recorded", "record": {"interaction_score": 244}}
+
+    monkeypatch.setattr(
+        "ptsm.interfaces.cli.main.record_xhs_post_metrics",
+        fake_record_xhs_post_metrics,
+        raising=False,
+    )
+
+    exit_code = main(
+        [
+            "xhs-record-metrics",
+            "--artifact",
+            "outputs/artifacts/psychology.json",
+            "--checkpoint",
+            "24h",
+            "--views",
+            "1000",
+            "--likes",
+            "80",
+            "--collects",
+            "60",
+            "--comments",
+            "8",
+            "--shares",
+            "2",
+            "--output-path",
+            "outputs/artifacts/xhs-post-metrics/metrics.jsonl",
+            "--decision",
+            "keep",
+            "--notes",
+            "collects close to likes",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload["status"] == "recorded"
+    assert captured["artifact_path"] == Path("outputs/artifacts/psychology.json")
+    assert captured["checkpoint"] == "24h"
+    assert captured["views"] == 1000
+    assert captured["likes"] == 80
+    assert captured["collects"] == 60
+    assert captured["comments"] == 8
+    assert captured["shares"] == 2
+    assert captured["output_path"] == Path("outputs/artifacts/xhs-post-metrics/metrics.jsonl")
+    assert captured["decision"] == "keep"
+    assert captured["notes"] == "collects close to likes"
+
+
+def test_xhs_metrics_report_cli_passes_filters(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_summarize_xhs_post_metrics(**kwargs: object) -> dict[str, object]:
+        captured.update(kwargs)
+        return {"status": "ok", "groups": [{"group": "sleep_recovery_shutdown_card"}]}
+
+    monkeypatch.setattr(
+        "ptsm.interfaces.cli.main.summarize_xhs_post_metrics",
+        fake_summarize_xhs_post_metrics,
+        raising=False,
+    )
+
+    exit_code = main(
+        [
+            "xhs-metrics-report",
+            "--input-path",
+            "outputs/artifacts/xhs-post-metrics/metrics.jsonl",
+            "--playbook-id",
+            "modern_psychology_post",
+            "--account-id",
+            "acct-psychology-local",
+            "--checkpoint",
+            "24h",
+            "--group-by",
+            "topic_direction_id",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload["status"] == "ok"
+    assert captured["input_path"] == Path("outputs/artifacts/xhs-post-metrics/metrics.jsonl")
+    assert captured["playbook_id"] == "modern_psychology_post"
+    assert captured["account_id"] == "acct-psychology-local"
+    assert captured["checkpoint"] == "24h"
+    assert captured["group_by"] == "topic_direction_id"
+
+
 def test_run_playbook_cli_passes_local_image_style(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],

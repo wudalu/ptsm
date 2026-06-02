@@ -38,6 +38,13 @@ from ptsm.application.use_cases.xhs_browser import open_xhs_browser
 from ptsm.application.use_cases.xhs_domain_opportunity import (
     run_xhs_domain_opportunity,
 )
+from ptsm.application.use_cases.xhs_post_metrics import (
+    DEFAULT_POST_METRICS_PATH,
+    VALID_CHECKPOINTS,
+    VALID_GROUP_BY,
+    record_xhs_post_metrics,
+    summarize_xhs_post_metrics,
+)
 from ptsm.application.use_cases.xhs_login import (
     DEFAULT_XHS_LOGIN_QRCODE_PATH,
     run_xhs_login_qrcode,
@@ -255,6 +262,37 @@ def build_parser() -> argparse.ArgumentParser:
     xhs_check_publish = subparsers.add_parser("xhs-check-publish")
     xhs_check_publish.add_argument("--artifact", type=Path, required=True)
     xhs_check_publish.add_argument("--server-url")
+
+    xhs_record_metrics = subparsers.add_parser("xhs-record-metrics")
+    xhs_record_metrics.add_argument("--artifact", type=Path, required=True)
+    xhs_record_metrics.add_argument("--checkpoint", choices=sorted(VALID_CHECKPOINTS), required=True)
+    xhs_record_metrics.add_argument("--views", type=int, required=True)
+    xhs_record_metrics.add_argument("--likes", type=int, required=True)
+    xhs_record_metrics.add_argument("--collects", type=int, required=True)
+    xhs_record_metrics.add_argument("--comments", type=int, required=True)
+    xhs_record_metrics.add_argument("--shares", type=int, required=True)
+    xhs_record_metrics.add_argument(
+        "--output-path",
+        type=Path,
+        default=DEFAULT_POST_METRICS_PATH,
+    )
+    xhs_record_metrics.add_argument("--decision", default="")
+    xhs_record_metrics.add_argument("--notes", default="")
+
+    xhs_metrics_report = subparsers.add_parser("xhs-metrics-report")
+    xhs_metrics_report.add_argument(
+        "--input-path",
+        type=Path,
+        default=DEFAULT_POST_METRICS_PATH,
+    )
+    xhs_metrics_report.add_argument("--playbook-id")
+    xhs_metrics_report.add_argument("--account-id")
+    xhs_metrics_report.add_argument("--checkpoint", choices=sorted(VALID_CHECKPOINTS))
+    xhs_metrics_report.add_argument(
+        "--group-by",
+        choices=sorted(VALID_GROUP_BY),
+        default="topic_direction_id",
+    )
 
     eval_artifact_parser = subparsers.add_parser("eval-artifact")
     eval_artifact_parser.add_argument("--artifact", type=Path, required=True)
@@ -806,6 +844,33 @@ def main(argv: Sequence[str] | None = None) -> int:
         result = check_xhs_publish_status(
             artifact_path=args.artifact,
             settings=build_login_settings(server_url=args.server_url),
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "xhs-record-metrics":
+        result = record_xhs_post_metrics(
+            artifact_path=args.artifact,
+            checkpoint=args.checkpoint,
+            views=args.views,
+            likes=args.likes,
+            collects=args.collects,
+            comments=args.comments,
+            shares=args.shares,
+            output_path=args.output_path,
+            decision=args.decision,
+            notes=args.notes,
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "xhs-metrics-report":
+        result = summarize_xhs_post_metrics(
+            input_path=args.input_path,
+            playbook_id=args.playbook_id,
+            account_id=args.account_id,
+            checkpoint=args.checkpoint,
+            group_by=args.group_by,
         )
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
