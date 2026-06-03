@@ -291,6 +291,74 @@ def test_psychology_topic_guidance_routes_sleep_recovery_growth_sublane() -> Non
     _assert_no_internal_source_leakage(result)
 
 
+def test_psychology_topic_guidance_routes_relationship_mixed_signal_camp_vote() -> None:
+    result = run_guide_post(
+        GuidePostRequest(scene="对方忽冷忽热，我想问清楚又怕显得烦，想让评论区站队")
+    )
+
+    guidance = result["topic_guidance"]
+    assert guidance["matched_direction_id"] == "relationship_mixed_signal_camp_vote"
+    first_direction = guidance["directions"][0]
+    assert first_direction["id"] == "relationship_mixed_signal_camp_vote"
+    assert "A." in first_direction["comment_prompt"]
+    assert "B." in first_direction["comment_prompt"]
+    assert "事实" in first_direction["saveable_tool"]
+    assert "问" in first_direction["saveable_tool"]
+    assert first_direction["scene_fit"]
+
+    recommendation = _image_recommendation(result)
+    assert recommendation["recommended_backend"] == "local_social_screenshot"
+    assert recommendation["local_style"] == "iphone_notes"
+    assert recommendation["role"] == "save_tool"
+    _assert_no_internal_source_leakage(result)
+
+
+def test_psychology_topic_guidance_routes_social_battery_cancel_plan_boundary() -> None:
+    result = run_guide_post(
+        GuidePostRequest(scene="约好的局临时不想去了，怕扫兴又很累，想写社交电量边界")
+    )
+
+    brief = result["brief"]
+    assert brief["lane"] == "孤独 / 比较焦虑"
+
+    guidance = result["topic_guidance"]
+    assert guidance["matched_direction_id"] == "social_battery_cancel_plan_boundary"
+    first_direction = guidance["directions"][0]
+    assert first_direction["id"] == "social_battery_cancel_plan_boundary"
+    assert "A." in first_direction["comment_prompt"]
+    assert "B." in first_direction["comment_prompt"]
+    assert "取消" in first_direction["saveable_tool"]
+    assert "社交" in first_direction["trend_signal"]
+
+    recommendation = _image_recommendation(result)
+    assert recommendation["recommended_backend"] == "local_social_screenshot"
+    assert recommendation["local_style"] == "iphone_notes"
+    assert recommendation["role"] == "save_tool"
+    _assert_no_internal_source_leakage(result)
+
+
+def test_psychology_topic_guidance_routes_after_hours_message_body_alarm() -> None:
+    result = run_guide_post(
+        GuidePostRequest(scene="领导18:57发来一句在吗，下班后身体被消息拉回工位")
+    )
+
+    guidance = result["topic_guidance"]
+    assert guidance["matched_direction_id"] == "after_hours_message_body_alarm"
+    first_direction = guidance["directions"][0]
+    assert first_direction["id"] == "after_hours_message_body_alarm"
+    assert "A." in first_direction["comment_prompt"]
+    assert "B." in first_direction["comment_prompt"]
+    assert "C." in first_direction["comment_prompt"]
+    assert "下班消息" in first_direction["saveable_tool"]
+    assert "身体" in first_direction["trend_signal"]
+
+    recommendation = _image_recommendation(result)
+    assert recommendation["recommended_backend"] == "local_social_screenshot"
+    assert recommendation["local_style"] in {"iphone_notes", "wechat_chat"}
+    assert recommendation["role"] in {"save_tool", "comment_prompt"}
+    _assert_no_internal_source_leakage(result)
+
+
 def test_psychology_topic_guidance_recommends_notes_for_boundary_tools() -> None:
     result = run_guide_post(
         GuidePostRequest(scene="同事临时加需求，想练一版边界句")

@@ -25,6 +25,8 @@ uv run python -m ptsm.bootstrap guide-post \
 
 PTSM may return sleep recovery / light-wellness directions such as 睡眠恢复、轻养生、办公室恢复 as a PTSM-returned psychology sublane. Display them exactly like other returned psychology directions; do not turn them into a separate non-psychology playbook or add unreturned wellness advice.
 
+PTSM may also return growth-oriented psychology direction hypotheses such as `relationship_mixed_signal_camp_vote`, `social_battery_cancel_plan_boundary`, and `after_hours_message_body_alarm`. Display them exactly as PTSM-returned directions with their saveable tool and A/B or A/B/C comment prompt; do not describe them as proven uplift until real post metrics support that.
+
 3. Ask the user to choose one direction, or pick the best matching direction when the user has already given a clear scene.
 
 If the user changes the scene, call `guide-post` again with the new scene. Do not reuse previous directions for a different scene.
@@ -81,6 +83,7 @@ Treat groups with fewer than 3 posts as early signals. Use the report to choose 
 - Do not copy topic logic into this skill; PTSM owns the guidance payload.
 - Do not invent, expand, or replace PTSM-returned open_scene direction(s); only display them when they are present in `topic_guidance.directions`.
 - Do not invent, expand, or replace PTSM-returned psychology sublane direction(s), including 睡眠恢复、轻养生 or 办公室恢复; only display them when PTSM returns them.
+- Do not invent, expand, or replace PTSM-returned growth-oriented psychology direction(s), including `relationship_mixed_signal_camp_vote`, `social_battery_cancel_plan_boundary`, or `after_hours_message_body_alarm`; only display them when PTSM returns them.
 - Do not invent, expand, or replace PTSM-returned image recommendation; only display `topic_guidance.image_recommendation` when PTSM returns it.
 - Do not invent views, likes, saves, comments, shares, interaction rates, or uplift claims. Use `xhs-record-metrics` / `xhs-metrics-report` only with real supplied metrics.
 - If `run-playbook --caller openclaw` returns `topic_guidance_required`, show the directions and call `run-playbook` again only after direction confirmation with `--guidance-ack`.

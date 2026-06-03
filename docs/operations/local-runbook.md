@@ -264,6 +264,21 @@ uv run python -m ptsm.bootstrap run-playbook \
 uv run python -m ptsm.bootstrap guide-post \
   --scene "下班后还在反复复盘白天一句话"
 
+uv run python -m ptsm.bootstrap guide-post \
+  --scene "对方忽冷忽热，我想问清楚又怕显得烦，想让评论区站队" \
+  --non-interactive \
+  --format json
+
+uv run python -m ptsm.bootstrap guide-post \
+  --scene "约好的局临时不想去了，怕扫兴又很累，想写社交电量边界" \
+  --non-interactive \
+  --format json
+
+uv run python -m ptsm.bootstrap guide-post \
+  --scene "领导18:57发来一句在吗，下班后身体被消息拉回工位" \
+  --non-interactive \
+  --format json
+
 uv run python -m ptsm.bootstrap run-playbook \
   --scene "下班后还在反复复盘白天一句话" \
   --account-id acct-psychology-local \
@@ -579,6 +594,11 @@ uv run python -m ptsm.bootstrap run-playbook \
 # 现代心理困境观察领域
 uv run python -m ptsm.bootstrap guide-post \
   --scene "看到别人周末都在聚会，自己突然觉得很失败"
+
+uv run python -m ptsm.bootstrap guide-post \
+  --scene "对方忽冷忽热，我想问清楚又怕显得烦，想让评论区站队" \
+  --non-interactive \
+  --format json
 
 uv run python -m ptsm.bootstrap run-playbook \
   --scene "下班后还在反复复盘白天一句话" \

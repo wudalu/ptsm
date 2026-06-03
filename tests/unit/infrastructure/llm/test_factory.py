@@ -857,6 +857,43 @@ def test_deterministic_modern_psychology_draft_covers_digital_and_loneliness_lan
     assert any(tag in loneliness["hashtags"] for tag in ("#孤独感", "#比较焦虑"))
 
 
+def test_deterministic_modern_psychology_draft_covers_new_growth_directions() -> None:
+    backend = DeterministicDraftBackend()
+    skill_contents = [
+        "# Psychology Style\n需要关系不确定感、社交耗竭和A/B阵营评论入口。",
+        "# Psychology Safety\n禁止诊断化表达，必须提示专业帮助边界。",
+    ]
+
+    mixed_signal = backend.generate(
+        scene="对方忽冷忽热，我想问清楚又怕显得烦，想让评论区站队",
+        planner_prompt="# 现代心理困境观察 Planner",
+        persona_prompt="# Modern Psychology Persona",
+        skill_contents=skill_contents,
+    )
+    social_battery = backend.generate(
+        scene="约好的局临时不想去了，怕扫兴又很累，想写社交电量边界",
+        planner_prompt="# 现代心理困境观察 Planner",
+        persona_prompt="# Modern Psychology Persona",
+        skill_contents=skill_contents,
+    )
+
+    assert any(term in mixed_signal["body"] for term in ("忽冷忽热", "不确定感"))
+    assert "事实" in mixed_signal["body"]
+    assert any(term in mixed_signal["body"] for term in ("信号", "问清楚"))
+    assert "处理优先级" not in mixed_signal["body"]
+    assert "A." in mixed_signal["body"] and "B." in mixed_signal["body"]
+
+    assert any(term in social_battery["body"] for term in ("社交电量", "社交耗竭"))
+    assert "取消局三句" in social_battery["body"]
+    assert "突然消失" not in social_battery["body"]
+    assert "A." in social_battery["body"] and "B." in social_battery["body"]
+
+    for draft in (mixed_signal, social_battery):
+        assert "专业帮助" in draft["body"]
+        assert 350 <= len(draft["body"]) <= 580
+        assert "#心理学" in draft["hashtags"]
+
+
 def test_deterministic_drafts_strip_experiment_variant_instructions() -> None:
     backend = DeterministicDraftBackend()
 

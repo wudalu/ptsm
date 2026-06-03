@@ -114,6 +114,9 @@ COOKIES_PATH=cookies/fk-local.json .ptsm/bin/xhs-mcp/xiaohongshu-mcp-darwin-amd6
 - `uv run python -m ptsm.bootstrap guide-post --scene "看到别人周末都在聚会，自己突然觉得很失败" --non-interactive`
 - `uv run python -m ptsm.bootstrap guide-post --scene "他3小时没回消息，我已经想好分手后猫归谁了" --non-interactive --format json`
 - `uv run python -m ptsm.bootstrap guide-post --scene "睡眠恢复和轻养生很火，想写办公室下班后的5分钟恢复" --non-interactive --format json`
+- `uv run python -m ptsm.bootstrap guide-post --scene "对方忽冷忽热，我想问清楚又怕显得烦，想让评论区站队" --non-interactive --format json`
+- `uv run python -m ptsm.bootstrap guide-post --scene "约好的局临时不想去了，怕扫兴又很累，想写社交电量边界" --non-interactive --format json`
+- `uv run python -m ptsm.bootstrap guide-post --scene "领导18:57发来一句在吗，下班后身体被消息拉回工位" --non-interactive --format json`
 - `uv run python -m ptsm.bootstrap guide-post --playbook-id fengkuang_daily_post --account-id acct-fk-local --scene "领导18:57发来一句在吗，工牌想替我发疯" --non-interactive --format json`
 - `uv run python -m ptsm.bootstrap guide-post --playbook-id human_enrichment_daily_post --account-id acct-enrichment-local --scene "想把书桌角落改成十分钟适我主义手作位" --non-interactive --format json`
 - `uv run python -m ptsm.bootstrap guide-post --playbook-id sushi_poetry_daily_post --account-id acct-sushi-local --scene "夜里读到怀民亦未寝，想写一种旧友关系" --non-interactive --format json`
@@ -151,7 +154,7 @@ COOKIES_PATH=cookies/fk-local.json .ptsm/bin/xhs-mcp/xiaohongshu-mcp-darwin-amd6
 - 每个完成的 playbook artifact 和 CLI JSON 响应都会包含 `content_review`，用于人工确认生成逻辑、质量信号和发布前风险；review 不是自动发布批准。当前人审闭环通过 operator 阅读该说明并在对话中要求调整完成，不需要独立 review 操作台。
 - `eval-artifact` 可对已有 artifact 独立跑 eval，不依赖运行时。
 - `diagnose-publish` 是对单次发布问题的只读诊断入口，适合排查 “为什么没法自动确认已发布” 或 “为什么发布后状态不明确”。
-- `xhs-record-metrics` / `xhs-metrics-report` 是内容实验的本地指标回收入口。前者把已发布帖子的 `2h`、`24h` 或 `72h` 浏览、点赞、收藏、评论、分享追加到 `outputs/artifacts/xhs-post-metrics/metrics.jsonl`；后者按方向、封面样式、checkpoint、账号或 playbook 聚合。心理学增长实验优先用 `--playbook-id modern_psychology_post --checkpoint 24h --group-by topic_direction_id` 比较 `sleep_recovery_shutdown_card` 等方向。少于 3 条记录的 group 只作为早期信号，不应直接改 prompt。
+- `xhs-record-metrics` / `xhs-metrics-report` 是内容实验的本地指标回收入口。前者把已发布帖子的 `2h`、`24h` 或 `72h` 浏览、点赞、收藏、评论、分享追加到 `outputs/artifacts/xhs-post-metrics/metrics.jsonl`；后者按方向、封面样式、checkpoint、账号或 playbook 聚合。心理学增长实验优先用 `--playbook-id modern_psychology_post --checkpoint 24h --group-by topic_direction_id` 比较 `sleep_recovery_shutdown_card`、`relationship_mixed_signal_camp_vote`、`social_battery_cancel_plan_boundary`、`after_hours_message_body_alarm` 等方向。少于 3 条记录的 group 只作为早期信号，不应直接改 prompt。
 - `--fresh-topic-research` 通过 topic-radar 先扫描平台热点，交互式让用户选题后再生成内容，此时 `--scene` 可选。
 - `collect-xhs-patterns` / `analyze-xhs-patterns` 是周期采集和格式沉淀入口。普通 `run-playbook` 默认只读取本地 pattern snapshot，不会每次发帖都检索实时高互动帖子；需要实验特定 snapshot 时，用 `--format-pattern-path` 覆盖。
 - `reddit_curation_daily_post` 会在 `reddit_discussion_scan` skill 激活时尝试读取 Reddit 英文讨论作为内部素材。按 Reddit Responsible Builder Policy，读取 Reddit API 前需要为该用途取得 explicit approval，并保持透明、限量、只读、不规避限制、不做 Reddit 数据商业化或 AI 训练。配置已获批 app 的 `REDDIT_CLIENT_ID`、`REDDIT_CLIENT_SECRET` 和 `REDDIT_USER_AGENT` 后会用 OAuth 形成真实最新 Reddit runtime context；如果 app 创建受验证码阻塞，可先设置 `REDDIT_PUBLIC_JSON_FALLBACK=true` 和非占位 `REDDIT_USER_AGENT`，用 Reddit public `.json` 页面低频只读扫描。未配置时 dry-run 会完成但上下文标记为 `missing_credentials`。读者可见成稿只呈现中文热点帖，不暴露 Reddit、subreddit、英文讨论、翻译过程或来源 URL。
@@ -162,6 +165,9 @@ COOKIES_PATH=cookies/fk-local.json .ptsm/bin/xhs-mcp/xiaohongshu-mcp-darwin-amd6
 - 心理学 `guide-post` 保留更丰富的六步 brief：先问具体场景，再建议心理学 lane、机制、非诊断化重构、可保存动作、角色/阵营/填空式评论提示和低密度封面；生成时机制用于服务场景，不应前置成标题破梗。非心理学交互只问具体场景、可选 lane 和评论提示覆盖，避免把心理学机制问题套到其他领域。
 - 对 `他3小时没回消息，我已经想好分手后猫归谁了` 这类亲密关系等待消息场景，心理学 `guide-post` 应返回 `亲密关系 / 不确定感` 和 `事实 / 脑补 / 我需要什么`，封面推荐 `--local-image-style iphone_notes`；不要把它作为职场协作式消息边界回复来生成。
 - 对 `睡眠恢复和轻养生很火，想写办公室下班后的5分钟恢复` 这类增长子线场景，心理学 `guide-post` 应返回 `睡眠恢复 / 轻养生`、`sleep_recovery_shutdown_card` 和 `5 分钟下班信号`，封面推荐 `--local-image-style iphone_notes`；这是 `modern_psychology_post` 的子线实验，不是新养生 playbook，也不能写成医疗、营养或治疗建议。2026-06-02 的 live opportunity scan 因 MCP 缺少 `search_feeds` 没有真实样本，不能把这条子线称为已验证趋势排名。
+- 对 `对方忽冷忽热，我想问清楚又怕显得烦，想让评论区站队` 这类亲密关系场景，心理学 `guide-post` 应返回 `relationship_mixed_signal_camp_vote`、`事实 / 信号 / 我要不要问清楚` 和 A/B 阵营评论入口；不要把它写成职场处理时间或优先级。
+- 对 `约好的局临时不想去了，怕扫兴又很累，想写社交电量边界` 这类社交耗竭场景，心理学 `guide-post` 应返回 `social_battery_cancel_plan_boundary`、`取消局三句` 和 A/B 角色认领；不要鼓励失联或羞辱社交。
+- 对 `领导18:57发来一句在吗，下班后身体被消息拉回工位` 这类下班消息场景，心理学 `guide-post` 应返回 `after_hours_message_body_alarm`、`下班消息三步` 和 A/B/C 评论入口；这是心理学的职场低控制感/身体警报表达，不是发疯文学。
 - OpenClaw 心理学集成使用 `integrations/openclaw/ptsm-xhs-psychology/SKILL.md` 作为薄 wrapper：先调用 `guide-post` 展示 `topic_guidance.directions`、`direction_type` 和 `scene_fit`，用户确认方向后再调用 `run-playbook --caller openclaw --guidance-ack --topic-direction-id <chosen id>`。如果 OpenClaw 直接调用 `run-playbook --caller openclaw` 生成 `modern_psychology_post` 且没有 `--guidance-ack`，PTSM 会返回 `topic_guidance_required`，不会启动 workflow、写 run 或发布。
 - OpenClaw 非心理学 XHS 集成使用 `integrations/openclaw/ptsm-xhs-topic-guide/SKILL.md`。该 wrapper 自动把发疯文学、人类丰容、苏轼诗词、武侠人物、AI科技、每日英语、世界杯和 Reddit英文讨论转译意图映射到对应 playbook；意图模糊时先问一个短澄清问题；方向确认后再 dry-run 生成，并把确认的方向 id 作为 `--topic-direction-id` 传给 `run-playbook`。如果用户更换场景，wrapper 必须重新调用 `guide-post`，不要沿用上一轮方向。wrapper 只能展示 PTSM-returned `open_scene` 方向，不能自己发明开放方向。非心理学没有 runtime hard preflight gate，因此 `run-playbook --caller openclaw` 不会因为缺少非心理学 guidance ack 而被拒绝。
 - OpenClaw/Codex 领域机会分析使用 `integrations/openclaw/ptsm-xhs-domain-opportunity/SKILL.md` 作为薄 wrapper：当用户想比较小红书领域、寻找新增 PTSM 领域或评估 playbook 覆盖缺口时，先调用 `xhs-domain-opportunity` CLI 生成 JSON/Markdown brief，再按 `existing_playbook_fit`、`sublane_first`、`new_domain_candidate` 给下一步建议。该 wrapper 不生成、不发布、不复制 PTSM scoring，也不展示原始 feed id/token。
