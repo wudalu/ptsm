@@ -1,6 +1,17 @@
 from __future__ import annotations
 
 import importlib
+from pathlib import Path
+
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _isolate_runtime_state(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
 
 
 def _load_playbook_contracts() -> tuple[type[object], object]:
