@@ -1185,6 +1185,8 @@ def test_factory_deepseek_prompt_includes_title_body_appeal_requirements() -> No
     assert "泛标题" in user_prompt
     for body_rule in ("现场锚点", "真人视角", "不要先总述", "自然保存"):
         assert body_rule in user_prompt
+    for copyable_rule in ("朋友安利", "可抄作业", "原模板直接放这", "少解释多交付"):
+        assert copyable_rule in user_prompt
 
 
 def test_factory_puts_runtime_trend_context_in_dedicated_prompt_section() -> None:
