@@ -73,6 +73,27 @@ node_contracts:
         - 收藏
         - 清单
         - 记住
+      body_must_include_scene_signal: true
+      body_scene_signal_any:
+        - AI
+        - 工具
+        - 普通人
+        - 今天
+        - 工作流
+        - 试
+        - 边界
+      body_human_anchor_any:
+        - 我
+        - 你
+        - 我们
+        - 今天
+        - 刚刚
+        - 那一秒
+        - 今晚
+        - 路上
+        - 手边
+        - 这句
+        - 这个
       body_must_not_include_any:
         - 暴富
         - 收益承诺

@@ -68,6 +68,27 @@ node_contracts:
         - 存
         - 收藏
         - 句型
+      body_must_include_scene_signal: true
+      body_scene_signal_any:
+        - 今天
+        - 开会
+        - 私聊
+        - 这句
+        - 例句
+        - 评论区
+        - 你会怎么说
+      body_human_anchor_any:
+        - 我
+        - 你
+        - 我们
+        - 今天
+        - 刚刚
+        - 那一秒
+        - 今晚
+        - 路上
+        - 手边
+        - 这句
+        - 这个
       body_must_not_include_any:
         - 词典释义
         - 老师讲

@@ -35,6 +35,8 @@ def test_skill_loader_reads_shared_xhs_human_voice_skill() -> None:
         assert rule in loaded.content
     for title_rule in ("12-18", "22", "冲突", "反差", "戏剧", "身份", "工具", "泛标题"):
         assert title_rule in loaded.content
+    for body_rule in ("现场锚点", "真人视角", "少总述", "自然保存", "可接话结尾"):
+        assert body_rule in loaded.content
 
 
 def test_key_xhs_style_skills_reference_viral_hook_mechanics() -> None:

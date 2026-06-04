@@ -107,6 +107,28 @@ node_contracts:
         - 写在
         - 金句
         - 话术
+      body_must_include_scene_signal: true
+      body_scene_signal_any:
+        - 领导
+        - 工牌
+        - 群聊
+        - 周报
+        - 早会
+        - 下班
+        - 工位
+        - 地铁
+      body_human_anchor_any:
+        - 我
+        - 你
+        - 我们
+        - 今天
+        - 刚刚
+        - 那一秒
+        - 今晚
+        - 路上
+        - 手边
+        - 这句
+        - 这个
       body_must_not_include_any:
         - 精神病
         - 心理医生

@@ -92,6 +92,28 @@ node_contracts:
         - 三步
         - 先试
         - 可保存
+      body_must_include_scene_signal: true
+      body_scene_signal_any:
+        - 角落
+        - 书桌
+        - 床头
+        - 路线
+        - 材料
+        - 今天
+        - 十分钟
+        - 手边
+      body_human_anchor_any:
+        - 我
+        - 你
+        - 我们
+        - 今天
+        - 刚刚
+        - 那一秒
+        - 今晚
+        - 路上
+        - 手边
+        - 这句
+        - 这个
       body_must_not_include_any:
         - 治好
         - 治愈焦虑

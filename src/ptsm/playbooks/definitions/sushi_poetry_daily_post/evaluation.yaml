@@ -72,6 +72,27 @@ node_contracts:
         - 记下来
         - 这一句
         - 可收藏
+      body_must_include_scene_signal: true
+      body_scene_signal_any:
+        - 苏轼
+        - 夜里
+        - 这一句
+        - 风雨
+        - 月亮
+        - 旧友
+        - 今天
+      body_human_anchor_any:
+        - 我
+        - 你
+        - 我们
+        - 今天
+        - 刚刚
+        - 那一秒
+        - 今晚
+        - 路上
+        - 手边
+        - 这句
+        - 这个
       body_must_not_include_any:
         - 课堂讲义
         - 百科

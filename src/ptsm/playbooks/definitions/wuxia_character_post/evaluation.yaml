@@ -74,6 +74,27 @@ node_contracts:
         - 截图
         - 记下来
         - 这一句
+      body_must_include_scene_signal: true
+      body_scene_signal_any:
+        - 令狐冲
+        - 黄蓉
+        - 郭靖
+        - 这一段
+        - 原文
+        - 今天
+        - 职场
+      body_human_anchor_any:
+        - 我
+        - 你
+        - 我们
+        - 今天
+        - 刚刚
+        - 那一秒
+        - 今晚
+        - 路上
+        - 手边
+        - 这句
+        - 这个
       body_must_not_include_any:
         - 课堂讲义
         - 百科

@@ -442,6 +442,66 @@ class TestPlaybookNodeContract:
         assert "body_must_include_comment_prompt_any" in result.reason
         assert "body_must_include_save_trigger_any" in result.reason
 
+    def test_fails_when_body_lacks_required_scene_signal(self):
+        contract = PlaybookEvalContract(
+            suite_id="human_voice.default",
+            node_contracts={
+                "executor": {
+                    "required_fields": ["title", "body", "hashtags"],
+                    "constraints": {
+                        "body_must_include_scene_signal": True,
+                        "body_scene_signal_any": ["领导", "工牌", "下班"],
+                    },
+                }
+            },
+        )
+        target = _target(
+            phase="executor",
+            target_type="artifact_slice",
+            output_ref={
+                "final_content": {
+                    "title": "下班那一秒",
+                    "body": "职场压力需要被合理释放。评论区接一句。",
+                    "hashtags": ["#发疯文学"],
+                }
+            },
+        )
+
+        result = contract_playbook_node_contract(target, contract)
+
+        assert result.status == "failed"
+        assert "body_must_include_scene_signal" in result.reason
+
+    def test_passes_when_body_contains_scene_signal_and_human_anchor(self):
+        contract = PlaybookEvalContract(
+            suite_id="human_voice.default",
+            node_contracts={
+                "executor": {
+                    "required_fields": ["title", "body", "hashtags"],
+                    "constraints": {
+                        "body_must_include_scene_signal": True,
+                        "body_scene_signal_any": ["领导", "工牌", "下班"],
+                        "body_human_anchor_any": ["我", "今天", "那一秒"],
+                    },
+                }
+            },
+        )
+        target = _target(
+            phase="executor",
+            target_type="artifact_slice",
+            output_ref={
+                "final_content": {
+                    "title": "下班那一秒",
+                    "body": "领导18:57发在吗那一秒，我的工牌已经想先下班。评论区接一句。",
+                    "hashtags": ["#发疯文学"],
+                }
+            },
+        )
+
+        result = contract_playbook_node_contract(target, contract)
+
+        assert result.status == "passed"
+
     def test_passes_when_body_contains_required_psychology_safety_signals(self):
         contract = PlaybookEvalContract(
             suite_id="psych.default",

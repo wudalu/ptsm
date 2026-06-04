@@ -107,6 +107,27 @@ node_contracts:
         - 可收藏
         - 记住
         - 小结
+      body_must_include_scene_signal: true
+      body_scene_signal_any:
+        - AI
+        - 工具
+        - 压力
+        - 消息
+        - 普通人
+        - 今天
+        - 你现在
+      body_human_anchor_any:
+        - 我
+        - 你
+        - 我们
+        - 今天
+        - 刚刚
+        - 那一秒
+        - 今晚
+        - 路上
+        - 手边
+        - 这句
+        - 这个
       body_must_not_include_any:
         - Reddit
         - reddit

@@ -100,6 +100,20 @@ TITLE_TENSION_MARKERS = [
     "拖回",
 ]
 
+BODY_SCENE_SIGNAL_MARKERS = {
+    "fengkuang_daily_post": ["领导", "工牌", "群聊", "周报", "早会", "下班", "工位", "地铁"],
+    "modern_psychology_post": ["下班", "会议", "消息", "睡前", "关系", "脑子", "身体", "今晚", "那句话"],
+    "human_enrichment_daily_post": ["角落", "书桌", "床头", "路线", "材料", "今天", "十分钟", "手边"],
+    "sushi_poetry_daily_post": ["苏轼", "夜里", "这一句", "风雨", "月亮", "旧友", "今天"],
+    "daily_english_post": ["今天", "开会", "私聊", "这句", "例句", "评论区", "你会怎么说"],
+    "ai_tech_daily_post": ["AI", "工具", "普通人", "今天", "工作流", "试", "边界"],
+    "world_cup_daily_post": ["赛前", "看球", "普通球迷", "今晚", "这场", "评论区"],
+    "reddit_curation_daily_post": ["AI", "工具", "压力", "消息", "普通人", "今天", "你现在"],
+    "wuxia_character_post": ["令狐冲", "黄蓉", "郭靖", "这一段", "原文", "今天", "职场"],
+}
+
+BODY_HUMAN_ANCHORS = ["我", "你", "我们", "今天", "刚刚", "那一秒", "今晚", "路上", "手边", "这句", "这个"]
+
 
 class TestPlaybookEvalContract:
     def test_loads_fengkuang_contract(self):
@@ -313,6 +327,20 @@ class TestPlaybookEvalContract:
             assert constraints["title_max_chars"] <= 22
             for marker in TITLE_TENSION_MARKERS:
                 assert marker in constraints["title_must_include_tension_any"]
+
+    def test_all_xhs_contracts_require_body_scene_and_human_anchors(self):
+        root = Path(__file__).parent.parent.parent.parent / "src" / "ptsm" / "playbooks" / "definitions"
+
+        for playbook_id, markers in BODY_SCENE_SIGNAL_MARKERS.items():
+            contract = load_playbook_eval_contract(root, playbook_id)
+            assert contract is not None
+            constraints = contract.node_contracts["executor"]["constraints"]
+
+            assert constraints["body_must_include_scene_signal"] is True
+            for marker in markers:
+                assert marker in constraints["body_scene_signal_any"]
+            for anchor in BODY_HUMAN_ANCHORS:
+                assert anchor in constraints["body_human_anchor_any"]
 
     @pytest.mark.parametrize(
         ("playbook_id", "title_terms"),

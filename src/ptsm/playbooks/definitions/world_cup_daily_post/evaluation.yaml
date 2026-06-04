@@ -80,6 +80,26 @@ node_contracts:
         - 看球清单
         - 收藏
         - 复盘顺序
+      body_must_include_scene_signal: true
+      body_scene_signal_any:
+        - 赛前
+        - 看球
+        - 普通球迷
+        - 今晚
+        - 这场
+        - 评论区
+      body_human_anchor_any:
+        - 我
+        - 你
+        - 我们
+        - 今天
+        - 刚刚
+        - 那一秒
+        - 今晚
+        - 路上
+        - 手边
+        - 这句
+        - 这个
       body_must_not_include_any:
         - 稳赚
         - 下注

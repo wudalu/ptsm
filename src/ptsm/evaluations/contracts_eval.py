@@ -405,6 +405,33 @@ def _constraint_failures(
                 }
             )
 
+        if constraints.get("body_must_include_scene_signal") is True:
+            scene_signal_any = _string_list(constraints.get("body_scene_signal_any"))
+            if scene_signal_any and not any(term in body for term in scene_signal_any):
+                failures.append(
+                    {
+                        "path": _field_path(target, "body"),
+                        "value_preview": body[:120],
+                        "observation": (
+                            "body_must_include_scene_signal violated: "
+                            f"missing one of {scene_signal_any}"
+                        ),
+                    }
+                )
+
+        human_anchor_any = _string_list(constraints.get("body_human_anchor_any"))
+        if human_anchor_any and not any(term in body for term in human_anchor_any):
+            failures.append(
+                {
+                    "path": _field_path(target, "body"),
+                    "value_preview": body[:120],
+                    "observation": (
+                        "body_human_anchor_any violated: "
+                        f"missing one of {human_anchor_any}"
+                    ),
+                }
+            )
+
         forbidden = _string_list(constraints.get("body_must_not_include_any"))
         present = [term for term in forbidden if term in body]
         if present:

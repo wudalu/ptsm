@@ -63,6 +63,26 @@ FUNCTIONAL_LABEL_MARKERS = (
     "看球清单可以先收藏",
     "可保存三步",
 )
+ABSTRACT_BODY_MARKERS = (
+    "本文",
+    "本篇",
+    "从本质上",
+    "总体来说",
+    "核心逻辑是",
+    "建议大家",
+)
+BODY_SCENE_SIGNAL_MARKERS = {
+    "fengkuang_daily_post": ("领导", "工牌", "群聊", "周报", "早会", "下班", "工位", "地铁"),
+    "modern_psychology_post": ("下班", "会议", "消息", "睡前", "关系", "脑子", "身体", "今晚", "那句话"),
+    "human_enrichment_daily_post": ("角落", "书桌", "床头", "路线", "材料", "今天", "十分钟", "手边"),
+    "sushi_poetry_daily_post": ("苏轼", "夜里", "这一句", "风雨", "月亮", "旧友", "今天"),
+    "daily_english_post": ("今天", "开会", "私聊", "这句", "例句", "评论区", "你会怎么说"),
+    "ai_tech_daily_post": ("AI", "工具", "普通人", "今天", "工作流", "试", "边界"),
+    "world_cup_daily_post": ("赛前", "看球", "普通球迷", "今晚", "这场", "评论区"),
+    "reddit_curation_daily_post": ("AI", "工具", "压力", "消息", "普通人", "今天", "你现在"),
+    "wuxia_character_post": ("令狐冲", "黄蓉", "郭靖", "这一段", "原文", "今天", "职场"),
+}
+BODY_HUMAN_ANCHORS = ("我", "你", "我们", "今天", "刚刚", "那一秒", "今晚", "路上", "手边", "这句", "这个")
 
 
 @pytest.mark.parametrize(
@@ -174,5 +194,8 @@ def test_xhs_playbook_dry_runs_fit_title_body_quality_contract(
     assert not any(marker in content["title"] for marker in GENERIC_TITLE_MARKERS)
     visible = f"{content['title']}\n{content['image_text']}\n{content['body']}"
     assert not any(marker in visible for marker in FUNCTIONAL_LABEL_MARKERS)
+    assert any(marker in content["body"] for marker in BODY_SCENE_SIGNAL_MARKERS[playbook_id])
+    assert any(anchor in content["body"] for anchor in BODY_HUMAN_ANCHORS)
+    assert not any(marker in content["body"] for marker in ABSTRACT_BODY_MARKERS)
 
     get_settings.cache_clear()
