@@ -328,6 +328,13 @@ uv run python -m ptsm.bootstrap guide-post \
   --format json
 
 uv run python -m ptsm.bootstrap guide-post \
+  --playbook-id ai_tech_daily_post \
+  --account-id acct-ai-tech-local \
+  --scene "想模拟一条教普通人写好 prompt 的小红书帖子，重点是让 AI 先问清楚再输出" \
+  --non-interactive \
+  --format json
+
+uv run python -m ptsm.bootstrap guide-post \
   --playbook-id daily_english_post \
   --account-id acct-daily-english-local \
   --scene "学一个表示坚持的高级词汇，想配真实职场例句" \
@@ -584,6 +591,12 @@ uv run python -m ptsm.bootstrap run-playbook \
   --scene "Google发布Gemini 3模型" \
   --account-id acct-ai-tech-local \
   --playbook-id ai_tech_daily_post
+
+uv run python -m ptsm.bootstrap run-playbook \
+  --scene "想模拟一条教普通人写好 prompt 的小红书帖子，重点是让 AI 先问清楚再输出" \
+  --account-id acct-ai-tech-local \
+  --playbook-id ai_tech_daily_post \
+  --publish-mode dry-run
 
 # 每日英语学习领域
 uv run python -m ptsm.bootstrap run-playbook \

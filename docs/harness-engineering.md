@@ -2,7 +2,7 @@
 title: Harness Engineering In PTSM
 status: active
 owner: ptsm
-last_verified: 2026-06-02
+last_verified: 2026-06-04
 source_of_truth: true
 related_paths:
   - README.md
@@ -78,6 +78,7 @@ repository.
 - first-class XHS image strategy through `xhs_image_strategy` and `final_content.image_plan`, so deterministic dry-runs and artifacts can prove when local social screenshots are selected intentionally instead of only as provider fallback
 - a deterministic, local-first XHS pattern library loop: periodic `collect-xhs-patterns` persists partial MCP samples, `analyze-xhs-patterns` distills them into local format snapshots, and ordinary generation consumes `current.json` without live XHS calls
 - a deterministic, local-first cross-domain `guide-post` harness surface: domain tests cover the generic selector, including scene-keyword/lane-affinity separation, diversity-family selection, multiple open-scene candidates, and dynamic breadth reranking; application tests cover all current topic packs, larger-than-display candidate pools, scene-varying direction sets, `topic_guidance.image_recommendation`, and the `dynamic_scene_diversity_rerank` contract; CLI tests cover JSON/Markdown output with `direction_type`, `open_direction_ids`, `direction_type_counts`, and image recommendation fields; run-playbook tests cover `topic_direction_id` persistence into response/artifact metadata; docs tests lock the generic, psychology, and domain-opportunity OpenClaw wrapper contracts
+- an AI tech prompt-building sublane harness: `guide-post` tests lock prompt / 提示词 scenes to `ai_prompt_context_card`, `任务 / 背景 / 输出格式 / 反例` save tools, and `iphone_notes` save-tool image recommendations; deterministic backend and e2e dry-run tests require prompt-building final content to include task, background, output format, failure example or counterexample, comment handoff, `#AI资讯`, and no internal experiment-token leakage. This sublane was added after the 2026-06-04 XHS opportunity scan failed to collect live samples and returned no new-domain candidate, so harness docs treat it as `ai_tech_daily_post` coverage rather than a tenth playbook.
 - a modern psychology relationship-uncertainty regression harness: unit tests now lock `他3小时没回消息，我已经想好分手后猫归谁了` to `亲密关系 / 不确定感`, `relationship_uncertainty_waiting_message`, `iphone_notes`, and deterministic copy that uses `事实 / 脑补 / 我需要什么` rather than workplace reply wording
 - a modern psychology growth-direction guidance harness: unit tests lock `relationship_mixed_signal_camp_vote`, `social_battery_cancel_plan_boundary`, and `after_hours_message_body_alarm` as first `guide-post` directions for exact high-intent scenes, including local low-density image recommendations, concrete saveable tools, and A/B or A/B/C comment prompts; deterministic draft tests cover the two previously generic paths, `忽冷忽热` and `社交电量取消局`, without claiming post-metrics uplift
 - a modern psychology growth-sublane regression harness: unit tests now lock sleep recovery/light-wellness scenes to `睡眠恢复 / 轻养生`, `sleep_recovery_shutdown_card`, and `iphone_notes` save-tool guidance; e2e deterministic dry-run tests require a short tension title, 350-580 char body, 5-minute shutdown/save tool, role/camp comment prompt, and professional-help boundary without medical wellness claims

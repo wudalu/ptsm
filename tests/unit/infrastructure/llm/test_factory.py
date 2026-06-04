@@ -289,6 +289,35 @@ def test_deterministic_backend_can_follow_ai_tech_context() -> None:
     assert "发疯文学" not in draft["body"]
 
 
+def test_deterministic_backend_can_follow_ai_prompt_builder_context() -> None:
+    backend = DeterministicDraftBackend()
+
+    draft = backend.generate(
+        scene="想模拟一条教普通人写好 prompt 的小红书帖子，重点是让 AI 先问清楚再输出",
+        planner_prompt="# AI科技资讯 Planner\n目标：写一条适合小红书的 AI/科技资讯。",
+        skill_contents=[
+            "# AI Tech Style\n需要 3秒核心信息、普通人影响、收藏清单、非投资建议。",
+            "# AI Tech Hashtagging\n标签必须包含 `#AI资讯`。",
+        ],
+    )
+
+    body = draft["body"]
+    assert "是什么" in body
+    assert "为什么重要" in body
+    assert "普通人" in body
+    assert "任务" in body
+    assert "背景" in body
+    assert "输出格式" in body
+    assert "反例" in body or "失败样例" in body
+    assert "评论区" in body
+    assert "非投资建议" in body
+    assert "#AI资讯" in draft["hashtags"]
+    assert not any(
+        leaked in body
+        for leaked in ("save_tool", "comment_chain", "模板要求")
+    )
+
+
 def test_deterministic_backend_can_follow_daily_english_context() -> None:
     backend = DeterministicDraftBackend()
 

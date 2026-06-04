@@ -516,6 +516,26 @@ def _build_world_cup_draft(*, scene: str, feedback: str) -> dict[str, Any]:
 
 
 def _build_ai_tech_draft(*, scene: str, feedback: str) -> dict[str, Any]:
+    if _is_prompt_builder_scene(scene):
+        body = (
+            f"3秒核心信息：{scene}。写好 prompt 不靠神秘咒语，先让 AI 明白你要完成什么、"
+            "已有背景和希望的输出格式。\n"
+            "是什么：把一句“帮我写”改成四块：任务、背景、输出格式、反例。"
+            "比如先说目标读者、语气、长度，再给一个不想要的失败样例。\n"
+            "为什么重要：AI 很会补空白，也最容易补错空白。普通人先把条件讲清楚，"
+            "再让它追问 3 个不确定点，返工会少很多。\n"
+            "我会收藏成一张卡：任务=要它做什么；背景=给谁看、用在哪；"
+            "输出格式=列表/表格/小红书正文；反例=不要官腔、不要太长。"
+            "非投资建议，只是 AI 工具使用观察。\n"
+            "评论区丢一个你写废的 prompt 或失败输出，我试着帮你改一版。"
+        )
+        return {
+            "title": "普通人写prompt先别急",
+            "image_text": "任务 背景 输出格式 反例",
+            "body": body,
+            "hashtags": ["#AI资讯", "#AI工具", "#提示词", "#效率工具"],
+        }
+
     body = (
         f"3秒核心信息：{scene}。这类更新值得看，不是因为它又喊了一句“AI改变世界”，"
         "而是它开始把多模态能力放进更日常的使用入口里。\n"
@@ -537,6 +557,21 @@ def _build_ai_tech_draft(*, scene: str, feedback: str) -> dict[str, Any]:
         "body": body,
         "hashtags": ["#AI资讯", "#人工智能", "#效率工具", "#科技观察"],
     }
+
+
+def _is_prompt_builder_scene(scene: str) -> bool:
+    return any(
+        keyword in scene
+        for keyword in (
+            "prompt",
+            "提示词",
+            "提问",
+            "问清楚",
+            "输出格式",
+            "失败输出",
+            "反例",
+        )
+    )
 
 
 def _build_daily_english_draft(*, scene: str, feedback: str) -> dict[str, Any]:

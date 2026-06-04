@@ -210,6 +210,40 @@ def test_run_guide_post_returns_productized_topic_directions_without_internal_so
     assert '"source"' not in serialized
 
 
+def test_ai_tech_topic_guidance_routes_prompt_builder_sublane() -> None:
+    result = run_guide_post(
+        GuidePostRequest(
+            playbook_id="ai_tech_daily_post",
+            account_id="acct-ai-tech-local",
+            scene="想模拟一条教普通人写好 prompt 的小红书帖子，重点是让 AI 先问清楚再输出",
+        )
+    )
+
+    guidance = result["topic_guidance"]
+    assert guidance["matched_direction_id"] == "ai_prompt_context_card"
+    first_direction = guidance["directions"][0]
+    assert first_direction["id"] == "ai_prompt_context_card"
+    assert (
+        "prompt" in first_direction["name"].lower()
+        or "提示词" in first_direction["name"]
+    )
+    assert "任务" in first_direction["saveable_tool"]
+    assert "背景" in first_direction["saveable_tool"]
+    assert "输出格式" in first_direction["saveable_tool"]
+    assert any(
+        marker in first_direction["comment_prompt"]
+        for marker in ("prompt", "提示词", "失败")
+    )
+
+    recommendation = _image_recommendation(result)
+    assert recommendation["recommended_backend"] == "local_social_screenshot"
+    assert recommendation["local_style"] == "iphone_notes"
+    assert recommendation["role"] == "save_tool"
+    assert recommendation["command_hint"] == "--local-image-style iphone_notes"
+
+    _assert_no_internal_source_leakage(result)
+
+
 def test_psychology_topic_guidance_recommends_wechat_for_message_reply_assets() -> None:
     result = run_guide_post(
         GuidePostRequest(scene="朋友半夜发来一大段消息，我想写一版不被掏空的回复")

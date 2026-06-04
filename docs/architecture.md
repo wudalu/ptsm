@@ -2,7 +2,7 @@
 title: PTSM Architecture
 status: active
 owner: ptsm
-last_verified: 2026-06-02
+last_verified: 2026-06-04
 source_of_truth: true
 related_paths:
   - src/ptsm
@@ -30,6 +30,11 @@ related_paths:
 # Architecture
 
 PTSM 当前已支持九个垂直领域（发疯文学、苏轼诗词赏析、武侠人物评述、AI科技资讯、每日英语学习、现代心理困境观察、人类丰容实验、世界杯主题、Reddit英文讨论转译），通过 playbook + skill + account 注册表实现多领域并行运营。
+
+提示词构建 / 好用 prompt 不是第十个 playbook；当前证据只支持把它作为
+`ai_tech_daily_post` 下的 AI 工作流子线。它复用 AI 科技资讯的账号、playbook、
+skill 和 eval contract，只在本地 `guide-post` topic pack 与 deterministic dry-run
+helper 中增加 prompt 构建方向。
 
 ## Package Boundaries
 
@@ -81,6 +86,7 @@ PTSM 当前已支持九个垂直领域（发疯文学、苏轼诗词赏析、武
 - 标题吸引力和正文组织也保持在资产/合同层：`xhs_human_voice` 定义 12-18 字优先、最多 22 字的短标题纪律，要求具体标题钩子叠加冲突、反差或戏剧张力；playbook-local `evaluation.yaml` 用 `title_max_chars`、`title_must_include_tension_any`、`title_must_not_include_any` 与 body length band 做确定性约束，DeepSeek / deterministic drafting backend 只读取这些要求，不新增领域 orchestration 分支。
 - playbook contract evaluator 现在还支持 `title_must_include_any`、`title_must_include_tension_any`、`title_must_not_include_any`、body length band 和 `combined_must_not_include_any`，用于让标题保留具体物件/场景钩子、限制在短标题上限内、拦截泛标题，并跨标题、封面文案和正文拦截 `首先`、`其次`、`综上`、`作为AI` 这类模板化或元叙事语言。
 - `modern_psychology_post` 的浏览/点赞优化仍放在既有心理学资产层：睡眠恢复、轻养生、办公室恢复被建模为现代心理学子线实验，由 `guide-post`、`psychology_style`、playbook prompt 和 deterministic dry-run helper 承接，不新增 domain/playbook/runtime 分支。2026-06-02 的 XHS domain opportunity live scan 因本地 MCP 缺少 `search_feeds` 没有采到样本，所以这条子线只按弱证据推进为本地可验证实验，不声称已完成趋势排名。
+- `ai_tech_daily_post` 的提示词构建方向同样保持在资产层：2026-06-04 的 prompt / AI提问 domain-opportunity scan 因本地 XHS MCP 缺少可用 `search_feeds` 未拿到真实样本，但 deterministic mapping 将 AI提问、普通人用AI、AI工具和AI工作流归入现有 AI tech playbook fit。因此本次只新增 `提示词构建 / 好用 prompt` lane、`ai_prompt_context_card` 等 guide-post 方向和 deterministic prompt-card dry-run，不新增账号、playbook 或 runtime 分支。
 
 ## Current Design Pressure
 
