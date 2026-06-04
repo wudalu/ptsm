@@ -67,6 +67,11 @@ def test_run_playbook_cli_outputs_prompt_builder_ai_tech_receipt(capsys) -> None
     assert "背景" in body
     assert "输出格式" in body
     assert "反例" in body or "失败样例" in body
+    assert "直接复制" in body
+    assert "你是一个" in body
+    assert "如果信息不够" in body
+    assert "请先问我" in body
+    assert "不要编造" in body
     assert "评论区" in body
     assert not any(
         leaked in body

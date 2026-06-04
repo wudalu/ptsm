@@ -309,6 +309,11 @@ def test_deterministic_backend_can_follow_ai_prompt_builder_context() -> None:
     assert "背景" in body
     assert "输出格式" in body
     assert "反例" in body or "失败样例" in body
+    assert "直接复制" in body
+    assert "你是一个" in body
+    assert "如果信息不够" in body
+    assert "请先问我" in body
+    assert "不要编造" in body
     assert "评论区" in body
     assert "非投资建议" in body
     assert "#AI资讯" in draft["hashtags"]

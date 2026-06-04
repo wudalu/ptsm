@@ -227,9 +227,12 @@ def test_ai_tech_topic_guidance_routes_prompt_builder_sublane() -> None:
         "prompt" in first_direction["name"].lower()
         or "提示词" in first_direction["name"]
     )
+    assert "直接复制" in first_direction["viral_hook"]
+    assert "直接复制" in first_direction["saveable_tool"]
     assert "任务" in first_direction["saveable_tool"]
     assert "背景" in first_direction["saveable_tool"]
     assert "输出格式" in first_direction["saveable_tool"]
+    assert "直接复制" in result["recommended_scene"]
     assert any(
         marker in first_direction["comment_prompt"]
         for marker in ("prompt", "提示词", "失败")
