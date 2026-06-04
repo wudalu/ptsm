@@ -39,11 +39,16 @@ def test_openclaw_topic_guide_skill_auto_maps_intent_and_clarifies_ambiguity() -
     for keyword in (
         "武侠",
         "AI",
+        "prompt",
+        "提示词",
+        "AI提问",
+        "好用prompt",
         "每日英语",
         "世界杯",
         "Reddit",
     ):
         assert keyword in text
+    assert "ai_prompt_context_card" in text
     assert "ptsm-xhs-psychology" in text
     assert "模糊" in text or "ambiguous" in text
     assert "澄清" in text or "clarification" in text

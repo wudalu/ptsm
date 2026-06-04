@@ -1,6 +1,6 @@
 ---
 name: ptsm-xhs-topic-guide
-description: 当用户想发布小红书发疯文学、人类丰容、苏轼诗词、武侠、AI科技、每日英语、世界杯、Reddit转译或其他已支持的非心理学 XHS 内容时，先调用 PTSM 的跨领域选题引导，再生成或发布。
+description: 当用户想发布小红书发疯文学、人类丰容、苏轼诗词、武侠、AI科技、AI提问/prompt/提示词、每日英语、世界杯、Reddit转译或其他已支持的非心理学 XHS 内容时，先调用 PTSM 的跨领域选题引导，再生成或发布。
 metadata: {"openclaw": {"requires": {"bins": ["uv"]}}}
 ---
 
@@ -16,13 +16,15 @@ Use this skill when the user asks OpenClaw to create, prepare, draft, save, or p
 - 生活丰容 / 居家变量 / 低成本改造 -> `human_enrichment_daily_post`
 - 苏轼 / 诗词 / 古典文化治愈 -> `sushi_poetry_daily_post`
 - 武侠 / 金庸 / 古龙 / 人物评述 -> `wuxia_character_post`
-- AI / 科技资讯 / 大模型 / 工具 / 工作流 -> `ai_tech_daily_post`
+- AI / 科技资讯 / 大模型 / 工具 / 工作流 / prompt / 提示词 / AI提问 / 好用prompt -> `ai_tech_daily_post`
 - 每日英语 / 单词 / 英文表达 / 例句 / 造句 -> `daily_english_post`
 - 世界杯 / 看球 / 球迷 / 赛前看点 / 赛后复盘 -> `world_cup_daily_post`
 - Reddit / 外网讨论 / 英文热帖 / AI 焦虑 / 工作流讨论 -> `reddit_curation_daily_post`
 - 心理学 / 情绪 / 关系边界 / 内耗 -> use `ptsm-xhs-psychology` instead
 
 If the request is 模糊 or multiple playbooks fit, ask one short 澄清 / clarification question before calling PTSM. If the caller already resolved the target, accept the explicit `--playbook-id`.
+
+Prompt / 提示词 / AI提问 scenes stay under `ai_tech_daily_post`; do not create a new playbook. Let PTSM return the prompt-building lane/directions such as `ai_prompt_context_card`.
 
 ## Required Flow
 
