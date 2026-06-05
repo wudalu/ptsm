@@ -682,7 +682,7 @@ AI_TECH_PACK = TopicPack(
             default_scene="想教普通人写一条能让 AI 先问清楚再输出的 prompt",
             default_content_angle="先给一段可直接复制的 prompt 成品，再拆成任务、背景、输出格式和反例。",
             default_saveable_tool="可直接复制 prompt 成品 + 任务 / 背景 / 输出格式 / 反例标注",
-            default_comment_prompt="把你写废的 prompt 或失败输出丢评论区，我帮你改一版。",
+            default_comment_prompt="评论区晒一个你跑通的好用 prompt，大家互相抄作业。",
             keywords=(
                 "prompt",
                 "提示词",
@@ -730,7 +730,7 @@ AI_TECH_PACK = TopicPack(
             best_scenes=("让 AI 写文案总跑偏", "想让 AI 先问清楚需求", "把失败输出改成更好 prompt"),
             content_angle="好 prompt 不是讲概念，而是给出一段能直接复制的成品，再拆解它为什么有效。",
             saveable_tool="可直接复制 prompt 成品 + 任务 / 背景 / 输出格式 / 反例标注",
-            comment_prompt="把你写废的 prompt 或失败输出丢评论区，我帮你改一版。",
+            comment_prompt="评论区晒一个你跑通的好用 prompt，大家互相抄作业。",
             avoid="不要包装成万能提示词，不承诺一次提问就能稳定产出完美结果。",
             lane_affinity=("提示词构建", "好用 prompt"),
             scene_keywords=(
@@ -773,7 +773,7 @@ AI_TECH_PACK = TopicPack(
             best_scenes=("AI 写得太官腔", "输出不是自己想要的格式", "已经试过一次但结果不好"),
             content_angle="别急着重开一个对话，先把失败点标出来，让 AI 根据反例重写规则。",
             saveable_tool="原 prompt / 失败点 / 新约束 / 再试一次",
-            comment_prompt="评论区交一个失败输出，我试着帮你改成可复用 prompt。",
+            comment_prompt="评论区晒一个失败输出和改好的 prompt，大家互相抄作业。",
             avoid="不要展示隐私材料，不鼓励用户粘贴公司机密或个人敏感信息。",
             lane_affinity=("提示词构建", "工具选择"),
             scene_keywords=("失败", "反例", "改写", "官腔", "格式", "重写", "失败输出"),

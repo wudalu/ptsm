@@ -237,6 +237,10 @@ def test_ai_tech_topic_guidance_routes_prompt_builder_sublane() -> None:
         marker in first_direction["comment_prompt"]
         for marker in ("prompt", "提示词", "失败")
     )
+    assert "好用" in first_direction["comment_prompt"]
+    assert "互相抄" in first_direction["comment_prompt"]
+    assert "我帮" not in first_direction["comment_prompt"]
+    assert "帮你改" not in first_direction["comment_prompt"]
 
     recommendation = _image_recommendation(result)
     assert recommendation["recommended_backend"] == "local_social_screenshot"
