@@ -5,7 +5,7 @@ from ptsm.agent_runtime.state import ExecutionState
 
 def build_ingest_node(*, drafting_provider: str):
     def ingest(state: ExecutionState) -> ExecutionState:
-        return {
+        result: ExecutionState = {
             "status": "running",
             "attempt_count": 0,
             "planner_iterations": 0,
@@ -16,5 +16,9 @@ def build_ingest_node(*, drafting_provider: str):
             "account_id": state["account_id"],
             "drafting_provider": drafting_provider,
         }
+        topic_selection = state.get("topic_selection")
+        if isinstance(topic_selection, dict):
+            result["topic_selection"] = topic_selection
+        return result
 
     return ingest

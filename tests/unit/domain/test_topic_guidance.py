@@ -178,6 +178,42 @@ def test_select_topic_directions_omits_internal_fields() -> None:
     assert direction["scene_fit"]
 
 
+def test_select_topic_directions_returns_public_format_recommendation() -> None:
+    result = select_topic_directions(
+        directions=(
+            TopicDirection(
+                id="desk",
+                name="Desk",
+                trend_signal="desk",
+                viral_hook="save",
+                why_it_may_work="desk",
+                best_scenes=("书桌",),
+                content_angle="desk",
+                saveable_tool="tool",
+                comment_prompt="prompt",
+                avoid="avoid",
+                scene_keywords=("书桌",),
+                base_priority=9,
+            ),
+        ),
+        scene="想写书桌角落改造",
+        lane_name="一平米角落",
+    )
+
+    format_recommendation = result[0]["format_recommendation"]
+
+    assert format_recommendation["format_archetype"] in {
+        "note_card",
+        "carousel",
+        "chat_screenshot",
+        "provider_scene",
+    }
+    assert format_recommendation["cover_role"]
+    assert format_recommendation["body_shape"]
+    assert format_recommendation["visual_evidence_need"] in {"none", "low", "high"}
+    assert "dense_text_poster" in format_recommendation["avoid_format"]
+
+
 def test_select_topic_directions_can_append_open_scene_slot() -> None:
     directions = (
         TopicDirection(
@@ -228,6 +264,12 @@ def test_select_topic_directions_can_append_open_scene_slot() -> None:
     assert open_slot["saveable_tool"]
     assert open_slot["comment_prompt"]
     assert open_slot["avoid"]
+    assert open_slot["format_recommendation"]["format_archetype"] in {
+        "note_card",
+        "carousel",
+        "chat_screenshot",
+        "provider_scene",
+    }
 
     serialized = json.dumps(open_slot, ensure_ascii=False)
     assert "scene_keywords" not in serialized

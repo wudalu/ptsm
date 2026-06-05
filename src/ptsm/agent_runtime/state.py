@@ -32,6 +32,7 @@ class ExecutionState(TypedDict, total=False):
     loaded_skill_contents: list[str]
     runtime_skill_contents: list[str]
     runtime_skill_details: list[dict[str, Any]]
+    topic_selection: dict[str, Any]
     artifact_path: str
     memory_hits: list[dict[str, Any]]
     content_quality_eval: dict[str, Any]

@@ -145,6 +145,17 @@ def _image_recommendation(result: dict[str, object]) -> dict[str, object]:
     return recommendation
 
 
+def _format_recommendation(direction: dict[str, object]) -> dict[str, object]:
+    recommendation = direction["format_recommendation"]
+    assert isinstance(recommendation, dict)
+    assert recommendation["format_archetype"]
+    assert recommendation["cover_role"]
+    assert recommendation["body_shape"]
+    assert recommendation["visual_evidence_need"] in {"none", "low", "high"}
+    assert "dense_text_poster" in recommendation["avoid_format"]
+    return recommendation
+
+
 def test_run_guide_post_builds_psychology_brief_with_scene_defaults() -> None:
     result = run_guide_post(
         GuidePostRequest(
@@ -203,6 +214,10 @@ def test_run_guide_post_returns_productized_topic_directions_without_internal_so
     assert "边界句" in boundary["comment_prompt"]
     assert "万能" in boundary["avoid"]
     assert boundary["scene_fit"]
+    boundary_format = _format_recommendation(boundary)
+    assert boundary_format["format_archetype"] == "note_card"
+    assert boundary_format["cover_role"] == "save_tool"
+    assert boundary_format["visual_evidence_need"] == "low"
 
     serialized = json.dumps(result, ensure_ascii=False)
     assert "docs/research" not in serialized
@@ -241,6 +256,10 @@ def test_ai_tech_topic_guidance_routes_prompt_builder_sublane() -> None:
     assert "互相抄" in first_direction["comment_prompt"]
     assert "我帮" not in first_direction["comment_prompt"]
     assert "帮你改" not in first_direction["comment_prompt"]
+    prompt_format = _format_recommendation(first_direction)
+    assert prompt_format["format_archetype"] == "note_card"
+    assert prompt_format["cover_role"] == "save_tool"
+    assert "prompt" in prompt_format["body_shape"].lower() or "提示词" in prompt_format["body_shape"]
 
     recommendation = _image_recommendation(result)
     assert recommendation["recommended_backend"] == "local_social_screenshot"
@@ -323,6 +342,10 @@ def test_psychology_topic_guidance_routes_sleep_recovery_growth_sublane() -> Non
         marker in first_direction["comment_prompt"]
         for marker in ("A.", "B.", "____")
     )
+    sleep_format = _format_recommendation(first_direction)
+    assert sleep_format["format_archetype"] == "note_card"
+    assert sleep_format["cover_role"] == "save_tool"
+    assert sleep_format["visual_evidence_need"] == "low"
 
     recommendation = _image_recommendation(result)
     assert recommendation["recommended_backend"] == "local_social_screenshot"
@@ -634,6 +657,8 @@ def test_format_guide_post_markdown_includes_scene_fit() -> None:
 
     assert "scene:" in markdown
     assert "fit:" in markdown
+    assert "format:" in markdown
+    assert "visual:" in markdown
     assert "匹配当前场景信号" in markdown
     assert "## Image Recommendation" in markdown
     assert "after_topic_direction_confirmation" in markdown
@@ -803,6 +828,11 @@ def test_guide_post_supports_human_enrichment_topic_guidance() -> None:
     assert result["brief"]["lane"]
     assert result["topic_guidance"]["matched_direction_id"].startswith("enrichment_")
     assert len(result["topic_guidance"]["directions"]) == 4
+    first_direction = result["topic_guidance"]["directions"][0]
+    enrichment_format = _format_recommendation(first_direction)
+    assert enrichment_format["format_archetype"] in {"carousel", "provider_scene"}
+    assert enrichment_format["cover_role"] == "evidence_or_scene"
+    assert enrichment_format["visual_evidence_need"] == "high"
     assert "run-playbook --scene" in result["run_playbook_command_text"]
 
     serialized = json.dumps(result, ensure_ascii=False)

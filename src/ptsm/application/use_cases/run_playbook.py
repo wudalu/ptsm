@@ -16,9 +16,12 @@ from ptsm.agent_runtime.runtime import (
 from ptsm.application.models import FengkuangRequest, PlaybookRequest
 from ptsm.application.services.side_effect_ledger import SideEffectLedger
 from ptsm.application.use_cases.guide_post import (
+    SUPPORTED_PLAYBOOK_ID,
+    build_topic_guidance,
     build_psychology_topic_guidance,
     resolve_psychology_lane,
 )
+from ptsm.application.use_cases.topic_guidance_packs import TOPIC_GUIDANCE_PACKS
 from ptsm.application.use_cases.xhs_login import (
     DEFAULT_XHS_LOGIN_QRCODE_PATH,
     build_xhs_login_instructions,
@@ -38,6 +41,7 @@ from ptsm.infrastructure.publishers.contracts import Publisher
 from ptsm.infrastructure.publishers.factory import build_publisher
 from ptsm.infrastructure.publishers.xiaohongshu_mcp_publisher import PublisherPreflightError
 from ptsm.playbooks.registry import PlaybookRegistry
+from ptsm.domain.topic_guidance import resolve_topic_lane
 from ptsm.skills.runtime_context import (
     PatternAwareTopicResearchContextBuilder,
     RedditDiscussionContextBuilder,
@@ -202,6 +206,9 @@ def _build_enriched_scene(selection: dict[str, Any]) -> str:
 def _topic_selection_metadata(
     topic_selection: dict[str, Any] | None,
     topic_direction_id: str | None,
+    *,
+    playbook_id: str,
+    scene: str,
 ) -> dict[str, Any] | None:
     if topic_selection is None and not topic_direction_id:
         return None
@@ -210,7 +217,46 @@ def _topic_selection_metadata(
     if topic_direction_id:
         metadata["topic_direction_id"] = topic_direction_id
         metadata.setdefault("source", "guide-post")
+        direction = _resolve_topic_direction_payload(
+            playbook_id=playbook_id,
+            scene=scene,
+            topic_direction_id=topic_direction_id,
+        )
+        if direction is not None:
+            metadata["direction"] = direction
     return metadata
+
+
+def _resolve_topic_direction_payload(
+    *,
+    playbook_id: str,
+    scene: str,
+    topic_direction_id: str,
+) -> dict[str, Any] | None:
+    if playbook_id == SUPPORTED_PLAYBOOK_ID:
+        lane = resolve_psychology_lane(scene=scene)
+        guidance = build_psychology_topic_guidance(
+            scene=scene,
+            lane_name=lane.name,
+        )
+    else:
+        pack = TOPIC_GUIDANCE_PACKS.get(playbook_id)
+        if pack is None:
+            return None
+        lane = resolve_topic_lane(lanes=pack.lanes, scene=scene)
+        guidance = build_topic_guidance(
+            pack=pack,
+            scene=scene,
+            lane_name=lane.name,
+        )
+
+    directions = guidance.get("directions")
+    if not isinstance(directions, list):
+        return None
+    for direction in directions:
+        if isinstance(direction, dict) and direction.get("id") == topic_direction_id:
+            return direction
+    return None
 
 
 def run_playbook(
@@ -290,6 +336,13 @@ def run_playbook(
         print(f"{enriched_scene}")
         print(f"{'='*60}\n")
 
+    topic_selection_metadata = _topic_selection_metadata(
+        topic_selection,
+        request.topic_direction_id,
+        playbook_id=playbook.playbook_id,
+        scene=request.scene,
+    )
+
     run = run_store.start(
         command=command_name,
         account_id=request.account_id,
@@ -367,21 +420,17 @@ def run_playbook(
     )
     effective_thread_id = thread_id or run.run_id
     config = {"configurable": {"thread_id": effective_thread_id}}
-    result = workflow.invoke(
-        {
-            **request.model_dump(mode="python"),
-            "platform": resolved_platform,
-        },
-        config=config,
-    )
+    workflow_payload: dict[str, Any] = {
+        **request.model_dump(mode="python"),
+        "platform": resolved_platform,
+    }
+    if topic_selection_metadata is not None:
+        workflow_payload["topic_selection"] = topic_selection_metadata
+    result = workflow.invoke(workflow_payload, config=config)
     result = {"playbook_id": playbook.playbook_id, **result}
     format_patterns_used = _extract_format_patterns_used(
         result,
         pattern_path=request.format_pattern_path or settings.xhs_pattern_library_path,
-    )
-    topic_selection_metadata = _topic_selection_metadata(
-        topic_selection,
-        request.topic_direction_id,
     )
     result["format_patterns_used"] = format_patterns_used
     if topic_selection_metadata is not None:

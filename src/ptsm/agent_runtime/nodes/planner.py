@@ -53,8 +53,14 @@ def build_planner_node(
                 loaded_skills=loaded_skills,
             )
             if skill_context_resolver is not None
-            else []
+            else {}
         )
+        topic_direction_context = _build_topic_direction_runtime_context(state)
+        if topic_direction_context:
+            runtime_skill_contexts = {
+                **runtime_skill_contexts,
+                "topic_direction_guidance": topic_direction_context,
+            }
         runtime_skill_details = [
             {
                 "skill_name": skill_name,
@@ -83,3 +89,60 @@ def build_planner_node(
         }
 
     return planner
+
+
+def _build_topic_direction_runtime_context(state: ExecutionState) -> str:
+    topic_selection = state.get("topic_selection")
+    if not isinstance(topic_selection, dict):
+        return ""
+    direction = topic_selection.get("direction")
+    if not isinstance(direction, dict):
+        return ""
+    format_recommendation = direction.get("format_recommendation")
+    if not isinstance(format_recommendation, dict):
+        format_recommendation = {}
+
+    direction_id = str(
+        topic_selection.get("topic_direction_id") or direction.get("id") or ""
+    ).strip()
+    lines = [
+        "# XHS Topic Direction Guidance",
+        "- status: confirmed_by_guide_post",
+        f"- source: {_string_value(topic_selection.get('source'), default='guide-post')}",
+        f"- topic_direction_id: {direction_id}",
+        f"- name: {_string_value(direction.get('name'))}",
+        f"- viral_hook: {_string_value(direction.get('viral_hook'))}",
+        f"- content_angle: {_string_value(direction.get('content_angle'))}",
+        f"- saveable_tool: {_string_value(direction.get('saveable_tool'))}",
+        f"- comment_prompt: {_string_value(direction.get('comment_prompt'))}",
+        f"- avoid: {_string_value(direction.get('avoid'))}",
+        f"- format_archetype: {_string_value(format_recommendation.get('format_archetype'))}",
+        f"- cover_role: {_string_value(format_recommendation.get('cover_role'))}",
+        f"- body_shape: {_string_value(format_recommendation.get('body_shape'))}",
+        (
+            "- visual_evidence_need: "
+            f"{_string_value(format_recommendation.get('visual_evidence_need'))}"
+        ),
+        (
+            "- avoid_format: "
+            f"{', '.join(_string_list(format_recommendation.get('avoid_format')))}"
+        ),
+        (
+            "- drafting_constraints: Treat this as the primary selected direction; "
+            "align title, cover, body structure, saveable unit, and comment handoff "
+            "with the format recommendation. Do not switch to dense text poster."
+        ),
+    ]
+    return "\n".join(lines)
+
+
+def _string_value(value: object, *, default: str = "") -> str:
+    text = str(value or "").strip()
+    return text or default
+
+
+def _string_list(value: object) -> list[str]:
+    if isinstance(value, list | tuple):
+        return [str(item).strip() for item in value if str(item).strip()]
+    text = str(value or "").strip()
+    return [text] if text else []

@@ -7,6 +7,7 @@ from typing import Any
 
 from ptsm.application.use_cases.topic_guidance_packs import TOPIC_GUIDANCE_PACKS
 from ptsm.domain.topic_guidance import (
+    FormatRecommendation,
     TopicDirection,
     TopicPack,
     resolve_topic_lane,
@@ -287,6 +288,13 @@ PSYCHOLOGY_TOPIC_DIRECTIONS: tuple[TopicDirection, ...] = (
         saveable_tool="先确认、再说明限制、最后给一个可行选项",
         comment_prompt="你是哪派：A.边界句写好不敢发 B.发了又怕冷？",
         avoid="不要写成万能沟通术，不要鼓励冷暴力或突然断联。",
+        format_recommendation=FormatRecommendation(
+            format_archetype="note_card",
+            cover_role="save_tool",
+            body_shape="micro scene / 3-part boundary sentence / A-B comment vote",
+            visual_evidence_need="low",
+            avoid_format=("dense_text_poster", "universal_script_wall"),
+        ),
         lane_affinity=("关系边界", "职场复盘"),
         scene_keywords=(
             "拒绝",
@@ -569,6 +577,13 @@ PSYCHOLOGY_TOPIC_DIRECTIONS: tuple[TopicDirection, ...] = (
         saveable_tool="5 分钟下班信号：关入口、松肩颈、写明天第一步",
         comment_prompt="你最需要哪种下班信号：A.身体放松 B.脑子停机 C.手机下线？",
         avoid="不要承诺改善睡眠，不给医疗、营养、药物或治疗建议。",
+        format_recommendation=FormatRecommendation(
+            format_archetype="note_card",
+            cover_role="save_tool",
+            body_shape="office shutdown scene / 5-minute recovery card / non-medical boundary note / A-B-C comment vote",
+            visual_evidence_need="low",
+            avoid_format=("dense_text_poster", "medical_before_after"),
+        ),
         lane_affinity=("睡眠恢复", "轻养生", "情绪调节", "职场复盘"),
         scene_keywords=(
             "睡眠恢复",
@@ -883,10 +898,7 @@ def _run_generic_guide_post(
 def format_guide_post_markdown(result: dict[str, Any]) -> str:
     brief = result["brief"]
     directions = "\n".join(
-        f"- {direction['name']}（trend: {direction['trend_signal']} / "
-        f"type: {direction.get('direction_type', 'curated')} / "
-        f"hook: {direction['viral_hook']} / fit: {direction.get('scene_fit', '')}）"
-        f"：{direction['content_angle']}"
+        _format_topic_direction_markdown(direction)
         for direction in result.get("topic_guidance", {}).get("directions", [])
     )
     checklist = "\n".join(
@@ -971,6 +983,22 @@ def format_guide_post_markdown(result: dict[str, Any]) -> str:
             "",
             f"`{result['run_playbook_command_text']}`",
         ]
+    )
+
+
+def _format_topic_direction_markdown(direction: dict[str, Any]) -> str:
+    format_recommendation = direction.get("format_recommendation")
+    if not isinstance(format_recommendation, dict):
+        format_recommendation = {}
+    return (
+        f"- {direction['name']}（trend: {direction['trend_signal']} / "
+        f"type: {direction.get('direction_type', 'curated')} / "
+        f"hook: {direction['viral_hook']} / "
+        f"format: {format_recommendation.get('format_archetype', '')} / "
+        f"cover: {format_recommendation.get('cover_role', '')} / "
+        f"visual: {format_recommendation.get('visual_evidence_need', '')} / "
+        f"fit: {direction.get('scene_fit', '')}）"
+        f"：{direction['content_angle']}"
     )
 
 

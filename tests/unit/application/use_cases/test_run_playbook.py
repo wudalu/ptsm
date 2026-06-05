@@ -130,6 +130,16 @@ class PatternWorkflow(FakeWorkflow):
         return result
 
 
+class CapturingWorkflow(FakeWorkflow):
+    def __init__(self, artifact_path: Path):
+        super().__init__(artifact_path)
+        self.payload: dict[str, object] | None = None
+
+    def invoke(self, payload: dict[str, object], config: dict[str, object] | None = None):
+        self.payload = payload
+        return super().invoke(payload, config)
+
+
 class ImagePlanWorkflow(FakeWorkflow):
     def __init__(self, artifact_path: Path, image_plan: dict[str, str]):
         super().__init__(artifact_path)
@@ -387,6 +397,57 @@ def test_run_playbook_records_format_patterns_used_in_response_and_artifact(
     assert result["run"]["runtime_skill_details"][0]["content_preview"] == (
         "# XHS Format Pattern Library Context"
     )
+
+
+def test_run_playbook_injects_selected_topic_direction_into_workflow_and_artifact(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    artifact_path = tmp_path / "artifact.json"
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "human_enrichment_daily_post",
+                "final_content": {"title": "旧标题"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    workflow = CapturingWorkflow(artifact_path)
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        lambda **_: workflow,
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = run_playbook(
+        PlaybookRequest(
+            scene="把书桌改成十分钟手作角",
+            account_id="acct-enrichment-local",
+            playbook_id="human_enrichment_daily_post",
+            topic_direction_id="enrichment_desk_corner_variable",
+        ),
+        publisher=SuccessfulPublisher(),
+    )
+
+    assert workflow.payload is not None
+    workflow_selection = workflow.payload["topic_selection"]
+    assert isinstance(workflow_selection, dict)
+    assert workflow_selection["topic_direction_id"] == "enrichment_desk_corner_variable"
+    assert workflow_selection["source"] == "guide-post"
+    assert workflow_selection["direction"]["id"] == "enrichment_desk_corner_variable"
+    assert workflow_selection["direction"]["format_recommendation"]["cover_role"] == (
+        "evidence_or_scene"
+    )
+    assert (
+        workflow_selection["direction"]["format_recommendation"]["visual_evidence_need"]
+        == "high"
+    )
+
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+    assert result["topic_selection"] == workflow_selection
+    assert artifact["topic_selection"] == workflow_selection
 
 
 def test_run_playbook_requires_topic_guidance_for_openclaw_psychology(

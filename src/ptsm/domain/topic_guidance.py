@@ -17,7 +17,17 @@ TOPIC_DIRECTION_PUBLIC_FIELDS = (
     "saveable_tool",
     "comment_prompt",
     "avoid",
+    "format_recommendation",
 )
+
+
+@dataclass(frozen=True)
+class FormatRecommendation:
+    format_archetype: str = "note_card"
+    cover_role: str = "save_tool"
+    body_shape: str = "scene hook / 3-step save tool / comment handoff"
+    visual_evidence_need: str = "low"
+    avoid_format: tuple[str, ...] = ("dense_text_poster",)
 
 
 @dataclass(frozen=True)
@@ -44,6 +54,9 @@ class TopicDirection:
     saveable_tool: str
     comment_prompt: str
     avoid: str
+    format_recommendation: FormatRecommendation = field(
+        default_factory=FormatRecommendation
+    )
     lane_affinity: tuple[str, ...] = ()
     scene_keywords: tuple[str, ...] = ()
     base_priority: int = 0
@@ -329,6 +342,12 @@ def _build_open_scene_topic_direction_for_mechanism(
             base_priority=7,
             diversity_key=f"open-scene:{mechanism}",
             direction_type="open_scene",
+            format_recommendation=_format_recommendation_for_open_scene(
+                scene=scene,
+                lane_name=lane_name,
+                facets=facets,
+                mechanism=mechanism,
+            ),
         ),
         facets,
     )
@@ -339,10 +358,82 @@ def public_topic_direction(
     *,
     scene_fit: str = "",
 ) -> dict[str, Any]:
-    data = {field: getattr(direction, field) for field in TOPIC_DIRECTION_PUBLIC_FIELDS}
+    data = {
+        field: _serialize_topic_direction_public_field(getattr(direction, field))
+        for field in TOPIC_DIRECTION_PUBLIC_FIELDS
+    }
     data["best_scenes"] = list(direction.best_scenes)
     data["scene_fit"] = scene_fit or "补充视角：给当前场景一个不同表达角度。"
     return data
+
+
+def _serialize_topic_direction_public_field(value: object) -> object:
+    if isinstance(value, FormatRecommendation):
+        return {
+            "format_archetype": value.format_archetype,
+            "cover_role": value.cover_role,
+            "body_shape": value.body_shape,
+            "visual_evidence_need": value.visual_evidence_need,
+            "avoid_format": list(value.avoid_format),
+        }
+    return value
+
+
+def _format_recommendation_for_open_scene(
+    *,
+    scene: str,
+    lane_name: str,
+    facets: tuple[str, ...],
+    mechanism: str,
+) -> FormatRecommendation:
+    text = f"{scene} {lane_name} {' '.join(facets)}".lower()
+    if any(
+        keyword in text
+        for keyword in (
+            "书桌",
+            "角落",
+            "工位",
+            "床头",
+            "玄关",
+            "手作",
+            "材料",
+            "平铺",
+            "路线",
+            "colorwalk",
+            "颜色",
+            "拍照",
+        )
+    ):
+        return FormatRecommendation(
+            format_archetype="provider_scene",
+            cover_role="evidence_or_scene",
+            body_shape="visual scene / low-cost variable / saved action / comment assignment",
+            visual_evidence_need="high",
+            avoid_format=("dense_text_poster", "fake_before_after"),
+        )
+    if mechanism in {"copyable_line", "comment_pattern"}:
+        return FormatRecommendation(
+            format_archetype="chat_screenshot",
+            cover_role="comment_prompt",
+            body_shape="one copyable line / two response variants / comment continuation",
+            visual_evidence_need="low",
+            avoid_format=("dense_text_poster", "private_chat_leak"),
+        )
+    if mechanism in {"micro_task", "watch_checklist"}:
+        return FormatRecommendation(
+            format_archetype="carousel",
+            cover_role="save_tool",
+            body_shape="task card / 2-3 checklist pages / comment assignment",
+            visual_evidence_need="low",
+            avoid_format=("dense_text_poster",),
+        )
+    return FormatRecommendation(
+        format_archetype="note_card",
+        cover_role="save_tool",
+        body_shape="scene hook / 3-grid save card / comment handoff",
+        visual_evidence_need="low",
+        avoid_format=("dense_text_poster",),
+    )
 
 
 def _keyword_hits(text: str, keywords: tuple[str, ...]) -> int:

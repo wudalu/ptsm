@@ -69,6 +69,12 @@ def test_openclaw_topic_guide_skill_shows_only_returned_direction_fields() -> No
         "avoid note",
         "scene_fit",
         "direction_type",
+        "format_recommendation",
+        "format_archetype",
+        "cover_role",
+        "body_shape",
+        "visual_evidence_need",
+        "avoid_format",
         "open_scene",
     ):
         assert phrase in text
@@ -91,6 +97,7 @@ def test_openclaw_topic_guide_skill_shows_only_returned_direction_fields() -> No
     assert "raw source URLs" in text
     assert "provenance" in text
     assert "Do not copy topic logic" in text
+    assert "Do not invent, expand, or replace PTSM-returned format recommendation" in text
     assert "Do not invent, expand, or replace PTSM-returned image recommendation" in text
     assert "fk_work_object_vent" not in text
     assert "enrichment_desk_corner_variable" not in text

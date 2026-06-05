@@ -642,6 +642,21 @@ def test_guide_post_cli_outputs_non_interactive_psychology_brief(
         "provider_image",
     }
     assert image_recommendation["command_hint"]
+    for direction in payload["topic_guidance"]["directions"]:
+        assert direction["format_recommendation"]["format_archetype"] in {
+            "note_card",
+            "carousel",
+            "chat_screenshot",
+            "provider_scene",
+        }
+        assert direction["format_recommendation"]["cover_role"]
+        assert direction["format_recommendation"]["body_shape"]
+    open_direction = next(
+        direction
+        for direction in payload["topic_guidance"]["directions"]
+        if direction["direction_type"] == "open_scene"
+    )
+    assert open_direction["format_recommendation"]["avoid_format"]
     assert "run-playbook --scene" in payload["run_playbook_command_text"]
 
 
@@ -673,6 +688,9 @@ def test_guide_post_cli_outputs_non_interactive_human_enrichment_brief(
         payload["topic_guidance"]["image_recommendation"]["recommended_backend"]
         == "provider_image"
     )
+    first_direction = payload["topic_guidance"]["directions"][0]
+    assert first_direction["format_recommendation"]["cover_role"] == "evidence_or_scene"
+    assert first_direction["format_recommendation"]["visual_evidence_need"] == "high"
 
 
 @pytest.mark.parametrize(

@@ -93,3 +93,65 @@ def test_planner_separates_runtime_skill_contexts_from_static_skills() -> None:
             ],
         }
     ]
+
+
+def test_planner_adds_topic_direction_guidance_runtime_context() -> None:
+    playbook_root = Path("src/ptsm/playbooks/definitions")
+    skill_root = Path("src/ptsm/skills/builtin")
+    playbooks = PlaybookRegistry(playbook_root=playbook_root)
+    playbook_loader = PlaybookLoader(playbook_root=playbook_root)
+    skills = SkillRegistry(skill_root=skill_root)
+    skill_loader = SkillLoader(skills)
+    resolver = FakeSkillContextResolver()
+
+    planner = build_planner_node(
+        domain="发疯文学",
+        playbook_id="fengkuang_daily_post",
+        playbooks=playbooks,
+        playbook_loader=playbook_loader,
+        skills=skills,
+        skill_loader=skill_loader,
+        skill_context_resolver=resolver,
+    )
+
+    result = planner(
+        {
+            "scene": "把书桌改成十分钟手作角",
+            "platform": "xiaohongshu",
+            "account_id": "acct-fk-local",
+            "topic_selection": {
+                "topic_direction_id": "fk_work_object_vent",
+                "source": "guide-post",
+                "direction": {
+                    "id": "fk_work_object_vent",
+                    "name": "职场物件替人发疯",
+                    "viral_hook": "评论区补一句",
+                    "content_angle": "不是人在发疯，是工牌终于替我把那句话说出来了。",
+                    "saveable_tool": "物件 / 它想说的话 / 体面翻译",
+                    "comment_prompt": "你今天想让哪个物件替你发疯？",
+                    "avoid": "不要拿心理疾病、医院、治疗或用药当笑点。",
+                    "format_recommendation": {
+                        "format_archetype": "note_card",
+                        "cover_role": "save_tool",
+                        "body_shape": "scene hook / three-column save card / comment relay",
+                        "visual_evidence_need": "low",
+                        "avoid_format": ["dense_text_poster", "harmful_joke"],
+                    },
+                },
+            },
+        }
+    )
+
+    context = "\n".join(result["runtime_skill_contents"])
+    assert "# XHS Topic Direction Guidance" in context
+    assert "fk_work_object_vent" in context
+    assert "note_card" in context
+    assert "save_tool" in context
+    assert "dense_text_poster" in context
+    assert result["runtime_skill_details"][-1] == {
+        "skill_name": "topic_direction_guidance",
+        "resource_type": "runtime_context",
+        "resource_id": "topic_direction_guidance:runtime_context",
+        "source_path": None,
+        "content_preview": "# XHS Topic Direction Guidance",
+    }

@@ -39,17 +39,19 @@ uv run python -m ptsm.bootstrap guide-post \
   --format json
 ```
 
-2. Show the user only the returned `topic_guidance.directions`: direction name, `direction_type`, `scene_fit`, trend signal, viral hook, why it may work, best scenes, content angle, saveable tool, comment prompt, and avoid note. When returned direction(s) have `direction_type: open_scene`, label them as PTSM-returned open_scene exploration directions.
+2. Show the user only the returned `topic_guidance.directions`: direction name, `direction_type`, `scene_fit`, trend signal, viral hook, why it may work, best scenes, content angle, saveable tool, comment prompt, avoid note, and each direction's `format_recommendation` fields: `format_archetype`, `cover_role`, `body_shape`, `visual_evidence_need`, and `avoid_format`. When returned direction(s) have `direction_type: open_scene`, label them as PTSM-returned open_scene exploration directions.
 
 3. Ask the user to choose one direction, or pick the best matching direction when the user has already given a clear scene.
 
 If the user changes the scene, call `guide-post` again with the new scene. Do not reuse previous directions for a different scene.
 
-4. After the topic direction is chosen or confirmed, show only the returned `topic_guidance.image_recommendation`: `recommended_backend`, `local_style`, `provider`, `model`, `role`, `text_density`, `max_text_units`, `reason`, `command_hint`, and `fallback`.
+4. After the topic direction is chosen or confirmed, show only that direction's returned `format_recommendation`: `format_archetype`, `cover_role`, `body_shape`, `visual_evidence_need`, and `avoid_format`. Treat it as the body/cover/comment structure constraint for generation; do not add extra format archetypes or replace it with generic dense text poster guidance.
+
+5. Then show only the returned `topic_guidance.image_recommendation`: `recommended_backend`, `local_style`, `provider`, `model`, `role`, `text_density`, `max_text_units`, `reason`, `command_hint`, and `fallback`.
 
 If `recommended_backend` is `provider_image`, describe it as an LLM/provider image recommendation and use the returned `provider` and `model`. If `recommended_backend` is `local_social_screenshot`, describe the returned local style such as `wechat_chat`, `iphone_notes`, or `note_card`. Do not add extra image styles, providers, or model names.
 
-5. Generate through PTSM only after the direction is chosen or confirmed. Pass the chosen direction's id as `--topic-direction-id`.
+6. Generate through PTSM only after the direction is chosen or confirmed. Pass the chosen direction's id as `--topic-direction-id`.
 
 ```bash
 uv run python -m ptsm.bootstrap run-playbook \
@@ -61,7 +63,7 @@ uv run python -m ptsm.bootstrap run-playbook \
   --publish-mode dry-run
 ```
 
-6. Real publishing requires the user's explicit publish intent and the normal PTSM publish flags. Prefer dry-run first.
+7. Real publishing requires the user's explicit publish intent and the normal PTSM publish flags. Prefer dry-run first.
 
 ## Guardrails
 
@@ -71,5 +73,6 @@ uv run python -m ptsm.bootstrap run-playbook \
 - Do not copy topic logic into this skill; PTSM owns the guidance payload.
 - Do not expose directions that are not present in the returned `topic_guidance.directions`.
 - Do not invent, expand, or replace PTSM-returned open_scene direction(s); only display them when they are present in `topic_guidance.directions`.
+- Do not invent, expand, or replace PTSM-returned format recommendation; only display `format_recommendation` when PTSM returns it.
 - Do not invent, expand, or replace PTSM-returned image recommendation; only display `topic_guidance.image_recommendation` when PTSM returns it.
 - For psychology, switch to `ptsm-xhs-psychology`; this generic skill does not own psychology safety boundaries or the `--guidance-ack` gate.

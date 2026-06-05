@@ -22,6 +22,12 @@ def test_openclaw_psychology_skill_documents_two_step_guidance_flow() -> None:
     assert "viral hook" in text
     assert "scene_fit" in text
     assert "direction_type" in text
+    assert "format_recommendation" in text
+    assert "format_archetype" in text
+    assert "cover_role" in text
+    assert "body_shape" in text
+    assert "visual_evidence_need" in text
+    assert "avoid_format" in text
     assert "open_scene" in text
     assert "PTSM-returned open_scene" in text
     assert "topic_guidance.image_recommendation" in text
@@ -29,6 +35,7 @@ def test_openclaw_psychology_skill_documents_two_step_guidance_flow() -> None:
     assert "local_social_screenshot" in text
     assert "provider_image" in text
     assert "model" in text
+    assert "Do not invent, expand, or replace PTSM-returned format recommendation" in text
     assert "Do not invent, expand, or replace PTSM-returned image recommendation" in text
     assert "call `guide-post` again" in text
     assert "睡眠恢复" in text

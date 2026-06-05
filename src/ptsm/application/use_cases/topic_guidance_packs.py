@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from ptsm.domain.topic_guidance import TopicDirection, TopicLane, TopicPack
+from ptsm.domain.topic_guidance import (
+    FormatRecommendation,
+    TopicDirection,
+    TopicLane,
+    TopicPack,
+)
 
 
 FENGKUANG_PACK = TopicPack(
@@ -190,6 +195,13 @@ HUMAN_ENRICHMENT_PACK = TopicPack(
             saveable_tool="原本惯性 / 一个变量 / 今天能试的一步",
             comment_prompt="你先想丰容哪个角落？",
             avoid="不要写成购物清单，不要用 AI 图伪装真实改造。",
+            format_recommendation=FormatRecommendation(
+                format_archetype="provider_scene",
+                cover_role="evidence_or_scene",
+                body_shape="scene photo or generated scene / before friction / one low-cost variable / comment assignment",
+                visual_evidence_need="high",
+                avoid_format=("dense_text_poster", "fake_before_after"),
+            ),
             lane_affinity=("一平米角落",),
             scene_keywords=("书桌", "角落", "工位", "适我主义", "低成本"),
             base_priority=8,
@@ -205,6 +217,13 @@ HUMAN_ENRICHMENT_PACK = TopicPack(
             saveable_tool="关入口 / 留明天第一步 / 放一个低刺激物件",
             comment_prompt="你想给睡前加哪一个下线信号？",
             avoid="不要做助眠治疗承诺，不要把失眠简单归因于自控力。",
+            format_recommendation=FormatRecommendation(
+                format_archetype="provider_scene",
+                cover_role="evidence_or_scene",
+                body_shape="quiet bedside scene / shutdown signal / 3-step low-stimulus action",
+                visual_evidence_need="high",
+                avoid_format=("dense_text_poster", "medical_before_after"),
+            ),
             lane_affinity=("睡前下线",),
             scene_keywords=("床头", "睡前", "下线", "充电线", "十分钟"),
             base_priority=7,
@@ -220,6 +239,13 @@ HUMAN_ENRICHMENT_PACK = TopicPack(
             saveable_tool="路线 / 颜色 / 一张细节照片",
             comment_prompt="你明天的通勤颜色任务是什么？",
             avoid="不要写成旅游攻略，也不要暗示危险拍摄或影响通行。",
+            format_recommendation=FormatRecommendation(
+                format_archetype="carousel",
+                cover_role="evidence_or_scene",
+                body_shape="route detail photo / color mission / 2-3 captured details / comment assignment",
+                visual_evidence_need="high",
+                avoid_format=("dense_text_poster", "stock_travel_guide"),
+            ),
             lane_affinity=("通勤路线",),
             scene_keywords=("通勤", "路线", "colorwalk", "颜色", "下班路"),
             base_priority=6,
@@ -235,6 +261,13 @@ HUMAN_ENRICHMENT_PACK = TopicPack(
             saveable_tool="材料 / 十分钟动作 / 停止点",
             comment_prompt="你最想摊开哪一种材料？",
             avoid="不要写成昂贵工具种草，不要把失败手作包装成完美教程。",
+            format_recommendation=FormatRecommendation(
+                format_archetype="carousel",
+                cover_role="evidence_or_scene",
+                body_shape="material spread / 10-minute process / stop point / imperfect result",
+                visual_evidence_need="high",
+                avoid_format=("dense_text_poster", "perfect_tutorial_poster"),
+            ),
             lane_affinity=("手作材料",),
             scene_keywords=("手作", "材料", "心流", "平铺", "十分钟"),
             base_priority=6,
@@ -250,6 +283,13 @@ HUMAN_ENRICHMENT_PACK = TopicPack(
             saveable_tool="路线 / 颜色任务 / 拍到的一处细节",
             comment_prompt="你明天想找哪一种颜色？",
             avoid="不要鼓励危险拍摄，不把普通通勤包装成旅游攻略。",
+            format_recommendation=FormatRecommendation(
+                format_archetype="carousel",
+                cover_role="evidence_or_scene",
+                body_shape="color detail cover / route task / one captured detail / comment assignment",
+                visual_evidence_need="high",
+                avoid_format=("dense_text_poster", "stock_travel_guide"),
+            ),
             lane_affinity=("通勤路线",),
             scene_keywords=("通勤", "下班路", "绿色", "colorwalk", "颜色", "路线", "拍照"),
             base_priority=5,
@@ -266,6 +306,13 @@ HUMAN_ENRICHMENT_PACK = TopicPack(
             saveable_tool="必带 / 可缓冲 / 今天先减掉的一样",
             comment_prompt="你的包里最想先留哪个缓冲小物？",
             avoid="不要变成购物清单，不制造精致生活焦虑。",
+            format_recommendation=FormatRecommendation(
+                format_archetype="provider_scene",
+                cover_role="evidence_or_scene",
+                body_shape="bag corner scene / keep-remove-buffer checklist / comment assignment",
+                visual_evidence_need="high",
+                avoid_format=("dense_text_poster", "shopping_flatlay"),
+            ),
             lane_affinity=("一平米角落", "通勤路线"),
             scene_keywords=("包", "通勤", "外出", "小物", "缓冲", "出门", "安全感"),
             base_priority=4,
@@ -732,6 +779,13 @@ AI_TECH_PACK = TopicPack(
             saveable_tool="可直接复制 prompt 成品 + 任务 / 背景 / 输出格式 / 反例标注",
             comment_prompt="评论区晒一个你跑通的好用 prompt，大家互相抄作业。",
             avoid="不要包装成万能提示词，不承诺一次提问就能稳定产出完美结果。",
+            format_recommendation=FormatRecommendation(
+                format_archetype="note_card",
+                cover_role="save_tool",
+                body_shape="copyable prompt block / task-background-output-format labels / one failure example / comment prompt exchange",
+                visual_evidence_need="low",
+                avoid_format=("dense_text_poster", "tool_hype_poster"),
+            ),
             lane_affinity=("提示词构建", "好用 prompt"),
             scene_keywords=(
                 "prompt",
