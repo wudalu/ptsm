@@ -1129,6 +1129,146 @@ def test_run_fengkuang_real_publish_always_removes_watermark_for_images(
     assert artifact["watermark_removal"]["status"] == "completed"
 
 
+def test_run_fengkuang_real_publish_skips_watermark_removal_for_local_generated_images(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    artifact_path = tmp_path / "artifact.json"
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "fengkuang_daily_post",
+                "final_content": {"title": "旧标题"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    publisher = CapturingPublisher()
+
+    class FailingWatermarkRemover:
+        def __init__(self, **_: object) -> None:
+            raise AssertionError("local renderer images should not be cleaned")
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_fengkuang_workflow",
+        lambda **_: FakeWorkflow(artifact_path),
+    )
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_image_backend",
+        lambda _settings: None,
+    )
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.WatermarkRemover",
+        FailingWatermarkRemover,
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = run_fengkuang_playbook(
+        FengkuangRequest(
+            scene="领导18:57发来一句在吗",
+            platform="xiaohongshu",
+            account_id="acct-fk-local",
+            publish_mode="mcp-real",
+            local_image_style="wechat_chat",
+        ),
+        settings=Settings.model_construct(
+            default_model_provider="deterministic",
+            deepseek_api_key=None,
+            watermark_removal_enabled=False,
+        ),
+        publisher=publisher,
+    )
+
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+
+    assert result["image_generation"]["provider"] == "local_note_card"
+    assert result["image_generation"]["provenance"]["source"] == "ptsm_local_renderer"
+    assert publisher.received_image_paths
+    assert result["watermark_removal"] == {
+        "status": "skipped",
+        "policy": "skipped_for_local_renderer",
+        "reason": "local_renderer_trusted_no_watermark",
+    }
+    assert artifact["watermark_removal"] == result["watermark_removal"]
+
+
+def test_run_fengkuang_real_publish_still_removes_watermark_for_provider_generated_images(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    artifact_path = tmp_path / "artifact.json"
+    generated_path = tmp_path / "provider-generated.png"
+    cleaned_path = tmp_path / "generated_images" / "provider-generated-nowm.png"
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "fengkuang_daily_post",
+                "final_content": {"title": "旧标题"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    publisher = CapturingPublisher()
+    image_backend = CapturingImageBackend(generated_path)
+    calls: list[dict[str, object]] = []
+
+    class FakeWatermarkRemover:
+        def __init__(self, **kwargs: object) -> None:
+            calls.append({"init": kwargs})
+
+        def remove(self, *, image_path: Path, output_dir: Path, output_stem: str):
+            calls.append(
+                {
+                    "image_path": str(image_path),
+                    "output_dir": str(output_dir),
+                    "output_stem": output_stem,
+                }
+            )
+            return {
+                "status": "removed",
+                "provider": "fake-remover",
+                "source_path": str(image_path),
+                "output_path": str(cleaned_path),
+            }
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_fengkuang_workflow",
+        lambda **_: FakeWorkflow(artifact_path),
+    )
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_image_backend",
+        lambda _settings: image_backend,
+    )
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.WatermarkRemover",
+        FakeWatermarkRemover,
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = run_fengkuang_playbook(
+        FengkuangRequest(
+            scene="书桌角落换一个变量",
+            platform="xiaohongshu",
+            account_id="acct-fk-local",
+            publish_mode="mcp-real",
+        ),
+        settings=Settings.model_construct(
+            default_model_provider="deterministic",
+            deepseek_api_key=None,
+            pic_model_api_key="fake-key",
+            watermark_removal_enabled=False,
+        ),
+        publisher=publisher,
+    )
+
+    assert calls[1]["image_path"] == str(generated_path)
+    assert publisher.received_image_paths == [str(cleaned_path)]
+    assert result["image_generation"]["provider"] == "bailian"
+    assert result["watermark_removal"]["status"] == "completed"
+
+
 def test_run_fengkuang_playbook_skips_generation_for_dry_run_without_flag(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -1493,6 +1633,57 @@ def test_run_fengkuang_local_renderer_records_no_watermark_policy(
     )
 
 
+def test_run_fengkuang_generated_image_records_asset_ledger_entry(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    artifact_path = tmp_path / "artifact.json"
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "fengkuang_daily_post",
+                "final_content": {"title": "旧标题"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    publisher = CapturingPublisher()
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_fengkuang_workflow",
+        lambda **_: FakeWorkflow(artifact_path),
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = run_fengkuang_playbook(
+        FengkuangRequest(
+            scene="领导18:57发来一句在吗",
+            platform="xiaohongshu",
+            account_id="acct-fk-local",
+            auto_generate_images=True,
+            local_image_style="wechat_chat",
+        ),
+        publisher=publisher,
+    )
+
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+    ledger = result["image_generation"]["asset_ledger"]
+    ledger_path = Path(ledger["ledger_path"])
+    entries = [
+        json.loads(line)
+        for line in ledger_path.read_text(encoding="utf-8").splitlines()
+    ]
+
+    assert ledger["status"] == "recorded"
+    assert artifact["image_generation"]["asset_ledger"] == ledger
+    assert len(entries) == 1
+    assert entries[0]["image_path"] == result["image_generation"]["generated_image_paths"][0]
+    assert entries[0]["playbook_id"] == "fengkuang_daily_post"
+    assert entries[0]["account_id"] == "acct-fk-local"
+    assert entries[0]["provenance_source"] == "ptsm_local_renderer"
+
+
 def test_build_note_card_image_payload_includes_local_image_style() -> None:
     payload = json.loads(
         _build_note_card_image_payload(
@@ -1714,6 +1905,56 @@ def test_build_image_generation_prompt_uses_image_form_review() -> None:
     assert "清单" in prompt
     assert "氛围参考" in prompt
     assert "不要伪装成真实前后对比" in prompt
+
+
+def test_build_image_generation_prompt_uses_provider_realism_policy() -> None:
+    prompt = _build_image_generation_prompt(
+        scene="把书桌改成一个十分钟手作角",
+        persona_prompt="# Human Enrichment Persona\n真实生活角落。",
+        runtime_skill_contents=[],
+        final_content={
+            "title": "给书桌加一个变量",
+            "image_text": "今天先丰容这个角落",
+            "body": "桌面、剪刀、胶带和一小块布料摊开，像刚试完一个小实验。",
+            "hashtags": ["#人类丰容计划"],
+        },
+        image_plan={
+            "requested_backend": "provider_image",
+            "role": "evidence_or_scene",
+            "prompt_focus": "书桌角落、材料平铺、真实手作过程",
+        },
+    )
+
+    assert "手机随手拍" in prompt
+    assert "自然光或室内环境光" in prompt
+    assert "不完美构图" in prompt
+    assert "边缘轻微裁切" in prompt
+    assert "真实物件、空间或过程" in prompt
+    assert "不要塑料皮肤" in prompt
+    assert "不要伪造真实界面截图" in prompt
+
+
+def test_build_image_generation_prompt_allows_only_short_overlay_for_cover_hook() -> None:
+    prompt = _build_image_generation_prompt(
+        scene="普通人看懂AI更新",
+        persona_prompt="# AI Tech Persona\n像真实创作者。",
+        runtime_skill_contents=[],
+        final_content={
+            "title": "这个AI更新被低估了",
+            "image_text": "别只看参数",
+            "body": "一个桌面上的手机和电脑，像刚刚试完工具。",
+            "hashtags": ["#AI工具"],
+        },
+        image_plan={
+            "requested_backend": "provider_image",
+            "role": "cover_hook",
+            "prompt_focus": "桌面设备场景",
+        },
+    )
+
+    assert "最多一行短字" in prompt
+    assert "不要做营销海报" in prompt
+    assert "不要密集排版" in prompt
 
 
 def test_run_fengkuang_playbook_passes_runtime_context_into_image_prompt(

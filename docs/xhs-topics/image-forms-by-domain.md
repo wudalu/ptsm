@@ -25,8 +25,9 @@ related_paths:
 - 默认 `text_density=low`。
 - 封面最多 1 到 3 个文字单元，用 `max_text_units` 表达。
 - 本地截图式图片只放短句、清单项或聊天气泡，不放完整正文段落。
+- 本地截图可以用 `golden_line` / `quote_line` 提供一句可保存短句；微信聊天可以用结构化 `chat_messages` 提供真实昵称、关系和对话逻辑。
 - 有真实物件、空间、材料、过程、界面或人物氛围时，优先视觉证据，不做纯文字海报。
-- AI 生成图只能做氛围参考，不能伪装成真实前后对比、真实数据截图或真实观察证据。
+- AI/provider 生成图只能做氛围参考，不能伪装成真实前后对比、真实数据截图或真实观察证据；prompt 应明确手机随手拍、自然光或室内环境光、不完美构图、边缘轻微裁切和真实物件/空间/过程，避免营销海报感、塑料皮肤和 fake UI。
 
 ## Domain Matrix
 
@@ -43,9 +44,9 @@ related_paths:
 
 ## Local Style Selection
 
-- `wechat_chat`: 当正文核心是消息、群聊、可复制回复或评论接龙时使用。`role=comment_prompt`，`max_text_units=2`。当前本地 renderer 画的是内容区聊天转录，不画完整手机头部、输入栏或头像；需要像真实对话时，正文或 `image_plan` 应提供结构化 `chat_messages` / `messages`，或 `同事：...`、`我：...` 这类 speaker-prefixed 多行文本。`theme=dark` 和 `chat_times` 可用于复刻深色聊天截图与时间分隔。
-- `iphone_notes`: 当正文核心是可保存工具、三步练习、英语句型或小纸条时使用。`role=save_tool`，`max_text_units=3`。
-- `note_card`: 当正文核心是一句强判断或短金句时使用。`role=cover_hook` 或 `shareable_line`，`max_text_units=1` 到 `2`。
+- `wechat_chat`: 当正文核心是消息、群聊、可复制回复或评论接龙时使用。`role=comment_prompt`，`max_text_units=2`。当前本地 renderer 画的是内容区聊天转录，不画完整手机头部、输入栏或头像；需要像真实对话时，正文或 `image_plan` 应提供结构化 `chat_messages` / `messages`，或 `同事：...`、`我：...` 这类 speaker-prefixed 多行文本。speaker 应尽量是模拟真实用户的昵称或关系名，例如 `林主管`、`小周`、`阿晴`、`我`；`theme=dark`、`status_time` 和 `chat_times` 可用于复刻深色聊天截图与时间分隔。没有显式时间时，renderer 会按 scene 时间或 payload hash 确定性生成，不固定为 `9:41`。
+- `iphone_notes`: 当正文核心是可保存工具、三步练习、英语句型或小纸条时使用。`role=save_tool`，`max_text_units=3`。可用 `golden_line` / `quote_line` 指定一条短句；缺省 note 时间也会随 payload 确定性变化。
+- `note_card`: 当正文核心是一句强判断或短金句时使用。`role=cover_hook` 或 `shareable_line`，`max_text_units=1` 到 `2`。优先用正文自然抽出的 `golden_line`，不要显示“金句：”这类内部标签。
 - `provider_image`: 当用户需要看见空间、物件、材料、人物氛围、过程、设备或界面感时使用。`role=evidence_or_scene`，`max_text_units=0` 到 `1`。
 
 ## Psychology Default

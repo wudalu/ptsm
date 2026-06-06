@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -7,6 +8,8 @@ import textwrap
 from typing import Any
 
 from PIL import Image, ImageDraw, ImageFont
+
+from ptsm.infrastructure.images.watermark_policy import local_renderer_provenance
 
 
 class NoteCardImageBackend:
@@ -42,6 +45,7 @@ class NoteCardImageBackend:
             "generated_image_paths": [str(output_path)],
             "output_dir": str(output_dir),
             "output_stem": output_stem,
+            "provenance": local_renderer_provenance("NoteCardImageBackend"),
         }
 
     def _render(self, payload: dict[str, Any], *, style: str) -> Image.Image:
@@ -205,7 +209,12 @@ class NoteCardImageBackend:
             max_lines=3,
         )
         y += int(18 * scale)
-        draw.text((margin, y), "今天 9:41", fill=(142, 142, 147), font=date_font)
+        draw.text(
+            (margin, y),
+            _iphone_notes_timestamp_from_payload(payload),
+            fill=(142, 142, 147),
+            font=date_font,
+        )
         y += int(64 * scale)
 
         if image_text:
@@ -484,10 +493,39 @@ def _select_display_body(payload: dict[str, Any]) -> str:
         return body
 
     max_units = _display_max_text_units(image_plan, default=2)
+    priority_lines = _image_plan_priority_display_lines(
+        image_plan,
+        max_units=max_units,
+    )
+    if priority_lines:
+        return "\n".join(priority_lines)
     short_lines = _extract_short_display_lines(body, max_units=max_units)
     if short_lines:
         return "\n".join(short_lines[:max_units])
     return ""
+
+
+def _image_plan_priority_display_lines(
+    image_plan: dict[str, Any],
+    *,
+    max_units: int,
+) -> list[str]:
+    raw_value = None
+    for key in ("golden_line", "quote_line", "shareable_line", "cover_line"):
+        if image_plan.get(key):
+            raw_value = image_plan[key]
+            break
+    if raw_value is None:
+        return []
+    if isinstance(raw_value, list):
+        candidates = [str(value).strip() for value in raw_value if str(value).strip()]
+    else:
+        candidates = [
+            line.strip()
+            for line in str(raw_value).splitlines()
+            if line.strip()
+        ]
+    return [_truncate_for_canvas(line, 32) for line in candidates[:max_units]]
 
 
 def _uses_low_density_display(image_plan: dict[str, Any]) -> bool:
@@ -1074,7 +1112,7 @@ def _wechat_status_time_from_payload(payload: dict[str, Any]) -> str:
         value = str(candidate or "").strip()
         if value:
             return _truncate_for_canvas(value, 5)
-    return "9:41"
+    return _deterministic_time_from_payload(payload)
 
 
 def _wechat_unread_count_from_payload(payload: dict[str, Any]) -> str:
@@ -1106,7 +1144,8 @@ def _wechat_time_labels_from_payload(payload: dict[str, Any]) -> list[str]:
             for part in raw_value
             if str(part).strip()
         ][:3]
-    return []
+    first = _deterministic_time_from_payload(payload)
+    return [first, _time_plus_minutes(first, 11)]
 
 
 def _wechat_show_avatars(payload: dict[str, Any]) -> bool:
@@ -1133,8 +1172,91 @@ def _wechat_speaker_label(speaker: str, payload: dict[str, Any]) -> str:
     if normalized in {"me", "我"}:
         return "我"
     if normalized == "other":
-        return _wechat_header_title_from_payload(payload)
+        title = _wechat_header_title_from_payload(payload)
+        if title != "朋友":
+            return title
+        return _simulated_chat_nickname(payload)
     return normalized or _wechat_header_title_from_payload(payload)
+
+
+def _iphone_notes_timestamp_from_payload(payload: dict[str, Any]) -> str:
+    image_plan = payload.get("image_plan")
+    candidates: list[object] = [
+        payload.get("note_time"),
+        payload.get("status_time"),
+    ]
+    if isinstance(image_plan, dict):
+        candidates.extend(
+            [
+                image_plan.get("note_time"),
+                image_plan.get("status_time"),
+            ]
+        )
+    for candidate in candidates:
+        value = str(candidate or "").strip()
+        if value:
+            if value.startswith("今天 "):
+                return _truncate_for_canvas(value, 8)
+            return f"今天 {_truncate_for_canvas(value, 5)}"
+    return f"今天 {_deterministic_time_from_payload(payload)}"
+
+
+def _deterministic_time_from_payload(payload: dict[str, Any]) -> str:
+    text = " ".join(
+        str(payload.get(key) or "")
+        for key in ("scene", "title", "image_text", "body", "prompt")
+    )
+    hinted = _extract_time_hint(text)
+    if hinted:
+        return hinted
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    minute_seed = int(digest[:8], 16)
+    hour = 8 + (minute_seed % 16)
+    minute = (minute_seed // 16) % 60
+    return f"{hour:02d}:{minute:02d}"
+
+
+def _extract_time_hint(text: str) -> str:
+    colon_match = re.search(r"(?<!\d)([01]?\d|2[0-3])[:：]([0-5]\d)", text)
+    if colon_match is not None:
+        return f"{int(colon_match.group(1)):02d}:{colon_match.group(2)}"
+    point_match = re.search(r"(?<!\d)([01]?\d|2[0-3])点(半|[0-5]?\d分?)?", text)
+    if point_match is None:
+        return ""
+    hour = int(point_match.group(1))
+    minute_text = point_match.group(2) or ""
+    if minute_text == "半":
+        minute = 30
+    elif minute_text:
+        minute = int(re.sub(r"\D", "", minute_text) or "0")
+    else:
+        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        minute = int(digest[:4], 16) % 12
+    return f"{hour:02d}:{minute:02d}"
+
+
+def _time_plus_minutes(value: str, minutes: int) -> str:
+    match = re.match(r"^([01]?\d|2[0-3]):([0-5]\d)$", value)
+    if match is None:
+        return value
+    total = (int(match.group(1)) * 60 + int(match.group(2)) + minutes) % (24 * 60)
+    return f"{total // 60:02d}:{total % 60:02d}"
+
+
+def _simulated_chat_nickname(payload: dict[str, Any]) -> str:
+    text = " ".join(
+        str(payload.get(key) or "")
+        for key in ("scene", "title", "image_text", "body", "prompt")
+    )
+    if any(keyword in text for keyword in ("领导", "主管", "老板", "汇报")):
+        return "林主管"
+    if any(keyword in text for keyword in ("朋友", "闺蜜", "半夜", "关系", "消息")):
+        return "阿晴"
+    if any(keyword in text for keyword in ("同事", "工位", "会议", "需求")):
+        return "小周"
+    names = ("阿夏", "小林", "阿茉", "小许")
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    return names[int(digest[:4], 16) % len(names)]
 
 
 def _chat_speaker_from_line(line: str) -> str | None:

@@ -33,6 +33,7 @@ from ptsm.config.settings import Settings, get_settings
 from ptsm.infrastructure.observability.run_store import RunStore
 from ptsm.infrastructure.artifacts.file_store import FileArtifactStore
 from ptsm.infrastructure.memory.store import ExecutionMemoryStore
+from ptsm.infrastructure.images.asset_ledger import append_generated_image_assets
 from ptsm.infrastructure.images.factory import build_image_backend
 from ptsm.infrastructure.images.note_card_backend import NoteCardImageBackend
 from ptsm.infrastructure.images.watermark_policy import generated_no_watermark_policy
@@ -517,9 +518,23 @@ def run_playbook(
 
         if image_generation is not None:
             _ensure_generated_image_watermark_policy(image_generation)
+            asset_ledger = append_generated_image_assets(
+                base_dir=Path.cwd(),
+                artifact_path=str(result["artifact_path"]),
+                playbook_id=playbook.playbook_id,
+                account_id=account.account_id,
+                image_generation=image_generation,
+            )
+            if asset_ledger is not None:
+                image_generation["asset_ledger"] = asset_ledger
 
         watermark_removal = None
-        if _should_remove_watermark(
+        if _should_skip_watermark_removal_for_local_renderer(
+            image_generation=image_generation,
+            image_paths=resolved_image_paths,
+        ):
+            watermark_removal = _local_renderer_watermark_removal_skipped_result()
+        elif _should_remove_watermark(
             publish_mode=publish_mode,
             watermark_removal_enabled=settings.watermark_removal_enabled,
             image_paths=resolved_image_paths,
@@ -940,6 +955,30 @@ def _watermark_removal_policy(
     return "disabled"
 
 
+def _should_skip_watermark_removal_for_local_renderer(
+    *,
+    image_generation: dict[str, Any] | None,
+    image_paths: Sequence[str],
+) -> bool:
+    if not image_paths or not isinstance(image_generation, dict):
+        return False
+    provenance = image_generation.get("provenance")
+    if not isinstance(provenance, dict):
+        return False
+    return (
+        provenance.get("source") == "ptsm_local_renderer"
+        and provenance.get("watermark_removal") == "skip"
+    )
+
+
+def _local_renderer_watermark_removal_skipped_result() -> dict[str, object]:
+    return {
+        "status": "skipped",
+        "policy": "skipped_for_local_renderer",
+        "reason": "local_renderer_trusted_no_watermark",
+    }
+
+
 def _ensure_generated_image_watermark_policy(image_generation: dict[str, Any]) -> None:
     if image_generation.get("watermark_policy"):
         return
@@ -964,15 +1003,16 @@ def _build_image_generation_prompt(
     image_text = _truncate_text(str(final_content.get("image_text", "")).strip(), 120)
     body = _truncate_text(
         " ".join(str(final_content.get("body", "")).split()),
-        260,
+        220,
     )
-    persona = _truncate_text(" ".join((persona_prompt or "").split()), 180)
+    persona = _truncate_text(" ".join((persona_prompt or "").split()), 140)
     runtime_context = _truncate_text(
         _summarize_runtime_skill_contents(runtime_skill_contents or []),
         120,
     )
     image_form = _truncate_text(_summarize_image_form(content_review), 120)
     image_plan_summary = _truncate_text(_summarize_image_plan(image_plan), 140)
+    provider_policy = _provider_image_prompt_policy(image_plan)
     prompt = (
         "为小红书帖子生成一张 3:4 竖版封面图，适合中文社交媒体发布。"
         f"主题场景：{scene_text}。"
@@ -983,12 +1023,29 @@ def _build_image_generation_prompt(
         f"实时话题切口：{runtime_context or '贴近日常讨论热感即可'}。"
         f"图片形式参考：{image_form or '单张真实感封面'}。"
         f"图片策略：{image_plan_summary or '未指定，按真实感封面处理'}。"
+        f"{provider_policy}"
         "要求：中文互联网感，构图干净，有留白，像真人账号会发的封面"
         "，避免机械对称、塑料质感和营销海报感，保留真实随手拍氛围，"
         "AI 生成图只作为氛围参考，不要伪装成真实前后对比或真实观察证据，"
         "真人随手拍，不要复杂小字，不要在图片上添加任何标签文字如#发疯文学等话题标签，不要额外水印。"
     )
     return _truncate_text(prompt, 800)
+
+
+def _provider_image_prompt_policy(image_plan: dict[str, Any] | None) -> str:
+    metadata = _image_generation_decision_metadata(image_plan or {})
+    role = metadata.get("role", "").lower()
+    parts = [
+        "真实感约束：手机随手拍，自然光或室内环境光，不完美构图，边缘轻微裁切；",
+        "不要塑料皮肤，不要伪造真实界面截图，不要做营销海报，不要密集排版。",
+    ]
+    if role == "evidence_or_scene":
+        parts.append("画面重点是真实物件、空间或过程，不用大字海报。")
+    elif role == "cover_hook":
+        parts.append("如需文字，最多一行短字，像创作者后期轻贴的封面字。")
+    elif role in {"save_tool", "comment_prompt"}:
+        parts.append("不要让外部模型伪造聊天或备忘录截图，只生成真实桌面/纸张氛围。")
+    return "".join(parts)
 
 
 def _build_note_card_image_payload(

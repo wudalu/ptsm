@@ -206,7 +206,7 @@ uv run python -m ptsm.bootstrap run-fengkuang \
   --publish-visibility "仅自己可见"
 ```
 
-真实发布只要最终有图片，就会先执行 `watermark_removal` 后处理再把图片交给 XHS MCP。私密帖通常需要在小红书 App 人工确认样式，因为上游 MCP 可能不会返回可自动核验的 `post_id`。
+真实发布按图片来源执行 `watermark_removal`：PTSM 本地 renderer 图会跳过去水印，provider/LLM 图和手动图片会先清理再把图片交给 XHS MCP。私密帖通常需要在小红书 App 人工确认样式，因为上游 MCP 可能不会返回可自动核验的 `post_id`。
 
 更细的登录、发布和诊断说明见 [`docs/operations/local-runbook.md`](local-runbook.md)。
 

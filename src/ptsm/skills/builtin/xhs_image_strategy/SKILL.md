@@ -24,13 +24,16 @@ assets_present: false
 - `cover_text_strategy`: 一句话说明封面只放哪些短文字。
 - `reason`: 一句话说明为什么这个图片形式适合当前主题。
 - `prompt_focus`: 可选，一句话告诉图片生成器应该突出什么。
+- `golden_line` / `quote_line`: 可选。当本地 `note_card` 或 `iphone_notes` 只需要一句短金句时填写，必须是读者可直接保存或转发的一句话，不要带“金句：”标签。
+- `chat_messages` / `messages`: 可选。当 `style=wechat_chat` 时优先输出结构化消息，每条包含 `speaker` 和 `text`；speaker 用真实感昵称或关系名，如 `林主管`、`小周`、`阿晴`、`我`，不要只写 `other`。
+- `chat_times` / `status_time`: 可选。只有场景里有明确时间或时间张力时填写，例如 `18:57`、`23:22`；没有时可省略，renderer 会确定性生成不同时间。
 
 选择规则：
 
-- 微信聊天记录：适合领导/老板/同事/群聊/在吗/消息草稿/可复制回复这类内容，`role=comment_prompt`，`text_density=low`，`max_text_units=2`，`backend=local_social_screenshot`，`style=wechat_chat`。
+- 微信聊天记录：适合领导/老板/同事/群聊/在吗/消息草稿/可复制回复这类内容，`role=comment_prompt`，`text_density=low`，`max_text_units=2`，`backend=local_social_screenshot`，`style=wechat_chat`。如果输出聊天内容，尽量给 `chat_messages`，使用像真实用户的昵称或关系名，并让对话有因果：触发消息 -> 我的反应/回复 -> 对方补充或评论引子。
 - iPhone 记事本：适合清单、三栏工具、5分钟练习、边界句、英语句型、小纸条、可收藏模板，`role=save_tool`，`text_density=low`，`max_text_units=3`，`backend=local_social_screenshot`，`style=iphone_notes`。
-- 小红书笔记卡：适合短金句、强封面句、标题和封面语已经能撑住点击的内容，`role=cover_hook` 或 `shareable_line`，`text_density=low`，`max_text_units=1` 到 `2`，`backend=local_social_screenshot`，`style=note_card`。
-- 外部图片模型：适合真实物件、空间、材料、手作过程、桌面角落、路线感、生活氛围图，`role=evidence_or_scene`，`text_density=low`，`max_text_units=1`，`backend=provider_image`。
+- 小红书笔记卡：适合短金句、强封面句、标题和封面语已经能撑住点击的内容，`role=cover_hook` 或 `shareable_line`，`text_density=low`，`max_text_units=1` 到 `2`，`backend=local_social_screenshot`，`style=note_card`。可填写 `golden_line`，但必须是正文自然抽出的短句。
+- 外部图片模型：适合真实物件、空间、材料、手作过程、桌面角落、路线感、生活氛围图，`role=evidence_or_scene`，`text_density=low`，`max_text_units=1`，`backend=provider_image`。`prompt_focus` 要写清楚真实物件、空间或过程；不要要求外部模型伪造聊天截图、备忘录截图、真实产品界面或新闻截图。
 
 领域默认：
 
@@ -45,3 +48,4 @@ assets_present: false
 - 图片上不要放话题标签、水印、密集小字。
 - 不要把 AI 图伪装成真实前后对比、真实观察证据或真实截图证据。
 - 本地截图样式优先承载正文里的可复制句、聊天语境或保存工具；低密度封面只允许 1 到 3 个短文字单元。
+- provider 图优先像真人手机随手拍：自然光或室内环境光、不完美构图、边缘轻微裁切、真实物件/空间/过程；不要营销海报感、塑料皮肤或 fake UI。

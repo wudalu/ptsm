@@ -24,3 +24,12 @@ def generated_no_watermark_policy(
         "provider": provider,
         "provider_controls": provider_controls,
     }
+
+
+def local_renderer_provenance(renderer: str) -> dict[str, object]:
+    """Return provenance metadata for trusted local PTSM-rendered images."""
+    return {
+        "source": "ptsm_local_renderer",
+        "renderer": renderer,
+        "watermark_removal": "skip",
+    }

@@ -11,6 +11,8 @@ from ptsm.infrastructure.images.note_card_backend import (
     _chat_messages_from_payload,
     _select_display_body,
     _wechat_header_title_from_payload,
+    _wechat_speaker_label,
+    _wechat_time_labels_from_payload,
 )
 
 
@@ -85,6 +87,11 @@ def test_note_card_backend_renders_nonblank_png(tmp_path: Path) -> None:
     assert result["status"] == "generated"
     assert result["provider"] == "local_note_card"
     assert result["style"] == "xhs_note_card_v1"
+    assert result["provenance"] == {
+        "source": "ptsm_local_renderer",
+        "renderer": "NoteCardImageBackend",
+        "watermark_removal": "skip",
+    }
     assert output_path.exists()
     assert output_path.suffix == ".png"
 
@@ -168,6 +175,94 @@ def test_note_card_backend_renders_iphone_notes_style(tmp_path: Path) -> None:
     assert len({tuple(pixel) for pixel in sampled_pixels}) >= 5
 
 
+def test_iphone_notes_default_timestamp_varies_by_payload(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    drawn_texts: list[str] = []
+    original_text = ImageDraw.ImageDraw.text
+
+    def capture_text(self, xy, text, *args, **kwargs):
+        drawn_texts.append(str(text))
+        return original_text(self, xy, text, *args, **kwargs)
+
+    monkeypatch.setattr(ImageDraw.ImageDraw, "text", capture_text)
+    backend = NoteCardImageBackend(width=540, height=720)
+
+    for stem, scene in (
+        ("first", "领导18:57发来一句在吗"),
+        ("second", "周日23点想起明天晨会"),
+    ):
+        backend.generate(
+            prompt=json.dumps(
+                {
+                    "style": "iphone_notes_v1",
+                    "scene": scene,
+                    "title": scene,
+                    "image_plan": {
+                        "role": "save_tool",
+                        "text_density": "low",
+                    },
+                },
+                ensure_ascii=False,
+            ),
+            output_dir=tmp_path,
+            output_stem=stem,
+        )
+
+    timestamps = [text for text in drawn_texts if text.startswith("今天 ")]
+
+    assert len(timestamps) == 2
+    assert "今天 9:41" not in timestamps
+    assert timestamps[0] != timestamps[1]
+
+
+def test_wechat_default_time_labels_vary_by_payload() -> None:
+    workplace_labels = _wechat_time_labels_from_payload(
+        {
+            "style": "wechat_chat_v1",
+            "scene": "领导18:57发来一句在吗",
+            "body": "领导：在吗\n我：收到，但灵魂已下班。",
+        }
+    )
+    late_night_labels = _wechat_time_labels_from_payload(
+        {
+            "style": "wechat_chat_v1",
+            "scene": "朋友23点发来一大段消息",
+            "body": "朋友：你睡了吗\n我：刚准备关机。",
+        }
+    )
+
+    assert workplace_labels
+    assert late_night_labels
+    assert workplace_labels != late_night_labels
+    assert "9:41 AM" not in workplace_labels
+    assert "9:41" not in workplace_labels
+
+
+def test_wechat_generic_other_label_uses_simulated_nickname() -> None:
+    assert (
+        _wechat_speaker_label(
+            "other",
+            {
+                "scene": "领导18:57发来一句在吗",
+                "title": "领导18:57发来一句在吗",
+            },
+        )
+        == "林主管"
+    )
+    assert (
+        _wechat_speaker_label(
+            "other",
+            {
+                "scene": "朋友23点发来一大段消息",
+                "title": "朋友半夜发来一大段消息",
+            },
+        )
+        == "阿晴"
+    )
+
+
 def test_select_display_body_clamps_low_density_iphone_notes_copy() -> None:
     display_body = _select_display_body(
         {
@@ -193,6 +288,26 @@ def test_select_display_body_clamps_low_density_iphone_notes_copy() -> None:
     assert "下班地铁里" not in display_body
     assert "复盘漩涡" in display_body
     assert len([line for line in display_body.splitlines() if line.strip()]) <= 3
+
+
+def test_select_display_body_prefers_image_plan_golden_line() -> None:
+    display_body = _select_display_body(
+        {
+            "style": "iphone_notes_v1",
+            "body": (
+                "下班以后同事说要工作留痕，我第一反应是又要截图又要解释。"
+                "后来才发现，留痕不是为了吵架，是为了让事情别反复消耗。"
+            ),
+            "image_plan": {
+                "role": "cover_hook",
+                "text_density": "low",
+                "max_text_units": "1",
+                "golden_line": "事要留痕，但心别留疤。",
+            },
+        }
+    )
+
+    assert display_body == "事要留痕，但心别留疤。"
 
 
 def test_select_display_body_extracts_inline_tool_lines_without_prompt_focus() -> None:
