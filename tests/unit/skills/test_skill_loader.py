@@ -49,7 +49,7 @@ def test_key_xhs_style_skills_reference_viral_hook_mechanics() -> None:
     psychology = loader.load("psychology_style").content
     enrichment = loader.load("human_enrichment_style").content
     ai_tech = loader.load("ai_tech_style").content
-    sushi = loader.load("sushi_poetry_style").content
+    classic_poetry = loader.load("classic_poetry_style").content
     wuxia = loader.load("wuxia_commentary_style").content
 
     assert "高雅" in fengkuang
@@ -59,5 +59,6 @@ def test_key_xhs_style_skills_reference_viral_hook_mechanics() -> None:
     assert "适我主义" in enrichment
     assert "新独居" in enrichment
     assert "AI 生活搭子" in ai_tech
-    assert "文化力" in sushi
+    assert "古诗词" in classic_poetry
+    assert "金句" in classic_poetry
     assert "老款人格" in wuxia

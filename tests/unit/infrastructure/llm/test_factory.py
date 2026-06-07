@@ -223,21 +223,22 @@ def test_deterministic_backend_sanitizes_meta_scene_and_adapts_weekend_theme() -
     assert "#发疯文学" in draft["hashtags"]
 
 
-def test_deterministic_backend_can_follow_sushi_poetry_context() -> None:
+def test_deterministic_backend_can_follow_classic_poetry_quote_context() -> None:
     backend = DeterministicDraftBackend()
 
     draft = backend.generate(
-        scene="夜里读到《定风波》，突然想把今天的狼狈也写成一段赏析",
-        reflection_feedback="正文需要出现苏轼。",
-        planner_prompt="# 苏轼诗词赏析 Planner\n目标：写成适合小红书的诗词赏析短帖。",
+        scene="读到李白长风破浪会有时，想写给低谷里的自己",
+        reflection_feedback="正文需要出现这一句。",
+        planner_prompt="# 古诗词金句 Planner\n目标：围绕经典古诗词金句写成小红书短帖。",
         skill_contents=[
-            "# Sushi Poetry Style\n正文要点出苏轼，并保持可读、亲切。",
-            "# XHS Poetry Hashtagging\n标签必须包含 `#苏轼`。",
+            "# Classic Poetry Quote Style\n正文要给出一句经典古诗词金句，并保持可读、亲切。",
+            "# XHS Classic Poetry Hashtagging\n标签必须包含 `#古诗词`。",
         ],
     )
 
-    assert "苏轼" in draft["body"]
-    assert "#苏轼" in draft["hashtags"]
+    assert any(cue in draft["body"] for cue in ("长风破浪会有时", "李白", "古诗词"))
+    assert "#古诗词" in draft["hashtags"]
+    assert "#苏轼" not in draft["hashtags"]
     assert any(cue in draft["body"] for cue in ("存", "记下来", "可收藏", "这一句"))
     assert "评论区" in draft["body"]
     assert not any(term in draft["body"] for term in ("课堂讲义", "百科", "知识点"))
@@ -1237,17 +1238,17 @@ def test_factory_uses_generic_system_prompt_for_non_fengkuang_playbooks() -> Non
 
     backend = build_drafting_backend(settings, chat_model_cls=CapturingChatDeepSeek)
     backend.generate(
-        scene="夜里读到《定风波》",
-        planner_prompt="# 苏轼诗词赏析 Planner\n写成小红书诗词赏析短帖。",
-        reflection_feedback="# 苏轼诗词赏析 Reflection\n正文需要出现苏轼。",
-        skill_contents=["# XHS Poetry Hashtagging\n必须包含 `#苏轼`。"],
+        scene="读到李白长风破浪会有时",
+        planner_prompt="# 古诗词金句 Planner\n围绕经典古诗词金句写成小红书短帖。",
+        reflection_feedback="# 古诗词金句 Reflection\n正文需要出现这一句。",
+        skill_contents=["# XHS Classic Poetry Hashtagging\n必须包含 `#古诗词`。"],
     )
 
     system_prompt = CapturingChatDeepSeek.last_messages[0].content
     user_prompt = CapturingChatDeepSeek.last_messages[1].content
     assert "发疯文学" not in system_prompt
     assert "发疯文学文案" not in user_prompt
-    assert "hashtags 数组必须包含 '#苏轼'" in user_prompt
+    assert "hashtags 数组必须包含 '#古诗词'" in user_prompt
 
 
 def test_parse_json_payload_accepts_prose_wrapped_fenced_json() -> None:

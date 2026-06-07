@@ -211,15 +211,15 @@ def test_run_harness_evals_filters_eval_runs_by_scope(tmp_path: Path) -> None:
         evals_dir / "eval-2",
         summary={
             "eval_run_id": "eval-2",
-            "suite_id": "sushi_poetry_daily_post.default",
+            "suite_id": "classic_poetry_quote_post.default",
             "status": "passed",
             "source": {
                 "kind": "artifact",
                 "path": "b.json",
                 "run_id": "run-2",
-                "account_id": "acct-sushi-local",
+                "account_id": "acct-classic-poetry-local",
                 "platform": "xiaohongshu",
-                "playbook_id": "sushi_poetry_daily_post",
+                "playbook_id": "classic_poetry_quote_post",
             },
             "counts": {
                 "targets": 1,

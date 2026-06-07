@@ -56,13 +56,13 @@ def test_build_parser_supports_run_playbook() -> None:
         [
             "run-playbook",
             "--scene",
-            "夜里读到定风波",
+            "读到李白长风破浪会有时",
             "--account-id",
-            "acct-sushi-local",
+            "acct-classic-poetry-local",
             "--playbook-id",
-            "sushi_poetry_daily_post",
+            "classic_poetry_quote_post",
             "--thread-id",
-            "thread-sushi-001",
+            "thread-classic-poetry-001",
             "--publish-mode",
             "dry-run",
             "--publish-image-path",
@@ -80,10 +80,10 @@ def test_build_parser_supports_run_playbook() -> None:
     )
 
     assert args.command == "run-playbook"
-    assert args.scene == "夜里读到定风波"
-    assert args.account_id == "acct-sushi-local"
-    assert args.playbook_id == "sushi_poetry_daily_post"
-    assert args.thread_id == "thread-sushi-001"
+    assert args.scene == "读到李白长风破浪会有时"
+    assert args.account_id == "acct-classic-poetry-local"
+    assert args.playbook_id == "classic_poetry_quote_post"
+    assert args.thread_id == "thread-classic-poetry-001"
     assert args.publish_mode == "dry-run"
     assert args.publish_image_path == [
         "outputs/generated_images/cover-1.png",
@@ -974,7 +974,7 @@ def test_main_dispatches_run_playbook(monkeypatch, capsys) -> None:
         captured["thread_id"] = thread_id
         return {
             "status": "completed",
-            "playbook_id": "sushi_poetry_daily_post",
+            "playbook_id": "classic_poetry_quote_post",
             "publish_result": {"status": "dry_run"},
             "post_publish_checks": {"requested": True},
         }
@@ -989,24 +989,24 @@ def test_main_dispatches_run_playbook(monkeypatch, capsys) -> None:
         [
             "run-playbook",
             "--scene",
-            "夜里读到定风波",
+            "读到李白长风破浪会有时",
             "--account-id",
-            "acct-sushi-local",
+            "acct-classic-poetry-local",
             "--playbook-id",
-            "sushi_poetry_daily_post",
+            "classic_poetry_quote_post",
             "--thread-id",
-            "thread-sushi-001",
+            "thread-classic-poetry-001",
             "--publish-mode",
             "dry-run",
         ]
     )
 
     assert exit_code == 0
-    assert captured["thread_id"] == "thread-sushi-001"
-    assert captured["request"].scene == "夜里读到定风波"
-    assert captured["request"].account_id == "acct-sushi-local"
-    assert captured["request"].playbook_id == "sushi_poetry_daily_post"
-    assert '"playbook_id": "sushi_poetry_daily_post"' in capsys.readouterr().out
+    assert captured["thread_id"] == "thread-classic-poetry-001"
+    assert captured["request"].scene == "读到李白长风破浪会有时"
+    assert captured["request"].account_id == "acct-classic-poetry-local"
+    assert captured["request"].playbook_id == "classic_poetry_quote_post"
+    assert '"playbook_id": "classic_poetry_quote_post"' in capsys.readouterr().out
 
 
 def test_main_dispatches_guide_post(monkeypatch, capsys) -> None:

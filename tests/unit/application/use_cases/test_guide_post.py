@@ -61,10 +61,10 @@ GENERIC_DIVERSE_TOPIC_CASES = (
         "下班路上想做一次绿色 colorwalk",
     ),
     (
-        "sushi_poetry_daily_post",
-        "acct-sushi-local",
-        "夜里读到怀民亦未寝，想写一种旧友关系",
-        "今天被风雨淋得很狼狈，想重读定风波",
+        "classic_poetry_quote_post",
+        "acct-classic-poetry-local",
+        "读到李白长风破浪会有时，想写给低谷里的自己",
+        "深夜读到李清照，想写一句能安放情绪的词",
     ),
     (
         "wuxia_character_post",
@@ -523,18 +523,18 @@ def test_generic_topic_guidance_returns_dynamic_open_scene_metadata_for_all_pack
         _assert_no_internal_source_leakage(result)
 
 
-def test_sushi_topic_guidance_same_lane_scene_changes_do_not_keep_fixed_curated_anchors() -> None:
+def test_classic_poetry_topic_guidance_same_lane_scene_changes_do_not_keep_fixed_curated_anchors() -> None:
     scenes = (
-        "夜里读到怀民亦未寝，想写一种旧友关系",
-        "半夜一个人走在城市夜路上，突然想起怀民亦未寝",
-        "下班路上看到月亮，想写苏轼和一个没联系很久的人",
+        "读到李白长风破浪会有时，想写给低谷里的自己",
+        "深夜读到李清照，想写一句能安放情绪的词",
+        "下班路上看到月亮，想写一句古诗词金句给没联系很久的人",
     )
 
     results = [
         run_guide_post(
             GuidePostRequest(
-                playbook_id="sushi_poetry_daily_post",
-                account_id="acct-sushi-local",
+                playbook_id="classic_poetry_quote_post",
+                account_id="acct-classic-poetry-local",
                 scene=scene,
             )
         )
@@ -554,9 +554,9 @@ def test_sushi_topic_guidance_same_lane_scene_changes_do_not_keep_fixed_curated_
         for result in results
     ]
     fixed_curated_set = {
-        "sushi_role_pair_huimin",
-        "sushi_city_night_walk",
-        "sushi_old_friend_note",
+        "classic_tang_resilience_quote",
+        "classic_song_emotion_quote",
+        "classic_moon_longing_quote",
     }
 
     assert len(set(direction_id_sets)) > 1
@@ -574,31 +574,31 @@ def test_sushi_topic_guidance_same_lane_scene_changes_do_not_keep_fixed_curated_
     ("scene", "expected_lane_fragment", "expected_matched_direction_id"),
     (
         (
-            "想写赤壁赋和人在低谷时看大江大月，不要再写怀民",
-            "赤壁大江",
-            "sushi_red_cliff_big_view",
+            "读到李白长风破浪会有时，想写给低谷里的自己",
+            "唐诗金句",
+            "classic_tang_resilience_quote",
         ),
         (
-            "想写东坡肉、荔枝和苏轼把日子过成有滋味的生活感",
-            "烟火饮食",
-            "sushi_food_life_taste",
+            "想用李清照的词写深夜里那种瘦下来的情绪",
+            "宋词清醒",
+            "classic_song_emotion_quote",
         ),
         (
-            "被贬黄州以后还能重新开始，想写苏轼的旷达和自救",
-            "黄州自救",
-            "sushi_huangzhou_restart",
+            "想写王维山水诗，给下班后的自己一点松弛",
+            "山水松弛",
+            "classic_landscape_ease_quote",
         ),
     ),
 )
-def test_sushi_topic_guidance_expands_beyond_huimin_default(
+def test_classic_poetry_topic_guidance_matches_quote_families(
     scene: str,
     expected_lane_fragment: str,
     expected_matched_direction_id: str,
 ) -> None:
     result = run_guide_post(
         GuidePostRequest(
-            playbook_id="sushi_poetry_daily_post",
-            account_id="acct-sushi-local",
+            playbook_id="classic_poetry_quote_post",
+            account_id="acct-classic-poetry-local",
             scene=scene,
         )
     )
@@ -608,27 +608,28 @@ def test_sushi_topic_guidance_expands_beyond_huimin_default(
 
     assert expected_lane_fragment in result["brief"]["lane"]
     assert "怀民关系" not in result["brief"]["lane"]
+    assert "黄州自救" not in result["brief"]["lane"]
     assert guidance["matched_direction_id"] == expected_matched_direction_id
     assert first_direction["id"] == expected_matched_direction_id
     assert first_direction["direction_type"] == "curated"
+    assert first_direction["id"].startswith("classic_")
     assert "怀民" not in first_direction["name"]
     assert "怀民" not in first_direction["scene_fit"]
-    if "不要再写怀民" in scene:
-        assert "sushi_role_pair_huimin" not in [
-            direction["id"] for direction in guidance["directions"]
-        ]
+    assert "sushi_role_pair_huimin" not in [
+        direction["id"] for direction in guidance["directions"]
+    ]
     assert not any(
         direction["name"].startswith("开放探索：怀民")
         for direction in guidance["directions"]
     )
 
 
-def test_sushi_topic_guidance_generic_prompt_surfaces_multiple_curated_families() -> None:
+def test_classic_poetry_topic_guidance_generic_prompt_surfaces_multiple_curated_families() -> None:
     result = run_guide_post(
         GuidePostRequest(
-            playbook_id="sushi_poetry_daily_post",
-            account_id="acct-sushi-local",
-            scene="想做一期苏轼主题，先给我几个不同切口",
+            playbook_id="classic_poetry_quote_post",
+            account_id="acct-classic-poetry-local",
+            scene="想做一期古诗词金句，先给我几个不同切口",
         )
     )
 
@@ -638,12 +639,11 @@ def test_sushi_topic_guidance_generic_prompt_surfaces_multiple_curated_families(
         if direction["direction_type"] == "curated"
     ]
 
-    assert result["brief"]["lane"] == "黄州自救 / 低谷重启"
-    assert len(curated_ids) >= 3
+    assert result["brief"]["lane"] == "唐诗金句 / 低谷打气"
+    assert len(curated_ids) >= 2
     assert {
-        "sushi_huangzhou_restart",
-        "sushi_red_cliff_big_view",
-        "sushi_food_life_taste",
+        "classic_tang_resilience_quote",
+        "classic_landscape_ease_quote",
     } <= set(curated_ids)
     assert "sushi_role_pair_huimin" not in curated_ids
 
@@ -843,20 +843,20 @@ def test_guide_post_supports_human_enrichment_topic_guidance() -> None:
     assert "https://" not in serialized
 
 
-def test_guide_post_supports_sushi_poetry_topic_guidance() -> None:
+def test_guide_post_supports_classic_poetry_topic_guidance() -> None:
     result = run_guide_post(
         GuidePostRequest(
-            playbook_id="sushi_poetry_daily_post",
-            account_id="acct-sushi-local",
-            scene="夜里读到怀民亦未寝，想写一种旧友关系",
+            playbook_id="classic_poetry_quote_post",
+            account_id="acct-classic-poetry-local",
+            scene="读到李白长风破浪会有时，想写给低谷里的自己",
         )
     )
 
     assert result["status"] == "completed"
-    assert result["playbook_id"] == "sushi_poetry_daily_post"
-    assert result["account_id"] == "acct-sushi-local"
+    assert result["playbook_id"] == "classic_poetry_quote_post"
+    assert result["account_id"] == "acct-classic-poetry-local"
     assert result["brief"]["lane"]
-    assert result["topic_guidance"]["matched_direction_id"].startswith("sushi_")
+    assert result["topic_guidance"]["matched_direction_id"].startswith("classic_")
     assert len(result["topic_guidance"]["directions"]) == 4
     assert "run-playbook --scene" in result["run_playbook_command_text"]
 

@@ -20,7 +20,7 @@ related_paths:
 ## Bottom Line
 
 - 2026-04-22 用 `skill-installer` 的官方脚本复核 OpenAI curated skills 时，没有任何 XiaoHongShu-specific skill。
-- 当前仓库内已经有 `xhs_trend_scan` 这个小红书 research builtin skill；`xhs_hashtagging` 和 `xhs_poetry_hashtagging` 仍然负责发帖后处理。
+- 当前仓库内已经有 `xhs_trend_scan` 这个小红书 research builtin skill；`xhs_hashtagging` 和 `xhs_classic_poetry_hashtagging` 仍然负责发帖后处理，其中古诗词金句默认要求 `#古诗词` 而不是苏轼专属标签。
 - 所以后续如果要继续做“小红书热点分析”，路线不是继续找一个现成官方 skill，而是在现有 `xhs_trend_scan` 之上补更细的研究能力。
 
 ## Generic Skills Worth Reusing

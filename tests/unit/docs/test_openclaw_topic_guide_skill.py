@@ -28,7 +28,7 @@ def test_openclaw_topic_guide_skill_auto_maps_intent_and_clarifies_ambiguity() -
     for playbook_id in (
         "fengkuang_daily_post",
         "human_enrichment_daily_post",
-        "sushi_poetry_daily_post",
+        "classic_poetry_quote_post",
         "wuxia_character_post",
         "ai_tech_daily_post",
         "daily_english_post",
@@ -38,6 +38,8 @@ def test_openclaw_topic_guide_skill_auto_maps_intent_and_clarifies_ambiguity() -
         assert playbook_id in text
     for keyword in (
         "武侠",
+        "古诗词",
+        "诗词金句",
         "AI",
         "prompt",
         "提示词",

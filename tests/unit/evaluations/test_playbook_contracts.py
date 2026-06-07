@@ -9,7 +9,7 @@ from ptsm.evaluations.playbook_contracts import PlaybookEvalContract, load_playb
 
 XHS_PLAYBOOK_IDS = [
     "fengkuang_daily_post",
-    "sushi_poetry_daily_post",
+    "classic_poetry_quote_post",
     "wuxia_character_post",
     "ai_tech_daily_post",
     "daily_english_post",
@@ -53,7 +53,7 @@ BODY_LENGTH_BANDS = {
     "fengkuang_daily_post": (120, 380),
     "modern_psychology_post": (260, 580),
     "human_enrichment_daily_post": (180, 520),
-    "sushi_poetry_daily_post": (180, 520),
+    "classic_poetry_quote_post": (180, 520),
     "daily_english_post": (180, 520),
     "ai_tech_daily_post": (220, 650),
     "world_cup_daily_post": (220, 620),
@@ -65,7 +65,7 @@ GENERIC_TITLE_MARKERS = {
     "fengkuang_daily_post": ["实录", "日常", "今日已疯", "发疯文学"],
     "modern_psychology_post": ["心理学小知识", "情绪管理干货", "小红书爆款"],
     "human_enrichment_daily_post": ["治愈生活", "精致日常", "改造分享"],
-    "sushi_poetry_daily_post": ["苏轼诗词赏析", "诗词分享", "读书笔记"],
+    "classic_poetry_quote_post": ["古诗词金句", "诗词分享", "读书笔记"],
     "daily_english_post": ["每日英语单词", "英语学习干货", "万能表达"],
     "ai_tech_daily_post": ["AI科技资讯", "今日AI新闻", "科技速递"],
     "world_cup_daily_post": ["世界杯资讯", "比赛分析", "赛报"],
@@ -104,7 +104,7 @@ BODY_SCENE_SIGNAL_MARKERS = {
     "fengkuang_daily_post": ["领导", "工牌", "群聊", "周报", "早会", "下班", "工位", "地铁"],
     "modern_psychology_post": ["下班", "会议", "消息", "睡前", "关系", "脑子", "身体", "今晚", "那句话"],
     "human_enrichment_daily_post": ["角落", "书桌", "床头", "路线", "材料", "今天", "十分钟", "手边"],
-    "sushi_poetry_daily_post": ["苏轼", "夜里", "这一句", "风雨", "月亮", "旧友", "今天"],
+    "classic_poetry_quote_post": ["古诗词", "金句", "这一句", "李白", "李清照", "月亮", "今天"],
     "daily_english_post": ["今天", "开会", "私聊", "这句", "例句", "评论区", "你会怎么说"],
     "ai_tech_daily_post": ["AI", "工具", "普通人", "今天", "工作流", "试", "边界"],
     "world_cup_daily_post": ["赛前", "看球", "普通球迷", "今晚", "这场", "评论区"],
@@ -348,7 +348,7 @@ class TestPlaybookEvalContract:
             ("fengkuang_daily_post", ["工牌", "群聊", "周报", "早会", "下班", "领导", "物件"]),
             ("human_enrichment_daily_post", ["丰容", "变量", "角落", "书桌", "路线", "材料"]),
             ("ai_tech_daily_post", ["AI", "普通人", "搭子", "工具", "更新"]),
-            ("sushi_poetry_daily_post", ["苏轼", "这一句", "读", "年味", "节气"]),
+            ("classic_poetry_quote_post", ["古诗词", "金句", "这一句", "李白", "李清照", "月亮"]),
             ("wuxia_character_post", ["令狐冲", "黄蓉", "郭靖", "老款", "边界", "自由"]),
         ],
     )
@@ -368,7 +368,7 @@ class TestPlaybookEvalContract:
     @pytest.mark.parametrize(
         ("playbook_id", "required_tags", "required_body_terms"),
         [
-            ("sushi_poetry_daily_post", ["#苏轼"], ["苏轼"]),
+            ("classic_poetry_quote_post", ["#古诗词"], ["这一句", "古诗词", "金句"]),
             ("wuxia_character_post", ["#金庸", "#古龙"], ["《笑傲江湖》", "《射雕英雄传》"]),
             ("ai_tech_daily_post", ["#AI资讯"], ["是什么", "为什么重要", "普通人"]),
             ("daily_english_post", ["#每日英语"], ["音标", "词性", "例句", "翻译"]),

@@ -17,8 +17,8 @@ def test_skill_registry_discovers_builtin_fengkuang_skills() -> None:
     assert "xhs_hashtagging" in skill_names
     assert "xhs_trend_scan" in skill_names
     assert "xhs_image_strategy" in skill_names
-    assert "sushi_poetry_style" in skill_names
-    assert "xhs_poetry_hashtagging" in skill_names
+    assert "classic_poetry_style" in skill_names
+    assert "xhs_classic_poetry_hashtagging" in skill_names
 
 
 def test_skill_registry_parses_scope_tags_from_front_matter() -> None:
@@ -35,18 +35,18 @@ def test_skill_registry_parses_scope_tags_from_front_matter() -> None:
     assert spec.assets_present is False
 
 
-def test_skill_registry_parses_scope_tags_for_sushi_poetry_skill() -> None:
+def test_skill_registry_parses_scope_tags_for_classic_poetry_skill() -> None:
     registry = SkillRegistry(
         skill_root=Path("src/ptsm/skills/builtin"),
     )
 
     spec = next(
-        skill for skill in registry.list_skills() if skill.skill_name == "sushi_poetry_style"
+        skill for skill in registry.list_skills() if skill.skill_name == "classic_poetry_style"
     )
 
-    assert spec.domain_tags == ["苏轼诗词赏析"]
+    assert spec.domain_tags == ["古诗词金句"]
     assert spec.platform_tags == ["xiaohongshu"]
-    assert spec.playbook_tags == ["sushi_poetry_daily_post"]
+    assert spec.playbook_tags == ["classic_poetry_quote_post"]
 
 
 def test_registry_discovers_wuxia_skills() -> None:
@@ -243,7 +243,7 @@ def test_world_cup_style_encodes_safe_xhs_mechanics() -> None:
 def test_remaining_domain_style_skills_encode_xhs_quality_mechanics() -> None:
     skill_root = Path("src/ptsm/skills/builtin")
     expected_markers = {
-        "sushi_poetry_style": ["生活瞬间", "可收藏", "评论区", "不要讲义"],
+        "classic_poetry_style": ["古诗词", "金句", "可收藏", "不伪造出处"],
         "wuxia_commentary_style": ["当代切口", "原文", "截图", "评论区"],
         "ai_tech_style": ["3秒核心信息", "普通人影响", "收藏清单", "非投资建议"],
         "daily_english_style": ["真实场景", "造句", "可收藏", "不要词典式"],

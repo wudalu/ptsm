@@ -129,7 +129,7 @@ PTSM 已经有：
 
 - `fengkuang_daily_post`
   更适合优先接“修复系手作 / 情绪疗愈”“轻养生 / 睡眠恢复”“职场向 AI 解法”。
-- `sushi_poetry_daily_post`
+- `classic_poetry_quote_post`
   更适合优先接“文博 / 非遗 / 地方文化体验”“手作修复”“季节性生活观察”。
 
 这不是说 playbook 只能写这些，而是说明热点研究应先给现有语气找到可持续的垂类落点。

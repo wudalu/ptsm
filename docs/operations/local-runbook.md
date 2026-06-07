@@ -238,9 +238,9 @@ uv run python -m ptsm.bootstrap run-fengkuang \
 
 # Generic playbook dry-run
 uv run python -m ptsm.bootstrap run-playbook \
-  --scene "夜里读到《定风波》" \
-  --account-id acct-sushi-local \
-  --playbook-id sushi_poetry_daily_post
+  --scene "读到李白长风破浪会有时，想写给低谷里的自己" \
+  --account-id acct-classic-poetry-local \
+  --playbook-id classic_poetry_quote_post
 
 # Wuxia character commentary dry-run
 uv run python -m ptsm.bootstrap run-playbook \
@@ -310,9 +310,9 @@ uv run python -m ptsm.bootstrap guide-post \
   --format json
 
 uv run python -m ptsm.bootstrap guide-post \
-  --playbook-id sushi_poetry_daily_post \
-  --account-id acct-sushi-local \
-  --scene "夜里读到怀民亦未寝，想写一种旧友关系" \
+  --playbook-id classic_poetry_quote_post \
+  --account-id acct-classic-poetry-local \
+  --scene "下班路上想用王维空山新雨后写一点松弛感" \
   --non-interactive \
   --format json
 
@@ -461,13 +461,13 @@ ptsm accounts
     "cookie_path": "cookies/fk-local.json"
   },
   {
-    "account_id": "acct-sushi-local",
-    "nickname": "苏轼诗词赏析实验号",
+    "account_id": "acct-classic-poetry-local",
+    "nickname": "古诗词金句实验号",
     "platform": "xiaohongshu",
-    "domain": "苏轼诗词赏析",
+    "domain": "古诗词金句",
     "publish_mode": "dry-run",
-    "cookie_profile_id": "sushi-local-cookie",
-    "cookie_path": "cookies/sushi-local.json"
+    "cookie_profile_id": "classic-poetry-local-cookie",
+    "cookie_path": "cookies/classic-poetry-local.json"
   },
   {
     "account_id": "acct-wuxia-local",
@@ -519,7 +519,7 @@ ptsm accounts
 | 领域 | 账号 | Cookie Profile | 说明 |
 |------|------|---------------|------|
 | 发疯文学 | `acct-fk-local` | `cookies/fk-local.json` | 打工人日常、情绪宣泄、自嘲治愈 |
-| 苏轼诗词赏析 | `acct-sushi-local` | `cookies/sushi-local.json` | 诗词赏析、文化体验、生活感悟 |
+| 古诗词金句 | `acct-classic-poetry-local` | `cookies/classic-poetry-local.json` | 经典诗词金句、可保存读法、生活共鸣 |
 | 武侠人物评述 | `acct-wuxia-local` | (未绑定 cookie) | 金庸古龙人物深度评述 |
 | AI科技资讯 | `acct-ai-tech-local` | (未绑定 cookie) | AI/科技趋势速递与解读 |
 | 每日英语学习 | `acct-daily-english-local` | (未绑定 cookie) | 每日单词学习、陪伴式教育 |
@@ -541,8 +541,8 @@ ptsm accounts
 # 登录发疯文学账号
 COOKIES_PATH=cookies/fk-local.json .ptsm/bin/xhs-mcp/xiaohongshu-mcp-darwin-amd64
 
-# 登录苏轼诗词账号（另一个终端，另一个端口）
-COOKIES_PATH=cookies/sushi-local.json .ptsm/bin/xhs-mcp/xiaohongshu-mcp-darwin-amd64 -port :18061
+# 登录古诗词金句账号（另一个终端，另一个端口）
+COOKIES_PATH=cookies/classic-poetry-local.json .ptsm/bin/xhs-mcp/xiaohongshu-mcp-darwin-amd64 -port :18061
 ```
 
 如果只有一个 MCP server 实例但要切换账号，重新启动并更换 `COOKIES_PATH` 即可。
@@ -577,11 +577,11 @@ uv run python -m ptsm.bootstrap run-fengkuang \
   --scene "周四加班到崩溃" \
   --account-id acct-fk-local
 
-# 苏轼诗词领域
+# 古诗词金句领域
 uv run python -m ptsm.bootstrap run-playbook \
-  --scene "夜里读到《定风波》" \
-  --account-id acct-sushi-local \
-  --playbook-id sushi_poetry_daily_post
+  --scene "读到李白长风破浪会有时，想写给低谷里的自己" \
+  --account-id acct-classic-poetry-local \
+  --playbook-id classic_poetry_quote_post
 
 # 武侠人物评述领域
 uv run python -m ptsm.bootstrap run-playbook \
@@ -643,7 +643,7 @@ uv run python -m ptsm.bootstrap run-playbook \
 | 账号 | Cookie 路径 |
 |------|-------------|
 | `acct-fk-local` | `cookies/fk-local.json` |
-| `acct-sushi-local` | `cookies/sushi-local.json` |
+| `acct-classic-poetry-local` | `cookies/classic-poetry-local.json` |
 
 Cookie 文件由 xiaohongshu-mcp 管理，PTSM 通过账号定义引用，不直接读写。升级或重建 session 时只需在启动 MCP server 时指定新的 cookie 路径，重新扫码即可。
 

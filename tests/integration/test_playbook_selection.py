@@ -45,20 +45,19 @@ def test_run_playbook_routes_through_generic_request_contract() -> None:
     assert result["account"]["account_id"] == "acct-fk-local"
 
 
-def test_run_playbook_routes_sushi_account_to_sushi_playbook() -> None:
+def test_run_playbook_routes_classic_poetry_account_to_classic_poetry_playbook() -> None:
     playbook_request_cls, run_playbook = _load_playbook_contracts()
 
     result = run_playbook(
         playbook_request_cls(
-            account_id="acct-sushi-local",
-            playbook_id="sushi_poetry_daily_post",
-            scene="夜里读到《定风波》，突然想把今天的狼狈也写成一段赏析",
+            account_id="acct-classic-poetry-local",
+            playbook_id="classic_poetry_quote_post",
+            scene="读到李白长风破浪会有时，想写给低谷里的自己",
         )
     )
 
-    assert result["playbook_id"] == "sushi_poetry_daily_post"
-    assert result["account"]["account_id"] == "acct-sushi-local"
-    assert "#苏轼" in result["final_content"]["hashtags"]
+    assert result["playbook_id"] == "classic_poetry_quote_post"
+    assert result["account"]["account_id"] == "acct-classic-poetry-local"
 
 
 def test_wuxia_playbook_is_selected_for_wuxia_account():

@@ -33,7 +33,7 @@ related_paths:
 
 - `世界杯` 因小红书 2026-05-28 官宣成为 2026 美加墨世界杯持权转播商出现极强短期热度，适合现有 `world_cup_daily_post` 立刻做内容日历。
 - `情绪疗愈`、`睡眠恢复`、`轻养生` 是最强的常青机会，其中睡眠/轻养生是最清晰的新领域候选。
-- `每日英语`、`文博非遗`、`人类丰容`、`苏轼` 都有较强保存/文化/分享信号，适合继续优化现有 playbook。
+- `每日英语`、`文博非遗`、`人类丰容`、`古诗词/苏轼` 都有较强保存/文化/分享信号，适合继续优化现有 playbook；诗词侧现在承接到更宽的 `classic_poetry_quote_post`。
 - `武侠` 在这次搜索级样本中热度最低，应保留为深度小众域，不作为新增投入优先级。
 
 完整证据、样本分数和 workflow 建议见 [`docs/research/2026-05-30-xhs-domain-opportunity-and-workflow-review.md`](../research/2026-05-30-xhs-domain-opportunity-and-workflow-review.md)。
@@ -163,7 +163,7 @@ related_paths:
 
 为什么值得做：
 
-- 适合 `sushi_poetry_daily_post` 这类偏诗意、偏观察型表达。
+- 适合 `classic_poetry_quote_post` 这类偏诗意、偏观察型表达，尤其是把经典诗词金句转成当代生活共鸣的短帖。
 - 它比泛旅游更聚焦，也更容易做出稳定审美和账号辨识度。
 - 可与手作、季节、地方生活方式互相串联。
 

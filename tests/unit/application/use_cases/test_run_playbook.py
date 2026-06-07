@@ -2018,7 +2018,7 @@ def test_run_playbook_supports_non_fengkuang_playbook_with_generic_runtime(
     artifact_path.write_text(
         json.dumps(
             {
-                "playbook_id": "sushi_poetry_daily_post",
+                "playbook_id": "classic_poetry_quote_post",
                 "final_content": {"title": "旧标题"},
             },
             ensure_ascii=False,
@@ -2026,17 +2026,17 @@ def test_run_playbook_supports_non_fengkuang_playbook_with_generic_runtime(
         encoding="utf-8",
     )
     _write_account_definition(
-        tmp_path / "accounts" / "acct-sushi-local.yaml",
-        account_id="acct-sushi-local",
-        nickname="苏轼诗词赏析实验号",
-        domain="苏轼诗词赏析",
+        tmp_path / "accounts" / "acct-classic-poetry-local.yaml",
+        account_id="acct-classic-poetry-local",
+        nickname="古诗词金句实验号",
+        domain="古诗词金句",
     )
     _write_playbook_definition(
-        tmp_path / "playbooks" / "sushi_poetry_daily_post",
-        playbook_id="sushi_poetry_daily_post",
-        domain="苏轼诗词赏析",
-        required_hashtag="#苏轼",
-        required_phrase="苏轼",
+        tmp_path / "playbooks" / "classic_poetry_quote_post",
+        playbook_id="classic_poetry_quote_post",
+        domain="古诗词金句",
+        required_hashtag="#古诗词",
+        required_phrase="这一句",
     )
     captured: dict[str, object] = {}
 
@@ -2053,9 +2053,9 @@ def test_run_playbook_supports_non_fengkuang_playbook_with_generic_runtime(
 
     result = run_playbook(
         PlaybookRequest(
-            scene="夜里读到定风波",
-            account_id="acct-sushi-local",
-            playbook_id="sushi_poetry_daily_post",
+            scene="读到李白长风破浪会有时",
+            account_id="acct-classic-poetry-local",
+            playbook_id="classic_poetry_quote_post",
         ),
         accounts=AccountRegistry(account_root=tmp_path / "accounts"),
         playbooks=PlaybookRegistry(playbook_root=tmp_path / "playbooks"),
@@ -2064,9 +2064,9 @@ def test_run_playbook_supports_non_fengkuang_playbook_with_generic_runtime(
     )
 
     assert result["status"] == "completed"
-    assert result["playbook_id"] == "sushi_poetry_daily_post"
-    assert captured["playbook_id"] == "sushi_poetry_daily_post"
-    assert captured["domain"] == "苏轼诗词赏析"
+    assert result["playbook_id"] == "classic_poetry_quote_post"
+    assert captured["playbook_id"] == "classic_poetry_quote_post"
+    assert captured["domain"] == "古诗词金句"
 
 
 def test_run_playbook_uses_local_pattern_context_for_deterministic_provider(
@@ -2077,7 +2077,7 @@ def test_run_playbook_uses_local_pattern_context_for_deterministic_provider(
     artifact_path.write_text(
         json.dumps(
             {
-                "playbook_id": "sushi_poetry_daily_post",
+                "playbook_id": "classic_poetry_quote_post",
                 "final_content": {"title": "旧标题"},
             },
             ensure_ascii=False,
@@ -2085,17 +2085,17 @@ def test_run_playbook_uses_local_pattern_context_for_deterministic_provider(
         encoding="utf-8",
     )
     _write_account_definition(
-        tmp_path / "accounts" / "acct-sushi-local.yaml",
-        account_id="acct-sushi-local",
-        nickname="苏轼诗词赏析实验号",
-        domain="苏轼诗词赏析",
+        tmp_path / "accounts" / "acct-classic-poetry-local.yaml",
+        account_id="acct-classic-poetry-local",
+        nickname="古诗词金句实验号",
+        domain="古诗词金句",
     )
     _write_playbook_definition(
-        tmp_path / "playbooks" / "sushi_poetry_daily_post",
-        playbook_id="sushi_poetry_daily_post",
-        domain="苏轼诗词赏析",
-        required_hashtag="#苏轼",
-        required_phrase="苏轼",
+        tmp_path / "playbooks" / "classic_poetry_quote_post",
+        playbook_id="classic_poetry_quote_post",
+        domain="古诗词金句",
+        required_hashtag="#古诗词",
+        required_phrase="这一句",
     )
     captured: dict[str, object] = {}
 
@@ -2112,9 +2112,9 @@ def test_run_playbook_uses_local_pattern_context_for_deterministic_provider(
 
     result = run_playbook(
         PlaybookRequest(
-            scene="夜里读到定风波",
-            account_id="acct-sushi-local",
-            playbook_id="sushi_poetry_daily_post",
+            scene="读到李白长风破浪会有时",
+            account_id="acct-classic-poetry-local",
+            playbook_id="classic_poetry_quote_post",
         ),
         settings=Settings.model_construct(
             default_model_provider="deterministic",
@@ -2153,7 +2153,7 @@ def test_run_playbook_uses_local_pattern_context_when_deepseek_key_missing(
     artifact_path.write_text(
         json.dumps(
             {
-                "playbook_id": "sushi_poetry_daily_post",
+                "playbook_id": "classic_poetry_quote_post",
                 "final_content": {"title": "旧标题"},
             },
             ensure_ascii=False,
@@ -2161,17 +2161,17 @@ def test_run_playbook_uses_local_pattern_context_when_deepseek_key_missing(
         encoding="utf-8",
     )
     _write_account_definition(
-        tmp_path / "accounts" / "acct-sushi-local.yaml",
-        account_id="acct-sushi-local",
-        nickname="苏轼诗词赏析实验号",
-        domain="苏轼诗词赏析",
+        tmp_path / "accounts" / "acct-classic-poetry-local.yaml",
+        account_id="acct-classic-poetry-local",
+        nickname="古诗词金句实验号",
+        domain="古诗词金句",
     )
     _write_playbook_definition(
-        tmp_path / "playbooks" / "sushi_poetry_daily_post",
-        playbook_id="sushi_poetry_daily_post",
-        domain="苏轼诗词赏析",
-        required_hashtag="#苏轼",
-        required_phrase="苏轼",
+        tmp_path / "playbooks" / "classic_poetry_quote_post",
+        playbook_id="classic_poetry_quote_post",
+        domain="古诗词金句",
+        required_hashtag="#古诗词",
+        required_phrase="这一句",
     )
     captured: dict[str, object] = {}
 
@@ -2188,9 +2188,9 @@ def test_run_playbook_uses_local_pattern_context_when_deepseek_key_missing(
 
     result = run_playbook(
         PlaybookRequest(
-            scene="夜里读到定风波",
-            account_id="acct-sushi-local",
-            playbook_id="sushi_poetry_daily_post",
+            scene="读到李白长风破浪会有时",
+            account_id="acct-classic-poetry-local",
+            playbook_id="classic_poetry_quote_post",
         ),
         settings=Settings.model_construct(
             default_model_provider="deepseek",
@@ -2246,7 +2246,7 @@ def test_runtime_resolver_includes_reddit_scan_for_live_deepseek_runs() -> None:
     )
 
 
-def test_run_playbook_supports_sushi_poetry_repo_assets(
+def test_run_playbook_supports_classic_poetry_repo_assets(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -2254,18 +2254,23 @@ def test_run_playbook_supports_sushi_poetry_repo_assets(
 
     result = run_playbook(
         PlaybookRequest(
-            scene="夜里读到《定风波》，突然想把今天的狼狈也写成一段赏析",
-            account_id="acct-sushi-local",
-            playbook_id="sushi_poetry_daily_post",
+            scene="读到李白长风破浪会有时，想写给低谷里的自己",
+            account_id="acct-classic-poetry-local",
+            playbook_id="classic_poetry_quote_post",
         ),
         publisher=SuccessfulPublisher(),
         run_store=RunStore(base_dir=tmp_path / "runs"),
     )
 
     assert result["status"] == "completed"
-    assert result["playbook_id"] == "sushi_poetry_daily_post"
-    assert result["account"]["account_id"] == "acct-sushi-local"
-    assert "#苏轼" in result["final_content"]["hashtags"]
+    assert result["playbook_id"] == "classic_poetry_quote_post"
+    assert result["account"]["account_id"] == "acct-classic-poetry-local"
+    assert "#古诗词" in result["final_content"]["hashtags"]
+    assert "#苏轼" not in result["final_content"]["hashtags"]
+    assert any(
+        cue in result["final_content"]["body"]
+        for cue in ("长风破浪会有时", "李白", "古诗词", "金句")
+    )
 
 
 def _write_account_definition(

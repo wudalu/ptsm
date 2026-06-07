@@ -20,16 +20,17 @@ def test_playbook_loader_reads_yaml_and_markdown_assets() -> None:
     assert "轻量正向收束" in playbook.reflection_prompt
 
 
-def test_playbook_loader_reads_sushi_poetry_assets() -> None:
+def test_playbook_loader_reads_classic_poetry_assets() -> None:
     loader = PlaybookLoader(playbook_root=Path("src/ptsm/playbooks/definitions"))
 
-    playbook = loader.load("sushi_poetry_daily_post")
+    playbook = loader.load("classic_poetry_quote_post")
 
-    assert playbook.definition.playbook_id == "sushi_poetry_daily_post"
-    assert "苏轼" in playbook.planner_prompt
+    assert playbook.definition.playbook_id == "classic_poetry_quote_post"
+    assert "古诗词金句" in playbook.planner_prompt
+    assert "经典诗句" in playbook.planner_prompt
     assert "读书博主" in playbook.persona_prompt
     assert "网感" in playbook.persona_prompt
-    assert "#苏轼" in playbook.reflection_prompt
+    assert "#古诗词" in playbook.reflection_prompt
 
 
 def test_playbook_loader_reads_human_enrichment_assets() -> None:
@@ -60,8 +61,8 @@ def test_playbook_loader_reads_world_cup_assets() -> None:
     ("playbook_id", "expected_prompt_markers"),
     [
         (
-            "sushi_poetry_daily_post",
-            ["生活瞬间", "可收藏", "评论区", "不要讲义"],
+            "classic_poetry_quote_post",
+            ["生活瞬间", "经典诗句", "可收藏", "评论区"],
         ),
         (
             "wuxia_character_post",
@@ -99,7 +100,7 @@ def test_remaining_domain_playbook_assets_include_quality_strategy(
 @pytest.mark.parametrize(
     ("playbook_id", "required_tag"),
     [
-        ("sushi_poetry_daily_post", "#苏轼"),
+        ("classic_poetry_quote_post", "#古诗词"),
         ("wuxia_character_post", "#金庸"),
         ("ai_tech_daily_post", "#AI资讯"),
         ("daily_english_post", "#每日英语"),

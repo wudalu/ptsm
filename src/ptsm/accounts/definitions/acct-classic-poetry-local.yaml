@@ -1,0 +1,7 @@
+account_id: acct-classic-poetry-local
+nickname: 古诗词金句实验号
+platform: xiaohongshu
+domain: 古诗词金句
+publish_mode: dry-run
+cookie_profile_id: classic-poetry-local-cookie
+cookie_path: cookies/classic-poetry-local.json

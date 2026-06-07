@@ -26,7 +26,22 @@ from ptsm.skills.loader import LoadedSkill
 _WEEKDAY_TOKENS = ("周一", "周二", "周三", "周四", "周五", "周六", "周日")
 _WORK_CUES = ("老板", "领导", "工位", "下班", "上班", "需求", "开会", "会议", "群里", "打工")
 _OVERTIME_CUES = ("下班", "需求", "加班", "临时", "今晚", "初稿", "工位", "微信", "群里")
-_POETRY_CUES = ("苏轼", "定风波", "赤壁赋", "水调歌头", "诗词")
+_POETRY_CUES = (
+    "古诗词",
+    "诗词",
+    "诗词金句",
+    "经典诗句",
+    "金句",
+    "李白",
+    "李清照",
+    "王维",
+    "杜甫",
+    "长风破浪",
+    "苏轼",
+    "定风波",
+    "赤壁赋",
+    "水调歌头",
+)
 _REDDIT_AI_TERMS = (
     "ai",
     "openai",
@@ -849,7 +864,7 @@ def _derive_keywords(*, scene: str, domain: str, playbook_id: str, hints: list[s
         keywords.extend(hints)
     day_token = next((token for token in _WEEKDAY_TOKENS if token in scene), None)
     is_work_scene = any(cue in scene for cue in _WORK_CUES) or domain == "发疯文学"
-    is_poetry_scene = any(cue in scene for cue in _POETRY_CUES) or domain == "苏轼诗词赏析"
+    is_poetry_scene = any(cue in scene for cue in _POETRY_CUES) or domain == "古诗词金句"
 
     if day_token:
         if day_token == "周四":

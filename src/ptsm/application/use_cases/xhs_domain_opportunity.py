@@ -48,10 +48,10 @@ DOMAIN_MAPPINGS: tuple[DomainMapping, ...] = (
         opportunity_tier="invest_as_sublane",
     ),
     DomainMapping(
-        domain="苏轼 / 文博非遗 / 地方文化体验",
-        keywords=("苏轼", "东坡", "文博", "非遗", "地方文化", "博物馆"),
+        domain="古诗词金句 / 文博非遗 / 地方文化体验",
+        keywords=("古诗词", "诗词金句", "经典诗句", "苏轼", "东坡", "文博", "非遗", "地方文化", "博物馆"),
         current_playbook_fit=(
-            "sushi_poetry_daily_post",
+            "classic_poetry_quote_post",
             "human_enrichment_daily_post",
         ),
         recommendation="sublane_first",

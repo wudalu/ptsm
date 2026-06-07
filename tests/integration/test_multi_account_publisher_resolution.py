@@ -17,16 +17,16 @@ def test_different_accounts_resolve_different_contexts() -> None:
     settings = Settings()
 
     fk = registry.get("acct-fk-local")
-    sushi = registry.get("acct-sushi-local")
+    classic_poetry = registry.get("acct-classic-poetry-local")
 
     ctx_fk = resolve_publisher_context(fk, settings)
-    ctx_sushi = resolve_publisher_context(sushi, settings)
+    ctx_classic_poetry = resolve_publisher_context(classic_poetry, settings)
 
     assert ctx_fk.cookie_profile_id == "fk-local-cookie"
-    assert ctx_sushi.cookie_profile_id == "sushi-local-cookie"
-    assert ctx_fk.cookie_profile_id != ctx_sushi.cookie_profile_id
+    assert ctx_classic_poetry.cookie_profile_id == "classic-poetry-local-cookie"
+    assert ctx_fk.cookie_profile_id != ctx_classic_poetry.cookie_profile_id
     assert ctx_fk.resolution_source == "account"
-    assert ctx_sushi.resolution_source == "account"
+    assert ctx_classic_poetry.resolution_source == "account"
 
 
 def test_account_without_cookie_falls_back_to_settings() -> None:
@@ -63,8 +63,10 @@ def test_visibility_override() -> None:
     )
     settings = Settings()
 
-    sushi = registry.get("acct-sushi-local")
-    ctx = resolve_publisher_context(sushi, settings, visibility_override="公开")
+    classic_poetry = registry.get("acct-classic-poetry-local")
+    ctx = resolve_publisher_context(
+        classic_poetry, settings, visibility_override="公开"
+    )
 
     assert ctx.visibility == "公开"
 

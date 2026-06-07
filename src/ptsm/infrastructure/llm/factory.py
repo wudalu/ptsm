@@ -55,11 +55,10 @@ XHS_BODY_LENGTH_RULES = (
     (
         "180-520",
         (
-            "Sushi Poetry Style",
-            "Su Shi Poetry Style",
-            "sushi_poetry_daily_post",
-            "XHS Poetry Hashtagging",
-            "#苏轼",
+            "Classic Poetry Quote Style",
+            "classic_poetry_quote_post",
+            "XHS Classic Poetry Hashtagging",
+            "#古诗词",
         ),
     ),
     (
@@ -350,17 +349,19 @@ def _build_deterministic_draft(
     if contextual is not None:
         return contextual
 
-    if _is_sushi_poetry_context(scene=scene, extra_context=extra_context):
-        title = "读苏轼时突然读懂了今天"
-        image_text = "把风雨读慢一点"
+    if _is_classic_poetry_context(scene=scene, extra_context=extra_context):
+        title = "读到长风破浪那句，突然不慌了"
+        image_text = "这一句可以先存下"
         body = (
             f"{scene}。\n"
-            "再回头看苏轼写风雨和行路，才发现很多狼狈不是非要立刻赢过去，"
-            "而是可以先被看见、被安放。"
+            "再回头看李白写“长风破浪会有时”，才发现古诗词金句不是让人立刻赢，"
+            "而是提醒自己先把今天稳住。"
+            "这一句可以存下来：低谷不是结论，只是现在还没到风来的时候。"
+            "评论区留一句你最近读到会想到自己的古诗词。"
         )
-        hashtags = ["#苏轼", "#诗词赏析", "#小红书读书笔记"]
-        if feedback != "无" and "苏轼" not in body:
-            body += "\n顺着苏轼再读一遍，情绪也会慢一点落下来。"
+        hashtags = ["#古诗词", "#诗词金句", "#小红书读书笔记"]
+        if feedback != "无" and "这一句" not in body:
+            body += "\n把这一句补回来，读法才不会散成泛泛的文化感。"
         return {
             "title": title,
             "image_text": image_text,
@@ -481,11 +482,30 @@ def _avoid_recent_memory_title(
     return "这口气被我换个地方写下", image_text
 
 
-def _is_sushi_poetry_context(*, scene: str, extra_context: str) -> bool:
+def _is_classic_poetry_context(*, scene: str, extra_context: str) -> bool:
     combined = f"{scene}\n{extra_context}"
     return any(
         keyword in combined
-        for keyword in ("苏轼", "诗词赏析", "#苏轼", "定风波", "赤壁赋", "水调歌头")
+        for keyword in (
+            "古诗词金句",
+            "古诗词",
+            "诗词金句",
+            "经典诗句",
+            "Classic Poetry Quote Style",
+            "XHS Classic Poetry Hashtagging",
+            "#古诗词",
+            "李白",
+            "李清照",
+            "王维",
+            "杜甫",
+            "长风破浪",
+            "苏轼",
+            "诗词赏析",
+            "#苏轼",
+            "定风波",
+            "赤壁赋",
+            "水调歌头",
+        )
     )
 
 
@@ -577,7 +597,7 @@ def _build_deepseek_hard_requirements(*, extra_context: str, runtime_context: st
         requirements.append("正文不要写成长文，信息量要收住，但必须保留首屏钩子、领域要素、可保存单元和评论交接。")
     if runtime_context.strip() and _extract_runtime_signal(runtime_context, label="主切口"):
         requirements.append("优先参考实时上下文里的主切口和场景张力，只借情绪结构，不复写原题。")
-    for hashtag in ("#发疯文学", "#苏轼"):
+    for hashtag in ("#发疯文学", "#古诗词"):
         if hashtag in extra_context:
             requirements.append(f"hashtags 数组必须包含 '{hashtag}'。")
     if _is_fengkuang_context(extra_context):
@@ -594,8 +614,8 @@ def _build_deepseek_hard_requirements(*, extra_context: str, runtime_context: st
             "cover_text_strategy 用一句话说明封面只放哪些短文字；"
             "reason 用一句话解释为什么这个图片形式适合当前主题。"
         )
-    if "苏轼" in extra_context:
-        requirements.append("正文必须包含“苏轼”。")
+    if _is_classic_poetry_context(scene="", extra_context=extra_context):
+        requirements.append("正文必须围绕一句经典古诗词金句展开，并给出可保存的“这一句”读法；不要伪造作者、篇名或原句。")
     return " ".join(requirements)
 
 

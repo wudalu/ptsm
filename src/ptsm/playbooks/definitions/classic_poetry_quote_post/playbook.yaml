@@ -1,6 +1,6 @@
-playbook_id: sushi_poetry_daily_post
+playbook_id: classic_poetry_quote_post
 version: 1
-domain: 苏轼诗词赏析
+domain: 古诗词金句
 platforms:
   - xiaohongshu
 required_skills:
@@ -8,21 +8,24 @@ required_skills:
   - topic_research
   - xhs_image_strategy
   - xhs_human_voice
-  - sushi_poetry_style
-  - xhs_poetry_hashtagging
+  - classic_poetry_style
+  - xhs_classic_poetry_hashtagging
 optional_skills: []
 reflection:
-  must_include_phrase: 苏轼
-  required_hashtag: "#苏轼"
+  must_include_phrase: 这一句
+  required_hashtag: "#古诗词"
   body_must_include_any:
     - 存
     - 记下来
     - 这一句
+    - 金句
+    - 古诗词
     - 评论区
   body_must_not_include_any:
     - 课堂讲义
     - 百科
     - 知识点
+    - 伪造出处
     - 变体要求
     - 模板要求
     - comment_chain

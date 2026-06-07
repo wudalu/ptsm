@@ -204,13 +204,13 @@ def test_run_playbook_cli_passes_generic_request_fields(
         [
             "run-playbook",
             "--scene",
-            "夜里读到定风波",
+            "读到李白长风破浪会有时",
             "--account-id",
-            "acct-sushi-local",
+            "acct-classic-poetry-local",
             "--playbook-id",
-            "sushi_poetry_daily_post",
+            "classic_poetry_quote_post",
             "--thread-id",
-            "thread-sushi-001",
+            "thread-classic-poetry-001",
             "--publish-mode",
             "dry-run",
             "--publish-image-path",
@@ -221,27 +221,27 @@ def test_run_playbook_cli_passes_generic_request_fields(
             "--open-browser-if-needed",
             "--wait-for-publish-status",
             "--topic-direction-id",
-            "sushi_red_cliff_big_view",
+            "classic_tang_resilience_quote",
         ]
     )
 
     payload = json.loads(capsys.readouterr().out)
 
     assert exit_code == 0
-    assert payload["playbook_id"] == "sushi_poetry_daily_post"
+    assert payload["playbook_id"] == "classic_poetry_quote_post"
     request = captured["request"]
     assert isinstance(request, PlaybookRequest)
-    assert request.scene == "夜里读到定风波"
-    assert request.account_id == "acct-sushi-local"
-    assert request.playbook_id == "sushi_poetry_daily_post"
+    assert request.scene == "读到李白长风破浪会有时"
+    assert request.account_id == "acct-classic-poetry-local"
+    assert request.playbook_id == "classic_poetry_quote_post"
     assert request.publish_mode == "dry-run"
     assert request.publish_image_paths == ["outputs/generated_images/cover-1.png"]
     assert request.auto_generate_images is True
     assert request.publish_visibility == "仅自己可见"
     assert request.open_browser_if_needed is True
     assert request.wait_for_publish_status is True
-    assert request.topic_direction_id == "sushi_red_cliff_big_view"
-    assert captured["thread_id"] == "thread-sushi-001"
+    assert request.topic_direction_id == "classic_tang_resilience_quote"
+    assert captured["thread_id"] == "thread-classic-poetry-001"
 
 
 def test_run_playbook_cli_passes_openclaw_guidance_fields(

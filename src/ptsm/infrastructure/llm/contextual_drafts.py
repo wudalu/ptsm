@@ -18,8 +18,8 @@ def build_contextual_deterministic_draft(
             feedback=feedback,
             runtime_context=runtime_context,
         )
-    if _is_sushi_poetry_context(scene=scene, extra_context=extra_context):
-        return _build_sushi_poetry_draft(scene=scene, feedback=feedback)
+    if _is_classic_poetry_context(scene=scene, extra_context=extra_context):
+        return _build_classic_poetry_draft(scene=scene, feedback=feedback)
     if _is_wuxia_context(scene=scene, extra_context=extra_context):
         return _build_wuxia_draft(scene=scene, feedback=feedback)
     if _is_world_cup_context(scene=scene, extra_context=extra_context):
@@ -43,11 +43,23 @@ def build_contextual_deterministic_draft(
     return None
 
 
-def _is_sushi_poetry_context(*, scene: str, extra_context: str) -> bool:
+def _is_classic_poetry_context(*, scene: str, extra_context: str) -> bool:
     combined = f"{scene}\n{extra_context}"
     return any(
         keyword in combined
         for keyword in (
+            "古诗词金句",
+            "古诗词",
+            "诗词金句",
+            "经典诗句",
+            "Classic Poetry Quote Style",
+            "XHS Classic Poetry Hashtagging",
+            "#古诗词",
+            "李白",
+            "李清照",
+            "王维",
+            "杜甫",
+            "长风破浪",
             "苏轼",
             "诗词赏析",
             "Sushi Poetry Style",
@@ -411,22 +423,47 @@ def _extract_pattern_hooks(runtime_context: str) -> set[str]:
     return set()
 
 
-def _build_sushi_poetry_draft(*, scene: str, feedback: str) -> dict[str, Any]:
+def _build_classic_poetry_draft(*, scene: str, feedback: str) -> dict[str, Any]:
+    if any(keyword in scene for keyword in ("李清照", "人比黄花瘦", "声声慢")):
+        title = "读到李清照那句，突然不硬撑了"
+        image_text = "情绪可以慢慢安放"
+        quote = "人比黄花瘦"
+        author = "李清照"
+        reading = "不是把难过写得好看，而是承认有些时刻人真的会轻不起来。"
+    elif any(keyword in scene for keyword in ("王维", "山水", "空山")):
+        title = "读到王维那句，突然想留白"
+        image_text = "今晚先空出来一点"
+        quote = "空山新雨后"
+        author = "王维"
+        reading = "不是逃进山里，而是在今天也给自己留一小块安静。"
+    elif any(keyword in scene for keyword in ("苏轼", "定风波", "风雨")):
+        title = "读到定风波那句，突然不急了"
+        image_text = "风雨可以先慢一点"
+        quote = "莫听穿林打叶声"
+        author = "苏轼"
+        reading = "不是把狼狈变美，而是提醒自己别把一阵风雨判成失败。"
+    else:
+        title = "读到长风破浪那句，突然不慌了"
+        image_text = "这一句可以先存下"
+        quote = "长风破浪会有时"
+        author = "李白"
+        reading = "不是喊你立刻赢，而是提醒你：看不见风的时候，也可以先把船稳住。"
+
     body = (
-        f"{scene}，我会想到苏轼《定风波》里那种把狼狈放慢一点看的劲儿。\n"
-        "他不是把风雨写成胜利宣言，而是先承认：人走在雨里，衣角会湿，心也会乱。"
-        "但只要还能往前走，很多难堪就不会永远停在原地。\n"
-        "这一句可以存下来：别急着把今天解释成失败，先把它当成一段正在过去的风雨。"
-        "它不是鸡血，更像给自己留一点缓冲。\n"
-        "评论区可以留一句你最近读到会想到自己的苏轼词，我也想顺着大家的句子再读一遍。"
+        f"{scene}。我会先想到{author}这句“{quote}”。\n"
+        f"{reading}"
+        "所以这不是一条讲义，也不是把古诗词金句当成鸡血口号。\n"
+        f"这一句可以存下来：先承认今天很难，再给自己留一个还能往前走的小动作。"
+        "今晚只做一件事也算，打开文档、发出那条消息，或者早点睡。\n"
+        "评论区可以留一句你最近读到会想到自己的古诗词，我想顺着大家的句子再读一遍。"
     )
-    if feedback != "无" and "苏轼" not in body:
-        body += "\n顺着苏轼再读一遍，情绪也会慢一点落下来。"
+    if feedback != "无" and "这一句" not in body:
+        body += "\n把这一句补回来，读法才不会散成泛泛的文化感。"
     return {
-        "title": "读苏轼，突然不急着赢过今天了",
-        "image_text": "风雨可以先慢一点",
+        "title": title,
+        "image_text": image_text,
         "body": body,
-        "hashtags": ["#苏轼", "#诗词赏析", "#读书笔记", "#小红书读书"],
+        "hashtags": ["#古诗词", "#诗词金句", "#读书笔记", "#小红书读书"],
     }
 
 

@@ -8,7 +8,7 @@ from ptsm.playbooks.registry import PlaybookRegistry
 
 XHS_PLAYBOOK_IDS = [
     "fengkuang_daily_post",
-    "sushi_poetry_daily_post",
+    "classic_poetry_quote_post",
     "wuxia_character_post",
     "ai_tech_daily_post",
     "daily_english_post",
@@ -89,33 +89,33 @@ def test_playbook_registry_selects_by_account_domain_and_platform() -> None:
     assert playbook.playbook_id == "fengkuang_daily_post"
 
 
-def test_playbook_registry_loads_sushi_poetry_playbook() -> None:
+def test_playbook_registry_loads_classic_poetry_playbook() -> None:
     registry = PlaybookRegistry(
         playbook_root=Path("src/ptsm/playbooks/definitions"),
     )
 
-    playbook = registry.get("sushi_poetry_daily_post")
+    playbook = registry.get("classic_poetry_quote_post")
 
-    assert playbook.domain == "苏轼诗词赏析"
+    assert playbook.domain == "古诗词金句"
     assert playbook.required_skills == [
         "xhs_trend_scan",
         "topic_research",
         "xhs_image_strategy",
         "xhs_human_voice",
-        "sushi_poetry_style",
-        "xhs_poetry_hashtagging",
+        "classic_poetry_style",
+        "xhs_classic_poetry_hashtagging",
     ]
 
 
-def test_playbook_registry_selects_sushi_poetry_by_account_domain_and_platform() -> None:
+def test_playbook_registry_selects_classic_poetry_by_account_domain_and_platform() -> None:
     registry = PlaybookRegistry(
         playbook_root=Path("src/ptsm/playbooks/definitions"),
     )
-    account = AccountRegistry().get("acct-sushi-local")
+    account = AccountRegistry().get("acct-classic-poetry-local")
 
     playbook = registry.select_for_account(account=account)
 
-    assert playbook.playbook_id == "sushi_poetry_daily_post"
+    assert playbook.playbook_id == "classic_poetry_quote_post"
 
 
 def test_registry_loads_wuxia_playbook() -> None:

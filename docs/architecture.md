@@ -29,7 +29,7 @@ related_paths:
 
 # Architecture
 
-PTSM 当前已支持九个垂直领域（发疯文学、苏轼诗词赏析、武侠人物评述、AI科技资讯、每日英语学习、现代心理困境观察、人类丰容实验、世界杯主题、Reddit英文讨论转译），通过 playbook + skill + account 注册表实现多领域并行运营。
+PTSM 当前已支持九个垂直领域（发疯文学、古诗词金句、武侠人物评述、AI科技资讯、每日英语学习、现代心理困境观察、人类丰容实验、世界杯主题、Reddit英文讨论转译），通过 playbook + skill + account 注册表实现多领域并行运营。
 
 提示词构建 / 好用 prompt 不是第十个 playbook；当前证据只支持把它作为
 `ai_tech_daily_post` 下的 AI 工作流子线。它复用 AI 科技资讯的账号、playbook、

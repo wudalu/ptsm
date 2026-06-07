@@ -52,13 +52,13 @@ def test_surface_activates_full_skill_content_on_demand() -> None:
     assert "具体日常崩溃瞬间" in loaded.content
 
 
-def test_selector_returns_sushi_poetry_scoped_surface() -> None:
+def test_selector_returns_classic_poetry_scoped_surface() -> None:
     selector = _build_selector()
 
     surface = selector.select(
-        domain="苏轼诗词赏析",
+        domain="古诗词金句",
         platform="xiaohongshu",
-        playbook_id="sushi_poetry_daily_post",
+        playbook_id="classic_poetry_quote_post",
     )
 
     assert [item.skill_name for item in surface.list_summaries()] == [
@@ -66,23 +66,24 @@ def test_selector_returns_sushi_poetry_scoped_surface() -> None:
         "topic_research",
         "xhs_human_voice",
         "xhs_image_strategy",
-        "sushi_poetry_style",
-        "xhs_poetry_hashtagging",
+        "classic_poetry_style",
+        "xhs_classic_poetry_hashtagging",
     ]
 
 
-def test_surface_activates_sushi_poetry_skill_content_on_demand() -> None:
+def test_surface_activates_classic_poetry_skill_content_on_demand() -> None:
     selector = _build_selector()
 
     surface = selector.select(
-        domain="苏轼诗词赏析",
+        domain="古诗词金句",
         platform="xiaohongshu",
-        playbook_id="sushi_poetry_daily_post",
+        playbook_id="classic_poetry_quote_post",
     )
-    loaded = surface.activate("sushi_poetry_style")
+    loaded = surface.activate("classic_poetry_style")
 
-    assert loaded.skill.skill_name == "sushi_poetry_style"
-    assert "苏轼" in loaded.content
+    assert loaded.skill.skill_name == "classic_poetry_style"
+    assert "古诗词" in loaded.content
+    assert "金句" in loaded.content
 
 
 def test_selector_exposes_wuxia_skills() -> None:

@@ -58,6 +58,13 @@ SAVE_TOOL_IMAGE_KEYWORDS = (
     "三句",
 )
 NOTE_CARD_IMAGE_KEYWORDS = (
+    "古诗词",
+    "诗词金句",
+    "经典诗句",
+    "李白",
+    "李清照",
+    "王维",
+    "杜甫",
     "苏轼",
     "怀民",
     "定风波",
