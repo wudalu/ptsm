@@ -11,6 +11,7 @@ def generate_report(result: TopicScanResult, output_dir: str = "outputs/artifact
     lines.append(f"# Topic Radar Scan Report — {result.scan_date}")
     lines.append("")
     lines.append(f"**Platforms scanned:** {', '.join(result.platforms)}")
+    lines.append(f"**Scan quality:** {result.scan_quality}")
     if result.platform_errors:
         for platform, error in result.platform_errors.items():
             lines.append(f"- {platform}: ⚠️ {error}")
@@ -21,7 +22,12 @@ def generate_report(result: TopicScanResult, output_dir: str = "outputs/artifact
         lines.append("## 跨平台话题信号")
         lines.append("")
         for signal in result.cross_platform_signals:
-            lines.append(f"- **{signal.topic}** — 出现在 {', '.join(signal.platforms)} | 速度: {signal.velocity}")
+            velocity = (
+                "暂不判断（单次快照）"
+                if signal.velocity == "unknown"
+                else signal.velocity
+            )
+            lines.append(f"- **{signal.topic}** — 出现在 {', '.join(signal.platforms)} | 速度: {velocity}")
         lines.append("")
 
     # Discovered verticals
@@ -71,9 +77,19 @@ def generate_report(result: TopicScanResult, output_dir: str = "outputs/artifact
     content = "\n".join(lines)
     dir_path = Path(output_dir)
     dir_path.mkdir(parents=True, exist_ok=True)
-    filepath = dir_path / f"topic-brief-{result.scan_date}.md"
+    filepath = _report_path_for_result(result, dir_path)
     filepath.write_text(content, encoding="utf-8")
+    result._report_path = filepath
     return filepath
+
+
+def _report_path_for_result(result: TopicScanResult, dir_path: Path) -> Path:
+    """Pair a report with the unique JSON stem chosen for the same scan."""
+    artifact_path = result.artifact_path
+    if artifact_path is not None and artifact_path.parent == dir_path:
+        suffix = artifact_path.stem.removeprefix("topic-scan")
+        return dir_path / f"topic-brief{suffix}.md"
+    return dir_path / f"topic-brief-{result.scan_date}.md"
 
 
 def _format_heat(heat: dict[str, float]) -> str:

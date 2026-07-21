@@ -4,6 +4,7 @@ import asyncio
 from datetime import date
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 from ptsm.skills import runtime_context
 from ptsm.skills.runtime_context import (
@@ -180,7 +181,7 @@ def test_xhs_trend_scan_context_builder_times_out_when_mcp_hangs() -> None:
     assert context is None
 
 
-def test_topic_research_skips_scan_when_artifact_missing_and_not_fresh(
+def test_topic_research_ignores_existing_artifact_when_not_fresh(
     monkeypatch,
     tmp_path,
 ) -> None:
@@ -191,6 +192,22 @@ def test_topic_research_skips_scan_when_artifact_missing_and_not_fresh(
         calls += 1
 
     monkeypatch.setattr(runtime_context, "_run_topic_radar_scan", fake_scan)
+    (tmp_path / f"topic-scan-{date.today().isoformat()}.json").write_text(
+        json.dumps(
+            {
+                "scan_quality": "completed",
+                "recommended_angles": [
+                    {
+                        "vertical": "AI 科技",
+                        "angle": "旧热点工件不应影响普通草稿",
+                        "why_discussion_likely": "这是回归夹具。",
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
     builder = TopicResearchContextBuilder(artifact_dir=str(tmp_path))
 
     context = builder.build(
@@ -215,6 +232,38 @@ def test_topic_research_can_disable_fresh_scan_for_local_only_resolver(
         calls += 1
 
     monkeypatch.setattr(runtime_context, "_run_topic_radar_scan", fake_scan)
+    (tmp_path / f"topic-scan-{date.today().isoformat()}.json").write_text(
+        json.dumps(
+            {
+                "scan_quality": "completed",
+                "recommended_angles": [
+                    {
+                        "vertical": "人类丰容",
+                        "angle": "旧热点工件不应作为 fresh receipt",
+                        "why_discussion_likely": "这是回归夹具。",
+                        "cluster_id": "cluster-existing",
+                        "event_fingerprint": "event-existing",
+                        "evidence_ids": ["evidence-existing"],
+                    }
+                ],
+                "evidence": [
+                    {
+                        "evidence_id": "evidence-existing",
+                        "event_fingerprint": "event-existing",
+                    }
+                ],
+                "topic_clusters": [
+                    {
+                        "cluster_id": "cluster-existing",
+                        "event_fingerprint": "event-existing",
+                        "evidence_ids": ["evidence-existing"],
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
     builder = TopicResearchContextBuilder(
         artifact_dir=str(tmp_path),
         allow_fresh_scan=False,
@@ -229,6 +278,382 @@ def test_topic_research_can_disable_fresh_scan_for_local_only_resolver(
 
     assert context is None
     assert calls == 0
+
+
+def test_topic_research_fresh_scan_uses_public_full_platform_api_and_actual_artifact(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """A fresh scan reads the exact artifact selected by topic-radar, not today's base name."""
+    scan_day = date.today().isoformat()
+    artifact_path = tmp_path / f"topic-scan-{scan_day}-2.json"
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "scan_quality": "partial",
+                "platform_errors": {"weibo": "collection failed (TimeoutError)"},
+                "scan_summary": "下班后的低成本恢复讨论正在升温。",
+                "recommended_angles": [
+                    {
+                        "vertical": "人类丰容",
+                        "angle": "把晚饭后十分钟留给一个低成本感官实验",
+                        "why_discussion_likely": "容易复刻，也容易交换自己的版本。",
+                        "cluster_id": "cluster-internal-7",
+                        "angle_signature": "angle-internal-7",
+                        "event_fingerprint": "event-internal-7",
+                        "evidence_ids": ["evidence-internal-7"],
+                        "source_title": "原始热帖标题不应进入草稿",
+                        "author": "原作者",
+                        "url": "https://example.test/raw-source",
+                        "feed_id": "feed-secret-7",
+                        "xsec_token": "token-secret-7",
+                    }
+                ],
+                "discovered_verticals": [],
+                "noise_topics": [],
+                "evidence": [
+                    {
+                        "evidence_id": "evidence-internal-7",
+                        "event_fingerprint": "event-internal-7",
+                    }
+                ],
+                "topic_clusters": [
+                    {
+                        "cluster_id": "cluster-internal-7",
+                        "event_fingerprint": "event-internal-7",
+                        "evidence_ids": ["evidence-internal-7"],
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    calls: list[dict[str, object]] = []
+
+    async def fake_run_scan(**kwargs: object) -> object:
+        calls.append(dict(kwargs))
+        return SimpleNamespace(
+            artifact_path=artifact_path,
+            report_path=tmp_path / f"topic-brief-{scan_day}-2.md",
+            scan_quality="partial",
+            platform_errors={"weibo": "collection failed (TimeoutError)"},
+            evidence=[
+                {
+                    "evidence_id": "evidence-internal-7",
+                    "event_fingerprint": "event-internal-7",
+                }
+            ],
+            topic_clusters=[
+                {
+                    "cluster_id": "cluster-internal-7",
+                    "event_fingerprint": "event-internal-7",
+                    "evidence_ids": ["evidence-internal-7"],
+                }
+            ],
+        )
+
+    monkeypatch.setattr("topic_radar.cli.run_scan", fake_run_scan)
+    builder = TopicResearchContextBuilder(artifact_dir=str(tmp_path))
+
+    context = builder.build(
+        scene="人类丰容",
+        domain="人类丰容实验",
+        playbook_id="human_enrichment_daily_post",
+        fresh_topic_research=True,
+    )
+
+    assert calls == [{"output_dir": str(tmp_path)}]
+    assert context is not None
+    assert "把晚饭后十分钟留给一个低成本感官实验" in context
+    assert "容易复刻，也容易交换自己的版本。" in context
+    for secret in (
+        "原始热帖标题不应进入草稿",
+        "原作者",
+        "https://example.test/raw-source",
+        "feed-secret-7",
+        "token-secret-7",
+        "cluster-internal-7",
+        "angle-internal-7",
+        "event-internal-7",
+        "evidence-internal-7",
+    ):
+        assert secret not in context
+
+    assert builder.last_selection == {
+        "source": "topic-radar",
+        "vertical": "人类丰容",
+        "angle": "把晚饭后十分钟留给一个低成本感官实验",
+        "why": "容易复刻，也容易交换自己的版本。",
+        "constructed_scene": "以'把晚饭后十分钟留给一个低成本感官实验'为选题切入点，构建一个具体的个人化场景",
+        "scan_quality": "partial",
+        "platform_errors": {"weibo": "collection failed (TimeoutError)"},
+        "artifact_path": str(artifact_path),
+        "report_path": str(tmp_path / f"topic-brief-{scan_day}-2.md"),
+        "cluster_id": "cluster-internal-7",
+        "angle_signature": "angle-internal-7",
+        "event_fingerprint": "event-internal-7",
+        "evidence_ids": ["evidence-internal-7"],
+    }
+
+
+def test_topic_research_fresh_scan_without_artifact_receipt_never_reads_same_day_artifact(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """A missing current receipt must not fall back to an ambient same-day scan."""
+    stale_artifact = tmp_path / f"topic-scan-{date.today().isoformat()}.json"
+    stale_artifact.write_text(
+        json.dumps(
+            {
+                "scan_quality": "completed",
+                "recommended_angles": [
+                    {
+                        "vertical": "人类丰容",
+                        "angle": "旧工件不能伪装成本次 fresh 热点",
+                        "why_discussion_likely": "这是同日旧结果回读回归夹具。",
+                        "cluster_id": "cluster-stale",
+                        "event_fingerprint": "event-stale",
+                        "evidence_ids": ["evidence-stale"],
+                    }
+                ],
+                "evidence": [
+                    {
+                        "evidence_id": "evidence-stale",
+                        "event_fingerprint": "event-stale",
+                    }
+                ],
+                "topic_clusters": [
+                    {
+                        "cluster_id": "cluster-stale",
+                        "event_fingerprint": "event-stale",
+                        "evidence_ids": ["evidence-stale"],
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        runtime_context,
+        "_run_topic_radar_scan",
+        lambda _artifact_dir: {"scan_quality": "completed"},
+    )
+    builder = TopicResearchContextBuilder(artifact_dir=str(tmp_path))
+
+    context = builder.build(
+        scene="人类丰容",
+        domain="人类丰容实验",
+        playbook_id="human_enrichment_daily_post",
+        fresh_topic_research=True,
+    )
+
+    assert context is None
+    assert builder.last_selection is None
+
+
+def test_topic_research_fresh_context_rejects_forged_cluster_evidence_relationship(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    artifact_path = tmp_path / f"topic-scan-{date.today().isoformat()}.json"
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "scan_quality": "completed",
+                "evidence": [
+                    {
+                        "evidence_id": "evidence-valid",
+                        "event_fingerprint": "event-valid",
+                    }
+                ],
+                "topic_clusters": [
+                    {
+                        "cluster_id": "cluster-valid",
+                        "event_fingerprint": "event-valid",
+                        "evidence_ids": ["evidence-valid"],
+                    }
+                ],
+                "recommended_angles": [
+                    {
+                        "vertical": "人类丰容",
+                        "angle": "伪造证据 ID 的角度",
+                        "why_discussion_likely": "不应进入草稿",
+                        "cluster_id": "cluster-valid",
+                        "event_fingerprint": "event-valid",
+                        "evidence_ids": ["evidence-forged"],
+                    },
+                    {
+                        "vertical": "人类丰容",
+                        "angle": "伪造集群 ID 的角度",
+                        "why_discussion_likely": "不应进入草稿",
+                        "cluster_id": "cluster-forged",
+                        "event_fingerprint": "event-valid",
+                        "evidence_ids": ["evidence-valid"],
+                    },
+                    {
+                        "vertical": "人类丰容",
+                        "angle": "伪造事件指纹的角度",
+                        "why_discussion_likely": "不应进入草稿",
+                        "cluster_id": "cluster-valid",
+                        "event_fingerprint": "event-forged",
+                        "evidence_ids": ["evidence-valid"],
+                    },
+                ],
+                "discovered_verticals": [],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        runtime_context,
+        "_run_topic_radar_scan",
+        lambda _artifact_dir: {"artifact_path": str(artifact_path)},
+    )
+    builder = TopicResearchContextBuilder(artifact_dir=str(tmp_path))
+
+    context = builder.build(
+        scene="人类丰容",
+        domain="人类丰容实验",
+        playbook_id="human_enrichment_daily_post",
+        fresh_topic_research=True,
+    )
+
+    assert context is None
+    assert builder.last_selection is None
+
+
+def test_topic_research_refuses_recommendations_from_insufficient_evidence(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    artifact_path = tmp_path / f"topic-scan-{date.today().isoformat()}.json"
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "scan_quality": "insufficient_evidence",
+                "platform_errors": {"xiaohongshu": "login required"},
+                "recommended_angles": [
+                    {
+                        "vertical": "不可信方向",
+                        "angle": "不应进入草稿的角度",
+                        "why_discussion_likely": "没有有效证据",
+                    }
+                ],
+                "discovered_verticals": [],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        runtime_context,
+        "_run_topic_radar_scan",
+        lambda _artifact_dir: {"artifact_path": str(artifact_path)},
+    )
+    builder = TopicResearchContextBuilder(artifact_dir=str(tmp_path))
+
+    context = builder.build(
+        scene="人类丰容",
+        domain="人类丰容实验",
+        playbook_id="human_enrichment_daily_post",
+        fresh_topic_research=True,
+    )
+
+    assert context is None
+    assert builder.last_selection is None
+
+
+def test_topic_research_scene_context_never_renders_raw_topic_radar_provenance(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    artifact_path = tmp_path / f"topic-scan-{date.today().isoformat()}.json"
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "scan_quality": "completed",
+                "scan_summary": "原始热点标题不应进入草稿。",
+                "discovered_verticals": [
+                    {
+                        "name": "人类丰容",
+                        "keywords": ["下班恢复"],
+                        "discussion_density": "high",
+                        "sample_topics": ["原始热帖标题不应进入草稿"],
+                        "suggested_angles": ["不直接复写原始标题"],
+                        "author": "原作者",
+                        "url": "https://example.test/raw-source",
+                        "feed_id": "feed-secret-8",
+                        "xsec_token": "token-secret-8",
+                        "cluster_id": "cluster-internal-8",
+                        "evidence_ids": ["evidence-internal-8"],
+                    }
+                ],
+                "recommended_angles": [
+                    {
+                        "vertical": "人类丰容",
+                        "angle": "下班后给自己十分钟的无用恢复",
+                        "why_discussion_likely": "具体、低门槛，容易接龙自己的版本。",
+                        "cluster_id": "cluster-internal-8",
+                        "evidence_ids": ["evidence-internal-8"],
+                    }
+                ],
+                "evidence": [
+                    {
+                        "evidence_id": "evidence-internal-8",
+                        "event_fingerprint": "event-internal-8",
+                        "title": "原始热帖标题不应进入草稿",
+                    }
+                ],
+                "raw_trending": [
+                    {
+                        "title": "原始热帖标题不应进入草稿",
+                        "author": "原作者",
+                        "url": "https://example.test/raw-source",
+                        "feed_id": "feed-secret-8",
+                        "xsec_token": "token-secret-8",
+                    }
+                ],
+                "topic_clusters": [
+                    {
+                        "cluster_id": "cluster-internal-8",
+                        "event_fingerprint": "event-internal-8",
+                        "evidence_ids": ["evidence-internal-8"],
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        runtime_context,
+        "_run_topic_radar_scan",
+        lambda _artifact_dir: {"artifact_path": str(artifact_path)},
+    )
+    builder = TopicResearchContextBuilder(artifact_dir=str(tmp_path))
+
+    context = builder.build(
+        scene="今天下班后想给自己十分钟恢复",
+        domain="人类丰容实验",
+        playbook_id="human_enrichment_daily_post",
+        fresh_topic_research=True,
+    )
+
+    assert context is not None
+    assert "下班后给自己十分钟的无用恢复" in context
+    for secret in (
+        "原始热点标题不应进入草稿",
+        "原作者",
+        "https://example.test/raw-source",
+        "feed-secret-8",
+        "token-secret-8",
+        "cluster-internal-8",
+        "evidence-internal-8",
+    ):
+        assert secret not in context
 
 
 def test_pattern_aware_topic_research_uses_local_pattern_when_topic_artifact_missing(
@@ -252,7 +677,7 @@ def test_pattern_aware_topic_research_uses_local_pattern_when_topic_artifact_mis
     assert "sudden_realization" in context
 
 
-def test_pattern_aware_topic_research_appends_pattern_to_topic_artifact(
+def test_pattern_aware_topic_research_uses_only_local_pattern_without_fresh_request(
     tmp_path: Path,
 ) -> None:
     topic_dir = tmp_path / "topic"
@@ -288,7 +713,6 @@ def test_pattern_aware_topic_research_appends_pattern_to_topic_artifact(
     )
 
     assert context is not None
-    assert "# Topic Research" in context
-    assert "把晚饭后路线改成一个十分钟感官实验" in context
+    assert "# Topic Research" not in context
+    assert "把晚饭后路线改成一个十分钟感官实验" not in context
     assert "# XHS Format Pattern Library Context" in context
-    assert context.index("# Topic Research") < context.index("# XHS Format Pattern Library Context")

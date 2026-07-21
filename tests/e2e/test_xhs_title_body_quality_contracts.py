@@ -1,40 +1,29 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
 from ptsm.config.settings import get_settings
+from ptsm.evaluations.contracts import EvalTarget
+from ptsm.evaluations.contracts_eval import contract_playbook_node_contract
+from ptsm.evaluations.playbook_contracts import load_playbook_eval_contract
 from ptsm.interfaces.cli.main import main
 
 
 GENERIC_TITLE_MARKERS = ("日常", "实录", "干货分享", "小红书爆款")
-DRAMATIC_TITLE_CUES = (
-    "那一秒",
-    "那秒",
-    "那句",
-    "不是",
-    "不代表",
-    "不想",
-    "不急",
-    "不能",
-    "别",
-    "却",
-    "反而",
-    "突然",
-    "原来",
-    "为什么",
-    "到底",
-    "值不值",
-    "被",
-    "最累",
-    "先别",
-    "救",
-    "硬仗",
-    "冷场",
-    "改到",
-    "拖回",
-)
+TITLE_CONCRETE_ENTRY_MARKERS = {
+    "fengkuang_daily_post": ("工牌", "群聊", "周报", "早会", "下班", "领导", "物件", "地铁", "周六", "需求"),
+    "modern_psychology_post": ("下班", "会议", "消息", "睡前", "关系", "脑子", "那句话"),
+    "human_enrichment_daily_post": ("丰容", "变量", "角落", "书桌", "路线", "材料", "床头", "一厘米", "那条路"),
+    "classic_poetry_quote_post": ("古诗词", "金句", "这一句", "李白", "李清照", "月亮", "王维", "定风波"),
+    "daily_english_post": ("开会", "私聊", "例句", "这句", "英语"),
+    "ai_tech_daily_post": ("AI", "普通人", "搭子", "工具", "更新"),
+    "world_cup_daily_post": ("世界杯", "赛前", "看球", "开球", "终场", "阿根廷", "法国"),
+    "reddit_curation_daily_post": ("AI", "工具", "消息", "压力", "普通人"),
+    "wuxia_character_post": ("令狐冲", "黄蓉", "郭靖", "老款", "边界", "自由"),
+}
 FUNCTIONAL_LABEL_MARKERS = (
     "可复制疯话：",
     "可复制疯话:",
@@ -92,64 +81,64 @@ BODY_HUMAN_ANCHORS = ("我", "你", "我们", "今天", "刚刚", "那一秒", "
             "fengkuang_daily_post",
             "领导18:57突然发来一句在吗，明天早会还要我补材料",
             "acct-fk-local",
-            120,
-            380,
+            90,
+            220,
         ),
         (
             "modern_psychology_post",
             "下班路上还在反复复盘会议里一句话，越想越尴尬",
             "acct-psychology-local",
-            260,
-            580,
+            200,
+            380,
         ),
         (
             "human_enrichment_daily_post",
             "把下班后的书桌从堆满快递盒改成一个十分钟手作角",
             "acct-enrichment-local",
-            180,
-            520,
+            120,
+            280,
         ),
         (
             "classic_poetry_quote_post",
             "读到李白长风破浪会有时，想写给低谷里的自己",
             "acct-classic-poetry-local",
-            180,
-            520,
+            120,
+            280,
         ),
         (
             "daily_english_post",
             "想学一个开会和私聊都能用的英语表达",
             "acct-daily-english-local",
-            180,
-            520,
+            140,
+            300,
         ),
         (
             "ai_tech_daily_post",
             "OpenAI 发布一项新的多模态助手更新，普通用户想知道到底值不值得试",
             "acct-ai-tech-local",
-            220,
-            650,
+            180,
+            420,
         ),
         (
             "world_cup_daily_post",
             "阿根廷和法国决赛前，想写一篇普通球迷也能看懂的赛前看点",
             "acct-world-cup-local",
-            220,
-            620,
+            180,
+            420,
         ),
         (
             "reddit_curation_daily_post",
             "从Reddit上AI和心理学英文讨论里选一个适合中文读者的角度",
             "acct-reddit-curation-local",
-            220,
-            700,
+            180,
+            420,
         ),
         (
             "wuxia_character_post",
             "分析令狐冲的自由人格与当代职场人不愿被体制化的挣扎",
             "acct-wuxia-local",
-            700,
-            1100,
+            450,
+            750,
         ),
     ],
 )
@@ -189,13 +178,32 @@ def test_xhs_playbook_dry_runs_fit_title_body_quality_contract(
 
     assert exit_code == 0
     assert body_min <= len(content["body"]) <= body_max
+    body_beats = [line for line in content["body"].splitlines() if line.strip()]
+    assert 2 <= len(body_beats) <= 4
     assert len(content["title"]) <= 22
-    assert any(cue in content["title"] for cue in DRAMATIC_TITLE_CUES)
+    assert any(cue in content["title"] for cue in TITLE_CONCRETE_ENTRY_MARKERS[playbook_id])
     assert not any(marker in content["title"] for marker in GENERIC_TITLE_MARKERS)
     visible = f"{content['title']}\n{content['image_text']}\n{content['body']}"
     assert not any(marker in visible for marker in FUNCTIONAL_LABEL_MARKERS)
     assert any(marker in content["body"] for marker in BODY_SCENE_SIGNAL_MARKERS[playbook_id])
     assert any(anchor in content["body"] for anchor in BODY_HUMAN_ANCHORS)
     assert not any(marker in content["body"] for marker in ABSTRACT_BODY_MARKERS)
+
+    definitions_root = Path(__file__).resolve().parents[2] / "src" / "ptsm" / "playbooks" / "definitions"
+    contract = load_playbook_eval_contract(definitions_root, playbook_id)
+    assert contract is not None
+    contract_result = contract_playbook_node_contract(
+        EvalTarget(
+            target_id=f"e2e:{playbook_id}:executor",
+            run_id=f"thread-{playbook_id}-title-body-quality",
+            playbook_id=playbook_id,
+            account_id=account_id,
+            phase="executor",
+            target_type="artifact_slice",
+            output_ref={"final_content": content},
+        ),
+        contract,
+    )
+    assert contract_result.status == "passed", contract_result.reason
 
     get_settings.cache_clear()

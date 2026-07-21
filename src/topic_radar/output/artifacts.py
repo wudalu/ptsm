@@ -7,6 +7,12 @@ from pathlib import Path
 
 from topic_radar.analysis.note_teardown import TeardownResult
 from topic_radar.analysis.cross_platform import CrossPlatformSignal, DiscoveredVertical
+from topic_radar.analysis.evidence import (
+    EvidenceRecord,
+    ScanQuality,
+    canonicalize_trending_items,
+    determine_scan_quality,
+)
 from topic_radar.platforms.weibo import TrendingItem
 
 
@@ -23,16 +29,50 @@ class TopicScanResult:
     analysis_method: str = "rules"
     scan_summary: str = ""
     noise_topics: list[str] = field(default_factory=list)
+    schema_version: int = 2
+    scan_quality: str = ScanQuality.COMPLETED.value
+    evidence: list[dict] = field(default_factory=list)
+    topic_clusters: list[dict] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        if isinstance(self.scan_quality, ScanQuality):
+            self.scan_quality = self.scan_quality.value
 
     def to_json(self) -> str:
         return json.dumps(self, ensure_ascii=False, indent=2, default=_serialize)
 
+    @property
+    def artifact_path(self) -> Path | None:
+        """Path selected by the last write, excluded from serialized schema."""
+        return getattr(self, "_artifact_path", None)
+
+    @property
+    def report_path(self) -> Path | None:
+        """Path selected by the last Markdown render, excluded from schema."""
+        return getattr(self, "_report_path", None)
+
     def write(self, output_dir: str = "outputs/artifacts") -> Path:
         dir_path = Path(output_dir)
         dir_path.mkdir(parents=True, exist_ok=True)
-        filepath = dir_path / f"topic-scan-{self.scan_date}.json"
+        filepath = _next_scan_artifact_path(dir_path, self.scan_date)
         filepath.write_text(self.to_json(), encoding="utf-8")
+        self._artifact_path = filepath
         return filepath
+
+
+def _next_scan_artifact_path(dir_path: Path, scan_date: str) -> Path:
+    """Return a new daily artifact path without replacing an earlier scan."""
+    primary = dir_path / f"topic-scan-{scan_date}.json"
+    primary_report = dir_path / f"topic-brief-{scan_date}.md"
+    if not primary.exists() and not primary_report.exists():
+        return primary
+    index = 2
+    while True:
+        candidate = dir_path / f"topic-scan-{scan_date}-{index}.json"
+        report_candidate = dir_path / f"topic-brief-{scan_date}-{index}.md"
+        if not candidate.exists() and not report_candidate.exists():
+            return candidate
+        index += 1
 
 
 def build_scan_result(
@@ -42,16 +82,36 @@ def build_scan_result(
     cross_signals: list[CrossPlatformSignal],
     teardowns: list[TeardownResult] | None = None,
     errors: dict[str, str] | None = None,
+    scan_quality: ScanQuality | str | None = None,
+    evidence: list[EvidenceRecord] | list[dict] | None = None,
+    topic_clusters: list[dict] | None = None,
+    requested_platforms: list[str] | None = None,
 ) -> TopicScanResult:
     teardowns = teardowns or []
 
     patterns = _summarize_teardown_patterns(teardowns)
     angles = _build_recommended_angles(verticals, cross_signals, patterns)
     raw = _flatten_trending(trending_items)
+    if evidence is None:
+        _canonical, canonical_evidence = canonicalize_trending_items(trending_items)
+        artifact_evidence = [asdict(record) for record in canonical_evidence]
+    else:
+        artifact_evidence = [
+            asdict(record) if isinstance(record, EvidenceRecord) else dict(record)
+            for record in evidence
+        ]
+    quality = scan_quality or determine_scan_quality(
+        trending_items,
+        errors,
+        requested_platforms,
+    )
 
     return TopicScanResult(
         scan_date=date.today().isoformat(),
         platforms=sorted(trending_items),
+        scan_quality=quality,
+        evidence=artifact_evidence,
+        topic_clusters=topic_clusters or [],
         discovered_verticals=verticals,
         cross_platform_signals=cross_signals,
         high_engagement_patterns=patterns,
@@ -103,6 +163,9 @@ def _build_recommended_angles(
                 "angle": angle,
                 "why_discussion_likely": _pick_why(v.name),
                 "confidence": v.confidence,
+                # This is consumed by the scan pipeline before persistence to
+                # bind a generic rule angle to canonical event evidence.
+                "sample_topics": list(v.sample_topics),
             })
 
     angles.sort(key=lambda a: a["confidence"], reverse=True)
@@ -138,7 +201,11 @@ def _flatten_trending(
                 "label": item.label,
                 "url": item.url,
             }
-            row.update(item.metadata)
+            row.update({
+                key: value
+                for key, value in item.metadata.items()
+                if not key.startswith("_evidence_")
+            })
             flat.append(row)
     return flat
 

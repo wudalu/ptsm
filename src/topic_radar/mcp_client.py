@@ -4,7 +4,6 @@ import asyncio
 from dataclasses import dataclass, field
 from datetime import timedelta
 import json
-import sys
 from typing import Any
 
 from langchain_mcp_adapters.client import MultiServerMCPClient
@@ -20,9 +19,10 @@ class ServerHealth:
 
 
 class McpClient:
-    """Multi-server MCP client supporting HTTP and stdio transports."""
+    """MCP client that isolates HTTP and stdio servers during bounded discovery."""
 
     streamable_http_sse_read_timeout = timedelta(minutes=15)
+    tool_discovery_timeout = 20.0
 
     def __init__(
         self,
@@ -31,35 +31,71 @@ class McpClient:
     ) -> None:
         self._xhs_url = xhs_server_url
         self._enable_trends_hub = enable_trends_hub
-        self._tools: dict[str, dict[str, Any]] | None = None
-        self._client: MultiServerMCPClient | None = None
+        self._tools: dict[str, dict[str, Any]] = {}
+        self._loaded_servers: set[str] = set()
+        self._server_errors: dict[str, Exception] = {}
+        self._clients: dict[str, MultiServerMCPClient] = {}
 
-    async def get_tools(self) -> dict[str, dict[str, Any]]:
-        if self._tools is None:
-            self._tools = {}
-            client = self._build_client()
-            self._client = client
+    async def get_tools(
+        self,
+        server: str | None = None,
+        *,
+        timeout: float | None = None,
+    ) -> dict[str, dict[str, Any]]:
+        """Load tools per server so one broken MCP cannot poison another."""
+        if server is not None:
+            await self._load_server_tools(server, timeout=timeout)
+            return self._tools
+
+        for server_name in self._server_names():
             try:
-                raw = await client.get_tools()
-            except BaseException:
-                self._client = None
-                raise
-            for tool in raw:
-                server = getattr(tool, "server_name", None) or _guess_server(tool.name)
-                self._tools.setdefault(server, {})[tool.name] = tool
+                await self._load_server_tools(server_name, timeout=timeout)
+            except Exception:
+                # Callers asking for the aggregate can still use healthy
+                # servers; server-specific calls retain the original error.
+                continue
         return self._tools
+
+    async def _load_server_tools(self, server: str, *, timeout: float | None = None) -> None:
+        if server not in self._server_names():
+            return
+        if server in self._server_errors:
+            raise self._server_errors[server]
+        if server in self._loaded_servers:
+            return
+
+        client = _make_single_client(server, self._xhs_url)
+        try:
+            discovery_timeout = (
+                self.tool_discovery_timeout if timeout is None else timeout
+            )
+            raw = await asyncio.wait_for(client.get_tools(), timeout=discovery_timeout)
+        except Exception as exc:
+            self._server_errors[server] = exc
+            await _close_safely(client)
+            raise
+
+        self._clients[server] = client
+        self._loaded_servers.add(server)
+        for tool in raw:
+            tool_server = getattr(tool, "server_name", None) or server
+            self._tools.setdefault(tool_server, {})[tool.name] = tool
 
     async def health(self) -> dict[str, ServerHealth]:
         result: dict[str, ServerHealth] = {}
-        server_names = ["xiaohongshu"] + (["trends_hub"] if self._enable_trends_hub else [])
+        server_names = self._server_names()
 
         for name in server_names:
+            client: MultiServerMCPClient | None = None
             try:
                 client = _make_single_client(name, self._xhs_url)
-                raw = await client.get_tools()
+                raw = await asyncio.wait_for(
+                    client.get_tools(),
+                    timeout=self.tool_discovery_timeout,
+                )
                 tools = {}
                 for tool in raw:
-                    srv = getattr(tool, "server_name", None) or _guess_server(tool.name)
+                    srv = getattr(tool, "server_name", None) or name
                     tools.setdefault(srv, {})[tool.name] = tool
                 server_tools = tools.get(name, {})
                 result[name] = ServerHealth(
@@ -82,7 +118,7 @@ class McpClient:
         self, server: str, tool_name: str, payload: dict[str, object],
         timeout: float = 20.0,
     ) -> object:
-        tools = await self.get_tools()
+        tools = await self.get_tools(server, timeout=timeout)
         server_tools = tools.get(server, {})
         if tool_name not in server_tools:
             raise KeyError(f"Tool '{tool_name}' not found on server '{server}'")
@@ -92,25 +128,11 @@ class McpClient:
         )
 
     async def list_tools(self, server: str) -> list[str]:
-        tools = await self.get_tools()
+        tools = await self.get_tools(server)
         return sorted(tools.get(server, {}))
 
-    def _build_client(self) -> MultiServerMCPClient:
-        servers: dict[str, dict[str, Any]] = {
-            "xiaohongshu": {
-                "transport": "http",
-                "url": self._xhs_url,
-                "sse_read_timeout": self.streamable_http_sse_read_timeout,
-            }
-        }
-        if self._enable_trends_hub:
-            servers["trends_hub"] = {
-                "transport": "stdio",
-                "command": "npx",
-                "args": ["-y", "mcp-trends-hub"],
-            }
-        return MultiServerMCPClient(servers)
-
+    def _server_names(self) -> list[str]:
+        return ["xiaohongshu"] + (["trends_hub"] if self._enable_trends_hub else [])
 
 def _make_single_client(name: str, xhs_url: str) -> MultiServerMCPClient:
     if name == "xiaohongshu":
@@ -128,7 +150,7 @@ def _make_single_client(name: str, xhs_url: str) -> MultiServerMCPClient:
     return MultiServerMCPClient(servers)
 
 
-async def _close_safely(client: MultiServerMCPClient) -> None:
+async def _close_safely(client: MultiServerMCPClient | None) -> None:
     try:
         if hasattr(client, "close"):
             await client.close()

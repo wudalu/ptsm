@@ -4,6 +4,11 @@ from dataclasses import dataclass, field
 from collections import Counter
 import re
 
+from topic_radar.analysis.evidence import (
+    TopicCluster,
+    canonicalize_trending_items,
+    cluster_evidence,
+)
 from topic_radar.platforms.weibo import TrendingItem
 
 
@@ -12,8 +17,11 @@ class CrossPlatformSignal:
     topic: str
     platforms: list[str]
     first_seen_platform: str = ""
-    velocity: str = "stable"
+    velocity: str = "unknown"
     shared_keywords: list[str] = field(default_factory=list)
+    cluster_id: str = ""
+    event_fingerprint: str = ""
+    evidence_ids: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -30,34 +38,51 @@ class DiscoveredVertical:
 
 
 def discover_cross_platform(platform_items: dict[str, list[TrendingItem]]) -> list[CrossPlatformSignal]:
-    """Find topics appearing across multiple platforms."""
-    all_topics: dict[str, dict[str, TrendingItem]] = {}
+    """Find cross-platform events from canonical source evidence.
 
-    for platform, items in platform_items.items():
-        for item in items:
-            normalized = _normalize_topic(item.title)
-            if normalized not in all_topics:
-                all_topics[normalized] = {}
-            all_topics[normalized][platform] = item
+    This compatibility entry point accepts raw platform rows, but it no longer
+    trusts near-exact title equality alone.  A signal is emitted only when an
+    event cluster has independently observed evidence on at least two actual
+    platforms.
+    """
+    _canonical, evidence = canonicalize_trending_items(platform_items)
+    _clustered, clusters = cluster_evidence(evidence)
+    return discover_cross_platform_from_clusters(clusters)
 
+
+def discover_cross_platform_from_clusters(
+    clusters: list[TopicCluster] | tuple[TopicCluster, ...],
+) -> list[CrossPlatformSignal]:
+    """Create provenance-backed signals from already-built event clusters."""
     signals: list[CrossPlatformSignal] = []
-    for topic, platform_data in all_topics.items():
-        if len(platform_data) < 2:
+    for cluster in clusters:
+        if len(cluster.platforms) < 2:
             continue
-        platforms = sorted(platform_data)
-        first = min(platform_data.values(), key=lambda x: x.rank or 999)
-        shared_kw = _extract_shared_keywords([item.title for item in platform_data.values()])
-        velocity = _estimate_velocity(list(platform_data.values()))
-
-        signals.append(CrossPlatformSignal(
-            topic=topic,
-            platforms=platforms,
-            first_seen_platform=first.platform,
-            velocity=velocity,
-            shared_keywords=shared_kw[:5],
-        ))
-
-    signals.sort(key=lambda s: len(s.platforms), reverse=True)
+        signals.append(
+            CrossPlatformSignal(
+                topic=_normalize_topic(cluster.representative_title),
+                platforms=list(cluster.platforms),
+                # Radar collectors do not share a temporal observation clock,
+                # so alphabetical platform order must not masquerade as first
+                # appearance.
+                first_seen_platform="",
+                # A scan is a single snapshot. Cluster score represents
+                # cross-platform support and normalized heat, not a temporal
+                # change rate, so it cannot justify an acceleration claim.
+                velocity="unknown",
+                shared_keywords=_extract_shared_keywords([cluster.representative_title])[:5],
+                cluster_id=cluster.cluster_id,
+                event_fingerprint=cluster.event_fingerprint,
+                evidence_ids=list(cluster.evidence_ids),
+            )
+        )
+    signals.sort(
+        key=lambda signal: (
+            -len(signal.platforms),
+            signal.event_fingerprint,
+            signal.cluster_id,
+        )
+    )
     return signals
 
 
@@ -198,18 +223,6 @@ def _estimate_discussion_density(items: list[TrendingItem]) -> str:
     return "low"
 
 
-def _estimate_velocity(items: list[TrendingItem]) -> str:
-    hot_scores = [item.hot_score for item in items]
-    if not hot_scores:
-        return "stable"
-    avg = sum(hot_scores) / len(hot_scores)
-    if avg > 800_000:
-        return "accelerating"
-    if avg > 300_000:
-        return "steady"
-    return "fading"
-
-
 _HOOK_TEMPLATES = [
     "低门槛可复制 + 天然晒图欲望 + 评论区经验交换",
     "情绪共鸣切入 + 身份标签唤起 + 你来我往式讨论",
@@ -221,17 +234,17 @@ _HOOK_TEMPLATES = [
 def _suggest_angles(vertical: str, sample_titles: list[str]) -> list[str]:
     angles: list[str] = []
     if any(kw in vertical for kw in ("手作", "修复", "手工")):
-        angles.append("{product}改造前后对比，你们猜花了多少钱？")
+        angles.append("一件旧物改完前后差在哪，花的钱够不够买杯咖啡")
     if any(kw in vertical for kw in ("情绪", "疗愈", "治愈")):
-        angles.append("下班后10分钟的{ritual}，整个人都松下来")
+        angles.append("下班后留十分钟做一件没用的小事，整个人松一点")
     if any(kw in vertical for kw in ("AI", "效率")):
-        angles.append("普通人用AI{tool}搞定{task}，附上步骤")
+        angles.append("普通人用 AI 省掉一件重复小事，我把最短步骤写出来")
     if any(kw in vertical for kw in ("养生", "睡眠")):
-        angles.append("坚持{habit}一个月后，{benefit}了")
+        angles.append("睡前十分钟换一个小习惯，一周后身体先有了反应")
     if any(kw in vertical for kw in ("打工人", "上班")):
-        angles.append("工位上的{action}，旁边同事问我链接")
+        angles.append("工位上给自己留的两分钟恢复动作，旁边同事都来问")
     if not angles:
-        angles.append("{curiosity}如何用{method}实现{outcome}")
+        angles.append("一件小事怎么变得更顺手，评论区交换各自版本")
     return angles[:3]
 
 

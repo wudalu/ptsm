@@ -50,15 +50,15 @@ FUNCTIONAL_LABEL_MARKERS = [
 ]
 
 BODY_LENGTH_BANDS = {
-    "fengkuang_daily_post": (120, 380),
-    "modern_psychology_post": (260, 580),
-    "human_enrichment_daily_post": (180, 520),
-    "classic_poetry_quote_post": (180, 520),
-    "daily_english_post": (180, 520),
-    "ai_tech_daily_post": (220, 650),
-    "world_cup_daily_post": (220, 620),
-    "reddit_curation_daily_post": (220, 700),
-    "wuxia_character_post": (700, 1100),
+    "fengkuang_daily_post": (90, 220),
+    "modern_psychology_post": (200, 380),
+    "human_enrichment_daily_post": (120, 280),
+    "classic_poetry_quote_post": (120, 280),
+    "daily_english_post": (140, 300),
+    "ai_tech_daily_post": (180, 420),
+    "world_cup_daily_post": (180, 420),
+    "reddit_curation_daily_post": (180, 420),
+    "wuxia_character_post": (450, 750),
 }
 
 GENERIC_TITLE_MARKERS = {
@@ -73,32 +73,17 @@ GENERIC_TITLE_MARKERS = {
     "wuxia_character_post": ["武侠人物评述", "人物分析", "读书笔记"],
 }
 
-TITLE_TENSION_MARKERS = [
-    "那一秒",
-    "那秒",
-    "那句",
-    "不是",
-    "不代表",
-    "不想",
-    "不急",
-    "不能",
-    "别",
-    "却",
-    "反而",
-    "突然",
-    "原来",
-    "为什么",
-    "到底",
-    "值不值",
-    "被",
-    "最累",
-    "先别",
-    "救",
-    "硬仗",
-    "冷场",
-    "改到",
-    "拖回",
-]
+TITLE_CONCRETE_ENTRY_MARKERS = {
+    "fengkuang_daily_post": ["工牌", "群聊", "周报", "早会", "下班", "领导", "物件", "地铁", "周六", "需求"],
+    "modern_psychology_post": ["下班", "会议", "消息", "睡前", "关系", "脑子", "那句话"],
+    "human_enrichment_daily_post": ["丰容", "变量", "角落", "书桌", "路线", "材料", "床头", "一厘米", "那条路"],
+    "classic_poetry_quote_post": ["古诗词", "金句", "这一句", "李白", "李清照", "月亮", "王维", "定风波"],
+    "daily_english_post": ["开会", "私聊", "例句", "这句", "英语"],
+    "ai_tech_daily_post": ["AI", "普通人", "搭子", "工具", "更新"],
+    "world_cup_daily_post": ["世界杯", "赛前", "看球", "开球", "终场", "阿根廷", "法国"],
+    "reddit_curation_daily_post": ["AI", "工具", "消息", "压力", "普通人"],
+    "wuxia_character_post": ["令狐冲", "黄蓉", "郭靖", "老款", "边界", "自由"],
+}
 
 BODY_SCENE_SIGNAL_MARKERS = {
     "fengkuang_daily_post": ["领导", "工牌", "群聊", "周报", "早会", "下班", "工位", "地铁"],
@@ -126,7 +111,8 @@ class TestPlaybookEvalContract:
         assert "finalize" in contract.node_contracts
         constraints = contract.node_contracts["executor"].get("constraints", {})
         assert constraints.get("title_max_chars") == 22
-        assert "那一秒" in constraints["title_must_include_tension_any"]
+        assert "工牌" in constraints["title_must_include_any"]
+        assert "title_must_include_tension_any" not in constraints
         assert "打工人地铁生存实录" in constraints["title_must_not_equal_any"]
         assert "今日已疯" in constraints["image_text_must_not_equal_any"]
         assert "评论区" in constraints["body_must_include_comment_prompt_any"]
@@ -184,8 +170,9 @@ class TestPlaybookEvalContract:
         assert "变体要求" in executor_constraints["body_must_not_include_any"]
         assert "save_tool" in executor_constraints["body_must_not_include_any"]
         assert "专业帮助" in executor_constraints["body_must_include_all"]
-        assert executor_constraints["body_max_chars"] == 580
-        assert not executor_constraints.get("title_must_include_any")
+        assert executor_constraints["body_max_chars"] == 380
+        assert "title_must_include_any" not in executor_constraints
+        assert "title_must_include_tension_any" not in executor_constraints
         for term in ["不是你", "反刍思维", "低控制感", "边界压力", "情绪调节", "灾难化思维"]:
             assert term in executor_constraints["title_must_not_include_any"]
         for prompt in ["哪派", "A.", "B.", "____"]:
@@ -316,17 +303,21 @@ class TestPlaybookEvalContract:
             for marker in markers:
                 assert marker in constraints["title_must_not_include_any"]
 
-    def test_all_xhs_contracts_require_compact_dramatic_titles(self):
+    def test_all_xhs_contracts_require_domain_specific_concrete_title_entries(self):
         root = Path(__file__).parent.parent.parent.parent / "src" / "ptsm" / "playbooks" / "definitions"
 
-        for playbook_id in XHS_PLAYBOOK_IDS:
+        for playbook_id, markers in TITLE_CONCRETE_ENTRY_MARKERS.items():
             contract = load_playbook_eval_contract(root, playbook_id)
             assert contract is not None
             constraints = contract.node_contracts["executor"]["constraints"]
 
             assert constraints["title_max_chars"] <= 22
-            for marker in TITLE_TENSION_MARKERS:
-                assert marker in constraints["title_must_include_tension_any"]
+            assert "title_must_include_tension_any" not in constraints
+            if playbook_id == "modern_psychology_post":
+                assert "title_must_include_any" not in constraints
+                continue
+            for marker in markers:
+                assert marker in constraints["title_must_include_any"]
 
     def test_all_xhs_contracts_require_body_scene_and_human_anchors(self):
         root = Path(__file__).parent.parent.parent.parent / "src" / "ptsm" / "playbooks" / "definitions"
@@ -345,10 +336,10 @@ class TestPlaybookEvalContract:
     @pytest.mark.parametrize(
         ("playbook_id", "title_terms"),
         [
-            ("fengkuang_daily_post", ["工牌", "群聊", "周报", "早会", "下班", "领导", "物件"]),
-            ("human_enrichment_daily_post", ["丰容", "变量", "角落", "书桌", "路线", "材料"]),
+            ("fengkuang_daily_post", ["工牌", "群聊", "周报", "早会", "下班", "领导", "物件", "地铁", "周六", "需求"]),
+            ("human_enrichment_daily_post", ["丰容", "变量", "角落", "书桌", "路线", "材料", "床头", "一厘米", "那条路"]),
             ("ai_tech_daily_post", ["AI", "普通人", "搭子", "工具", "更新"]),
-            ("classic_poetry_quote_post", ["古诗词", "金句", "这一句", "李白", "李清照", "月亮"]),
+            ("classic_poetry_quote_post", ["古诗词", "金句", "这一句", "李白", "李清照", "月亮", "王维", "定风波"]),
             ("wuxia_character_post", ["令狐冲", "黄蓉", "郭靖", "老款", "边界", "自由"]),
         ],
     )

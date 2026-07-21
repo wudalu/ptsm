@@ -14,6 +14,6 @@ def test_drafting_agent_adds_positive_reframe_when_feedback_exists() -> None:
     assert draft["title"] == "地铁门关上那秒我把灵魂留站台"
     assert "周一早高峰地铁通勤" in draft["body"]
     assert "评论区" in draft["body"]
-    assert "先存好" in draft["body"]
+    assert "我把这句写在闸机口" in draft["body"]
     assert "还能给自己留点电" in draft["body"]
     assert draft["hashtags"][0] == "#发疯文学"

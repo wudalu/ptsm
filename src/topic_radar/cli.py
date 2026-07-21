@@ -3,8 +3,13 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from dataclasses import asdict, dataclass
+import inspect
 import math
+from pathlib import Path
+import re
 import sys
+from typing import Any, Mapping, Sequence
 
 from topic_radar.config import get_config
 from topic_radar.mcp_client import McpClient
@@ -15,10 +20,24 @@ from topic_radar.platforms.weibo import (
 )
 from topic_radar.analysis.note_teardown import teardown
 from topic_radar.analysis.cross_platform import (
-    discover_cross_platform,
+    discover_cross_platform_from_clusters,
     discover_verticals,
 )
-from topic_radar.analysis.llm_analyzer import LLMAnalyzer
+from topic_radar.analysis.evidence import (
+    SUPPORTED_PLATFORMS,
+    EvidenceRecord,
+    ScanQuality,
+    TopicCluster,
+    append_topic_history,
+    canonicalize_platforms,
+    canonicalize_trending_items,
+    cluster_evidence,
+    determine_scan_quality,
+    find_clusters_for_titles,
+    read_recent_topic_history,
+    select_recommended_angles,
+)
+from topic_radar.analysis.llm_analyzer import LLMAnalyzer, validate_llm_output_evidence
 from topic_radar.output.artifacts import (
     TopicScanResult,
     _flatten_trending,
@@ -28,8 +47,30 @@ from topic_radar.output.report import generate_report
 from datetime import date
 
 
+@dataclass(frozen=True)
+class ScanOptions:
+    """Optional quality controls for the public scan API.
+
+    Defaults retain existing call sites while allowing operators and PTSM's
+    explicit fresh-research path to cap results or tune a bounded novelty
+    window without importing internal implementation details.
+    """
+
+    max_recommendations: int = 6
+    history_days: int = 14
+    event_similarity_threshold: float = 0.58
+
+
 def _convert_llm_output(
-    llm_output, trending_items: dict[str, list[TrendingItem]], scan_date: str
+    llm_output,
+    trending_items: dict[str, list[TrendingItem]],
+    scan_date: str,
+    *,
+    errors: dict[str, str] | None = None,
+    scan_quality: ScanQuality | str = ScanQuality.COMPLETED,
+    evidence: list[EvidenceRecord] | None = None,
+    topic_clusters: list[dict] | None = None,
+    cross_signals: list[Any] | None = None,
 ) -> TopicScanResult:
     """Convert LLM analysis output to TopicScanResult format."""
     from topic_radar.analysis.cross_platform import CrossPlatformSignal, DiscoveredVertical
@@ -48,12 +89,16 @@ def _convert_llm_output(
         for v in llm_output.discovered_verticals
     ]
 
-    cross_signals = [
+    llm_cross_signals = [
         CrossPlatformSignal(
             topic=s.topic,
             platforms=s.platforms,
-            first_seen_platform=s.platforms[0] if s.platforms else "",
-            velocity=s.velocity,
+            # The LLM receives a single scan, not an ordered observation
+            # history. Never reinterpret its platform list as first-seen data.
+            first_seen_platform="",
+            # An LLM has no time-series observations beyond this scan, so its
+            # requested velocity label must not become an artifact claim.
+            velocity="unknown",
         )
         for s in llm_output.cross_platform_signals
     ]
@@ -70,6 +115,8 @@ def _convert_llm_output(
             "vertical": a.vertical,
             "angle": a.angle,
             "why_discussion_likely": a.why,
+            "cluster_id": a.cluster_id,
+            "evidence_ids": list(a.evidence_ids),
             "confidence": next(
                 (v.confidence for v in llm_output.discovered_verticals if v.name == a.vertical), 0.5
             ),
@@ -81,13 +128,17 @@ def _convert_llm_output(
         scan_date=scan_date,
         platforms=sorted(trending_items),
         discovered_verticals=verticals,
-        cross_platform_signals=cross_signals,
+        cross_platform_signals=cross_signals if cross_signals is not None else llm_cross_signals,
         high_engagement_patterns=patterns,
         recommended_angles=angles,
         raw_trending=_flatten_trending(trending_items),
+        platform_errors=errors or {},
         analysis_method="llm",
         scan_summary=llm_output.scan_summary,
         noise_topics=llm_output.noise_topics,
+        scan_quality=scan_quality,
+        evidence=[asdict(record) for record in evidence or []],
+        topic_clusters=topic_clusters or [],
     )
 
 
@@ -108,17 +159,32 @@ async def run_scan(
     platforms: str | None = None,
     keywords: str | None = None,
     output_dir: str | None = None,
+    *,
+    options: ScanOptions | None = None,
 ) -> TopicScanResult:
     """Programmatic entry point: scan and return TopicScanResult.
 
     This is the reusable core used by both the CLI and PTSM integration.
     """
     config = get_config()
-    platforms_str = platforms or config.default_platforms
-    platform_list = [p.strip() for p in platforms_str.split(",") if p.strip()]
+    scan_options = _normalize_scan_options(options)
+    platforms_str = config.default_platforms if platforms is None else platforms
+    requested_platforms = canonicalize_platforms(platforms_str)
+    platform_list = [p for p in requested_platforms if p in SUPPORTED_PLATFORMS]
     output_dir = output_dir or config.output_dir
     errors: dict[str, str] = {}
+    for platform in requested_platforms:
+        if platform not in SUPPORTED_PLATFORMS:
+            errors[platform] = "unsupported platform"
     all_trending: dict[str, list[TrendingItem]] = {}
+
+    if not requested_platforms:
+        errors["platform_request"] = "no platforms requested"
+        return _write_insufficient_evidence_result(
+            scan_date=date.today().isoformat(),
+            output_dir=output_dir,
+            errors=errors,
+        )
 
     client = McpClient(
         xhs_server_url=config.xhs_mcp_server_url,
@@ -151,38 +217,235 @@ async def run_scan(
             client, config, platform_cls, platform_name, display_name, all_trending, errors
         )
 
-    if not all_trending:
-        raise RuntimeError(
-            f"No data collected from any platform. Errors: {errors}"
+    all_trending, evidence = canonicalize_trending_items(all_trending)
+    evidence, clusters = cluster_evidence(
+        evidence,
+        similarity_threshold=scan_options.event_similarity_threshold,
+    )
+    cluster_rows = [asdict(cluster) for cluster in clusters]
+    for platform in platform_list:
+        if platform not in all_trending and platform not in errors:
+            errors[platform] = "no valid evidence collected"
+
+    scan_date = date.today().isoformat()
+    scan_quality = determine_scan_quality(all_trending, errors, requested_platforms)
+    if scan_quality is ScanQuality.INSUFFICIENT_EVIDENCE:
+        return _write_insufficient_evidence_result(
+            scan_date=scan_date,
+            output_dir=output_dir,
+            errors=errors,
+            platforms=sorted(all_trending),
+            evidence=evidence,
         )
 
     # Analyze: LLM first, rules fallback
-    scan_date = date.today().isoformat()
     analyzer = LLMAnalyzer(
         model=config.llm_model,
         api_key=config.llm_api_key,
         base_url=config.llm_base_url,
     )
-    llm_output, method = analyzer.analyze(all_trending, scan_date)
+    llm_output, method = _analyze_with_evidence(
+        analyzer,
+        all_trending,
+        scan_date,
+        evidence=evidence,
+        topic_clusters=clusters,
+    )
+    llm_error = _safe_llm_error(getattr(analyzer, "last_error", ""))
+    if llm_error:
+        errors["llm_analysis"] = llm_error
+        scan_quality = determine_scan_quality(all_trending, errors, requested_platforms)
 
+    validated_llm_output = (
+        validate_llm_output_evidence(
+            llm_output,
+            evidence,
+            clusters,
+            raw_provenance=_flatten_trending(all_trending),
+        )
+        if llm_output is not None
+        else None
+    )
+    # A source-backed vertical alone is useful diagnostic metadata, but it
+    # cannot fill the public recommendation list.  Fall back to deterministic
+    # rules whenever no evidence-backed angle survives validation.
+    if method == "llm" and (
+        validated_llm_output is None or not validated_llm_output.recommended_angles
+    ):
+        llm_output = None
+        errors["llm_analysis"] = "LLM output had no verifiable recommendations; rules fallback used"
+        scan_quality = determine_scan_quality(all_trending, errors, requested_platforms)
+    else:
+        llm_output = validated_llm_output
+
+    cross_signals = discover_cross_platform_from_clusters(clusters)
     if llm_output is not None:
-        result = _convert_llm_output(llm_output, all_trending, scan_date)
+        result = _convert_llm_output(
+            llm_output,
+            all_trending,
+            scan_date,
+            errors=errors,
+            scan_quality=scan_quality,
+            evidence=evidence,
+            topic_clusters=cluster_rows,
+            cross_signals=cross_signals,
+        )
     else:
         flat_items = [item for items in all_trending.values() for item in items]
         verticals = discover_verticals(flat_items)
-        cross_signals = discover_cross_platform(all_trending)
         result = build_scan_result(
             trending_items=all_trending,
             verticals=verticals,
             cross_signals=cross_signals,
             errors=errors,
+            scan_quality=scan_quality,
+            evidence=evidence,
+            topic_clusters=cluster_rows,
+            requested_platforms=requested_platforms,
         )
+
+    history = read_recent_topic_history(
+        output_dir,
+        scan_date,
+        history_days=scan_options.history_days,
+    )
+    result.recommended_angles = select_recommended_angles(
+        _attach_angle_cluster_support(result.recommended_angles, evidence, clusters),
+        clusters,
+        max_recommendations=scan_options.max_recommendations,
+        history_records=history,
+        scan_date=scan_date,
+        history_days=scan_options.history_days,
+    )
 
     # Write artifacts
     result.write(output_dir)
     generate_report(result, output_dir)
+    append_topic_history(output_dir, scan_date, result.recommended_angles)
 
     return result
+
+
+def _write_insufficient_evidence_result(
+    *,
+    scan_date: str,
+    output_dir: str,
+    errors: dict[str, str],
+    platforms: list[str] | None = None,
+    evidence: list[EvidenceRecord] | None = None,
+) -> TopicScanResult:
+    """Persist a diagnostic artifact without attempting analysis."""
+    result = TopicScanResult(
+        scan_date=scan_date,
+        platforms=platforms or [],
+        platform_errors=errors,
+        scan_quality=ScanQuality.INSUFFICIENT_EVIDENCE,
+        evidence=[asdict(record) for record in evidence or []],
+        topic_clusters=[],
+    )
+    result.write(output_dir)
+    generate_report(result, output_dir)
+    return result
+
+
+def _safe_llm_error(detail: object) -> str:
+    """Keep artifact diagnostics useful without serializing provider error text."""
+    if not isinstance(detail, str) or not detail:
+        return ""
+    match = re.fullmatch(
+        r"LLM analysis failed \(([A-Za-z_][A-Za-z0-9_]*)\); rules fallback used",
+        detail,
+    )
+    safe_exception_types = {
+        "APIConnectionError",
+        "APIError",
+        "AuthenticationError",
+        "BadRequestError",
+        "ConnectionError",
+        "Exception",
+        "JSONDecodeError",
+        "KeyError",
+        "OSError",
+        "RateLimitError",
+        "RuntimeError",
+        "TimeoutError",
+        "TypeError",
+        "ValidationError",
+        "ValueError",
+    }
+    if match and match.group(1) in safe_exception_types:
+        return detail
+    return "LLM analysis failed; rules fallback used"
+
+
+def _normalize_scan_options(options: ScanOptions | None) -> ScanOptions:
+    """Keep optional scan controls bounded and deterministic at the API edge."""
+    source = options or ScanOptions()
+    return ScanOptions(
+        max_recommendations=max(0, int(source.max_recommendations)),
+        history_days=max(0, int(source.history_days)),
+        event_similarity_threshold=min(
+            max(float(source.event_similarity_threshold), 0.0),
+            1.0,
+        ),
+    )
+
+
+def _analyze_with_evidence(
+    analyzer: LLMAnalyzer,
+    trending_items: dict[str, list[TrendingItem]],
+    scan_date: str,
+    *,
+    evidence: Sequence[EvidenceRecord],
+    topic_clusters: Sequence[TopicCluster],
+):
+    """Call evidence-aware analyzers while keeping older adapters callable."""
+    parameters = inspect.signature(analyzer.analyze).parameters.values()
+    supports_keywords = any(
+        parameter.kind is inspect.Parameter.VAR_KEYWORD
+        for parameter in parameters
+    ) or {"evidence", "topic_clusters"}.issubset(
+        inspect.signature(analyzer.analyze).parameters
+    )
+    if supports_keywords:
+        return analyzer.analyze(
+            trending_items,
+            scan_date,
+            evidence=evidence,
+            topic_clusters=topic_clusters,
+        )
+    return analyzer.analyze(trending_items, scan_date)
+
+
+def _attach_angle_cluster_support(
+    candidates: Sequence[Mapping[str, Any]],
+    evidence: Sequence[EvidenceRecord],
+    clusters: Sequence[TopicCluster],
+) -> list[dict[str, Any]]:
+    """Map rules candidates to their strongest sampled event without guessing.
+
+    Rule-based verticals retain their sample titles.  When several evidence
+    clusters belong to one vertical, the highest scored cluster is chosen for a
+    given generic angle; MMR then prevents that event from taking another slot.
+    """
+    resolved: list[dict[str, Any]] = []
+    known_clusters = {cluster.cluster_id for cluster in clusters}
+    for candidate in candidates:
+        item = dict(candidate)
+        if item.get("cluster_id") not in known_clusters:
+            titles = item.get("sample_topics")
+            matches = find_clusters_for_titles(
+                titles if isinstance(titles, list) else [],
+                evidence,
+                clusters,
+            )
+            if matches:
+                cluster = matches[0]
+                item["cluster_id"] = cluster.cluster_id
+                item["evidence_ids"] = list(cluster.evidence_ids)
+        item.pop("sample_topics", None)
+        resolved.append(item)
+    return resolved
 
 
 async def _scan_xiaohongshu(
@@ -192,56 +455,85 @@ async def _scan_xiaohongshu(
     all_trending: dict[str, list[TrendingItem]],
     errors: dict[str, str],
 ) -> None:
+    xhs = XiaohongshuPlatform(client)
     try:
-        xhs = XiaohongshuPlatform(client)
         is_logged_in, qr_data = await xhs.check_login()
-        if not is_logged_in:
-            errors["xiaohongshu"] = "login required; run ptsm xhs-login-qrcode"
-        else:
-            keywords_list = (keywords or "").split(",") if keywords else None
-            kws = (
-                [kw.strip() for kw in keywords_list if kw.strip()]
-                if keywords_list
-                else ["打工人", "治愈"]
+    except Exception as exc:
+        errors["xiaohongshu"] = _collection_error(exc)
+        return
+
+    if not is_logged_in:
+        errors["xiaohongshu"] = "login required; run ptsm xhs-login-qrcode"
+        return
+
+    keywords_list = re.split(r"[,，]", keywords or "") if keywords else []
+    kws = [kw.strip() for kw in keywords_list if kw.strip()] or ["打工人", "治愈"]
+    xhs_items: list[TrendingItem] = []
+    keyword_failures: list[str] = []
+    successful_searches = 0
+    per_keyword_limit = max(1, math.ceil(config.scan_sample_limit / len(kws)))
+    for kw in kws:
+        try:
+            feeds = await xhs.search_feeds(kw, limit=per_keyword_limit)
+        except Exception as exc:
+            keyword_failures.append(f"{kw} ({type(exc).__name__})")
+            continue
+
+        successful_searches += 1
+        for feed in feeds:
+            url = (
+                f"https://www.xiaohongshu.com/explore/{feed.feed_id}"
+                if feed.feed_id
+                else ""
             )
-            xhs_items: list[TrendingItem] = []
-            per_keyword_limit = max(1, math.ceil(config.scan_sample_limit / len(kws)))
-            for kw in kws:
-                feeds = await xhs.search_feeds(kw, limit=per_keyword_limit)
-                for feed in feeds:
-                    url = (
-                        f"https://www.xiaohongshu.com/explore/{feed.feed_id}"
-                        if feed.feed_id
-                        else ""
-                    )
-                    xhs_items.append(
-                        TrendingItem(
-                            rank=len(xhs_items) + 1,
-                            title=feed.title,
-                            hot_score=feed.engagement_score,
-                            url=url,
-                            platform="xiaohongshu",
-                            metadata={
-                                "feed_id": feed.feed_id,
-                                "xsec_token": feed.xsec_token,
-                                "author": feed.author,
-                                "likes": feed.likes,
-                                "comments": feed.comments,
-                                "collects": feed.collects,
-                                "shares": feed.shares,
-                                "keyword": kw,
-                                "cover_width": feed.cover_width,
-                                "cover_height": feed.cover_height,
-                                "has_cover_url": feed.has_cover_url,
-                            },
-                        )
-                    )
-            if xhs_items:
-                all_trending["xiaohongshu"] = xhs_items
-            else:
-                errors["xiaohongshu"] = "no search results returned for requested keywords"
-    except PlatformUnavailable as e:
-        errors["xiaohongshu"] = str(e)
+            xhs_items.append(
+                TrendingItem(
+                    rank=len(xhs_items) + 1,
+                    title=feed.title,
+                    hot_score=feed.engagement_score,
+                    url=url,
+                    platform="xiaohongshu",
+                    metadata={
+                        "feed_id": feed.feed_id,
+                        "xsec_token": feed.xsec_token,
+                        "author": feed.author,
+                        "likes": feed.likes,
+                        "comments": feed.comments,
+                        "collects": feed.collects,
+                        "shares": feed.shares,
+                        "keyword": kw,
+                        "cover_width": feed.cover_width,
+                        "cover_height": feed.cover_height,
+                        "has_cover_url": feed.has_cover_url,
+                    },
+                )
+            )
+
+    if xhs_items:
+        _store_collected_items(
+            "xiaohongshu",
+            xhs_items,
+            all_trending,
+            errors,
+            empty_error="no search results returned for requested keywords",
+        )
+        if keyword_failures:
+            errors["xiaohongshu"] = (
+                "partial keyword search failure: " + ", ".join(keyword_failures)
+            )
+        return
+
+    if keyword_failures:
+        if successful_searches:
+            errors["xiaohongshu"] = (
+                "no search results; keyword search failures: "
+                + ", ".join(keyword_failures)
+            )
+        else:
+            errors["xiaohongshu"] = "all keyword searches failed: " + ", ".join(keyword_failures)
+        return
+
+    errors["xiaohongshu"] = "no search results returned for requested keywords"
 
 
 async def _scan_weibo(
@@ -250,12 +542,13 @@ async def _scan_weibo(
     all_trending: dict[str, list[TrendingItem]],
     errors: dict[str, str],
 ) -> None:
+    weibo = WeiboPlatform(client)
     try:
-        weibo = WeiboPlatform(client)
         items = await weibo.get_trending(limit=config.scan_sample_limit)
-        all_trending["weibo"] = items
-    except PlatformUnavailable as e:
-        errors["weibo"] = str(e)
+    except Exception as exc:
+        errors["weibo"] = _collection_error(exc)
+        return
+    _store_collected_items("weibo", items, all_trending, errors)
 
 
 async def _scan_douyin(
@@ -264,12 +557,13 @@ async def _scan_douyin(
     all_trending: dict[str, list[TrendingItem]],
     errors: dict[str, str],
 ) -> None:
+    douyin = DouyinPlatform(client)
     try:
-        douyin = DouyinPlatform(client)
         items = await douyin.get_trending(limit=config.scan_sample_limit)
-        all_trending["douyin"] = items
-    except PlatformUnavailable as e:
-        errors["douyin"] = str(e)
+    except Exception as exc:
+        errors["douyin"] = _collection_error(exc)
+        return
+    _store_collected_items("douyin", items, all_trending, errors)
 
 
 async def _scan_trends_hub_platform(
@@ -281,12 +575,37 @@ async def _scan_trends_hub_platform(
     all_trending: dict[str, list[TrendingItem]],
     errors: dict[str, str],
 ) -> None:
+    p = platform_cls(client)
     try:
-        p = platform_cls(client)
         items = await p.get_trending(limit=config.scan_sample_limit)
-        all_trending[display_name] = items
-    except PlatformUnavailable as e:
-        errors[display_name] = str(e)
+    except Exception as exc:
+        errors[display_name] = _collection_error(exc)
+        return
+    _store_collected_items(display_name, items, all_trending, errors)
+
+
+def _collection_error(exc: Exception) -> str:
+    """Convert an external collection failure into a compact platform diagnostic."""
+    if isinstance(exc, PlatformUnavailable):
+        return str(exc)
+    return f"collection failed ({type(exc).__name__})"
+
+
+def _store_collected_items(
+    platform: str,
+    items: list[TrendingItem],
+    all_trending: dict[str, list[TrendingItem]],
+    errors: dict[str, str],
+    *,
+    empty_error: str = "no trending results returned",
+) -> None:
+    """Store only valid canonical evidence; an empty result is an explicit error."""
+    canonical, _evidence = canonicalize_trending_items({platform: items})
+    canonical_items = canonical.get(platform, [])
+    if canonical_items:
+        all_trending[platform] = canonical_items
+    else:
+        errors[platform] = empty_error
 
 
 def main() -> None:
@@ -294,7 +613,14 @@ def main() -> None:
     sub = parser.add_subparsers(dest="command")
 
     scan = sub.add_parser("scan", help="Multi-platform topic scan")
-    scan.add_argument("--platforms", default=None, help="Comma-separated: xiaohongshu,weibo,douyin")
+    scan.add_argument(
+        "--platforms",
+        default=None,
+        help=(
+            "Comma-separated: xiaohongshu (or xhs), weibo, douyin, zhihu, "
+            "bilibili, toutiao, douban, sspai"
+        ),
+    )
     scan.add_argument("--keywords", default=None, help="Optional comma-separated search keywords")
     scan.add_argument("--output-dir", default=None, help="Output directory for artifacts")
     scan.add_argument("--mcp-check", action="store_true", help="Only check MCP health")
@@ -321,18 +647,17 @@ def main() -> None:
 
 async def _scan(args: argparse.Namespace) -> None:
     config = get_config()
-    platforms_str = args.platforms or config.default_platforms
-    platform_list = [p.strip() for p in platforms_str.split(",") if p.strip()]
-
-    client = McpClient(
-        xhs_server_url=config.xhs_mcp_server_url,
-        enable_trends_hub=any(
-            p in {"weibo", "douyin", "zhihu", "bilibili", "toutiao", "douban", "sspai"}
-            for p in platform_list
-        ),
-    )
+    platforms_str = config.default_platforms if args.platforms is None else args.platforms
+    platform_list = canonicalize_platforms(platforms_str)
 
     if args.mcp_check:
+        client = McpClient(
+            xhs_server_url=config.xhs_mcp_server_url,
+            enable_trends_hub=any(
+                p in {"weibo", "douyin", "zhihu", "bilibili", "toutiao", "douban", "sspai"}
+                for p in platform_list
+            ),
+        )
         health = await client.health()
         for name, h in health.items():
             status = "✓" if h.reachable else "✗"
@@ -353,15 +678,23 @@ async def _scan(args: argparse.Namespace) -> None:
     if method == "llm":
         print(f"\nAnalysis: LLM ({len(result.discovered_verticals)} verticals, {len(result.recommended_angles)} angles)")
     else:
-        print(f"\nAnalysis: rules (LLM unavailable, {len(result.discovered_verticals)} verticals)")
+        print(f"\nAnalysis: rules fallback ({len(result.discovered_verticals)} verticals)")
 
+    artifact_dir = Path(args.output_dir or getattr(config, "output_dir", "outputs/artifacts"))
+    json_path = result.artifact_path or artifact_dir / f"topic-scan-{result.scan_date}.json"
+    report_path = result.report_path or artifact_dir / f"topic-brief-{result.scan_date}.md"
     print(f"\nArtifacts written:")
-    print(f"  JSON: outputs/artifacts/topic-scan-{result.scan_date}.json")
-    print(f"  Report: outputs/artifacts/topic-brief-{result.scan_date}.md")
+    print(f"  JSON: {json_path}")
+    print(f"  Report: {report_path}")
+
+    if result.scan_quality == ScanQuality.INSUFFICIENT_EVIDENCE.value:
+        print("\nScan status: insufficient evidence — diagnostic artifact written")
+        sys.exit(2)
 
     if result.platform_errors:
-        print(f"\nPartial scan — {len(result.platform_errors)} platform(s) unavailable")
+        print(f"\nScan status: partial — {len(result.platform_errors)} issue(s) recorded")
         sys.exit(1)
+    print("\nScan status: completed")
     sys.exit(0)
 
 

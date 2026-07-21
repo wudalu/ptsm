@@ -335,7 +335,7 @@ def _constraint_failures(
                 }
             )
 
-        body_max_chars = constraints.get("body_max_chars")
+        body_max_chars = _body_max_chars_for_payload(body=body, constraints=constraints)
         if isinstance(body_max_chars, int) and len(body) > body_max_chars:
             failures.append(
                 {
@@ -475,6 +475,20 @@ def _string_list(value: object) -> list[str]:
     if not isinstance(value, list):
         return []
     return [str(item) for item in value if str(item)]
+
+
+def _body_max_chars_for_payload(*, body: str, constraints: dict) -> int | None:
+    """Allow a bounded long asset only when every declared proof marker is present."""
+    normal_max = constraints.get("body_max_chars")
+    extended_max = constraints.get("body_extended_asset_max_chars")
+    required_markers = _string_list(constraints.get("body_extended_asset_must_include_all"))
+    if (
+        isinstance(extended_max, int)
+        and required_markers
+        and all(marker in body for marker in required_markers)
+    ):
+        return extended_max
+    return normal_max if isinstance(normal_max, int) else None
 
 
 ALL_CONTRACT_EVALUATORS: list[EvaluatorSpec] = [

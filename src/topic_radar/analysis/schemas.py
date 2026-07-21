@@ -10,7 +10,12 @@ class LLMTopicSignal(BaseModel):
 
     topic: str = Field(description="Normalized topic name shared across platforms")
     platforms: list[str] = Field(description="Platforms where this topic appears")
-    velocity: str = Field(description="accelerating | steady | fading")
+    velocity: str = Field(
+        description=(
+            "Use unknown for a single scan; temporal velocity is not inferable "
+            "without time-series evidence"
+        )
+    )
     discussion_value: str = Field(
         description="Why this topic is likely to generate comments, 1-2 sentences in Chinese"
     )
@@ -21,6 +26,14 @@ class LLMTopicSignal(BaseModel):
     archetype: str = Field(
         default="",
         description="Which Jung archetype this topic activates (from lens 2), e.g. 英雄/叛逆者/智者",
+    )
+    cluster_id: str = Field(
+        default="",
+        description="Optional supplied event cluster id used as evidence support",
+    )
+    evidence_ids: list[str] = Field(
+        default_factory=list,
+        description="Optional supplied evidence ids supporting this signal",
     )
 
 
@@ -33,6 +46,14 @@ class LLMAngle(BaseModel):
     hook_mechanism: str = Field(
         default="",
         description="Which cognitive mechanism this angle leverages to hook readers (from lens 1)",
+    )
+    cluster_id: str = Field(
+        default="",
+        description="Required when known: one supplied event cluster id supporting the angle",
+    )
+    evidence_ids: list[str] = Field(
+        default_factory=list,
+        description="Optional supplied evidence ids; they must belong to the selected cluster",
     )
 
 
@@ -49,6 +70,14 @@ class LLMVertical(BaseModel):
     )
     comment_themes: list[str] = Field(
         description="Predicted comment themes, e.g. ['经验交换', '情绪共鸣', '打卡记录']"
+    )
+    cluster_ids: list[str] = Field(
+        default_factory=list,
+        description="Optional supplied event cluster ids represented by this vertical",
+    )
+    evidence_ids: list[str] = Field(
+        default_factory=list,
+        description="Optional supplied evidence ids represented by this vertical",
     )
 
 

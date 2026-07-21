@@ -2,7 +2,7 @@
 title: PTSM Architecture
 status: active
 owner: ptsm
-last_verified: 2026-06-04
+last_verified: 2026-07-22
 source_of_truth: true
 related_paths:
   - src/ptsm
@@ -15,6 +15,8 @@ related_paths:
   - src/ptsm/application/use_cases/collect_xhs_patterns.py
   - src/ptsm/application/use_cases/analyze_xhs_patterns.py
   - src/ptsm/application/use_cases/xhs_domain_opportunity.py
+  - src/ptsm/application/use_cases/run_playbook.py
+  - src/ptsm/skills/runtime_context.py
   - src/ptsm/agent_runtime
   - src/ptsm/agent_runtime/state.py
   - src/ptsm/domain
@@ -24,6 +26,8 @@ related_paths:
   - src/ptsm/infrastructure/evaluations
   - src/ptsm/infrastructure/reddit
   - src/ptsm/infrastructure/xhs_patterns
+  - src/topic_radar/cli.py
+  - src/topic_radar/analysis/evidence.py
   - src/ptsm/interfaces
 ---
 
@@ -71,8 +75,9 @@ helper 中增加 prompt 构建方向。
 - side-effect replay control 也放在 `application/services + application/use_cases`，避免让 `agent_runtime` 直接承担发布副作用策略。
 - provider-backed image generation、本地 social screenshot renderer 和 generated image asset ledger 都留在 `infrastructure`，由 `application/use_cases/run_playbook.py` 在发布前编排调用，避免把外部 API 协议、Pillow 绘制细节或 JSONL 资产记录塞进 runtime graph。image backend 负责声明生成图的 no-watermark provider controls，并把 `watermark_policy` / `provenance` 返回给应用层；`run_playbook()` 只做归一化、provenance-aware post-processing 和 artifact 持久化。`final_content.image_plan` 可以让 LLM 主动选择 `local_social_screenshot` 或 `provider_image`；`PlaybookRequest.local_image_style` 是显式本地 override，即使外部 provider 已配置也会走本地 renderer。
 - XHS format pattern library 分成三层：`topic_radar` 负责外部 MCP 采样，`ptsm.domain.xhs_patterns` 定义本地样本和 pattern 领域模型，`ptsm.infrastructure.xhs_patterns` 只做本地 JSON snapshot 存储，`application/use_cases/collect_xhs_patterns.py` / `analyze_xhs_patterns.py` 负责编排 CLI 用例。普通生成只读取本地 snapshot，不直接依赖 live MCP。
+- `topic_radar` 仍是独立的研究边界：它拥有八平台 collection、canonical source evidence、scan quality、event clustering、推荐多样性和历史 novelty；不依赖或 import `ptsm`。它的 public `topic_radar.cli.run_scan()` API 才是 PTSM 的唯一 fresh-research 接口，PTSM 不复制 collector、平台识别或事件聚类逻辑。默认平台集合为 `xiaohongshu,weibo,douyin,zhihu,bilibili,toutiao,douban,sspai`；XHS HTTP MCP 与 trends-hub stdio MCP 按 server 隔离加载，工具发现也有 bounded timeout，所以一个服务失败或卡住只产生对应平台的 partial diagnostics。XHS 以 feed ID 为权威，完整 title+author 只桥接一条缺 ID 观察到首个真实 ID；后续不同真实 ID 保持独立，多个真实 ID 后的缺 ID 观察保持 unresolved。feed 去重和平台内热度归一化都在该边界完成。
 - 跨领域发帖前选题引导同样保持分层：`ptsm.domain.topic_guidance` 定义本地确定性 lane/direction 选择器、多个 open-scene candidate composer、动态 diversity reranker 和公开 `format_recommendation` 结构，`application/use_cases/topic_guidance_packs.py` 保存非心理学 playbook 的产品化 topic pack，心理学方向仍由 `application/use_cases/guide_post.py` 的专业边界 brief 组合；`guide_post.py` 只编排只读 CLI/OpenClaw 输出。selector 把用户 scene 关键词、lane affinity、direction source type、diversity family 和 open-scene mechanism 分开处理，并在公开方向中写出 `scene_fit` 和格式建议；`guide-post` 对当前九个 playbook 返回 4 个由 `selection_policy == "dynamic_scene_diversity_rerank"` 选出的场景相关方向，不再保留固定 curated 槽位。`open_scene` 方向由当前 scene/lane facets 和可复用内容机制本地组合，不来自固定候选池，也不触发 live research。这个路径不属于 `agent_runtime`，不会启动 workflow、创建 run 或发布。每条方向的 `format_recommendation` 说明 `format_archetype`、`cover_role`、`body_shape`、`visual_evidence_need` 和 `avoid_format`；例如人类丰容/手作/Colorwalk 方向优先视觉证据或轮播，AI prompt 和心理睡眠恢复方向优先低密度保存卡。`topic_guidance.image_recommendation` 也由 `guide-post` 生成：它只在方向确认后作为图片方式建议展示，按场景推荐 `local_social_screenshot` 的 `wechat_chat` / `iphone_notes` / `note_card`，或推荐 `provider_image` + `bailian` / `qwen-image-2.0-pro`，OpenClaw wrapper 不复制这层策略。
-- `PlaybookRequest.scene` 在 `--fresh-topic-research` 模式下可为空，由 topic-radar 多平台扫描 + 交互选题后构建 enriched scene 注入工作流，选题结果同时写入 artifact 的 `topic_selection` 字段。`PlaybookRequest.topic_direction_id` 是 guide-post/OpenClaw handoff key，不改变 playbook 路由或重新选题；`run_playbook()` 会解析该 id 对应的公开方向 payload，把 `topic_selection.direction` 写入 workflow payload、response、run payload 和 artifact，并由 planner 渲染成 `# XHS Topic Direction Guidance` runtime context，约束正文的标题、封面、body shape、保存单元和评论交接。
+- `PlaybookRequest.scene` 在 `--fresh-topic-research` 模式下可为空。`run_playbook()` 只在该显式路径调用 public `topic_radar.cli.run_scan()` 一次，并根据结果的 `completed` / `partial` / `insufficient_evidence` 状态决定是否继续：没有有效 evidence 会在 workflow 前返回诊断，不会用静态映射伪造热点方向。交互选择只把 evidence-backed 的选题角度、讨论诱因和构造场景写入 drafting；原始标题、作者、URL、feed ID、token 永不进入 drafting context，canonical-equivalent 或较具体 title 的内嵌复写、以及 raw author/URL/feed/token 都会在 `vertical` / `angle` / `why` 进入该边界前被拒绝；短泛 title 不会误杀新角度里的普通语言，短 provenance 值仍严格拒绝。普通/local-only `topic_research` builder 不回读旧 artifact；fresh builder 也只消费本次 receipt 明示且存在的 artifact，缺失 receipt 则 fail closed。`cluster_id`、`event_fingerprint`、`evidence_ids`、scan quality 和 artifact/report path 仅作为 `topic_selection` traceability metadata 写入 response/run/artifact，终端 `scan_summary` 不会进入该 metadata。写入选择后，runtime 会关闭后续 fresh context builder，避免第二次 live scan 或竞争性 `topic_research` 方向。`PlaybookRequest.topic_direction_id` 仍是 guide-post/OpenClaw handoff key，不改变 playbook 路由或重新选题；`run_playbook()` 会解析该 id 对应的公开方向 payload，把 `topic_selection.direction` 写入 workflow payload、response、run payload 和 artifact，并由 planner 渲染成 `# XHS Topic Direction Guidance` runtime context。
 - `ExecutionState` 现在携带 `activated_skill_details`、`runtime_skill_details`、`topic_selection` 和 `memory_hits` 等 observability 字段，记录每个 skill 的元信息（display_name、source_path、resource_type）、确认选题方向和本次回读的账号 lessons，供 artifact 写入、drafting context 和 harness evals 聚合消费。
 - `human_enrichment_daily_post` 以新增 playbook/account/skill/evaluation 资产接入人类丰容实验，不需要 runtime 增加领域分支；它的 artifact `content_review` 会额外写出 `image_form`，供 3:4 封面和轮播式人工 review 使用。
 - `world_cup_daily_post` 以新增 playbook/account/skill/evaluation 资产接入世界杯主题，默认绑定 `acct-world-cup-local`；正文质量约束通过 playbook-local contract 禁止赌球、盘口、预测比分、内部/官方消息伪装等高风险表达，离线 deterministic helper 只服务本地 dry-run 验证。
@@ -82,10 +87,10 @@ helper 中增加 prompt 构建方向。
 - `harness_evals` 新增 `_aggregate_skill_stats`，按 skill 维度聚合 runs/completed/runtime_context_runs/completion_rate，输出到 harness-report 的 `skills` 字段。
 - evaluation gates 区分 `required` 和 `warning`：deterministic required failures 可以阻塞 local harness；XHS executor content-quality judge 在显式启用 eval 或生成链路配置 judge backend 时使用 `required` gate，但最终发布仍需人工确认。
 - playbook contract evaluator 现在承担通用正文质量硬约束，包括标题/封面反泛化、必需标签、禁用标签、必需/禁用正文词、评论提示、保存触发、正文长度区间、正文现场/真人锚点和实验指令泄漏；新增约束应优先扩展 `src/ptsm/evaluations/contracts_eval.py`，避免在 runtime 或单个 playbook 中写领域分支。
-- 小红书的人设和真人感现在属于 playbook/skill 资产层：九个 XHS playbook 共享 `xhs_human_voice`，再叠加各自 style、persona、planner 和 reflection 规则；运行时只负责加载这些资产，不为“温暖、有调性、不格式化”新增领域分支。
-- 标题吸引力和正文组织也保持在资产/合同层：`xhs_human_voice` 定义 12-18 字优先、最多 22 字的短标题纪律，要求具体标题钩子叠加冲突、反差或戏剧张力；playbook-local `evaluation.yaml` 用 `title_max_chars`、`title_must_include_tension_any`、`title_must_not_include_any` 与 body length band 做确定性约束，DeepSeek / deterministic drafting backend 只读取这些要求，不新增领域 orchestration 分支。
-- 正文人味同样保持在资产/合同层：`xhs_human_voice` 定义现场锚点、真人视角、少总述、自然保存和可接话结尾；每个 XHS playbook 在 `evaluation.yaml` 中声明本领域的 `body_scene_signal_any` 和共享 `body_human_anchor_any`，由通用 contract evaluator 检查正文是否落在具体场景和真人视角里。
-- playbook contract evaluator 现在还支持 `title_must_include_any`、`title_must_include_tension_any`、`title_must_not_include_any`、body length band、`body_must_include_scene_signal` / `body_scene_signal_any` / `body_human_anchor_any` 和 `combined_must_not_include_any`，用于让标题保留具体物件/场景钩子、限制在短标题上限内、拦截泛标题，让正文保留现场锚点和真人视角，并跨标题、封面文案和正文拦截 `首先`、`其次`、`综上`、`作为AI` 这类模板化或元叙事语言。
+- 小红书的人设和真人感现在属于 playbook/skill 资产层：九个 XHS playbook 共享 `xhs_human_voice` 的 `xhs_compact_native_v1` 默认合同，再叠加各自 style、persona、planner 和 reflection 规则；运行时只负责加载这些资产，不为“温暖、有调性、不格式化”新增领域分支。合同要求 2–4 个短节拍：先给现场/真人锚点，再交付一个领域可用细节，并用自然的一句完成保存或回复入口；不是面向读者的四段写作课。
+- 标题吸引力和正文组织也保持在资产/合同层：标题仍优先 12-18 字、最多 22 字，并需给出领域适配的具体入口（场景、物件、关系或一句原话），同时拦截泛标题。它不再以一套跨所有领域的张力关键词作统一硬门槛；playbook-local contract 按领域声明真正需要的具体标题与安全限制，DeepSeek / deterministic drafting backend 只读取这些资产，不新增领域 orchestration 分支。
+- 正文人味同样保持在资产/合同层：`xhs_human_voice` 定义现场锚点、真人视角、少总述、自然保存和可接话结尾；每个 XHS playbook 在 `evaluation.yaml` 中声明本领域的 `body_scene_signal_any` 和共享 `body_human_anchor_any`，并使用更短的领域长度带。所有既有安全、标签、来源和专业帮助合同保持不变。
+- playbook contract evaluator 现在支持 `title_must_include_any`、`title_must_not_include_any`、可选领域 title constraints、body length band、`body_must_include_scene_signal` / `body_scene_signal_any` / `body_human_anchor_any` 和 `combined_must_not_include_any`，用于让标题保留具体物件/场景钩子、限制在短标题上限内、拦截泛标题，让正文保留现场锚点和真人视角，并跨标题、封面文案和正文拦截 `首先`、`其次`、`综上`、`作为AI` 这类模板化或元叙事语言。
 - `modern_psychology_post` 的浏览/点赞优化仍放在既有心理学资产层：睡眠恢复、轻养生、办公室恢复被建模为现代心理学子线实验，由 `guide-post`、`psychology_style`、playbook prompt 和 deterministic dry-run helper 承接，不新增 domain/playbook/runtime 分支。2026-06-02 的 XHS domain opportunity live scan 因本地 MCP 缺少 `search_feeds` 没有采到样本，所以这条子线只按弱证据推进为本地可验证实验，不声称已完成趋势排名。
 - `ai_tech_daily_post` 的提示词构建方向同样保持在资产层：2026-06-04 的 prompt / AI提问 domain-opportunity scan 因本地 XHS MCP 缺少可用 `search_feeds` 未拿到真实样本，但 deterministic mapping 将 AI提问、普通人用AI、AI工具和AI工作流归入现有 AI tech playbook fit。因此本次只新增 `提示词构建 / 好用 prompt` lane、`ai_prompt_context_card` 等 guide-post 方向和 deterministic 可复制 prompt 成品 dry-run，不新增账号、playbook 或 runtime 分支。
 

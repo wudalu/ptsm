@@ -62,7 +62,7 @@ This exercises:
 - **Planner**: selects playbook (`fengkuang_daily_post`) and skills such as `xhs_trend_scan`, `topic_research`, `fengkuang_style`, `positive_reframe`, `xhs_hashtagging`, and `xhs_image_strategy`.
 - **xhs_trend_scan**: loads the local XHS pattern library snapshot when available and injects reusable hook/body/image structures into `runtime_skill_contents`. Ordinary generation does not call live XHS by default; if no snapshot exists, it falls back to static SKILL.md guidance.
 - **Memory**: reads recent same-account, same-playbook lessons and injects a compact anti-repetition context before drafting.
-- **Executor**: DeepSeek LLM generates title, image_text, body, hashtags from scene + persona + planner + static skills + local pattern context + recent memory context. XHS prompts include shared title/body constraints: concrete click hook, four正文 moves, and domain-specific length band.
+- **Executor**: DeepSeek LLM generates title, image_text, body, hashtags from scene + persona + planner + static skills + local pattern context + recent memory context. XHS prompts use `xhs_compact_native_v1`: a concrete human/scene entry, 2–4 short beats, one domain-usable detail, and a natural combined save/reply opening inside the playbook’s compact length band—not four fixed正文 moves.
 - **Reflector**: enforces required rules such as `#发疯文学`, configured deterministic quality rules such as rejecting generic titles, requiring a comment/copyable mechanic, keeping正文 inside the playbook length band, and blocking mental-health/medical jokes. Light positive closings like `也算` are recommended style, not a mandatory phrase gate. Passes to finalize, or retries up to max_attempts.
 
 Review `content_review`, `content_review.image_plan`, and the final正文. If content and image strategy look good, proceed to real publish. When the planned style is `wechat_chat`, check that the visible text is a short content-only transcript rather than a full phone screenshot.
@@ -201,7 +201,7 @@ The `xhs_trend_scan` skill runs during the planner phase. Ordinary generation is
 1. Try to load `outputs/artifacts/xhs-pattern-library/current.json`.
 2. If a matching lane exists, inject pattern ids, hook archetypes, body structures and image sequences as `runtime_skill_contents`.
 3. If no snapshot exists, ordinary generation skips dynamic context and falls back to static `SKILL.md` guidance.
-4. Live MCP `search_feeds` is reserved for explicit fresh research or the separate `collect-xhs-patterns` job.
+4. This skill does not itself fall back to live MCP. Explicit `--fresh-topic-research` uses the public Topic Radar eight-platform scan once before workflow selection; direct XHS collection remains the separate `collect-xhs-patterns` job.
 
 This prevents normal content runs from depending on current XHS login state. The periodic collection command is:
 

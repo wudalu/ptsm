@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import date
 from pathlib import Path
 
 from ptsm.application.use_cases.harness_check import run_harness_check
@@ -11,7 +12,9 @@ def test_run_harness_check_composes_docs_sync_report_and_pytest(
     tmp_path: Path,
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    _write_active_doc(tmp_path / "docs" / "runtime.md", last_verified="2026-04-20")
+    _write_active_doc(
+        tmp_path / "docs" / "runtime.md", last_verified=date.today().isoformat()
+    )
     (tmp_path / "outputs" / "artifacts").mkdir(parents=True)
 
     captured: dict[str, object] = {}
@@ -45,7 +48,9 @@ def test_run_harness_check_composes_docs_sync_report_and_pytest(
 
 def test_run_harness_check_fails_when_docs_sync_fails(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.chdir(tmp_path)
-    _write_active_doc(tmp_path / "docs" / "runtime.md", last_verified="2026-04-20")
+    _write_active_doc(
+        tmp_path / "docs" / "runtime.md", last_verified=date.today().isoformat()
+    )
     (tmp_path / "outputs" / "artifacts").mkdir(parents=True)
 
     def fake_subprocess_run(command, **kwargs):
@@ -72,7 +77,9 @@ def test_run_harness_check_is_non_strict_for_retention_warnings(
     tmp_path: Path,
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    _write_active_doc(tmp_path / "docs" / "runtime.md", last_verified="2026-04-20")
+    _write_active_doc(
+        tmp_path / "docs" / "runtime.md", last_verified=date.today().isoformat()
+    )
     (tmp_path / "outputs" / "artifacts").mkdir(parents=True)
     stale_run = tmp_path / ".ptsm" / "runs" / "run-1"
     stale_run.mkdir(parents=True, exist_ok=True)
@@ -112,7 +119,9 @@ def test_run_harness_check_strict_mode_fails_on_harness_report_warning(
     tmp_path: Path,
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    _write_active_doc(tmp_path / "docs" / "runtime.md", last_verified="2026-04-20")
+    _write_active_doc(
+        tmp_path / "docs" / "runtime.md", last_verified=date.today().isoformat()
+    )
     (tmp_path / "outputs" / "artifacts").mkdir(parents=True)
     stale_run = tmp_path / ".ptsm" / "runs" / "run-1"
     stale_run.mkdir(parents=True, exist_ok=True)
@@ -152,7 +161,9 @@ def test_run_harness_check_does_not_gate_warning_eval_failures(
     tmp_path: Path,
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    _write_active_doc(tmp_path / "docs" / "runtime.md", last_verified="2026-04-20")
+    _write_active_doc(
+        tmp_path / "docs" / "runtime.md", last_verified=date.today().isoformat()
+    )
     (tmp_path / "outputs" / "artifacts").mkdir(parents=True)
     _write_eval_run(
         tmp_path / ".ptsm" / "evals" / "eval-1",

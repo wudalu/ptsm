@@ -53,10 +53,23 @@ def test_key_playbook_prompts_include_viral_hook_research_inputs() -> None:
     for term in ("适我主义", "新独居", "手作心流"):
         assert term in enrichment
 
-    for prompt_bundle in (fengkuang, psychology, enrichment):
-        assert "正文长度" in prompt_bundle
-        assert "首屏钩子" in prompt_bundle
-        assert "可保存单元" in prompt_bundle
+    compact_contracts = {
+        "fengkuang": (
+            fengkuang,
+            ("90-220 字", "2-4 个短拍", "具体崩溃瞬间", "物件发疯", "评论接龙"),
+        ),
+        "psychology": (
+            psychology,
+            ("200-380 字", "2-4 个短拍", "微场景", "低风险动作", "自然认领入口"),
+        ),
+        "enrichment": (
+            enrichment,
+            ("120-280 字", "2-4 个短拍", "低成本变量", "自然接话口"),
+        ),
+    }
+    for prompt_bundle, expected_terms in compact_contracts.values():
+        for term in expected_terms:
+            assert term in prompt_bundle
 
 
 def test_playbook_registry_selects_fengkuang_daily_post() -> None:

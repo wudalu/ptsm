@@ -11,6 +11,7 @@ from topic_radar.analysis.cross_platform import (
     DiscoveredVertical,
 )
 from topic_radar.output.artifacts import TopicScanResult, build_scan_result
+from topic_radar.output.report import generate_report
 from topic_radar.platforms.weibo import TrendingItem
 
 
@@ -65,6 +66,48 @@ class TestTopicScanResult:
             assert filepath.exists()
             assert "topic-scan-2026-05-03.json" == filepath.name
 
+    def test_write_preserves_an_earlier_same_day_scan_artifact(self, tmp_path):
+        first = TopicScanResult(
+            scan_date="2026-07-21",
+            platforms=["weibo"],
+            scan_summary="first scan",
+        )
+        second = TopicScanResult(
+            scan_date="2026-07-21",
+            platforms=["douyin"],
+            scan_summary="second scan",
+        )
+
+        first_path = first.write(str(tmp_path))
+        second_path = second.write(str(tmp_path))
+
+        assert first_path != second_path
+        assert json.loads(first_path.read_text(encoding="utf-8"))["scan_summary"] == "first scan"
+        assert json.loads(second_path.read_text(encoding="utf-8"))["scan_summary"] == "second scan"
+
+    def test_report_uses_the_same_unique_stem_as_its_json_artifact(self, tmp_path):
+        first = TopicScanResult(
+            scan_date="2026-07-21",
+            platforms=["weibo"],
+            scan_summary="first scan",
+        )
+        second = TopicScanResult(
+            scan_date="2026-07-21",
+            platforms=["douyin"],
+            scan_summary="second scan",
+        )
+
+        first_json = first.write(str(tmp_path))
+        first_report = generate_report(first, str(tmp_path))
+        second_json = second.write(str(tmp_path))
+        second_report = generate_report(second, str(tmp_path))
+
+        assert first_json.stem.removeprefix("topic-scan") == first_report.stem.removeprefix("topic-brief")
+        assert second_json.stem.removeprefix("topic-scan") == second_report.stem.removeprefix("topic-brief")
+        assert first_report != second_report
+        assert "weibo" in first_report.read_text(encoding="utf-8")
+        assert "douyin" in second_report.read_text(encoding="utf-8")
+
     def test_platform_errors_recorded(self):
         result = TopicScanResult(
             scan_date="2026-05-03",
@@ -72,6 +115,73 @@ class TestTopicScanResult:
             platform_errors={"weibo": "mcp-trends-hub not installed"},
         )
         assert result.platform_errors["weibo"] == "mcp-trends-hub not installed"
+
+    def test_schema_v2_serializes_scan_quality_evidence_and_empty_clusters(self):
+        result = TopicScanResult(
+            scan_date="2026-05-03",
+            platforms=["weibo"],
+            scan_quality="partial",
+            evidence=[
+                {
+                    "evidence_id": "evidence:1",
+                    "platform": "weibo",
+                    "title": "有效样本",
+                    "normalized_heat": 1.0,
+                }
+            ],
+        )
+
+        data = json.loads(result.to_json())
+
+        assert data["schema_version"] == 2
+        assert data["scan_quality"] == "partial"
+        assert data["evidence"][0]["evidence_id"] == "evidence:1"
+        assert data["topic_clusters"] == []
+
+    def test_report_includes_scan_quality(self, tmp_path):
+        report = generate_report(
+            TopicScanResult(
+                scan_date="2026-05-03",
+                platforms=["weibo"],
+                scan_quality="partial",
+            ),
+            str(tmp_path),
+        )
+
+        assert "**Scan quality:** partial" in report.read_text(encoding="utf-8")
+
+    def test_schema_v2_serializes_cluster_and_enriched_angle_provenance(self):
+        result = TopicScanResult(
+            scan_date="2026-07-21",
+            platforms=["weibo"],
+            topic_clusters=[
+                {
+                    "cluster_id": "cluster:abc",
+                    "event_fingerprint": "event:def",
+                    "representative_title": "成都暴雨致多处积水",
+                    "evidence_ids": ["evidence:weibo"],
+                    "platforms": ["weibo"],
+                    "score": 1.0,
+                }
+            ],
+            recommended_angles=[
+                {
+                    "vertical": "城市天气",
+                    "angle": "暴雨天通勤避坑清单",
+                    "cluster_id": "cluster:abc",
+                    "event_fingerprint": "event:def",
+                    "evidence_ids": ["evidence:weibo"],
+                    "angle_signature": "angle:123",
+                    "novelty_state": "new",
+                    "ranking_score": 1.2,
+                }
+            ],
+        )
+
+        data = json.loads(result.to_json())
+
+        assert data["topic_clusters"][0]["evidence_ids"] == ["evidence:weibo"]
+        assert data["recommended_angles"][0]["event_fingerprint"] == "event:def"
 
 
 class TestBuildScanResult:
