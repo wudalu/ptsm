@@ -34,9 +34,9 @@ SCENE_META_PATTERNS = (
 )
 
 XHS_BODY_LENGTH_RULES = (
-    ("120-380", ("Fengkuang Style", "fengkuang_daily_post", "#发疯文学")),
+    ("90-220", ("Fengkuang Style", "fengkuang_daily_post", "#发疯文学")),
     (
-        "260-620",
+        "200-380",
         (
             "Psychology Style",
             "Psychology Safety",
@@ -45,7 +45,7 @@ XHS_BODY_LENGTH_RULES = (
         ),
     ),
     (
-        "180-520",
+        "120-280",
         (
             "Human Enrichment Style",
             "human_enrichment_daily_post",
@@ -53,7 +53,7 @@ XHS_BODY_LENGTH_RULES = (
         ),
     ),
     (
-        "180-520",
+        "120-280",
         (
             "Classic Poetry Quote Style",
             "classic_poetry_quote_post",
@@ -62,12 +62,12 @@ XHS_BODY_LENGTH_RULES = (
         ),
     ),
     (
-        "180-520",
+        "140-300",
         ("Daily English Style", "Daily English Hashtagging", "daily_english_post", "#每日英语"),
     ),
-    ("220-650", ("AI Tech Style", "AI Tech Hashtagging", "ai_tech_daily_post", "#AI资讯")),
+    ("180-420", ("AI Tech Style", "AI Tech Hashtagging", "ai_tech_daily_post", "#AI资讯")),
     (
-        "220-620",
+        "180-420",
         (
             "World Cup Style",
             "XHS World Cup Hashtagging",
@@ -77,7 +77,7 @@ XHS_BODY_LENGTH_RULES = (
         ),
     ),
     (
-        "220-700",
+        "180-420",
         (
             "Reddit Curation Style",
             "XHS Reddit Curation Hashtagging",
@@ -85,7 +85,7 @@ XHS_BODY_LENGTH_RULES = (
         ),
     ),
     (
-        "700-1100",
+        "450-750",
         ("Wuxia Commentary Style", "XHS Wuxia Hashtagging", "wuxia_character_post", "#金庸", "#古龙"),
     ),
 )
@@ -193,6 +193,7 @@ class DeepSeekDraftBackend:
         hard_requirements = _build_deepseek_hard_requirements(
             extra_context=extra_context,
             runtime_context=runtime_context,
+            scene=scene,
         )
         user_prompt = (
             f"场景：{scene}\n"
@@ -350,7 +351,7 @@ def _build_deterministic_draft(
         return contextual
 
     if _is_classic_poetry_context(scene=scene, extra_context=extra_context):
-        title = "读到长风破浪那句，突然不慌了"
+        title = "读到李白那句，突然不慌了"
         image_text = "这一句可以先存下"
         body = (
             f"{scene}。\n"
@@ -375,7 +376,7 @@ def _build_deterministic_draft(
         body = (
             f"{scene}，我表面点头，工牌已经在桌上把自己扣成了免打扰。\n"
             "丝瓜汤式安慰最会让人卡住：问题没解决，情绪还要被安排成“你先降降火”。"
-            "我只想回一句：谢谢关心，但我的工牌现在只想喝下班风。"
+            "我把这句写在工牌背面：谢谢关心，但我的工牌现在只想喝下班风。"
             "评论区接一句你遇到过的丝瓜汤式职场回复，我先替大家写进群聊草稿。"
         )
         hashtags = ["#发疯文学", "#打工人日常", "#职场情绪实录"]
@@ -384,7 +385,7 @@ def _build_deterministic_draft(
         image_text = "今天先躺"
         body = (
             f"谁懂，周六本来想靠{scene}给自己回口血，结果人是躺下了，脑子还在加班续命。\n"
-            "床头小纸条先写一句：床批了我的假，工位别越权。"
+            "我把这句写在床头：床批了我的假，工位别越权；明早再把工牌翻回来。"
             "评论区接一句你最想贴在床头的周末保命宣言。"
         )
         hashtags = ["#发疯文学", "#周末躺平日记", "#社畜回血现场"]
@@ -393,7 +394,7 @@ def _build_deterministic_draft(
         image_text = "灵魂请下一站下车"
         body = (
             f"今日份发疯现场：{scene}，我差点当场把灵魂寄存给下一站。\n"
-            "闸机口那句我先存好：人在车厢，心已请假。"
+            "我把这句写在闸机口：人在车厢，心已请假，工牌留在包里，今天别追我，我先下线。"
             "评论区接一句你最想写在闸机口的打工人暗号。"
         )
         hashtags = ["#发疯文学", "#打工人日常", "#通勤崩溃实录"]
@@ -402,7 +403,7 @@ def _build_deterministic_draft(
         image_text = "点头模式已开启"
         body = (
             f"今日份崩溃瞬间：{scene}，我感觉自己像被会议室循环播放到只剩下点头功能。\n"
-            "我想把这句写在周报封面：收到，但大脑正在加载失败。"
+            "我想把这句写在周报封面：收到，但大脑正在加载失败，工牌也先别给我点头。"
             "评论区接一句你开会时最想打在共享屏上的疯话。"
         )
         hashtags = ["#发疯文学", "#会议崩溃实录", "#打工人日常"]
@@ -427,7 +428,7 @@ def _build_deterministic_draft(
         body = (
             f"{scene}，本来都快在心里打卡下班了，结果又被新需求一下子拽回工位。\n"
             f"{tension or '这种临门一脚的回拉感'}真的很会精准挑人快要松口气的时候下手，"
-            "嘴上说着收到，心里已经在工牌背面写好：收到，但灵魂已下班。"
+            "嘴上说着收到，心里已经把这句写在工牌背面：收到，但灵魂已下班。"
             "评论区接一句你最想发在群里但不敢发的下班疯话。"
         )
         hashtags = ["#发疯文学", "#打工人日常", "#职场情绪实录"]
@@ -437,7 +438,7 @@ def _build_deterministic_draft(
         body = (
             f"今日份发疯现场：{scene}。\n"
             "人看起来还坐得住，情绪其实已经提前一步申请下班了。"
-            "工牌背面先写一句：收到，但工牌只负责出勤，不负责续命。"
+            "我把这句写在工牌背面：收到，但工牌只负责出勤，不负责续命。"
             "评论区接一句你今天最想写进群聊草稿箱的话。"
         )
         hashtags = ["#发疯文学", "#社畜日常", "#打工人情绪实录"]
@@ -448,13 +449,6 @@ def _build_deterministic_draft(
         scene=scene,
         runtime_context=runtime_context,
     )
-    body = _ensure_body_min_chars(
-        body,
-        minimum=120,
-        addition="这一刻最累的不是多做一点，而是明明已经下线，还要把自己重新拧回工作模式。",
-        before="评论区",
-    )
-
     if feedback != "无":
         body += "\n不过换个角度想，能把这口气慢慢喘匀、还能给自己留点电，也算今天没白扛。"
 
@@ -483,9 +477,17 @@ def _avoid_recent_memory_title(
 
 
 def _is_classic_poetry_context(*, scene: str, extra_context: str) -> bool:
-    combined = f"{scene}\n{extra_context}"
+    if any(
+        keyword in extra_context
+        for keyword in (
+            "Classic Poetry Quote Style",
+            "classic_poetry_quote_post",
+            "XHS Classic Poetry Hashtagging",
+        )
+    ):
+        return True
     return any(
-        keyword in combined
+        keyword in scene
         for keyword in (
             "古诗词金句",
             "古诗词",
@@ -579,22 +581,30 @@ def _repair_json_payload_text(content: str) -> str:
     return repaired
 
 
-def _build_deepseek_hard_requirements(*, extra_context: str, runtime_context: str) -> str:
+def _build_deepseek_hard_requirements(
+    *,
+    extra_context: str,
+    runtime_context: str,
+    scene: str = "",
+) -> str:
     requirements = [
         "只输出 JSON 对象，不要 Markdown 代码块，不要额外解释。",
-        "标题最多 22 个字符，优先 12-18 字；必须用具体场景、物件、关系或一句原话做入口，再叠加冲突、反差、身份代入、工具感或戏剧张力。"
-        "优先使用“那一秒”“不是”“别”“却”“反而”“突然”“原来”“为什么”“到底”“值不值”“被”“最累”等钩子；"
-        "不得写成泛标题，不要只写“日常”“实录”“干货分享”“小红书爆款”。",
-        "正文必须按首屏钩子 -> 领域要素 -> 可保存单元 -> 评论交接组织：前两句给继续看的理由，中段补齐领域必要信息，至少给一句可收藏/可复制/可照做的单元，结尾问具体例子或接一句。",
-        "正文必须有现场锚点和真人视角：用时间、物件、关系、一句原话、材料、路线或动作开场，像我/你/我们在今天、刚刚、今晚、路上、手边经历过；不要先总述，不要用“本文”“本篇”“建议大家”“从本质上”“核心逻辑是”“总体来说”；自然保存，把收藏/模板/三栏写成生活句子。",
-        "正文要像朋友安利一个刚发现或刚试出来的东西，少解释多交付；中段必须有一个可抄作业，像“原模板直接放这”一样给出能立刻拿走的模板、prompt、清单、句式、判断框架或步骤。",
-        "不要把内部功能标签直接写进正文，例如“可复制疯话”“可收藏小结”“可收藏句型”“可保存单元”“评论交接”“可收藏看球清单”“可保存三步”，不管有没有冒号都不要露出；把这些功能改写成自然句子。",
+        "默认采用 xhs_compact_native_v1：标题最多 22 个字符，优先 12-18 字；用具体场景、物件、关系、一句原话或领域对象做入口，不得写成泛标题，不要只写“日常”“实录”“干货分享”“小红书爆款”。",
+        "正文用 2-4 个短拍，不要把正文硬拆成四段：先给现场和真人反应，再交一个能立刻拿走的领域细节；保存动作和接话口可以放在同一句自然的话里。",
+        "正文必须有现场锚点和真人视角：用时间、物件、关系、一句原话、材料、路线或动作开场，像我/你/我们在今天、刚刚、今晚、路上、手边经历过；不要先总述，不要用“首先”“其次”“最后”“综上”“本文”“本篇”“作为AI”“建议大家”“从本质上”“核心逻辑是”“总体来说”；自然保存，把存、试、截图写进生活句子。",
+        "正文要像朋友安利一个刚发现或刚试出来的东西，少解释多交付；只保留一个能立刻拿走的领域细节，例如一句话、一个判断、一个小动作、一个短清单或一段必要 prompt。",
+        "不要把内部功能标签直接写进正文，例如“可复制疯话”“可收藏小结”“可收藏句型”“可保存单元”“评论交接”“可收藏看球清单”“可保存三步”，不管有没有冒号都不要露出；把它们改写成自然句子。",
     ]
     body_length_range = _infer_xhs_body_length_range(extra_context)
     if body_length_range is not None:
         requirements.append(f"正文长度控制在 {body_length_range} 字。")
     else:
-        requirements.append("正文不要写成长文，信息量要收住，但必须保留首屏钩子、领域要素、可保存单元和评论交接。")
+        requirements.append("正文保持短帖节奏：只保留现场、一个领域细节和自然的接话口。")
+    if _is_required_runnable_prompt_scene(scene=scene, extra_context=extra_context):
+        requirements.append(
+            "只有当题目明确要求完整可运行 prompt，且正文确实包含“任务：”“背景：”“输出格式：”“不要编造”四项时，"
+            "才可扩展到 680 字；其他情况仍严格使用上面的短帖字数。"
+        )
     if runtime_context.strip() and _extract_runtime_signal(runtime_context, label="主切口"):
         requirements.append("优先参考实时上下文里的主切口和场景张力，只借情绪结构，不复写原题。")
     for hashtag in ("#发疯文学", "#古诗词"):
@@ -624,6 +634,13 @@ def _infer_xhs_body_length_range(extra_context: str) -> str | None:
         if any(marker in extra_context for marker in markers):
             return length_range
     return None
+
+
+def _is_required_runnable_prompt_scene(*, scene: str, extra_context: str) -> bool:
+    combined = f"{scene}\n{extra_context}".lower()
+    return any(marker in combined for marker in ("prompt", "提示词", "ai 提问", "ai提问")) and any(
+        marker in combined for marker in ("ai tech", "ai科技", "#ai资讯", "ai/科技")
+    )
 
 
 def _is_fengkuang_context(extra_context: str) -> bool:
@@ -678,7 +695,7 @@ def _build_deterministic_image_plan(
             "reason": "心理内容以边界句、三栏或5分钟工具为主，低密度记事本截图更适合收藏。",
             "prompt_focus": "做成低密度工具卡，保留标题、封面语和最多三条短句。",
         }
-    if _looks_like_world_cup(context_signal) and _looks_like_note_screenshot(
+    if _looks_like_world_cup(content_signal) and _looks_like_note_screenshot(
         content_signal
     ):
         return {
@@ -812,6 +829,7 @@ def _looks_like_note_screenshot(text: str) -> bool:
         cue in text
         for cue in (
             "三栏",
+            "事实 / 猜测 / 下一步",
             "5分钟",
             "边界句",
             "清单",
@@ -861,20 +879,6 @@ def _extract_hashtags_from_body(body: str) -> list[str]:
 def _strip_trailing_hashtags(body: str) -> str:
     """Remove trailing hashtag block from body text."""
     return re.sub(r"(\s*#[^\s#]+)+\s*$", "", body).rstrip()
-
-
-def _ensure_body_min_chars(
-    body: str,
-    *,
-    minimum: int,
-    addition: str,
-    before: str | None = None,
-) -> str:
-    if len(body) >= minimum:
-        return body
-    if before is not None and before in body:
-        return body.replace(before, f"{addition}{before}", 1)
-    return f"{body}{addition}"
 
 
 def _normalize_hashtags(raw_hashtags: object) -> list[str]:

@@ -586,6 +586,80 @@ class TestPlaybookNodeContract:
         assert result.status == "failed"
         assert "body_max_chars" in result.reason
 
+    def test_allows_documented_extended_prompt_asset_only_with_every_marker(self):
+        contract = PlaybookEvalContract(
+            suite_id="ai_prompt_asset.default",
+            node_contracts={
+                "executor": {
+                    "required_fields": ["title", "body", "hashtags"],
+                    "constraints": {
+                        "body_max_chars": 20,
+                        "body_extended_asset_max_chars": 240,
+                        "body_extended_asset_must_include_all": [
+                            "任务：",
+                            "背景：",
+                            "输出格式：",
+                            "不要编造",
+                        ],
+                    },
+                }
+            },
+        )
+        target = _target(
+            phase="executor",
+            target_type="artifact_slice",
+            output_ref={
+                "final_content": {
+                    "title": "AI提示词",
+                    "body": (
+                        "任务：整理会议记录。背景：给直属领导看。"
+                        "输出格式：三条短句。不要编造数据。"
+                    ),
+                    "hashtags": ["#AI资讯"],
+                }
+            },
+        )
+
+        result = contract_playbook_node_contract(target, contract)
+
+        assert result.status == "passed"
+
+    def test_rejects_extended_prompt_asset_when_a_required_marker_is_missing(self):
+        contract = PlaybookEvalContract(
+            suite_id="ai_prompt_asset.default",
+            node_contracts={
+                "executor": {
+                    "required_fields": ["title", "body", "hashtags"],
+                    "constraints": {
+                        "body_max_chars": 20,
+                        "body_extended_asset_max_chars": 240,
+                        "body_extended_asset_must_include_all": [
+                            "任务：",
+                            "背景：",
+                            "输出格式：",
+                            "不要编造",
+                        ],
+                    },
+                }
+            },
+        )
+        target = _target(
+            phase="executor",
+            target_type="artifact_slice",
+            output_ref={
+                "final_content": {
+                    "title": "AI提示词",
+                    "body": "任务：整理会议记录。背景：给直属领导看。输出格式：三条短句。",
+                    "hashtags": ["#AI资讯"],
+                }
+            },
+        )
+
+        result = contract_playbook_node_contract(target, contract)
+
+        assert result.status == "failed"
+        assert "body_max_chars" in result.reason
+
 
 class TestAllContractEvaluators:
     def test_all_registered(self):

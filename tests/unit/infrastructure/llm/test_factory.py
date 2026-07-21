@@ -1,13 +1,44 @@
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from ptsm.config.settings import Settings
+from ptsm.evaluations.contracts import EvalTarget
+from ptsm.evaluations.contracts_eval import contract_playbook_node_contract
+from ptsm.evaluations.playbook_contracts import load_playbook_eval_contract
 from ptsm.infrastructure.llm.factory import (
     DeterministicDraftBackend,
     _parse_json_payload,
     build_drafting_backend,
 )
+
+
+def _assert_executor_contract(playbook_id: str, draft: dict[str, object]) -> None:
+    definitions_root = (
+        Path(__file__).resolve().parents[4]
+        / "src"
+        / "ptsm"
+        / "playbooks"
+        / "definitions"
+    )
+    contract = load_playbook_eval_contract(definitions_root, playbook_id)
+    assert contract is not None
+    result = contract_playbook_node_contract(
+        EvalTarget(
+            target_id=f"factory:{playbook_id}:executor",
+            run_id=f"factory:{playbook_id}",
+            playbook_id=playbook_id,
+            account_id="acct-contract-regression",
+            phase="executor",
+            target_type="artifact_slice",
+            output_ref={"final_content": draft},
+        ),
+        contract,
+    )
+    assert result.status == "passed", result.reason
 
 
 def test_factory_falls_back_to_deterministic_when_deepseek_key_missing() -> None:
@@ -108,6 +139,21 @@ def test_deterministic_backend_emits_local_chat_image_plan_when_strategy_skill_l
     assert "聊天" in draft["image_plan"]["reason"] or "群聊" in draft["image_plan"]["reason"]
 
 
+def test_deterministic_backend_keeps_explicit_playbook_when_shared_voice_names_other_domains() -> None:
+    draft = DeterministicDraftBackend().generate(
+        scene="领导18:57发在吗让我补材料",
+        planner_prompt="# 发疯文学 Planner\n目标：写一条发疯文学内容。",
+        skill_contents=[
+            "# XHS Human Voice\n古诗词、每日英语和世界杯各有自己的具体入口。",
+            "# Fengkuang Style\n必须包含评论区接龙和可保存的一句疯话。",
+        ],
+    )
+
+    assert "#发疯文学" in draft["hashtags"]
+    assert "#古诗词" not in draft["hashtags"]
+    assert "工牌" in draft["body"] or "群聊" in draft["body"]
+
+
 def test_deterministic_backend_emits_low_density_save_tool_for_note_screenshot() -> None:
     draft = DeterministicDraftBackend().generate(
         scene="下班路上反复复盘会议上说错的那句话，想要一个5分钟心理练习",
@@ -147,6 +193,22 @@ def test_deterministic_image_plan_ignores_strategy_catalog_when_choosing_style()
     assert image_plan["style"] == "iphone_notes"
     assert image_plan["role"] == "save_tool"
     assert image_plan["text_density"] == "low"
+
+
+def test_deterministic_image_plan_does_not_treat_shared_forbidden_label_as_world_cup_context() -> None:
+    draft = DeterministicDraftBackend().generate(
+        scene="想学一个开会和私聊都能用的英语表达",
+        planner_prompt="# Daily English Planner\n目标：写一条每日英语学习内容。",
+        skill_contents=[
+            "# XHS Image Strategy\n可收藏清单优先 iPhone 记事本截图，必须输出 image_plan。",
+            "# XHS Human Voice\n不要露出可收藏看球清单这类内部标签。",
+            "# Daily English Style\n需要真实场景、可收藏句型和评论区造句。",
+        ],
+    )
+
+    image_plan = draft["image_plan"]
+    assert "世界杯" not in image_plan["reason"]
+    assert "看球清单" not in image_plan["cover_text_strategy"]
 
 
 def test_deterministic_psychology_message_boundary_prefers_save_tool_notes() -> None:
@@ -263,7 +325,7 @@ def test_deterministic_backend_can_follow_wuxia_context() -> None:
     assert "截图" in draft["body"]
     assert "评论区" in draft["body"]
     assert "#金庸" in draft["hashtags"]
-    assert len(draft["body"]) >= 800
+    assert 450 <= len(draft["body"]) <= 750
     assert "发疯文学" not in draft["body"]
 
 
@@ -328,6 +390,18 @@ def test_deterministic_backend_can_follow_ai_prompt_builder_context() -> None:
     )
 
 
+def test_deterministic_ai_news_question_does_not_activate_runnable_prompt_exception() -> None:
+    draft = DeterministicDraftBackend().generate(
+        scene="OpenAI 新模型支持实时提问，普通人想知道能不能省事",
+        planner_prompt="# AI科技资讯 Planner\n目标：写一条适合小红书的 AI/科技资讯。",
+        skill_contents=["# AI Tech Style\n需要普通人影响和收藏清单。"],
+    )
+
+    assert 180 <= len(draft["body"]) <= 420
+    assert "任务：" not in draft["body"]
+    assert "输出格式：" not in draft["body"]
+
+
 def test_deterministic_backend_can_follow_daily_english_context() -> None:
     backend = DeterministicDraftBackend()
 
@@ -369,6 +443,133 @@ def test_deterministic_backend_can_follow_modern_psychology_context() -> None:
     assert "#心理学" in draft["hashtags"]
     assert "#情绪管理" in draft["hashtags"]
     assert "发疯文学" not in draft["body"]
+
+
+@pytest.mark.parametrize(
+    (
+        "playbook_id",
+        "scene",
+        "planner_prompt",
+        "persona_prompt",
+        "skill_contents",
+        "expected_body_text",
+    ),
+    [
+        pytest.param(
+            "modern_psychology_post",
+            "被说想太多后睡不着",
+            "# 现代心理困境观察 Planner",
+            "# Modern Psychology Persona",
+            [
+                "# Psychology Style\n需要边界句、5分钟练习或消息草稿。",
+                "# Psychology Safety\n必须提示专业帮助边界。",
+            ],
+            "边界句",
+            id="psychology-boundary",
+        ),
+        pytest.param(
+            "modern_psychology_post",
+            "孤独",
+            "# 现代心理困境观察 Planner",
+            "# Modern Psychology Persona",
+            [
+                "# Psychology Style\n需要边界句、5分钟练习或消息草稿。",
+                "# Psychology Safety\n必须提示专业帮助边界。",
+            ],
+            "比较焦虑",
+            id="psychology-loneliness",
+        ),
+        pytest.param(
+            "modern_psychology_post",
+            "周日",
+            "# 现代心理困境观察 Planner",
+            "# Modern Psychology Persona",
+            [
+                "# Psychology Style\n需要边界句、5分钟练习或消息草稿。",
+                "# Psychology Safety\n必须提示专业帮助边界。",
+            ],
+            "5分钟",
+            id="psychology-sunday",
+        ),
+        pytest.param(
+            "modern_psychology_post",
+            "临时消息",
+            "# 现代心理困境观察 Planner",
+            "# Modern Psychology Persona",
+            [
+                "# Psychology Style\n需要边界句、5分钟练习或消息草稿。",
+                "# Psychology Safety\n必须提示专业帮助边界。",
+            ],
+            "消息草稿",
+            id="psychology-after-hours-message",
+        ),
+        pytest.param(
+            "modern_psychology_post",
+            "普通回复",
+            "# 现代心理困境观察 Planner",
+            "# Modern Psychology Persona",
+            [
+                "# Psychology Style\n需要边界句、5分钟练习或消息草稿。",
+                "# Psychology Safety\n必须提示专业帮助边界。",
+            ],
+            "5分钟",
+            id="psychology-ordinary-reply",
+        ),
+        pytest.param(
+            "human_enrichment_daily_post",
+            "丰容",
+            "# Human Enrichment Planner",
+            "# Human Enrichment Persona",
+            ["# Human Enrichment Style\n需要一个低成本变量和自然评论入口。"],
+            "手边",
+            id="enrichment-fallback",
+        ),
+        pytest.param(
+            "wuxia_character_post",
+            "令狐冲",
+            "# 武侠人物评述 Planner",
+            "# Wuxia Commentary Persona",
+            ["# Wuxia Commentary Style\n需要原文、人物分析和评论入口。"],
+            "令狐冲",
+            id="wuxia-short-scene",
+        ),
+    ],
+)
+def test_deterministic_short_scene_branches_satisfy_executor_contract(
+    playbook_id: str,
+    scene: str,
+    planner_prompt: str,
+    persona_prompt: str,
+    skill_contents: list[str],
+    expected_body_text: str,
+) -> None:
+    draft = DeterministicDraftBackend().generate(
+        scene=scene,
+        planner_prompt=planner_prompt,
+        persona_prompt=persona_prompt,
+        skill_contents=skill_contents,
+    )
+
+    assert expected_body_text in draft["body"]
+    _assert_executor_contract(playbook_id, draft)
+
+
+def test_deterministic_psychology_memory_alternate_avoids_formulaic_marker() -> None:
+    draft = DeterministicDraftBackend().generate(
+        scene="睡眠恢复",
+        planner_prompt="# 现代心理困境观察 Planner",
+        persona_prompt="# Modern Psychology Persona",
+        skill_contents=[
+            "# Psychology Style\n睡眠恢复只写低成本身体收口。",
+            "# Psychology Safety\n必须提示专业帮助边界。",
+        ],
+        runtime_skill_contents=[
+            "# Recent Account Memory\n- title: 下班后身体被拖回工位",
+        ],
+    )
+
+    _assert_executor_contract("modern_psychology_post", draft)
+    assert "最后" not in f"{draft['title']}\n{draft['image_text']}\n{draft['body']}"
 
 
 def test_deterministic_backend_can_follow_human_enrichment_context() -> None:
@@ -634,7 +835,7 @@ def test_deterministic_modern_psychology_draft_has_mini_tool_and_example_prompt(
     combined = f"{draft['title']}\n{draft['image_text']}\n{draft['body']}"
     assert draft["title"] != "下班后还在复盘那句话"
     assert draft["image_text"] != "脑子还没下班"
-    assert 350 <= len(draft["body"]) <= 580
+    assert 200 <= len(draft["body"]) <= 380
     assert not any(
         term in draft["title"]
         for term in ("不是你", "反刍思维", "低控制感", "边界压力", "灾难化思维", "心理机制")
@@ -643,7 +844,7 @@ def test_deterministic_modern_psychology_draft_has_mini_tool_and_example_prompt(
     assert draft["body"].index("下班路上还在反复复盘会议里一句话") < draft[
         "body"
     ].index("反刍思维")
-    assert draft["body"].index("反刍思维") >= 120
+    assert 0 < draft["body"].index("反刍思维") < 220
     assert draft["body"].count("反刍思维") <= 1
     assert "不是你" not in combined
     assert "这不是" not in combined
@@ -678,8 +879,8 @@ def test_deterministic_modern_psychology_draft_keeps_romantic_waiting_scene_out_
     assert all(term in draft["body"] for term in ("事实", "脑补", "我需要"))
     assert "不确定感" in draft["body"]
     assert draft["body"].count("关系不确定感") <= 1
-    assert draft["body"].index("不确定感") >= 120
-    assert 350 <= len(draft["body"]) <= 580
+    assert 0 < draft["body"].index("不确定感") < 220
+    assert 200 <= len(draft["body"]) <= 380
     assert "专业帮助" in draft["body"]
     assert any(prompt in draft["body"] for prompt in ("哪派", "A.", "B.", "____"))
     assert any(tag in draft["hashtags"] for tag in ("#心理学", "#情绪管理"))
@@ -786,7 +987,7 @@ def test_deterministic_modern_psychology_sleep_recovery_avoids_recent_memory_tit
         assert any(term in draft["body"] for term in ("睡眠恢复", "轻养生", "下班信号"))
         assert any(term in draft["body"] for term in ("5分钟", "5 分钟", "备忘录"))
         assert "专业帮助" in draft["body"]
-        assert 350 <= len(draft["body"]) <= 580
+        assert 200 <= len(draft["body"]) <= 380
         assert not any(term in combined for term in ("诊断", "改善睡眠", "治疗睡眠", "用药"))
         assert not any(term in draft["body"] for term in ("原话", "脑补", "审判", "扣分"))
 
@@ -929,7 +1130,7 @@ def test_deterministic_modern_psychology_draft_covers_new_growth_directions() ->
 
     for draft in (mixed_signal, social_battery):
         assert "专业帮助" in draft["body"]
-        assert 350 <= len(draft["body"]) <= 580
+        assert 200 <= len(draft["body"]) <= 380
         assert "#心理学" in draft["hashtags"]
 
 
@@ -1138,6 +1339,17 @@ def test_deterministic_fengkuang_draft_has_comment_and_copyable_mechanics() -> N
     assert not any(term in combined for term in ("精神病", "心理医生", "医院", "治疗", "用药"))
 
 
+def test_deterministic_fengkuang_draft_stays_compact_without_canned_length_padding() -> None:
+    draft = DeterministicDraftBackend().generate(
+        scene="领导18:57突然发来一句在吗，明天早会还要我补材料",
+        skill_contents=["# Fengkuang Style\n必须有评论区接龙和可复制句。"],
+    )
+
+    assert 90 <= len(draft["body"]) <= 220
+    assert "这一刻最累的不是多做一点" not in draft["body"]
+    assert "评论区" in draft["body"]
+
+
 def test_factory_deepseek_prompt_requires_fengkuang_mechanics_and_safety() -> None:
     settings = Settings.model_construct(
         default_model_provider="deepseek",
@@ -1164,7 +1376,7 @@ def test_factory_deepseek_prompt_requires_fengkuang_mechanics_and_safety() -> No
     assert "心理疾病、治疗、医院、用药" in user_prompt
 
 
-def test_factory_deepseek_prompt_includes_title_body_appeal_requirements() -> None:
+def test_factory_deepseek_prompt_includes_compact_native_title_body_requirements() -> None:
     settings = Settings.model_construct(
         default_model_provider="deepseek",
         default_model="deepseek-chat",
@@ -1185,18 +1397,49 @@ def test_factory_deepseek_prompt_includes_title_body_appeal_requirements() -> No
     )
 
     user_prompt = CapturingChatDeepSeek.last_messages[1].content
-    for required in ("首屏钩子", "领域要素", "可保存单元", "评论交接"):
+    for required in (
+        "xhs_compact_native_v1",
+        "2-4 个短拍",
+        "一个能立刻拿走的领域细节",
+        "保存动作和接话口可以放在同一句自然的话里",
+    ):
         assert required in user_prompt
-    assert "260-620" in user_prompt
+    assert "首屏钩子 -> 领域要素 -> 可保存单元 -> 评论交接" not in user_prompt
+    assert "200-380" in user_prompt
     assert "22" in user_prompt
     assert "12-18" in user_prompt
-    for title_cue in ("那一秒", "反差", "戏剧"):
-        assert title_cue in user_prompt
     assert "泛标题" in user_prompt
     for body_rule in ("现场锚点", "真人视角", "不要先总述", "自然保存"):
         assert body_rule in user_prompt
-    for copyable_rule in ("朋友安利", "可抄作业", "原模板直接放这", "少解释多交付"):
+    for copyable_rule in ("朋友安利", "一个能立刻拿走的领域细节", "少解释多交付"):
         assert copyable_rule in user_prompt
+
+
+def test_factory_deepseek_prompt_uses_compact_native_contract_without_four_part_template() -> None:
+    settings = Settings.model_construct(
+        default_model_provider="deepseek",
+        default_model="deepseek-chat",
+        deepseek_api_key="sk-test",
+        deepseek_model="deepseek-chat",
+        deepseek_base_url="https://api.deepseek.com/v1",
+        deepseek_temperature=0.3,
+        deepseek_max_tokens=1024,
+    )
+
+    backend = build_drafting_backend(settings, chat_model_cls=CapturingChatDeepSeek)
+    backend.generate(
+        scene="下班路上还在反复复盘会议里一句话，越想越尴尬",
+        skill_contents=[
+            "# Psychology Style\n现代心理困境观察，补齐心理机制、安全边界和低风险工具。",
+        ],
+    )
+
+    user_prompt = CapturingChatDeepSeek.last_messages[1].content
+    assert "xhs_compact_native_v1" in user_prompt
+    assert "2-4 个短拍" in user_prompt
+    assert "200-380" in user_prompt
+    assert "保存动作和接话口可以放在同一句自然的话里" in user_prompt
+    assert "首屏钩子 -> 领域要素 -> 可保存单元 -> 评论交接" not in user_prompt
 
 
 def test_factory_puts_runtime_trend_context_in_dedicated_prompt_section() -> None:

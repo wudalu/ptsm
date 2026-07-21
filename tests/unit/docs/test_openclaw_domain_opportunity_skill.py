@@ -23,6 +23,7 @@ def test_openclaw_domain_opportunity_skill_wraps_ptsm_cli() -> None:
     assert "--keywords" in text
     assert "--sample-limit-per-keyword" in text
     assert "--skip-login-check" in text
+    assert "Only add `--skip-login-check`" in text
     assert "--tool-timeout-seconds" in text
     assert "domain-opportunity-<date>.md" in text
     assert "domain-opportunity-<date>.json" in text

@@ -26,7 +26,10 @@ CONTENT_QUALITY_RUBRIC = (
     "platform_native_format, persona_fit, safety, each set to pass, warn, or fail. "
     "Check whether the hook is specific, there is a save/share trigger, there is a "
     "comment/example prompt, the format feels platform-native, persona fits the "
-    "playbook, and safety risks are absent. Do not judge virality."
+    "playbook, and safety risks are absent. Reward compact Xiaohongshu rhythm: "
+    "2-4 short beats, a concrete lived detail, one usable takeaway, and a natural "
+    "rather than template-like ending. Do not add a new deterministic hard gate; "
+    "use this only as a qualitative signal. Do not judge virality."
 )
 
 

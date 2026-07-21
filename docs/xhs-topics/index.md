@@ -2,7 +2,7 @@
 title: XHS Topic Index
 status: active
 owner: ptsm
-last_verified: 2026-05-30
+last_verified: 2026-07-22
 source_of_truth: false
 related_paths:
   - docs/index.md
@@ -37,7 +37,7 @@ related_paths:
 - 当前仓库已经落地周期性 XHS pattern library：`collect-xhs-patterns` 负责 bounded live MCP 采样，`analyze-xhs-patterns` 负责把原始样本变成可复用格式 snapshot，普通 `run-playbook` 读取本地 `current.json` 而不是每次实时搜索高互动帖子。
 - 2026-05-23 爆品梗调研已经进入现有 playbook/skill 资产层：共享 `xhs_human_voice` 负责温暖、真人、不格式化的横向语气，各领域 style/persona/prompt 再把丝瓜汤、爱你老己、三明治拒绝法、适我主义、AI 生活搭子、文化力、老款人格等机制消化成自己的主题表达。该研究现已进一步收敛为“角色认领、可保存工具、低成本动作、评论续写”的产品化 hook 框架，特别补充了苏轼/怀民这类文化角色梗如何把评论区变成关系入口。详见 [`docs/research/2026-05-23-xhs-viral-meme-product-hooks.md`](../research/2026-05-23-xhs-viral-meme-product-hooks.md)。
 - 2026-05-30 领域机会复核把现有九个 playbook 和候选新领域放到同一张证据表里：短期 `世界杯` 热度最高，常青新增优先级是 `轻养生 / 睡眠恢复 / 办公室恢复`，`情绪疗愈` 应继续由心理学安全边界承接，`人类丰容 + 修复系手作` 和 `苏轼 + 文博非遗` 先作为现有 playbook 子线推进。详见 [`docs/research/2026-05-30-xhs-domain-opportunity-and-workflow-review.md`](../research/2026-05-30-xhs-domain-opportunity-and-workflow-review.md)。
-- `guide-post` 已把 hook 框架产品化为本地确定性的跨领域选题引导，覆盖当前九个 playbook：心理学、发疯文学、人类丰容、苏轼诗词、武侠人物、AI科技、每日英语、世界杯和 Reddit英文讨论转译。它默认只读取本地 topic pack，不做 live MCP 或 web scan；实时/周期性证据仍由 `--fresh-topic-research`、`collect-xhs-patterns` 和 `analyze-xhs-patterns` 负责。
+- `guide-post` 已把 hook 框架产品化为本地确定性的跨领域选题引导，覆盖当前九个 playbook：心理学、发疯文学、人类丰容、苏轼诗词、武侠人物、AI科技、每日英语、世界杯和 Reddit英文讨论转译。它默认只读取本地 topic pack，不做 live MCP 或 web scan；显式 `--fresh-topic-research` 由 public Topic Radar 默认八平台扫描提供一次性、可追溯的选题证据，周期性 XHS pattern 仍由 `collect-xhs-patterns` 和 `analyze-xhs-patterns` 负责。
 - 真正可复用的外部能力在小红书 MCP / OpenClaw skill 生态；PTSM 更适合在这些能力之上做自己的 research skill，而不是直接照搬外部 workflow。
 
 ## 阅读顺序

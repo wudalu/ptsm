@@ -2,13 +2,17 @@
 title: Topic Radar
 status: active
 owner: ptsm
-last_verified: 2026-05-30
+last_verified: 2026-07-22
 source_of_truth: true
 related_paths:
   - src/topic_radar
+  - src/topic_radar/analysis/evidence.py
+  - src/topic_radar/cli.py
   - src/ptsm/application/use_cases/collect_xhs_patterns.py
   - src/ptsm/application/use_cases/analyze_xhs_patterns.py
   - src/ptsm/application/use_cases/xhs_domain_opportunity.py
+  - src/ptsm/application/use_cases/run_playbook.py
+  - src/ptsm/skills/runtime_context.py
   - src/ptsm/domain/xhs_patterns.py
   - src/ptsm/infrastructure/xhs_patterns
   - docs/index.md
@@ -27,8 +31,8 @@ related_paths:
 
 ```bash
 # 多平台扫描
-topic-radar scan                          # 三平台扫描
-topic-radar scan --platforms xhs,weibo    # 限定平台
+topic-radar scan                          # 默认请求全部 8 个已支持平台
+topic-radar scan --platforms xhs,weibo    # 限定平台（xhs 是 xiaohongshu 别名）
 topic-radar scan --mcp-check              # 仅检查 MCP 健康
 
 # 单帖拆解
@@ -52,6 +56,7 @@ src/topic_radar/
 │   ├── xiaohongshu.py     # search_feeds, get_feed_detail
 │   └── weibo.py           # Weibo/Douyin via mcp-trends-hub
 ├── analysis/
+│   ├── evidence.py        # canonical evidence、质量状态、事件簇、历史去重
 │   ├── schemas.py         # Pydantic schemas for LLM output
 │   ├── llm_analyzer.py    # LLM-driven analysis (primary)
 │   ├── methodology.py     # 4D methodology framework for prompt injection
@@ -65,17 +70,44 @@ src/topic_radar/
 
 ### 分析路径
 
-**默认路径：LLM → fallback rules**
-1. 数据归一化（去重、排序、格式统一）
-2. LLM 分析：将所有原始 trending 数据发送给 DeepSeek，system prompt 嵌入了 content-production-mcp 四维方法论框架（认知劫持机制 + 荣格原型 + 平台讨论模式 + 情绪-传播联动），LLM 据此自主发现垂类、评估讨论价值、生成选题角度
-3. 如果 LLM 不可用（无 API key、网络错误、响应无效），自动回退到规则引擎
+**默认路径：canonical evidence → 保守事件聚类 → LLM 或 rules → 多样性/新颖度筛选**
+
+1. 八个平台的 collector 先产生原始观察；小红书 HTTP MCP 与 trends-hub stdio MCP 分 server 加载和缓存，工具发现也有 bounded timeout。任一服务不可用或卡住只记录它覆盖的平台诊断，不能阻断另一服务的健康采集。空结果、未登录、不可用平台和不支持的平台都记为显式诊断，绝不把空列表当作成功采样。
+2. canonical evidence 在分析前去重。小红书优先按 `feed_id`；完整标题+作者只可桥接一条缺 ID 观察到其第一个真实 ID，随后同标题/作者的不同真实 ID 仍是独立来源。若同一可见身份已有多个真实 ID，后来的缺 ID 观察保持 unresolved，不会任意并到其中一篇。URL 或保守 fallback 只在 ID 不可用时参与识别；多关键词命中会合并 `matched_queries` 并累计 `source_observation_count`。热度只在各自平台内归一化，不把不同平台的绝对热度直接相加比较。
+3. 相近标题以保守 complete-link 规则聚成 event cluster；天气现象、AI 内容形态等互斥核心词不能被模糊匹配合并。AI 视觉同义词（如绘图、绘画、作图、图像、图片）属于同一槽位，和写作、编程等不同槽位仍互斥。只有一个簇确实有至少两个实际平台的 evidence 时，才会生成跨平台扩散信号；单次快照只说明共现，不会声称 `accelerating` 等时序速度。
+4. LLM 只能引用 prompt 中给出的 `evidence_id` / `cluster_id`，输出会在落盘前验证；八平台 prompt 有明确上限（每平台 12 条热搜、48 条 evidence、24 个事件簇），并以 round-robin 保留各平台可见证据。事件簇只可引用本次 prompt 内可见的 evidence，避免 raw rows/evidence/clusters 三重展开失控。任何与 canonical source title 等价的 `vertical`、`angle` 或 `why` 都会被拒绝，较具体 title 的内嵌复写也会被拒绝。像 `AI` 这样的短泛词可以作为新角度里的普通语言；raw author/URL/feed/token 仍无论长短一律阻断，不能作为 drafting-facing 二次创作角度。未展开的 `{placeholder}` 会在 LLM 结果验证阶段拒绝，因此不会把 rules fallback 错误地压成空结果；rules 产出的角度同样必须绑定真实 event evidence，且不得包含未展开的 `{placeholder}`。
+5. 最终 selector 每个 event 最多保留一个角度，并在默认 14 天窗口内压制同一事件+同一角度（包括语义等价的标题别名）；同一事件的新角度仍可进入报告。
 
 artifact 中 `analysis_method` 字段标记实际使用的路径（`"llm"` 或 `"rules"`）。
+
+## Evidence Quality, Clusters, and Novelty
+
+每次 scan 都有一个显式 `scan_quality`：
+
+- `completed`：每个请求平台都有有效 canonical evidence，且没有 collector/analysis 诊断。
+- `partial`：至少有一个平台有有效 evidence，但另一些平台、关键词或 LLM analysis 有可追溯问题；报告仍可使用，但不得把缺失平台当成已覆盖。
+- `insufficient_evidence`：没有任何有效 evidence。不会调用 LLM，也不会生成推荐；仍写出 diagnostic artifact 供排障。
+
+JSON schema 已升级为 `schema_version: 2`。除兼容保留的 `raw_trending` 外，关键字段是：
+
+- `evidence`：每条 canonical source 的 `evidence_id`、平台、规范化标题、平台内 `normalized_heat`、匹配查询数和观测次数。
+- `topic_clusters`：`cluster_id`、`event_fingerprint`、代表标题、`evidence_ids`、实际平台集合和 score。
+- `recommended_angles`：证据绑定的 `cluster_id`、`event_fingerprint`、`evidence_ids`、`angle_signature`、`novelty_state` 与 `ranking_score`。这些字段解释“为什么这个角度在本次有资格出现”，不是新的跨平台热度承诺。
+- `platform_errors`：collector 或安全化 LLM fallback 诊断。`partial` 和 `insufficient_evidence` 都必须先读它再解读推荐。
+
+选中的 event/angle 对会 append 到输出目录的 `topic-radar-history.jsonl`。它是小型本地历史索引，不回写或覆盖旧的 scan artifact；同一天多次扫描会成对产生 `topic-scan-<date>.json` / `topic-brief-<date>.md`，必要时追加 `-2`、`-3` 等后缀。
 
 ## 数据来源
 
 - **小红书**: 本地 xiaohongshu-mcp (HTTP MCP on localhost:18060)
-- **微博/抖音/知乎/B站/今日头条/豆瓣/少数派**: mcp-trends-hub (stdio MCP via npx)，共覆盖 7 个中文内容平台
+- **微博、抖音、知乎、B站、今日头条、豆瓣、少数派**: mcp-trends-hub (stdio MCP via npx)
+
+当前已支持且默认请求的平台集合是
+`xiaohongshu,weibo,douyin,zhihu,bilibili,toutiao,douban,sspai`。CLI 同时接受
+`xhs`、`小红书`、`微博`、`抖音`、`知乎`、`B站`、`头条`、`豆瓣`、`少数派`等常用别名；未知平台会保留为 diagnostic，而不会被悄悄忽略。
+平台列表与小红书关键词都接受 ASCII `,` 和中文 `，`，例如
+`--platforms "小红书，微博"` 会请求两个平台；关键词只传分隔符或空白时会回退到默认的
+`打工人,治愈` 查询，不会启动零关键词扫描。
 
 ## XHS Periodic Pattern Collection
 
@@ -118,7 +150,8 @@ HTTP 500、timeout 或登录波动时，会把已成功关键词的样本先落�
 
 - `xhs-domain-opportunity` 面向 operator，按一组关键词做 bounded `search_feeds`，
   计算 `likes + comments * 4 + collects * 2 + shares * 6`，再映射到现有
-  playbook、候选 sublane 或新领域建议。
+  playbook、候选 sublane 或新领域建议。跨关键词优先按 `feed_id` 去重；完整标题+作者只用于桥接缺失 ID 的同一观察，首个真实 ID 会消费该 bridge，后续同标题/作者的不同真实 ID 仍保留；若已知多个真实 ID，后来的缺 ID 样本保持 unresolved。标题单独不能折叠不同笔记。ASCII `,` 与中文 `，` 都能分隔关键词；只传分隔符或空白时回退到 bounded 默认基线查询。出现
+  no successful unique samples 时，不会产出 playbook fit、排序推荐或 `new_domain_candidate`。
 - `guide-post` 面向发帖前选题确认，默认只读本地 topic pack，不触发 live XHS
   搜索，不展示原始来源或 provenance。
 - 普通 `run-playbook` 仍不默认 live-scan；要么消费本地 pattern snapshot，要么由
@@ -132,31 +165,43 @@ HTTP 500、timeout 或登录波动时，会把已成功关键词的样本先落�
 
 JSON 会保留搜索级样本的标题、互动指标和 feed identifiers，便于追溯；Markdown
 brief 只展示 top domain、playbook fit、新领域候选和 workflow notes，不默认暴露
-feed id 或 token。
+feed id 或 token。搜索完成后的结果状态为 `completed`、`partial` 或
+`insufficient_evidence`；后者表示没有有效样本，不是“低热度的新领域”结论。若未使用
+`--skip-login-check` 且 XHS 登录预检先失败，状态会是 `login_required`：尚未搜索、没有
+fit/排序/新领域候选，先按 `_login` diagnostic 恢复登录再重跑。该 scan 是 bounded
+Xiaohongshu keyword-search evidence，not a whole-site or cross-platform trend ranking。
 
 ## 分析能力
 
 1. **帖子拆解**: 标题钩子分类（悬念/反常识/情绪共鸣/利益驱动/身份认同）、正文结构、互动诱因检测
-2. **跨平台话题发现**: 对比多平台热榜，发现扩散中的讨论点
-3. **垂类聚类**: 自动将话题分配到 12 个候选垂类，附带置信度和讨论密度
-4. **评论区信号**: 提问密度、情感极性、真讨论 vs 打卡
+2. **跨平台话题发现**: 只从至少两个真实平台支持的 event cluster 生成扩散信号；单次快照不推断传播速度
+3. **垂类聚类**: 自动将话题分配到候选垂类，附带置信度和讨论密度；LLM 结论必须可回溯到 canonical evidence
+4. **重复控制**: source 去重、同扫描一事件一角度、近期同事件+同角度 cooldown
+5. **评论区信号**: 提问密度、情感极性、真讨论 vs 打卡
 
 ## 产物
 
-- `outputs/artifacts/topic-scan-{date}.json` — 结构化 JSON
-- `outputs/artifacts/topic-brief-{date}.md` — 可读 Markdown 报告
+- `outputs/artifacts/topic-scan-{date}.json` — 结构化 JSON；同日重跑会使用 `-2`、`-3` 后缀而不覆盖
+- `outputs/artifacts/topic-brief-{date}.md` — 与 JSON stem 配对的可读 Markdown 报告
+- `outputs/artifacts/topic-radar-history.jsonl` — append-only 的近期 event/angle cooldown 索引
 
 ## Programmatic API
 
-`topic_radar.run_scan()` 提供异步 programmatic 接口，返回 `TopicScanResult`：
+`topic_radar.cli.run_scan()`（包级 `topic_radar.run_scan()` 同样可用）提供异步
+programmatic API，返回 `TopicScanResult`：
 
 ```python
-from topic_radar import run_scan
+from topic_radar.cli import ScanOptions, run_scan
 
-result = await run_scan(platforms="xiaohongshu", keywords="打工人,治愈")
+result = await run_scan(
+    platforms="xiaohongshu,weibo",
+    keywords="打工人,治愈",
+    options=ScanOptions(max_recommendations=6, history_days=14),
+)
 # result.discovered_verticals  — 发现的垂类
 # result.recommended_angles    — 推荐角度
-# result.scan_summary          — 扫描摘要
+# result.scan_quality          — completed | partial | insufficient_evidence
+# result.evidence / result.topic_clusters — 可追溯 canonical evidence
 ```
 
 ## 与 PTSM 协作
@@ -173,10 +218,11 @@ ptsm run-fengkuang --fresh-topic-research --account-id acct-fk-local --auto-gene
 ```
 
 流程：
-1. topic-radar 扫描当前平台热点
-2. 终端交互：展示发现的垂类和推荐角度，用户选择
-3. 基于用户选择的垂类+角度构建 enriched scene
-4. 继续正常的 playbook 发帖流程
+1. `run-playbook --fresh-topic-research` 只在这条显式路径调用 public `topic_radar.cli.run_scan()`；它不传入平台参数，因此使用 Topic Radar 配置的八平台默认集合。
+2. 如果结果为 `insufficient_evidence`，PTSM 在启动 workflow 前返回可操作诊断，不会用静态映射伪造一个“热点方向”。`partial` 会保留平台错误和 artifact/report 路径，供 operator 判断是否继续。
+3. 终端交互只展示 evidence-backed 的推荐角度。选定的垂类、角度和讨论诱因构成 enriched scene；`cluster_id`、`event_fingerprint`、`evidence_ids` 和 scan receipt 仅保留在 response/run/artifact 的 traceability metadata。
+4. drafting context never receives raw source titles, authors, URLs, feed IDs, or tokens。选定后 runtime 也不会再启动第二次 live scan 或叠加竞争性的 `topic_research` 方向。
+5. workflow 继续按普通 playbook 的安全、标签、来源和文案合同生成内容。
 
 topic_radar 不依赖 PTSM。PTSM 还可以：
 - 通过 CLI 命令独立运行，人工参考结果

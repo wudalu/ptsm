@@ -2,7 +2,7 @@
 title: PTSM Observability
 status: active
 owner: ptsm
-last_verified: 2026-06-02
+last_verified: 2026-07-22
 source_of_truth: true
 related_paths:
   - src/ptsm/infrastructure/observability/run_store.py
@@ -18,6 +18,11 @@ related_paths:
   - src/ptsm/infrastructure/xhs_patterns
   - src/ptsm/application/use_cases/collect_xhs_patterns.py
   - src/ptsm/application/use_cases/analyze_xhs_patterns.py
+  - src/ptsm/application/use_cases/xhs_domain_opportunity.py
+  - src/ptsm/application/use_cases/run_playbook.py
+  - src/ptsm/skills/runtime_context.py
+  - src/topic_radar/cli.py
+  - src/topic_radar/analysis/evidence.py
   - src/ptsm/plan_runner/runner.py
   - outputs/artifacts
   - outputs/generated_images
@@ -37,6 +42,11 @@ PTSM 当前的观测性核心是本地文件系统里的 run store 和 artifacts
 - `.ptsm/plan_runs/<run_id>.json`
 - `.ptsm/plan_runs/<run_id>.evidence.json`
 - `outputs/artifacts/*.json`
+- `outputs/artifacts/topic-scan-*.json`
+- `outputs/artifacts/topic-brief-*.md`
+- `outputs/artifacts/topic-radar-history.jsonl`
+- `outputs/artifacts/xhs-domain-opportunity/domain-opportunity-*.json`
+- `outputs/artifacts/xhs-domain-opportunity/domain-opportunity-*.md`
 - `outputs/artifacts/xhs-pattern-library/samples-*.json`
 - `outputs/artifacts/xhs-pattern-library/patterns-*.json`
 - `outputs/artifacts/xhs-pattern-library/current.json`
@@ -53,6 +63,10 @@ PTSM 当前的观测性核心是本地文件系统里的 run store 和 artifacts
 - workflow artifact 现在会持久化 `activated_skill_details` 和 `runtime_skill_details`，与已有的 `runtime_skill_contents` 一起回答本次运行读了哪些静态 skills 和哪些动态上下文资源。
 - workflow artifact 现在还会持久化 `step_outputs`，把 planner、executor、reflector 的关键产物保存成 bounded evidence，供 rule/contract/LLM evaluator 对 step outcome 做评价。
 - artifact 写入会保留同一个 `run_key` 下的多次 dry-run；当目标文件已存在时追加数字后缀，避免内容实验批量生成时覆盖前一个候选。
+- Topic Radar scan artifact 现在是 schema v2：`scan_quality` 明确记录 `completed` / `partial` / `insufficient_evidence`，`platform_errors` 记录安全化 collector/LLM diagnostics（包括 isolated server 的工具发现 timeout），`evidence` 记录 canonical source rows 和平台内归一化热度，`topic_clusters` 记录保守 event clusters。LLM prompt 在 48 条 evidence / 24 个 cluster 上限内 round-robin 覆盖平台，且 cluster 只引用 prompt 内可见的 evidence。`recommended_angles` 带 `cluster_id`、`event_fingerprint`、`evidence_ids`、`angle_signature`、`novelty_state` 和 `ranking_score`，因此推荐、跨平台信号和 scan-quality 都可从同一 artifact 回溯。跨平台信号只记录真实平台共现；没有时序观测时 `velocity` 为 `unknown`，不得由单次热度快照推断加速。
+- Topic Radar 同日重跑会为 JSON/Markdown 使用成对 suffix，避免覆盖旧 artifact；`outputs/artifacts/topic-radar-history.jsonl` append-only 记录已选 event+angle 的近期 cooldown。它是推荐去重依据，不是长期热度 dashboard。
+- fresh Topic Radar 选择写入 PTSM response/run/artifact 的 `topic_selection` 时，只保留选定角度、讨论诱因、构造场景、`cluster_id`、`event_fingerprint`、`evidence_ids`、scan quality、platform diagnostics 和 artifact/report receipt。receipt 必须来自本次 scan 且指向可读 artifact；终端 `scan_summary`、原始 source title、author、URL、feed ID、token 不进入 PTSM drafting context 或 selection metadata。
+- `xhs-domain-opportunity` artifact 记录每个 keyword 的去重后 `sample_count`、`duplicate_sample_count`、partial errors 和状态。去重优先以 `feed_id` 为准；完整 title+author 只桥接缺 ID 的同一观察到首个真实 ID，之后同 title/author 的不同真实 ID 仍独立；一旦可见身份已有多个真实 ID，后来的缺 ID 样本也保持 unresolved，标题单独不作为 identity。ASCII `,`、中文 `，` 和 separator-only fallback 的查询归一化也会保留为 bounded 行为。只有至少一个成功 unique sample 才会出现 evidence-backed domain recommendation；全空/全错为 `insufficient_evidence`，不能从静态 mapping 推导 ranked opportunity。
 - finished run summary 现在也会写入 `activated_skills`、`activated_skill_details` 和 `runtime_skill_details`，便于先查 `.ptsm/runs/*/summary.json`，只有需要全文时再回读 artifact。
 - `run_logs()` 支持按 `run_id` 或 artifact 反查运行记录。
 - `RunStore.list_runs()` 和 `ptsm runs` 支持按账号、平台、playbook、状态筛选最近运行。

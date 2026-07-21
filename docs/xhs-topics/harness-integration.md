@@ -2,12 +2,14 @@
 title: XHS Topic Harness Integration
 status: active
 owner: ptsm
-last_verified: 2026-05-03
+last_verified: 2026-07-22
 source_of_truth: false
 related_paths:
   - docs/xhs-topics/index.md
   - docs/harness-engineering.md
   - docs/observability.md
+  - docs/topic-radar.md
+  - docs/operations/topic-radar-runbook.md
   - docs/research/xhs-mcp-spike.md
   - src/ptsm/skills/builtin/xhs_trend_scan/SKILL.md
   - src/ptsm/skills/runtime_context.py
@@ -73,22 +75,11 @@ PTSM 已经有：
 
 `xhs_trend_scan` 已经作为 builtin skill 落地，并且已经挂进 planner。
 
-把热点扫描做成 `xhs_trend_scan` skill：
+`xhs_trend_scan` 仍作为现有 XiaoHongShu playbook 的 `required_skills`，但它的职责已经收窄为把本地 XHS pattern library snapshot（或静态 guidance）写进独立的 `runtime_skill_contents`。普通 drafting 不从该 skill 调用 `xiaohongshu-mcp`，也不会因缺少 snapshot 而启动实时搜索。
 
-- 输入：垂类、关键词、采样上限
-- 输出：候选主题 brief
+显式 `--fresh-topic-research` 则由 `run_playbook` 调用 public Topic Radar API：默认八个平台只扫描一次，产物保留证据、质量状态和候选事件簇；进入 drafting 的只有本次 receipt 已选方向/角度等安全元数据，不包含原始标题、作者、URL、feed ID 或 token。普通/local-only runtime 不会回读旧 Topic Radar artifact。`partial` 会保留诊断，`insufficient_evidence` 在启动 workflow 前停止。
 
-当前挂载位置：
-
-- 现有 XiaoHongShu playbook 的 `required_skills`
-- planner 在激活 `xhs_trend_scan` 后，会优先尝试调用本地 `xiaohongshu-mcp` 的 `search_feeds`
-- 成功时把实时站内趋势上下文写入独立的 `runtime_skill_contents`
-- 失败或未登录时回退到静态 skill，不中断 drafting workflow
-
-后续更适合扩展到：
-
-- 或未来单独的 `ptsm xhs-topic-scan` 命令
-- 或把 `get_feed_detail` / comment signals 再补进更完整的 research artifact
+若运营问题只需要小红书领域机会，使用 `xhs-domain-opportunity`：它是 bounded `search_feeds` 证据报告，不是全站或跨平台热榜；没有成功的唯一样本时只返回 `insufficient_evidence` 与恢复建议，不产出排名、匹配或新领域候选。
 
 ### 2. Note Teardown Skill
 
@@ -116,14 +107,14 @@ PTSM 已经有：
 
 ## Suggested Near-Term Integration
 
-当前已经落地的是“轻量 runtime 版”：
+当前已经落地的是分层 research 边界：
 
-1. 先用 scene 和 playbook 语境推导一组小红书搜索词。
-2. 通过本地 `xiaohongshu-mcp` 采样 `search_feeds`，收敛高互动表达和推荐切口。
-3. 把结果直接并入 planner 的 runtime skill context，而不是先引入新的 artifact 类型。
-4. 等结构稳定后，再决定要不要加新的 CLI/use case 和更细的 research skill。
+1. 普通小红书生成只消费本地 pattern snapshot 或静态 skill guidance。
+2. 需要最新跨平台选题时，显式运行一次 public Topic Radar fresh scan，并从其 artifact/诊断复盘。
+3. 需要小红书领域比较时，运行 bounded `xhs-domain-opportunity`，只把成功的唯一样本作为证据。
+4. `get_feed_detail` / 评论信号等更重的单帖拆解仍应作为未来独立 research artifact，而不是塞回普通 drafting prompt。
 
-这样做的取舍是：先把“可用的实时趋势上下文”接进现有 harness，再决定是否值得把 topic scan 产品化成独立研究流。
+这样保持普通生成可预测，也让实时研究的来源、失败和新颖度都能被独立追溯。
 
 ## Mapping To Current Playbooks
 

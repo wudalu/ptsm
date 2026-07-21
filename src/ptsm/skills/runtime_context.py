@@ -22,6 +22,12 @@ from ptsm.infrastructure.reddit.client import (
 )
 from ptsm.playbooks.registry import PlaybookDefinition
 from ptsm.skills.loader import LoadedSkill
+from topic_radar.analysis.evidence import (
+    SOURCE_PROVENANCE_FIELD_NAMES,
+    contains_raw_source_provenance,
+    normalized_source_keys,
+    source_provenance_keys,
+)
 
 _WEEKDAY_TOKENS = ("周一", "周二", "周三", "周四", "周五", "周六", "周日")
 _WORK_CUES = ("老板", "领导", "工位", "下班", "上班", "需求", "开会", "会议", "群里", "打工")
@@ -152,6 +158,15 @@ class SkillContextResolver:
         contexts: dict[str, str] = {}
         keyword_hints = list(playbook.trend_keywords) if playbook.trend_keywords else None
         for loaded_skill in loaded_skills:
+            if (
+                loaded_skill.skill.skill_name == "topic_research"
+                and _has_topic_radar_selection(state)
+            ):
+                # run-playbook already performed the explicit fresh scan and
+                # converted the chosen angle into the scene. Re-running the
+                # topic builder here would either launch a second scan or add
+                # a competing live direction to the same draft.
+                continue
             builder = self._builders.get(loaded_skill.skill.skill_name)
             if builder is None:
                 continue
@@ -167,6 +182,11 @@ class SkillContextResolver:
                 if hasattr(builder, "last_selection") and builder.last_selection:  # type: ignore[union-attr]
                     state["selected_topic_angle"] = builder.last_selection  # type: ignore[union-attr]
         return contexts
+
+
+def _has_topic_radar_selection(state: dict[str, Any]) -> bool:
+    selection = state.get("topic_selection")
+    return isinstance(selection, dict) and selection.get("source") == "topic-radar"
 
 
 class RedditDiscussionContextBuilder:
@@ -447,7 +467,7 @@ class PatternAwareTopicResearchContextBuilder:
         self.pattern_builder = pattern_builder
 
     @property
-    def last_selection(self) -> dict[str, str] | None:
+    def last_selection(self) -> dict[str, Any] | None:
         return self.topic_builder.last_selection
 
     def build(
@@ -485,10 +505,10 @@ class TopicResearchContextBuilder:
     ) -> None:
         self._artifact_dir = Path(artifact_dir)
         self._allow_fresh_scan = allow_fresh_scan
-        self._last_selection: dict[str, str] | None = None
+        self._last_selection: dict[str, Any] | None = None
 
     @property
-    def last_selection(self) -> dict[str, str] | None:
+    def last_selection(self) -> dict[str, Any] | None:
         return self._last_selection
 
     def build(
@@ -498,23 +518,44 @@ class TopicResearchContextBuilder:
     ) -> str | None:
         try:
             self._last_selection = None
-            today = date.today().isoformat()
-            artifact_path = self._artifact_dir / f"topic-scan-{today}.json"
-
-            if fresh_topic_research and self._allow_fresh_scan:
-                _run_topic_radar_scan(str(self._artifact_dir))
-
-            if not artifact_path.exists():
+            # A Topic Radar artifact is evidence from a particular scan, not
+            # a reusable ambient prompt source. Ordinary runs stay on local
+            # patterns, and local-only resolvers cannot prove an on-disk
+            # artifact belongs to this fresh request.
+            if not fresh_topic_research or not self._allow_fresh_scan:
                 return None
 
+            scan_result = _run_topic_radar_scan(str(self._artifact_dir))
+            artifact_path = _scan_artifact_path(scan_result)
+            # A fresh request has to name the artifact written by that exact
+            # scan. Falling back to today's conventional filename could turn a
+            # previous scan into fake fresh evidence, so missing/unreadable
+            # receipts fail closed.
+            if artifact_path is None or not artifact_path.is_file():
+                return None
             data = json.loads(artifact_path.read_text(encoding="utf-8"))
+
+            _merge_scan_diagnostics(
+                data,
+                scan_result=scan_result,
+                artifact_path=artifact_path,
+            )
+            if _is_insufficient_evidence(data):
+                return None
 
             if self._is_domain_hint(scene):
                 # Domain mode: select angle from topic-radar, construct scene
-                return self._build_with_angle_selection(scene, data)
+                return self._build_with_angle_selection(
+                    scene,
+                    data,
+                    require_evidence=True,
+                )
             else:
                 # Scene mode: user provided specific scene, use topic-radar as supplement
-                return _render_topic_research_context(data)
+                return _render_topic_research_context(
+                    data,
+                    evidence_backed_only=True,
+                )
         except Exception:
             return None
 
@@ -524,112 +565,390 @@ class TopicResearchContextBuilder:
             cue in scene for cue in ("今天", "昨天", "刚才", "路上", "工位", "回家", "开会", "地铁", "我")
         )
 
-    def _build_with_angle_selection(self, scene: str, data: dict) -> str | None:
-        """Render context with explicit angle selection based on scene."""
-        angles = data.get("recommended_angles", [])
+    def _build_with_angle_selection(
+        self,
+        scene: str,
+        data: dict[str, Any],
+        *,
+        require_evidence: bool = False,
+    ) -> str | None:
+        """Render one safe selected angle without copying source provenance."""
+        evidence_catalog = _topic_evidence_catalog(data)
+        angles = _safe_recommended_angles(
+            data.get("recommended_angles"),
+            require_evidence=require_evidence,
+            evidence_catalog=evidence_catalog,
+        )
         verticals = data.get("discovered_verticals", [])
-        noise = data.get("noise_topics", [])
-        summary = data.get("scan_summary", "")
 
         if not angles and not verticals:
             return None
 
-        # Select best matching angle based on scene keywords
-        selected = _pick_best_angle(scene, angles, verticals)
+        selected = _pick_best_angle(
+            scene,
+            angles,
+            verticals if not require_evidence else [],
+            evidence_catalog=evidence_catalog,
+        )
+        if selected is None:
+            return None
+
+        raw_scene = _angle_to_scene(selected)
         lines = [
             "# Topic Research — Selected Angle",
             "",
+            f"## 选定选题方向：{selected.get('vertical', '')}",
+            f"**选题角度**: {selected.get('angle', '')}",
+            f"**讨论诱因**: {selected.get('why_discussion_likely', '')}",
+            f"**构造场景**: {raw_scene}",
+            "",
+            "你将以这个场景为出发点撰写内容。场景是选题角度的具体化，保持角度核心不变。",
+            "约束：以选定角度为核心，将场景展开为具体故事。不要复写报告原文。",
         ]
-
-        if summary:
-            lines.append(f"今日趋势摘要：{summary}")
-            lines.append("")
-
-        if selected:
-            raw_scene = _angle_to_scene(selected)
-            lines.append(f"## 选定选题方向：{selected.get('vertical', '')}")
-            lines.append(f"**选题角度**: {selected.get('angle', '')}")
-            lines.append(f"**讨论诱因**: {selected.get('why_discussion_likely', '')}")
-            lines.append(f"**构造场景**: {raw_scene}")
-            lines.append("")
-            lines.append("你将以这个场景为出发点撰写内容。场景是选题角度的具体化，保持角度核心不变。")
-            # Store selection for traceability
-            self._last_selection = {
-                "vertical": selected.get("vertical", ""),
-                "angle": selected.get("angle", ""),
-                "why": selected.get("why_discussion_likely", ""),
-                "constructed_scene": raw_scene,
-            }
-        else:
-            lines.append("## 参考选题（按讨论度排序）")
-            for a in angles[:3]:
-                lines.append(f"- [{a.get('vertical', '')}] {a.get('angle', '')}")
-            lines.append("")
-
-        if noise:
-            lines.append(f"## 避免话题")
-            lines.append(f"{', '.join(noise[:5])}")
-            lines.append("")
-
-        lines.append("约束：以选定角度为核心，将场景展开为具体故事。不要复写报告原文。")
+        # Preserve only opaque traceability in state/artifacts. Never render
+        # it (or any raw source field) into a drafting context.
+        self._last_selection = _selection_traceability(
+            selected,
+            data,
+            constructed_scene=raw_scene,
+        )
         return "\n".join(lines)
 
 
-def _run_topic_radar_scan(output_dir: str) -> None:
-    """Run topic-radar scan programmatically. Errors are silently ignored."""
+def run_topic_radar_scan(output_dir: str | Path) -> dict[str, Any]:
+    """Use Topic Radar's public full-platform scan API for fresh research.
+
+    ``platforms`` is deliberately omitted. Topic Radar's configuration owns
+    the supported eight-platform default; PTSM only supplies an artifact
+    destination for the explicit fresh-research path.
+    """
+    from topic_radar.cli import run_scan
+
+    result = asyncio.run(run_scan(output_dir=str(output_dir)))
+    return _topic_radar_scan_receipt(result)
+
+
+def _run_topic_radar_scan(output_dir: str) -> dict[str, Any]:
+    """Compatibility wrapper for the runtime builder and its unit tests."""
+    return run_topic_radar_scan(output_dir)
+
+
+_TOPIC_TRACEABILITY_FIELDS = (
+    "cluster_id",
+    "angle_signature",
+    "event_fingerprint",
+    "evidence_ids",
+)
+
+
+@dataclass(frozen=True)
+class TopicEvidenceCatalog:
+    """The opaque evidence relationship catalog carried by a Topic Radar artifact."""
+
+    evidence_event_fingerprints: dict[str, str]
+    evidence_title_keys: frozenset[str]
+    raw_provenance_keys: frozenset[str]
+    cluster_evidence_ids: dict[str, frozenset[str]]
+    cluster_event_fingerprints: dict[str, str]
+
+
+def _topic_radar_scan_receipt(result: object) -> dict[str, Any]:
+    """Normalize the public result without copying raw source rows into PTSM."""
+    return {
+        "scan_summary": _topic_text(_topic_field(result, "scan_summary")),
+        "scan_date": _topic_text(_topic_field(result, "scan_date")),
+        "platforms": _topic_string_list(_topic_field(result, "platforms")),
+        # PTSM fresh drafting only accepts a Topic Radar angle when the
+        # public result attached evidence IDs.  Verticals are diagnostic
+        # material (and can contain raw sample headlines), so they stay in
+        # the topic-radar artifact rather than becoming selectable here.
+        "verticals": [],
+        "recommended_angles": _safe_recommended_angles(
+            _topic_field(result, "recommended_angles"),
+            require_evidence=True,
+            evidence_catalog=_topic_evidence_catalog(result),
+        ),
+        "noise_topics": _topic_string_list(_topic_field(result, "noise_topics")),
+        "scan_quality": _topic_text(_topic_field(result, "scan_quality")),
+        "platform_errors": _topic_error_map(_topic_field(result, "platform_errors")),
+        "artifact_path": _topic_path(_topic_field(result, "artifact_path")),
+        "report_path": _topic_path(_topic_field(result, "report_path")),
+    }
+
+
+def _topic_field(value: object, key: str) -> object:
+    if isinstance(value, dict):
+        return value.get(key)
+    return getattr(value, key, None)
+
+
+def _topic_list(value: object) -> list[object]:
+    return list(value) if isinstance(value, list | tuple) else []
+
+
+def _topic_text(value: object) -> str:
+    if hasattr(value, "value"):
+        value = getattr(value, "value")
+    return value.strip() if isinstance(value, str) else ""
+
+
+def _topic_number(value: object, *, default: float) -> float:
     try:
-        import asyncio as _asyncio
-        from topic_radar.config import get_config
-        from topic_radar.mcp_client import McpClient
-        from topic_radar.platforms.weibo import WeiboPlatform, DouyinPlatform
-        from topic_radar.analysis.llm_analyzer import LLMAnalyzer
-        from topic_radar.cli import _convert_llm_output
-        from topic_radar.output.report import generate_report
-        from datetime import date as _date
+        return float(value)
+    except (TypeError, ValueError):
+        return default
 
-        config = get_config()
-        client = McpClient(xhs_server_url=config.xhs_mcp_server_url, enable_trends_hub=True)
-        analyzer = LLMAnalyzer(
-            model=config.llm_model,
-            api_key=config.llm_api_key,
-            base_url=config.llm_base_url,
+
+def _topic_string_list(value: object) -> list[str]:
+    if not isinstance(value, list | tuple):
+        return []
+    return [item.strip() for item in value if isinstance(item, str) and item.strip()]
+
+
+def _topic_error_map(value: object) -> dict[str, str]:
+    if not isinstance(value, dict):
+        return {}
+    return {
+        str(platform): detail.strip()
+        for platform, detail in value.items()
+        if isinstance(platform, str) and isinstance(detail, str) and detail.strip()
+    }
+
+
+def _topic_path(value: object) -> str:
+    return str(value) if isinstance(value, str | Path) and str(value) else ""
+
+
+def _topic_trace_value(field: str, value: object) -> str | list[str]:
+    if field == "evidence_ids":
+        return _topic_string_list(value)
+    return _topic_text(value)
+
+
+def _topic_evidence_catalog(source: object) -> TopicEvidenceCatalog:
+    evidence_event_fingerprints: dict[str, str] = {}
+    evidence_rows = _topic_list(_topic_field(source, "evidence"))
+    raw_trending_rows = _topic_list(_topic_field(source, "raw_trending"))
+    for row in evidence_rows:
+        evidence_id = _topic_text(_topic_field(row, "evidence_id"))
+        if evidence_id:
+            evidence_event_fingerprints[evidence_id] = _topic_text(
+                _topic_field(row, "event_fingerprint")
+            )
+    source_rows = [*evidence_rows, *raw_trending_rows]
+    evidence_title_keys = normalized_source_keys(
+        _topic_field(row, field)
+        for row in source_rows
+        for field in ("title", "canonical_title", "source_title")
+    )
+    raw_provenance_keys = source_provenance_keys(
+        {
+            field: _topic_field(row, field)
+            for field in SOURCE_PROVENANCE_FIELD_NAMES
+        }
+        for row in source_rows
+    )
+
+    cluster_evidence_ids: dict[str, frozenset[str]] = {}
+    cluster_event_fingerprints: dict[str, str] = {}
+    for row in _topic_list(_topic_field(source, "topic_clusters")):
+        cluster_id = _topic_text(_topic_field(row, "cluster_id"))
+        if not cluster_id:
+            continue
+        cluster_evidence_ids[cluster_id] = frozenset(
+            _topic_string_list(_topic_field(row, "evidence_ids"))
         )
-        platforms_to_scan = [("weibo", WeiboPlatform), ("douyin", DouyinPlatform)]
+        cluster_event_fingerprints[cluster_id] = _topic_text(
+            _topic_field(row, "event_fingerprint")
+        )
 
-        async def _scan() -> None:
-            trending: dict[str, list] = {}
-            for name, cls in platforms_to_scan:
-                try:
-                    items = await cls(client).get_trending(limit=20)
-                    trending[name] = items
-                except Exception:
-                    pass
-            if not trending:
-                return
-
-            scan_date = _date.today().isoformat()
-            llm_output, _ = analyzer.analyze(trending, scan_date)
-            if llm_output is None:
-                return
-
-            result = _convert_llm_output(llm_output, trending, scan_date)
-            result.write(output_dir)
-            generate_report(result, output_dir)
-
-        _asyncio.run(_scan())
-    except Exception:
-        pass
+    return TopicEvidenceCatalog(
+        evidence_event_fingerprints=evidence_event_fingerprints,
+        evidence_title_keys=evidence_title_keys,
+        raw_provenance_keys=raw_provenance_keys,
+        cluster_evidence_ids=cluster_evidence_ids,
+        cluster_event_fingerprints=cluster_event_fingerprints,
+    )
 
 
-def _pick_best_angle(scene: str, angles: list[dict], verticals: list[dict]) -> dict | None:
+def _angle_has_catalogued_evidence(
+    candidate: object,
+    *,
+    evidence_ids: list[str],
+    catalog: TopicEvidenceCatalog | None,
+) -> bool:
+    """Require an angle's opaque evidence IDs to belong to its real cluster."""
+    if catalog is None or not evidence_ids:
+        return False
+
+    cluster_id = _topic_text(_topic_field(candidate, "cluster_id"))
+    cluster_evidence_ids = catalog.cluster_evidence_ids.get(cluster_id)
+    if not cluster_id or not cluster_evidence_ids:
+        return False
+
+    selected_ids = frozenset(evidence_ids)
+    if not selected_ids.issubset(cluster_evidence_ids):
+        return False
+    if not selected_ids.issubset(catalog.evidence_event_fingerprints):
+        return False
+
+    cluster_event = catalog.cluster_event_fingerprints.get(cluster_id, "")
+    candidate_event = _topic_text(_topic_field(candidate, "event_fingerprint"))
+    if candidate_event and candidate_event != cluster_event:
+        return False
+    if cluster_event and any(
+        catalog.evidence_event_fingerprints[evidence_id] not in {"", cluster_event}
+        for evidence_id in selected_ids
+    ):
+        return False
+    return True
+
+
+def _safe_recommended_angles(
+    value: object,
+    *,
+    require_evidence: bool,
+    evidence_catalog: "TopicEvidenceCatalog | None" = None,
+) -> list[dict[str, Any]]:
+    """Whitelist drafting-safe angle fields and opaque traceability only."""
+    angles: list[dict[str, Any]] = []
+    for candidate in _topic_list(value):
+        vertical = _topic_text(_topic_field(candidate, "vertical"))
+        angle = _topic_text(_topic_field(candidate, "angle"))
+        if not vertical or not angle:
+            continue
+        evidence_ids = _topic_string_list(_topic_field(candidate, "evidence_ids"))
+        if require_evidence and not _angle_has_catalogued_evidence(
+            candidate,
+            evidence_ids=evidence_ids,
+            catalog=evidence_catalog,
+        ):
+            continue
+        why = _topic_text(
+            _topic_field(candidate, "why_discussion_likely")
+            or _topic_field(candidate, "why")
+        )
+        if _drafting_fields_leak_raw_source(
+            (vertical, angle, why),
+            evidence_catalog=evidence_catalog,
+        ):
+            continue
+        payload: dict[str, Any] = {
+            "vertical": vertical,
+            "angle": angle,
+            "why_discussion_likely": why,
+        }
+        confidence = _topic_field(candidate, "confidence")
+        if confidence is not None:
+            payload["confidence"] = _topic_number(confidence, default=0.0)
+        for field in _TOPIC_TRACEABILITY_FIELDS:
+            trace = evidence_ids if field == "evidence_ids" else _topic_trace_value(
+                field,
+                _topic_field(candidate, field),
+            )
+            if trace not in ("", []):
+                payload[field] = trace
+        angles.append(payload)
+    return angles
+
+
+def _drafting_fields_leak_raw_source(
+    fields: Sequence[str],
+    *,
+    evidence_catalog: TopicEvidenceCatalog | None,
+) -> bool:
+    """Reject any raw source text before it can reach drafting."""
+    if evidence_catalog is None:
+        return False
+    return contains_raw_source_provenance(
+        fields,
+        source_title_keys=evidence_catalog.evidence_title_keys,
+        provenance_keys=evidence_catalog.raw_provenance_keys,
+    )
+
+
+def _scan_artifact_path(
+    scan_result: dict[str, Any] | None,
+) -> Path | None:
+    if isinstance(scan_result, dict):
+        raw_path = scan_result.get("artifact_path")
+        if isinstance(raw_path, str) and raw_path.strip():
+            return Path(raw_path)
+    return None
+
+
+def _merge_scan_diagnostics(
+    data: dict[str, Any],
+    *,
+    scan_result: dict[str, Any] | None,
+    artifact_path: Path,
+) -> None:
+    if not isinstance(scan_result, dict):
+        return
+    for field in ("scan_quality", "platform_errors", "report_path"):
+        if field not in data or data.get(field) in (None, "", {}):
+            data[field] = scan_result.get(field)
+    data["artifact_path"] = str(artifact_path)
+
+
+def _is_insufficient_evidence(data: dict[str, Any]) -> bool:
+    return _topic_text(data.get("scan_quality")) == "insufficient_evidence"
+
+
+def _selection_traceability(
+    selected: dict[str, Any],
+    data: dict[str, Any],
+    *,
+    constructed_scene: str,
+) -> dict[str, Any]:
+    metadata: dict[str, Any] = {
+        "source": "topic-radar",
+        "vertical": _topic_text(selected.get("vertical")),
+        "angle": _topic_text(selected.get("angle")),
+        "why": _topic_text(selected.get("why_discussion_likely")),
+        "constructed_scene": constructed_scene,
+        "scan_quality": _topic_text(data.get("scan_quality")),
+        "platform_errors": _topic_error_map(data.get("platform_errors")),
+        "artifact_path": _topic_path(data.get("artifact_path")),
+        "report_path": _topic_path(data.get("report_path")),
+    }
+    for field in _TOPIC_TRACEABILITY_FIELDS:
+        trace = _topic_trace_value(field, selected.get(field))
+        if trace not in ("", []):
+            metadata[field] = trace
+    return metadata
+
+
+def _pick_best_angle(
+    scene: str,
+    angles: list[dict],
+    verticals: list[dict],
+    *,
+    evidence_catalog: TopicEvidenceCatalog | None = None,
+) -> dict | None:
     """Pick the best matching angle from topic-radar recommendations based on scene keywords."""
     if not angles:
-        if verticals and verticals[0].get("suggested_angles"):
-            return {
-                "vertical": verticals[0].get("name", ""),
-                "angle": verticals[0]["suggested_angles"][0],
-                "why_discussion_likely": verticals[0].get("discussion_density", ""),
+        for vertical in verticals:
+            suggested_angles = _topic_string_list(vertical.get("suggested_angles"))
+            candidate = {
+                "vertical": _topic_text(vertical.get("name")),
+                "angle": suggested_angles[0] if suggested_angles else "",
+                "why_discussion_likely": _topic_text(
+                    vertical.get("discussion_density")
+                ),
             }
+            if not candidate["vertical"] or not candidate["angle"]:
+                continue
+            if _drafting_fields_leak_raw_source(
+                (
+                    candidate["vertical"],
+                    candidate["angle"],
+                    candidate["why_discussion_likely"],
+                ),
+                evidence_catalog=evidence_catalog,
+            ):
+                continue
+            return candidate
         return None
 
     # Score each angle by keyword overlap with scene
@@ -656,50 +975,86 @@ def _angle_to_scene(selected: dict) -> str:
     return f"以'{scene}'为选题切入点，构建一个具体的个人化场景"
 
 
-def _render_topic_research_context(data: dict) -> str | None:
-    verticals = data.get("discovered_verticals", [])
-    angles = data.get("recommended_angles", [])
-    summary = data.get("scan_summary", "")
-    noise = data.get("noise_topics", [])
+def _render_topic_research_context(
+    data: dict[str, Any],
+    *,
+    evidence_backed_only: bool = False,
+) -> str | None:
+    if evidence_backed_only:
+        angles = _safe_recommended_angles(
+            data.get("recommended_angles"),
+            require_evidence=True,
+            evidence_catalog=_topic_evidence_catalog(data),
+        )
+        if not angles:
+            return None
+        lines = ["# Topic Research Live Context", "", "## 推荐选题角度"]
+        for index, angle in enumerate(angles[:3], start=1):
+            lines.append(f"{index}. [{angle['vertical']}] {angle['angle']}")
+            if angle["why_discussion_likely"]:
+                lines.append(f"   - 讨论诱因：{angle['why_discussion_likely']}")
+        lines.extend(
+            [
+                "",
+                "约束：只选一个角度切入，将其转化为具体场景和情绪表达，不要复写报告原文。",
+            ]
+        )
+        return "\n".join(lines)
 
-    if not verticals and not angles:
+    evidence_catalog = _topic_evidence_catalog(data)
+    angles = _safe_recommended_angles(
+        data.get("recommended_angles"),
+        require_evidence=False,
+        evidence_catalog=evidence_catalog,
+    )
+    if not angles:
+        angles = _safe_vertical_angles(
+            data.get("discovered_verticals"),
+            evidence_catalog=evidence_catalog,
+        )
+    if not angles:
         return None
 
-    lines = [
-        "# Topic Research Live Context",
-        "",
-    ]
-    if summary:
-        lines.append(f"本周选题趋势：{summary}")
-        lines.append("")
-
-    if verticals:
-        lines.append("## 当前热门垂类")
-        for v in verticals[:4]:
-            name = v.get("name", "")
-            keywords = ", ".join(v.get("keywords", [])[:4])
-            density = v.get("discussion_density", "")
-            lines.append(f"- **{name}**（{density}讨论密度）— {keywords}")
-            for angle in v.get("suggested_angles", [])[:1]:
-                lines.append(f"  - 选题：{angle}")
-        lines.append("")
-
-    if angles:
-        lines.append("## 推荐选题角度")
-        for i, a in enumerate(angles[:3], 1):
-            lines.append(f"{i}. [{a.get('vertical', '')}] {a.get('angle', '')}")
-            why = a.get("why_discussion_likely", "")
-            if why:
-                lines.append(f"   - 讨论诱因：{why}")
-        lines.append("")
-
-    if noise:
-        lines.append(f"## 避免话题（噪声）")
-        lines.append(f"以下话题热但讨论价值低，建议跳过：{', '.join(noise[:5])}")
-        lines.append("")
-
-    lines.append("约束：只选一个角度切入，将其转化为具体场景和情绪表达，不要复写报告原文。")
+    lines = ["# Topic Research Live Context", "", "## 推荐选题角度"]
+    for index, angle in enumerate(angles[:3], start=1):
+        lines.append(f"{index}. [{angle['vertical']}] {angle['angle']}")
+        if angle["why_discussion_likely"]:
+            lines.append(f"   - 讨论诱因：{angle['why_discussion_likely']}")
+    lines.extend(
+        [
+            "",
+            "约束：只选一个角度切入，将其转化为具体场景和情绪表达，不要复写报告原文。",
+        ]
+    )
     return "\n".join(lines)
+
+
+def _safe_vertical_angles(
+    value: object,
+    *,
+    evidence_catalog: TopicEvidenceCatalog | None = None,
+) -> list[dict[str, str]]:
+    """Fallback only to generated vertical labels, never to sample headlines."""
+    angles: list[dict[str, str]] = []
+    for vertical in _topic_list(value):
+        name = _topic_text(_topic_field(vertical, "name"))
+        suggested = _topic_string_list(_topic_field(vertical, "suggested_angles"))
+        if not name or not suggested:
+            continue
+        why = _topic_text(_topic_field(vertical, "discussion_density"))
+        if _drafting_fields_leak_raw_source(
+            (name, suggested[0], why),
+            evidence_catalog=evidence_catalog,
+        ):
+            continue
+        angles.append(
+            {
+                "vertical": name,
+                "angle": suggested[0],
+                "why_discussion_likely": why,
+            }
+        )
+    return angles
 
 
 def build_skill_context_resolver(

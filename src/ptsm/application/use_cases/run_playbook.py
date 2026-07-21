@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import json
 from pathlib import Path
 import re
@@ -50,6 +49,7 @@ from ptsm.skills.runtime_context import (
     TopicResearchContextBuilder,
     XhsPatternContextBuilder,
     build_skill_context_resolver,
+    run_topic_radar_scan,
 )
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[2]
@@ -60,53 +60,22 @@ WAIT_FOR_PUBLISH_STATUS_SEARCH_RETRY_ATTEMPTS = 4
 WAIT_FOR_PUBLISH_STATUS_SEARCH_RETRY_INTERVAL_SECONDS = 2.0
 
 
-def _run_topic_radar_scan(platform: str) -> dict[str, Any]:
-    """Run topic-radar scan across all platforms and return structured results for user selection."""
-    from topic_radar.cli import run_scan
-
+def _run_topic_radar_scan(*, output_dir: str) -> dict[str, Any]:
+    """Run Topic Radar's public full-platform API for explicit fresh research."""
     print(f"\n{'='*60}")
     print(f"Topic Radar: scanning hot topics across platforms...")
     print(f"{'='*60}\n")
-
-    try:
-        result = asyncio.run(run_scan())
-    except RuntimeError as e:
-        print(f"Topic radar scan failed: {e}")
-        sys.exit(2)
-
-    verticals = [
-        {
-            "name": v.name,
-            "keywords": v.keywords,
-            "confidence": v.confidence,
-            "discussion_density": v.discussion_density,
-            "sample_topics": v.sample_topics,
-            "suggested_angles": v.suggested_angles,
-            "comment_themes": v.comment_themes,
-        }
-        for v in result.discovered_verticals
-    ]
-
-    angles = result.recommended_angles
-
-    return {
-        "scan_summary": result.scan_summary,
-        "scan_date": result.scan_date,
-        "platforms": result.platforms,
-        "verticals": verticals,
-        "recommended_angles": angles,
-        "noise_topics": result.noise_topics,
-    }
+    return run_topic_radar_scan(output_dir)
 
 
-def _interactive_topic_selection(scan_result: dict[str, Any]) -> dict[str, Any]:
+def _interactive_topic_selection(scan_result: dict[str, Any]) -> dict[str, Any] | None:
     """Present topic radar results interactively and return user selection."""
     verticals = scan_result.get("verticals", [])
     angles = scan_result.get("recommended_angles", [])
 
-    if not verticals:
-        print("No verticals discovered. Cannot proceed with topic selection.")
-        sys.exit(1)
+    if not verticals and not angles:
+        print("No evidence-backed topic directions are available.")
+        return None
 
     print(f"\n{'='*60}")
     print("Discovered Content Verticals & Recommended Angles")
@@ -168,24 +137,32 @@ def _interactive_topic_selection(scan_result: dict[str, Any]) -> dict[str, Any]:
         selected_angle = (
             vertical["suggested_angles"][0] if vertical.get("suggested_angles") else vertical["name"]
         )
-        return {
+        return _with_topic_radar_traceability(
+            {
             "vertical": vertical["name"],
             "angle": selected_angle,
+            "why_discussion_likely": vertical.get("discussion_density", ""),
             "keywords": vertical.get("keywords", []),
             "discussion_density": vertical.get("discussion_density", ""),
             "comment_themes": vertical.get("comment_themes", []),
-            "scan_summary": summary,
-        }
+            },
+            scan_result=scan_result,
+            selected=vertical,
+        )
     else:
         angle = angles[idx - len(verticals) - 1]
-        return {
+        return _with_topic_radar_traceability(
+            {
             "vertical": angle.get("vertical", ""),
             "angle": angle.get("angle", ""),
+            "why_discussion_likely": angle.get("why_discussion_likely", ""),
             "keywords": [],
             "discussion_density": "",
             "comment_themes": [],
-            "scan_summary": summary,
-        }
+            },
+            scan_result=scan_result,
+            selected=angle,
+        )
 
 
 def _build_enriched_scene(selection: dict[str, Any]) -> str:
@@ -195,13 +172,67 @@ def _build_enriched_scene(selection: dict[str, Any]) -> str:
     ]
     if selection.get("angle"):
         parts.append(f"切入角度：{selection['angle']}")
-    if selection.get("keywords"):
-        parts.append(f"关键标签：{'、'.join(selection['keywords'])}")
-    if selection.get("comment_themes"):
-        parts.append(f"预期讨论方向：{'、'.join(selection['comment_themes'])}")
-    if selection.get("scan_summary"):
-        parts.append(f"热点背景：{selection['scan_summary']}")
+    if selection.get("why_discussion_likely"):
+        parts.append(f"讨论诱因：{selection['why_discussion_likely']}")
     return "\n".join(parts)
+
+
+def _with_topic_radar_traceability(
+    selection: dict[str, Any],
+    *,
+    scan_result: dict[str, Any],
+    selected: dict[str, Any],
+) -> dict[str, Any]:
+    """Keep opaque scan traceability in artifacts, not the enriched scene."""
+    metadata = dict(selection)
+    metadata["source"] = "topic-radar"
+    for field in ("scan_quality", "artifact_path", "report_path"):
+        value = scan_result.get(field)
+        if isinstance(value, str) and value.strip():
+            metadata[field] = value.strip()
+    errors = scan_result.get("platform_errors")
+    if isinstance(errors, dict):
+        metadata["platform_errors"] = {
+            str(platform): str(detail)
+            for platform, detail in errors.items()
+            if isinstance(platform, str) and isinstance(detail, str)
+        }
+    for field in ("cluster_id", "angle_signature", "event_fingerprint"):
+        value = selected.get(field)
+        if isinstance(value, str) and value.strip():
+            metadata[field] = value.strip()
+    evidence_ids = selected.get("evidence_ids")
+    if isinstance(evidence_ids, list):
+        metadata["evidence_ids"] = [
+            value.strip() for value in evidence_ids if isinstance(value, str) and value.strip()
+        ]
+    return metadata
+
+
+def _topic_scan_is_insufficient(scan_result: dict[str, Any]) -> bool:
+    return str(scan_result.get("scan_quality") or "").strip() == "insufficient_evidence"
+
+
+def _topic_research_receipt(scan_result: dict[str, Any]) -> dict[str, Any]:
+    """Return only operator-safe freshness diagnostics on a blocked run."""
+    receipt: dict[str, Any] = {
+        "scan_quality": str(scan_result.get("scan_quality") or "insufficient_evidence"),
+        "platform_errors": {},
+        "artifact_path": "",
+        "report_path": "",
+    }
+    errors = scan_result.get("platform_errors")
+    if isinstance(errors, dict):
+        receipt["platform_errors"] = {
+            str(platform): str(detail)
+            for platform, detail in errors.items()
+            if isinstance(platform, str) and isinstance(detail, str)
+        }
+    for field in ("artifact_path", "report_path"):
+        value = scan_result.get(field)
+        if isinstance(value, str) and value.strip():
+            receipt[field] = value.strip()
+    return receipt
 
 
 def _topic_selection_metadata(
@@ -328,8 +359,36 @@ def run_playbook(
     # Topic-radar integration: scan hot topics, let user pick, enrich scene
     topic_selection: dict[str, Any] | None = None
     if request.fresh_topic_research:
-        scan_result = _run_topic_radar_scan(platform=resolved_platform)
+        scan_result = _run_topic_radar_scan(
+            output_dir=str(Path.cwd() / "outputs" / "artifacts"),
+        )
+        if _topic_scan_is_insufficient(scan_result):
+            return {
+                "scene": request.scene,
+                "platform": resolved_platform,
+                "account_id": request.account_id,
+                "playbook_id": playbook.playbook_id,
+                "status": "insufficient_evidence",
+                "topic_research": _topic_research_receipt(scan_result),
+                "next_step": (
+                    "No evidence-backed fresh direction is available. Resolve the "
+                    "reported platform issues or continue with a local topic pack."
+                ),
+            }
         topic_selection = _interactive_topic_selection(scan_result)
+        if topic_selection is None:
+            return {
+                "scene": request.scene,
+                "platform": resolved_platform,
+                "account_id": request.account_id,
+                "playbook_id": playbook.playbook_id,
+                "status": "insufficient_evidence",
+                "topic_research": _topic_research_receipt(scan_result),
+                "next_step": (
+                    "The fresh scan returned no evidence-backed direction. "
+                    "Resolve the reported platform issues or continue with a local topic pack."
+                ),
+            }
         enriched_scene = _build_enriched_scene(topic_selection)
         request.scene = enriched_scene
         print(f"\n{'='*60}")
@@ -427,6 +486,11 @@ def run_playbook(
     }
     if topic_selection_metadata is not None:
         workflow_payload["topic_selection"] = topic_selection_metadata
+        if topic_selection_metadata.get("source") == "topic-radar":
+            # The explicit scan above already selected a safe angle. Runtime
+            # builders must remain local-only for this workflow invocation so
+            # they cannot run another scan or add a competing live context.
+            workflow_payload["fresh_topic_research"] = False
     result = workflow.invoke(workflow_payload, config=config)
     result = {"playbook_id": playbook.playbook_id, **result}
     format_patterns_used = _extract_format_patterns_used(

@@ -2,7 +2,7 @@
 title: XHS Content Experiment Runbook
 status: active
 owner: ptsm
-last_verified: 2026-06-02
+last_verified: 2026-07-22
 source_of_truth: true
 related_paths:
   - docs/research/2026-05-15-xhs-content-experiment-log.md
@@ -38,7 +38,7 @@ Variant labels are operator metadata. They can be written in the experiment log 
 
 When generating several variants for the same account and playbook, keep each returned `artifact_path`. Artifact storage appends a numeric suffix when a run key already exists, so repeated dry-runs should produce separate files instead of overwriting earlier candidates.
 
-For XHS copy experiments, reject variants whose title is only a category label such as `日常`, `实录`, or `干货分享`. The final正文 should still have the four observable moves: first-screen hook, domain substance, saveable unit, and concrete comment handoff. Keep candidates inside their playbook body band before considering publish.
+For XHS copy experiments, reject variants whose title is only a category label such as `日常`, `实录`, or `干货分享`; use the playbook’s concrete-entry rule rather than inserting a universal tension keyword. The final正文 follows `xhs_compact_native_v1`: 2–4 short beats with a scene/human anchor, one usable domain detail, and a natural save or reply opening. Save and comment intent may share one sentence; do not turn them into four labelled moves. Keep candidates inside their compact playbook body band before considering publish.
 
 For `modern_psychology_post`, do not reuse six near-identical "反复复盘一句话" scenes. The deterministic fallback now separates meeting replay, boundary pressure, Sunday work-message anxiety, after-work message pullback, brain-in-review-meeting, and ordinary-reply replay. A calibration batch should keep those scene mechanics distinct before publishing.
 

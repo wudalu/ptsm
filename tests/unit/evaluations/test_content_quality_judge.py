@@ -90,3 +90,32 @@ def test_content_quality_judge_rejects_missing_labels() -> None:
     assert result.status == "error"
     assert result.gate_level == "required"
     assert "labels" in result.reason
+
+
+def test_content_quality_judge_prompt_rewards_compact_native_rhythm_without_new_hard_gate() -> None:
+    backend = FakeJudgeBackend(
+        json.dumps(
+            {
+                "score": 0.9,
+                "labels": {
+                    "hook_specificity": "pass",
+                    "save_trigger": "pass",
+                    "comment_trigger": "pass",
+                    "platform_native_format": "pass",
+                    "persona_fit": "pass",
+                    "safety": "pass",
+                },
+                "reason": "compact and specific",
+                "rewrite_hint": "",
+            }
+        )
+    )
+
+    result = run_content_quality_judge(_target(), backend=backend)
+
+    assert result.status == "passed"
+    prompt = backend.prompts[0]
+    assert "2-4 short beats" in prompt
+    assert "concrete lived detail" in prompt
+    assert "template-like ending" in prompt
+    assert "Do not add a new deterministic hard gate" in prompt

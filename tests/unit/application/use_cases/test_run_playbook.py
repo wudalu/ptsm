@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -138,6 +139,31 @@ class CapturingWorkflow(FakeWorkflow):
     def invoke(self, payload: dict[str, object], config: dict[str, object] | None = None):
         self.payload = payload
         return super().invoke(payload, config)
+
+
+class ResolverInvokingWorkflow(CapturingWorkflow):
+    """Exercise the real dynamic resolver inside a lightweight workflow double."""
+
+    def __init__(self, artifact_path: Path):
+        super().__init__(artifact_path)
+        self.skill_context_resolver = None
+        self.runtime_contexts: dict[str, str] | None = None
+
+    def invoke(self, payload: dict[str, object], config: dict[str, object] | None = None):
+        self.payload = payload
+        assert self.skill_context_resolver is not None
+        self.runtime_contexts = self.skill_context_resolver.resolve(
+            state=dict(payload),
+            playbook=SimpleNamespace(
+                trend_keywords=[],
+                domain="发疯文学",
+                playbook_id="fengkuang_daily_post",
+            ),
+            loaded_skills=[
+                SimpleNamespace(skill=SimpleNamespace(skill_name="topic_research")),
+            ],
+        )
+        return FakeWorkflow.invoke(self, payload, config)
 
 
 class ImagePlanWorkflow(FakeWorkflow):
@@ -448,6 +474,391 @@ def test_run_playbook_injects_selected_topic_direction_into_workflow_and_artifac
     artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
     assert result["topic_selection"] == workflow_selection
     assert artifact["topic_selection"] == workflow_selection
+
+
+def test_fresh_run_playbook_uses_public_full_scan_and_keeps_raw_provenance_out_of_scene(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    artifact_path = tmp_path / "playbook-artifact.json"
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "fengkuang_daily_post",
+                "final_content": {"title": "旧标题"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    topic_artifact = tmp_path / "outputs" / "artifacts" / "topic-scan-2026-07-21-2.json"
+    calls: list[dict[str, object]] = []
+    workflow = CapturingWorkflow(artifact_path)
+
+    async def fake_run_scan(**kwargs: object) -> object:
+        calls.append(dict(kwargs))
+        return SimpleNamespace(
+            scan_summary="本次核心是独家原始热帖标题不能进入草稿。",
+            scan_date="2026-07-21",
+            platforms=[
+                "xiaohongshu",
+                "weibo",
+                "douyin",
+                "zhihu",
+                "bilibili",
+                "toutiao",
+                "douban",
+                "sspai",
+            ],
+            discovered_verticals=[],
+            recommended_angles=[
+                {
+                    "vertical": "围绕原始热帖标题不能进入草稿聊聊恢复",
+                    "angle": "下班后给自己十分钟的无用恢复",
+                    "why_discussion_likely": "具体、低门槛，容易评论区接龙自己的版本。",
+                    "cluster_id": "cluster-internal-7",
+                    "evidence_ids": ["evidence-internal-7"],
+                },
+                {
+                    "vertical": "人类丰容",
+                    "angle": "围绕原始热帖标题不能进入草稿，聊聊下班后的恢复",
+                    "why_discussion_likely": "具体、低门槛，容易评论区接龙自己的版本。",
+                    "cluster_id": "cluster-internal-7",
+                    "evidence_ids": ["evidence-internal-7"],
+                },
+                {
+                    "vertical": "人类丰容",
+                    "angle": "下班后给自己十分钟的无用恢复",
+                    "why_discussion_likely": "原始热帖标题不能进入草稿让人有代入感",
+                    "cluster_id": "cluster-internal-7",
+                    "evidence_ids": ["evidence-internal-7"],
+                },
+                {
+                    "vertical": "原作者的下班恢复",
+                    "angle": "下班后给自己十分钟的无用恢复",
+                    "why_discussion_likely": "具体、低门槛，容易评论区接龙自己的版本。",
+                    "cluster_id": "cluster-internal-7",
+                    "evidence_ids": ["evidence-internal-7"],
+                },
+                {
+                    "vertical": "人类丰容",
+                    "angle": "https://example.test/raw-source 的恢复讨论",
+                    "why_discussion_likely": "具体、低门槛，容易评论区接龙自己的版本。",
+                    "cluster_id": "cluster-internal-7",
+                    "evidence_ids": ["evidence-internal-7"],
+                },
+                {
+                    "vertical": "人类丰容",
+                    "angle": "下班后给自己十分钟的无用恢复",
+                    "why_discussion_likely": "feed-secret-7 让人有代入感",
+                    "cluster_id": "cluster-internal-7",
+                    "evidence_ids": ["evidence-internal-7"],
+                },
+                {
+                    "vertical": "人类丰容",
+                    "angle": "token-secret-7 的恢复讨论",
+                    "why_discussion_likely": "具体、低门槛，容易评论区接龙自己的版本。",
+                    "cluster_id": "cluster-internal-7",
+                    "evidence_ids": ["evidence-internal-7"],
+                },
+                {
+                    "vertical": "人类丰容",
+                    "angle": "普通人用AI工具的恢复流程",
+                    "why_discussion_likely": "具体、低门槛，容易评论区接龙自己的版本。",
+                    "cluster_id": "cluster-internal-7",
+                    "evidence_ids": ["evidence-internal-7"],
+                },
+                {
+                    "vertical": "小王的下班恢复",
+                    "angle": "下班后给自己十分钟的无用恢复",
+                    "why_discussion_likely": "具体、低门槛，容易评论区接龙自己的版本。",
+                    "cluster_id": "cluster-internal-7",
+                    "evidence_ids": ["evidence-internal-7"],
+                },
+                {
+                    "vertical": "人类丰容",
+                    "angle": "下班后给自己十分钟的无用恢复",
+                    "why_discussion_likely": "具体、低门槛，容易评论区接龙自己的版本。",
+                    "cluster_id": "cluster-internal-7",
+                    "angle_signature": "angle-internal-7",
+                    "event_fingerprint": "event-internal-7",
+                    "evidence_ids": ["evidence-internal-7"],
+                    "source_title": "原始热帖标题不能进入草稿",
+                    "author": "原作者",
+                    "url": "https://example.test/raw-source",
+                    "feed_id": "feed-secret-7",
+                    "xsec_token": "token-secret-7",
+                }
+            ],
+            noise_topics=[],
+            scan_quality="partial",
+            platform_errors={"weibo": "collection failed (TimeoutError)"},
+            evidence=[
+                {
+                    "evidence_id": "evidence-internal-7",
+                    "title": "原始热帖标题不能进入草稿",
+                    "event_fingerprint": "event-internal-7",
+                }
+            ],
+            raw_trending=[
+                {
+                    "title": "原始热帖标题不能进入草稿",
+                    "author": "原作者",
+                    "url": "https://example.test/raw-source",
+                    "feed_id": "feed-secret-7",
+                    "xsec_token": "token-secret-7",
+                },
+                {
+                    "title": "AI工具",
+                    "author": "小王",
+                }
+            ],
+            topic_clusters=[
+                {
+                    "cluster_id": "cluster-internal-7",
+                    "event_fingerprint": "event-internal-7",
+                    "evidence_ids": ["evidence-internal-7"],
+                }
+            ],
+            artifact_path=topic_artifact,
+            report_path=tmp_path / "outputs" / "artifacts" / "topic-brief-2026-07-21-2.md",
+        )
+
+    monkeypatch.setattr("topic_radar.cli.run_scan", fake_run_scan)
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_fengkuang_workflow",
+        lambda **_: workflow,
+    )
+    monkeypatch.setattr("builtins.input", lambda _prompt: "1")
+    monkeypatch.chdir(tmp_path)
+
+    result = run_fengkuang_playbook(
+        FengkuangRequest(
+            scene="人类丰容",
+            platform="xiaohongshu",
+            account_id="acct-fk-local",
+            fresh_topic_research=True,
+        ),
+        publisher=SuccessfulPublisher(),
+    )
+
+    assert calls == [{"output_dir": str(tmp_path / "outputs" / "artifacts")}]
+    assert workflow.payload is not None
+    selection = result["topic_selection"]
+    assert selection["scan_quality"] == "partial"
+    assert selection["platform_errors"] == {"weibo": "collection failed (TimeoutError)"}
+    assert selection["artifact_path"] == str(topic_artifact)
+    assert selection["cluster_id"] == "cluster-internal-7"
+    assert selection["angle_signature"] == "angle-internal-7"
+    assert selection["event_fingerprint"] == "event-internal-7"
+    assert selection["evidence_ids"] == ["evidence-internal-7"]
+    assert "scan_summary" not in selection
+    assert "原始热帖标题不能进入草稿" not in json.dumps(selection, ensure_ascii=False)
+
+    enriched_scene = str(workflow.payload["scene"])
+    for secret in (
+        "原始热帖标题不能进入草稿",
+        "AI工具",
+        "原作者",
+        "小王",
+        "https://example.test/raw-source",
+        "feed-secret-7",
+        "token-secret-7",
+        "cluster-internal-7",
+        "angle-internal-7",
+        "event-internal-7",
+        "evidence-internal-7",
+    ):
+        assert secret not in enriched_scene
+
+    persisted = json.loads(artifact_path.read_text(encoding="utf-8"))
+    assert persisted["topic_selection"] == selection
+
+
+def test_fresh_run_playbook_scans_once_and_skips_conflicting_runtime_topic_context(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    artifact_path = tmp_path / "playbook-artifact.json"
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "fengkuang_daily_post",
+                "final_content": {"title": "旧标题"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    topic_artifact = tmp_path / "outputs" / "artifacts" / "topic-scan-2026-07-21-2.json"
+    calls: list[dict[str, object]] = []
+    workflow = ResolverInvokingWorkflow(artifact_path)
+
+    async def fake_run_scan(**kwargs: object) -> object:
+        calls.append(dict(kwargs))
+        return SimpleNamespace(
+            scan_summary="下班后的短暂恢复讨论正在升温。",
+            scan_date="2026-07-21",
+            platforms=["xiaohongshu", "weibo"],
+            discovered_verticals=[],
+            recommended_angles=[
+                {
+                    "vertical": "人类丰容",
+                    "angle": "下班后给自己十分钟的无用恢复",
+                    "why_discussion_likely": "具体、低门槛，容易评论区接龙自己的版本。",
+                    "cluster_id": "cluster-internal-7",
+                    "angle_signature": "angle-internal-7",
+                    "event_fingerprint": "event-internal-7",
+                    "evidence_ids": ["evidence-internal-7"],
+                }
+            ],
+            noise_topics=[],
+            scan_quality="partial",
+            platform_errors={"weibo": "collection failed (TimeoutError)"},
+            evidence=[
+                {
+                    "evidence_id": "evidence-internal-7",
+                    "event_fingerprint": "event-internal-7",
+                }
+            ],
+            topic_clusters=[
+                {
+                    "cluster_id": "cluster-internal-7",
+                    "event_fingerprint": "event-internal-7",
+                    "evidence_ids": ["evidence-internal-7"],
+                }
+            ],
+            artifact_path=topic_artifact,
+            report_path=tmp_path / "outputs" / "artifacts" / "topic-brief-2026-07-21-2.md",
+        )
+
+    def fake_build_fengkuang_workflow(**kwargs: object) -> ResolverInvokingWorkflow:
+        workflow.skill_context_resolver = kwargs["skill_context_resolver"]
+        return workflow
+
+    monkeypatch.setattr("topic_radar.cli.run_scan", fake_run_scan)
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_fengkuang_workflow",
+        fake_build_fengkuang_workflow,
+    )
+    monkeypatch.setattr("builtins.input", lambda _prompt: "1")
+    monkeypatch.chdir(tmp_path)
+
+    result = run_fengkuang_playbook(
+        FengkuangRequest(
+            scene="人类丰容",
+            platform="xiaohongshu",
+            account_id="acct-fk-local",
+            fresh_topic_research=True,
+            format_pattern_path=str(tmp_path / "custom-pattern.json"),
+        ),
+        settings=Settings.model_construct(
+            default_model_provider="deepseek",
+            deepseek_api_key="sk-test",
+            watermark_removal_enabled=False,
+        ),
+        publisher=SuccessfulPublisher(),
+    )
+
+    assert result["status"] == "completed"
+    assert calls == [{"output_dir": str(tmp_path / "outputs" / "artifacts")}]
+    assert workflow.payload is not None
+    assert workflow.payload["fresh_topic_research"] is False
+    assert workflow.runtime_contexts == {}
+    assert result["topic_selection"]["angle"] == "下班后给自己十分钟的无用恢复"
+
+
+def test_fresh_run_playbook_refuses_insufficient_evidence_without_starting_workflow(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    async def fake_run_scan(**_: object) -> object:
+        return SimpleNamespace(
+            scan_summary="",
+            scan_date="2026-07-21",
+            platforms=[],
+            discovered_verticals=[],
+            recommended_angles=[],
+            noise_topics=[],
+            scan_quality="insufficient_evidence",
+            platform_errors={"xiaohongshu": "login required"},
+            artifact_path=tmp_path / "topic-scan-2026-07-21.json",
+            report_path=tmp_path / "topic-brief-2026-07-21.md",
+        )
+
+    monkeypatch.setattr("topic_radar.cli.run_scan", fake_run_scan)
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_fengkuang_workflow",
+        lambda **_: (_ for _ in ()).throw(AssertionError("workflow must not start")),
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = run_fengkuang_playbook(
+        FengkuangRequest(
+            scene="人类丰容",
+            platform="xiaohongshu",
+            account_id="acct-fk-local",
+            fresh_topic_research=True,
+        ),
+        publisher=SuccessfulPublisher(),
+    )
+
+    assert result["status"] == "insufficient_evidence"
+    assert result["topic_research"] == {
+        "scan_quality": "insufficient_evidence",
+        "platform_errors": {"xiaohongshu": "login required"},
+        "artifact_path": str(tmp_path / "topic-scan-2026-07-21.json"),
+        "report_path": str(tmp_path / "topic-brief-2026-07-21.md"),
+    }
+
+
+def test_fresh_run_playbook_refuses_vertical_without_evidence_backed_angle(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    async def fake_run_scan(**_: object) -> object:
+        return SimpleNamespace(
+            scan_summary="",
+            scan_date="2026-07-21",
+            platforms=["weibo"],
+            discovered_verticals=[
+                SimpleNamespace(
+                    name="未经证实垂类",
+                    keywords=["关键词"],
+                    confidence=0.9,
+                    discussion_density="high",
+                    sample_topics=["不应进入草稿的原始标题"],
+                    suggested_angles=["没有证据 ID 的建议"],
+                    comment_themes=[],
+                )
+            ],
+            recommended_angles=[],
+            noise_topics=[],
+            scan_quality="partial",
+            platform_errors={"douyin": "collection failed (TimeoutError)"},
+            artifact_path=tmp_path / "topic-scan-2026-07-21.json",
+            report_path=tmp_path / "topic-brief-2026-07-21.md",
+        )
+
+    monkeypatch.setattr("topic_radar.cli.run_scan", fake_run_scan)
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_fengkuang_workflow",
+        lambda **_: (_ for _ in ()).throw(AssertionError("workflow must not start")),
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = run_fengkuang_playbook(
+        FengkuangRequest(
+            scene="人类丰容",
+            platform="xiaohongshu",
+            account_id="acct-fk-local",
+            fresh_topic_research=True,
+        ),
+        publisher=SuccessfulPublisher(),
+    )
+
+    assert result["status"] == "insufficient_evidence"
+    assert result["topic_research"]["scan_quality"] == "partial"
 
 
 def test_run_playbook_requires_topic_guidance_for_openclaw_psychology(

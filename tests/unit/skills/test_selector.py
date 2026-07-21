@@ -117,6 +117,31 @@ def test_surface_activates_xhs_trend_scan_for_xiaohongshu_requests() -> None:
     assert "热点扫描" in loaded.content
 
 
+def test_xhs_trend_scan_skill_encodes_evidence_backed_full_platform_contract() -> None:
+    selector = _build_selector()
+
+    surface = selector.select(
+        domain="发疯文学",
+        platform="xiaohongshu",
+        playbook_id="fengkuang_daily_post",
+    )
+    loaded = surface.activate("xhs_trend_scan")
+
+    for marker in [
+        "默认扫描 8 个平台",
+        "已验证的事件簇",
+        "有证据支撑的推荐角度",
+        "新颖性筛选",
+        "不要复写原始标题",
+        "证据不足",
+        "生成前停止",
+        "不要把它写成新鲜热点",
+        "常青",
+        "明确要求新鲜选题研究",
+    ]:
+        assert marker in loaded.content
+
+
 def test_selector_exposes_ai_tech_image_strategy() -> None:
     selector = _build_selector()
 

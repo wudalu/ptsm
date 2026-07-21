@@ -2,15 +2,18 @@
 title: XHS Skills Landscape
 status: active
 owner: ptsm
-last_verified: 2026-05-30
+last_verified: 2026-07-22
 source_of_truth: false
 related_paths:
   - docs/xhs-topics/index.md
   - docs/skills.md
   - docs/research/xhs-mcp-spike.md
   - docs/research/2026-05-30-xhs-domain-opportunity-and-workflow-review.md
+  - docs/topic-radar.md
+  - src/topic_radar
   - src/ptsm/skills/builtin
   - src/ptsm/skills/builtin/xhs_trend_scan/SKILL.md
+  - src/ptsm/application/use_cases/xhs_domain_opportunity.py
   - src/ptsm/infrastructure/publishers/xiaohongshu_mcp_publisher.py
   - src/ptsm/application/use_cases/xhs_browser.py
 ---
@@ -20,8 +23,8 @@ related_paths:
 ## Bottom Line
 
 - 2026-04-22 用 `skill-installer` 的官方脚本复核 OpenAI curated skills 时，没有任何 XiaoHongShu-specific skill。
-- 当前仓库内已经有 `xhs_trend_scan` 这个小红书 research builtin skill；`xhs_hashtagging` 和 `xhs_classic_poetry_hashtagging` 仍然负责发帖后处理，其中古诗词金句默认要求 `#古诗词` 而不是苏轼专属标签。
-- 所以后续如果要继续做“小红书热点分析”，路线不是继续找一个现成官方 skill，而是在现有 `xhs_trend_scan` 之上补更细的研究能力。
+- 当前仓库内已有 `xhs_trend_scan` 这个本地 pattern-context builtin skill；`xhs_hashtagging` 和 `xhs_classic_poetry_hashtagging` 仍然负责发帖后处理，其中古诗词金句默认要求 `#古诗词` 而不是苏轼专属标签。
+- 所以后续如果要继续做“小红书热点分析”，主路径是 public Topic Radar 的显式 fresh scan（默认八平台、证据/去重/新颖度 artifact），小红书领域比较则走 bounded `xhs-domain-opportunity`；不是让普通 drafting 在 `xhs_trend_scan` 中做实时搜索。
 
 ## Generic Skills Worth Reusing
 
@@ -99,15 +102,15 @@ related_paths:
 
 基于当前 repo 结构，最值得补的不是“万能 skill”，而是边界明确的 PTSM-owned research surfaces。2026-05-30 领域机会复核显示，人工临时探针可以拿到跨领域搜索级证据，但不应该长期靠 ad hoc 脚本；下一步应把 domain opportunity scan 产品化成 use case/artifact，再决定是否加新的 playbook。
 
-### `xhs_domain_opportunity` `next`
+### `xhs_domain_opportunity` `landed`
 
 职责：
 
 - 输入一组候选领域关键词
-- 调用 bounded `search_feeds`
-- 用 PTSM 现有 engagement score 汇总每个关键词的 top sample、top score、保存/评论/分享信号
-- 映射到现有 playbook、候选 sublane 或新领域建议
-- 输出 JSON artifact 和 Markdown brief
+- 调用 bounded `search_feeds`，按 feed identity 去重后汇总证据
+- 用 PTSM 现有 engagement score 汇总每个关键词的成功唯一 sample、top score、保存/评论/分享信号
+- 仅在有成功样本时映射现有 playbook、候选 sublane 或新领域建议
+- 输出 JSON artifact 和 Markdown brief；全空或全错时返回 `insufficient_evidence` 与诊断/恢复建议，不伪造排名或新领域候选
 
 为什么适合现在做：
 
@@ -115,21 +118,21 @@ related_paths:
 - 它能把 `轻养生 / 睡眠恢复 / 办公室恢复` 这类新候选从直觉变成可复核证据。
 - 它不需要直接改变普通 `run-playbook`，也不会让生成流程依赖实时 XHS。
 
-这个能力应放在 PTSM application/use case 层，不应塞进 OpenClaw skill。OpenClaw wrapper 只展示 PTSM 已返回的方向、图片建议和后续命令。
+这个能力放在 PTSM application/use case 层，不塞进 OpenClaw skill。OpenClaw wrapper 只展示 PTSM 已返回的、带状态的方向和后续命令。
 
 ### `xhs_trend_scan` `landed`
 
 职责：
 
-- 输入一组关键词或一个垂类
-- 调用 `list_feeds` / `search_feeds`
-- 输出候选热点、关键词簇、样例帖子和推荐观察角度
+- 在普通小红书 drafting 中读取本地 pattern library snapshot
+- 输出可复用的格式/内容机制，或在 snapshot 缺失时保留静态 guidance
+- 不在该 skill 内调用 `list_feeds` / `search_feeds`
 
 当前状态：
 
 - 已在 2026-04-23 落成 builtin skill
-- 当前先以轻量“热点判断和切口选择”形式进入现有小红书 playbook
-- 还不负责真实抓取执行和 artifact 持久化
+- 当前以本地格式/内容机制 context 形式进入现有小红书 playbook
+- 实时抓取、跨平台候选去重和 artifact 持久化由独立 Topic Radar fresh scan 负责
 
 ### `xhs_note_teardown` `next`
 
