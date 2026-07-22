@@ -67,7 +67,8 @@ def materialize_xhs_login_qrcode(
 def build_xhs_login_instructions(
     *,
     qrcode_output_path: str | None,
-    rerun_command: str,
+    rerun_command: str | None,
+    recovery_instruction: str | None = None,
 ) -> list[str]:
     instructions: list[str] = []
     if qrcode_output_path:
@@ -75,7 +76,10 @@ def build_xhs_login_instructions(
     else:
         instructions.append("Run `ptsm xhs-login-qrcode` to generate a XiaoHongShu login QR code.")
     instructions.append("Confirm login in the XiaoHongShu app.")
-    instructions.append(f"Then rerun: {rerun_command}")
+    if rerun_command:
+        instructions.append(f"Then rerun: {rerun_command}")
+    elif recovery_instruction:
+        instructions.append(recovery_instruction)
     return instructions
 
 

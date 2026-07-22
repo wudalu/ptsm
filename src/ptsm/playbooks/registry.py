@@ -21,6 +21,7 @@ class PlaybookDefinition:
     reflection: dict[str, object] = field(default_factory=dict)
     trend_keywords: list[str] = field(default_factory=list)
     hotspot_routing: dict[str, object] = field(default_factory=dict)
+    ai_content_policy: dict[str, object] = field(default_factory=dict)
     max_attempts: int = 2
     drafting_model: str = ""
     source_path: Path | None = None
@@ -80,6 +81,7 @@ class PlaybookRegistry:
                     reflection=dict(payload.get("reflection", {})),
                     trend_keywords=list(payload.get("trend_keywords", [])),
                     hotspot_routing=dict(payload.get("hotspot_routing", {})),
+                    ai_content_policy=dict(payload.get("ai_content_policy", {})),
                     max_attempts=int(payload.get("max_attempts", 2)),
                     drafting_model=str(payload.get("drafting_model", "")),
                     source_path=path,

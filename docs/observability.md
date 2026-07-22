@@ -2,7 +2,7 @@
 title: PTSM Observability
 status: active
 owner: ptsm
-last_verified: 2026-07-22
+last_verified: 2026-07-23
 source_of_truth: true
 related_paths:
   - src/ptsm/infrastructure/observability/run_store.py
@@ -21,6 +21,7 @@ related_paths:
   - src/ptsm/application/use_cases/xhs_domain_opportunity.py
   - src/ptsm/application/use_cases/hotspot_discovery.py
   - src/ptsm/application/use_cases/run_playbook.py
+  - src/ptsm/domain/ai_tech_content.py
   - src/ptsm/domain/hotspot_routing.py
   - src/ptsm/skills/runtime_context.py
   - src/topic_radar/cli.py
@@ -64,6 +65,7 @@ PTSM 当前的观测性核心是本地文件系统里的 run store 和 artifacts
 - `RunStore.finish()` 结束并写回 summary。
 - workflow artifact 现在会持久化 `activated_skill_details` 和 `runtime_skill_details`，与已有的 `runtime_skill_contents` 一起回答本次运行读了哪些静态 skills 和哪些动态上下文资源。
 - workflow artifact 现在还会持久化 `step_outputs`，把 planner、executor、reflector 的关键产物保存成 bounded evidence，供 rule/contract/LLM evaluator 对 step outcome 做评价。
+- completed `ai_tech_daily_post` artifact 额外保留一个最小 evidence receipt：`ai_tech_content_mode`、`ai_tech_evidence_manifest` 与 `ai_tech_evidence_gate`。manifest 只含 opaque `source_refs` / `test_evidence_refs` / event fingerprints / 可选 trend IDs，gate 固定记录 draft contract 已通过；它不保存 operator evidence 文件、原始标题、source URL、author、feed ID 或完整 Topic Radar scan。若 custom workflow 的 artifact 不在受控 artifact root、final content 不一致，或含 provenance 字段，应用层会在图片/发布前标为 AI artifact invalid，而不是 merge receipt。
 - artifact 写入会保留同一个 `run_key` 下的多次 dry-run；当目标文件已存在时追加数字后缀，避免内容实验批量生成时覆盖前一个候选。
 - Topic Radar scan artifact 现在是 schema v2：`scan_quality` 明确记录 `completed` / `partial` / `insufficient_evidence`，`platform_errors` 记录安全化 collector/LLM diagnostics（包括 isolated server 的工具发现 timeout），`evidence` 记录 canonical source rows 和平台内归一化热度，`topic_clusters` 记录保守 event clusters。LLM prompt 在 48 条 evidence / 24 个 cluster 上限内 round-robin 覆盖平台，且 cluster 只引用 prompt 内可见的 evidence。`recommended_angles` 带 `cluster_id`、`event_fingerprint`、`evidence_ids`、`angle_signature`、`novelty_state` 和 `ranking_score`，因此推荐、跨平台信号和 scan-quality 都可从同一 artifact 回溯。跨平台信号只记录真实平台共现；没有时序观测时 `velocity` 为 `unknown`，不得由单次热度快照推断加速。
 - Topic Radar 同日重跑会为 JSON/Markdown 使用成对 suffix，避免覆盖旧 artifact；`outputs/artifacts/topic-radar-history.jsonl` append-only 记录已选 event+angle 的近期 cooldown。它是推荐去重依据，不是长期热度 dashboard。
@@ -91,6 +93,7 @@ PTSM 当前的观测性核心是本地文件系统里的 run store 和 artifacts
 - `analyze-xhs-patterns` 会把样本蒸馏为 `patterns-*.json` 和 `current.json`。生成链路命中本地 snapshot 时，artifact 和 CLI 响应会写入 `format_patterns_used`，记录 pattern ids、hook archetypes、body structures、image sequences、freshness 和来源 snapshot。
 - `ptsm eval-artifact --artifact <path>` 对单个 artifact 运行所有确定性 rule/contract evaluator，将结构化 EvalResult 写入 `.ptsm/evals/<eval_run_id>/results.jsonl`，并返回 eval run summary（status、counts、gate）。
 - `eval-artifact` 现在会读取 playbook-local `evaluation.yaml`，对已有 `node_contracts` 做确定性 contract enforcement；缺失 playbook evaluation contract 时仍保持非 fatal，便于迁移。当前 executor 约束支持 anti-generic `title_must_not_equal_any` / `image_text_must_not_equal_any`、`body_min_chars` / `body_max_chars`、`body_must_include_comment_prompt_any`、`body_must_include_save_trigger_any`、必需/禁用正文词和必需标签，也会把 `变体要求`、`comment_chain`、`save_tool`、`identity_conflict` 这类实验操作指令当作正文泄漏来拦截。
+- AI 科技 artifact 还会运行 `ai_tech.evidence_receipt`：它离线检查三件事是否一致——mode、opaque manifest 与 `ai_tech_draft_contract` gate，并依 mode 审计新闻条目数量、hands-on test ref 或事实转译的 source ref。它是回归/审计层；运行时 preflight、draft retry 与 publish 前复核才是阻断门禁。失败说明使用固定诊断，不回显可能带 provenance 的历史 artifact 内容。
 - LLM judge adapter 默认不会被 `eval-artifact` 和 `harness-check` 调用，因此默认 harness 不需要网络或模型凭据。显式启用后，executor content-quality judge 会输出 `hook_specificity`、`save_trigger`、`comment_trigger`、`platform_native_format`、`persona_fit`、`safety` 六个标签和 `rewrite_hint`；当前 XHS 内容质量 playbook 将该 judge 配置为 `required`，失败会进入 `required_failed`。
 - 运行时 artifact 现在会持久化 `content_review`，记录生成逻辑、质量信号、LLM 内容质量门状态和人工确认建议；它是发布前人工确认材料，不是自动发布授权。
 - `human_enrichment_daily_post` 的 `content_review` 还会持久化 `image_form`，包含 `primary_ratio=3:4`、封面风格、推荐轮播顺序、`carousel_brief`、封面/清单文字约束，以及命中的 `image_pattern_id` / `carousel_pattern_id`。这个字段用于人工 review 与图片生成 prompt 提示，不改变 `final_content.v1` 的必需字段，也不代表已经自动生成多图轮播。

@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import json
 import re
-from typing import Any
+from typing import Any, Mapping
+
+from pydantic import ValidationError
+
+from ptsm.domain.ai_tech_content import parse_ai_tech_runtime_contract
 
 
 def build_contextual_deterministic_draft(
@@ -31,7 +36,7 @@ def build_contextual_deterministic_draft(
             runtime_context=runtime_context,
         )
     if _is_ai_tech_context(scene=scene, extra_context=extra_context):
-        return _build_ai_tech_draft(scene=scene, feedback=feedback)
+        return _build_ai_tech_draft(runtime_context=runtime_context)
     if _is_daily_english_context(scene=scene, extra_context=extra_context):
         return _build_daily_english_draft(scene=scene, feedback=feedback)
     if _is_modern_psychology_context(scene=scene, extra_context=extra_context):
@@ -531,61 +536,122 @@ def _build_world_cup_draft(*, scene: str, feedback: str) -> dict[str, Any]:
     }
 
 
-def _build_ai_tech_draft(*, scene: str, feedback: str) -> dict[str, Any]:
-    if _is_prompt_builder_scene(scene):
-        body = (
-            f"3秒核心信息：{scene}。写好 prompt 不靠神秘咒语，先让 AI 明白你要完成什么、"
-            "已有背景和希望的输出格式。但只给模板还不够，真正好用的是直接给一段可复制成品。"
-            "是什么：把一句“帮我写周报”改成下面这段，直接复制就能用：\n"
-            "你是一个务实的职场写作助手。请根据我贴的工作记录，帮我写一份本周周报。"
-            "任务：把零散记录整理成老板能快速扫读的周报。"
-            "背景：我是产品运营，本周做了 A/B 测试、数据复盘和需求对齐，读者是直属领导。"
-            "输出格式：按“本周重点 / 具体成果 / 下周计划”三段输出，每段 2-3 条，尽量用短句。"
-            "风格要求：具体、克制、像真人汇报，不要写成年度总结。"
-            "反例：不要写“本周完成了多项工作”，要写“本周 A/B 测试点击率提升 12%”。"
-            "如果信息不够，请先问我 3 个问题，再开始写。不要编造数据，不要加入我没给过的项目。\n"
-            "为什么重要：AI 很会补空白，也最容易补错空白。普通人先把任务、背景、输出格式、"
-            "反例和禁止项讲清楚，再让它追问不确定点，返工会少很多。"
-            "这段我会先收藏进备忘录；用在周报、邮件、方案初稿时，只要替换背景和材料就行。"
-            "非投资建议，只是 AI 工具使用观察。\n"
-            "评论区晒一个你自己跑通的好用 prompt，也可以贴失败输出和改后版本，大家互相抄作业。"
-            "记得别贴公司机密、隐私材料或敏感信息。"
-        )
+def _build_ai_tech_draft(*, runtime_context: str) -> dict[str, Any]:
+    """Render a deterministic AI post from the bound evidence contract only.
+
+    AI-tech deterministic drafts intentionally ignore the free-text scene and
+    reflection text.  The production boundary already binds a validated
+    contract; mirroring that boundary here prevents test/dry-run fallbacks
+    from quietly returning a generic opinion or an invented prompt recipe.
+    """
+    contract = _extract_ai_tech_runtime_contract(runtime_context)
+    mode = contract["mode"]
+    payload = contract["drafting_payload"]
+    if not isinstance(payload, Mapping):
+        raise ValueError("AI tech evidence contract is missing its drafting payload")
+
+    if mode == "news_brief":
+        items = payload.get("news_items")
+        if not isinstance(items, (list, tuple)):
+            raise ValueError("AI tech news brief evidence is invalid")
+        lines: list[str] = []
+        for index, item in enumerate(items, start=1):
+            if not isinstance(item, Mapping):
+                raise ValueError("AI tech news brief item is invalid")
+            label = _required_ai_tech_text(item.get("label"), field="news label")
+            facts = _required_ai_tech_texts(item.get("facts"), field="news facts")
+            lines.append(f"{index}. {label}｜{'；'.join(facts)}")
         return {
-            "title": "普通人写prompt先别急",
-            "image_text": "任务 背景 输出格式 反例",
-            "body": body,
-            "hashtags": ["#AI资讯", "#AI工具", "#提示词", "#效率工具"],
+            "title": f"AI 更新｜{len(lines)} 条",
+            "image_text": "今天值得记住的更新",
+            "body": "\n".join(lines),
+            "hashtags": ["#AI资讯", "#AI科技"],
         }
 
-    body = (
-        f"今天看到{scene}，我第一反应不是马上开新标签页，而是想看它会不会真进我的工作流。"
-        "它是什么？能把图片、语音、文件和上下文一起看，像能看材料、听需求、给步骤的工作搭子。\n"
-        "为什么重要？不是演示更花哨，而是会议纪要、资料整理和内容初稿可能少来回几趟。"
-        "普通人先别把判断外包：我会收藏这张三点清单——能不能读真实文件、能不能追问修正、权限是否说清。"
-        "非投资建议，只是工具使用观察。\n"
-        "你会先拿它试工作、学习，还是生活杂事？评论区告诉我。"
+    topic = _required_ai_tech_text(payload.get("topic"), field="topic")
+    if mode == "hands_on":
+        record = payload.get("hands_on")
+        if not isinstance(record, Mapping):
+            raise ValueError("AI tech hands-on evidence is invalid")
+        product = _required_ai_tech_text(record.get("product"), field="product")
+        version = _required_ai_tech_text(record.get("version"), field="version")
+        tested_at = _required_ai_tech_text(record.get("tested_at"), field="tested_at")
+        task = _required_ai_tech_text(record.get("task"), field="task")
+        input_summary = _required_ai_tech_text(record.get("input_summary"), field="input")
+        observed_output = _required_ai_tech_text(
+            record.get("observed_output"), field="observation"
+        )
+        limitation = _required_ai_tech_text(record.get("limitation"), field="limitation")
+        return {
+            "title": f"实测记录｜{topic}",
+            "image_text": "一条可复核的 AI 实测",
+            "body": "\n".join(
+                (
+                    f"主题：{topic}",
+                    f"产品与版本：{product} {version}",
+                    f"测试日期：{tested_at}",
+                    f"任务：{task}",
+                    f"输入：{input_summary}",
+                    f"观察：{observed_output}",
+                    f"局限：{limitation}",
+                )
+            ),
+            "hashtags": ["#AI资讯", "#AI实测", "#AI工具"],
+        }
+
+    if mode != "fact_translation":
+        raise ValueError("AI tech evidence contract has an unknown mode")
+    facts = _required_ai_tech_texts(payload.get("facts"), field="facts")
+    audience = payload.get("audience")
+    if not isinstance(audience, Mapping):
+        raise ValueError("AI tech fact-translation audience is invalid")
+    who_should_care = _required_ai_tech_text(
+        audience.get("who_should_care"), field="who_should_care"
     )
-    if feedback != "无" and "#AI资讯" not in body:
-        body += "\n这条更适合放在 #AI资讯 方向里做工具观察。"
+    who_can_wait = _required_ai_tech_text(audience.get("who_can_wait"), field="who_can_wait")
     return {
-        "title": "AI更新来了，普通人先别急",
-        "image_text": "别只看热闹，先看能不能真省事",
-        "body": body,
-        "hashtags": ["#AI资讯", "#人工智能", "#效率工具", "#科技观察"],
+        "title": f"更新解读｜{topic}",
+        "image_text": "这次谁该先看",
+        "body": "\n".join(
+            (
+                f"主题：{topic}",
+                *(f"事实：{fact}" for fact in facts),
+                f"该关注：{who_should_care}",
+                f"可以等等：{who_can_wait}",
+            )
+        ),
+        "hashtags": ["#AI资讯", "#科技解读"],
     }
 
 
-def _is_prompt_builder_scene(scene: str) -> bool:
-    return any(
-        keyword in scene
-        for keyword in (
-            "prompt",
-            "提示词",
-            "AI 提问",
-            "AI提问",
-        )
-    )
+def _extract_ai_tech_runtime_contract(runtime_context: str) -> dict[str, Any]:
+    marker = "# AI Tech Evidence Contract"
+    marker_index = runtime_context.find(marker)
+    if marker_index < 0:
+        raise ValueError("AI tech drafts require a bound evidence contract")
+    json_start = runtime_context.find("{", marker_index + len(marker))
+    if json_start < 0:
+        raise ValueError("AI tech evidence contract is missing JSON")
+    try:
+        payload, _ = json.JSONDecoder().raw_decode(runtime_context[json_start:])
+        return parse_ai_tech_runtime_contract(payload)
+    except (TypeError, ValueError, ValidationError, json.JSONDecodeError) as exc:
+        raise ValueError("AI tech evidence contract is invalid") from exc
+
+
+def _required_ai_tech_text(value: object, *, field: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"AI tech evidence {field} is missing")
+    return value.strip()
+
+
+def _required_ai_tech_texts(value: object, *, field: str) -> list[str]:
+    if not isinstance(value, (list, tuple)):
+        raise ValueError(f"AI tech evidence {field} is missing")
+    values = [_required_ai_tech_text(item, field=field) for item in value]
+    if not values:
+        raise ValueError(f"AI tech evidence {field} is missing")
+    return values
 
 
 def _build_daily_english_draft(*, scene: str, feedback: str) -> dict[str, Any]:

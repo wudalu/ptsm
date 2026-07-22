@@ -104,3 +104,19 @@ def test_openclaw_topic_guide_skill_shows_only_returned_direction_fields() -> No
     assert "fk_work_object_vent" not in text
     assert "enrichment_desk_corner_variable" not in text
     assert "sushi_role_pair_huimin" not in text
+
+
+def test_openclaw_topic_guide_skill_requires_ai_evidence_modes_after_discovery() -> None:
+    text = SKILL_PATH.read_text(encoding="utf-8")
+
+    assert "hotspot-discovery" in text
+    assert "news_brief" in text
+    assert "hands_on" in text
+    assert "fact_translation" in text
+    assert "--ai-content-mode" in text
+    assert "--ai-evidence-file" in text
+    assert "3–5" in text or "3-5" in text
+    assert "可复现" in text
+    assert "谁该关注" in text
+    assert "不要生成或发布" in text
+    assert "热点" in text and "不能" in text

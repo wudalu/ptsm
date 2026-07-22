@@ -1,0 +1,16 @@
+{
+  "mode": "hands_on",
+  "topic": {
+    "label": "提示词追问实测"
+  },
+  "hands_on": {
+    "product": "示例助手",
+    "version": "2026.07",
+    "tested_at": "2026-07-22",
+    "task": "把三条会议记录整理成周报",
+    "input_summary": "三条含项目进度的匿名会议记录",
+    "observed_output": "先追问缺失负责人，再给出三段式周报。",
+    "limitation": "没有负责人信息时，输出仍需人工核对。",
+    "test_evidence_refs": ["test-run-001"]
+  }
+}

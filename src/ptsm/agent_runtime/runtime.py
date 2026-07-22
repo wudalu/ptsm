@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
+from typing import Any, Mapping
 
 from langgraph.checkpoint.memory import InMemorySaver
+from pydantic import ValidationError
 
 from ptsm.agent_runtime.agents import FengkuangDraftingAgent
 from ptsm.agent_runtime.graph.builder import build_execution_graph
@@ -13,6 +16,11 @@ from ptsm.agent_runtime.nodes.planner import build_planner_node
 from ptsm.agent_runtime.nodes.reflector import build_reflector_node
 from ptsm.agent_runtime.state import ExecutionState
 from ptsm.config.settings import Settings, get_settings
+from ptsm.domain.ai_tech_content import (
+    AiTechEvidenceManifest,
+    parse_ai_tech_runtime_contract,
+    validate_ai_tech_draft_contract,
+)
 from ptsm.infrastructure.artifacts.file_store import FileArtifactStore
 from ptsm.infrastructure.evaluations.content_quality_gate import (
     build_content_quality_judge_gate,
@@ -35,7 +43,51 @@ PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 PLAYBOOK_ROOT = PACKAGE_ROOT / "playbooks" / "definitions"
 SKILL_ROOT = PACKAGE_ROOT / "skills" / "builtin"
 DOMAIN_FENGKUANG = "发疯文学"
+AI_TECH_PLAYBOOK_ID = "ai_tech_daily_post"
 DEFAULT_RUNTIME_STATE_DIR = Path(".ptsm") / "agent_runtime"
+_SAFE_AI_RUNTIME_IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
+
+
+class _BoundAiTechWorkflow:
+    """Expose an AI workflow only through a pre-checkpoint input boundary.
+
+    LangGraph records its input before the first node executes, so ingest-time
+    cleanup cannot protect checkpoint history.  This facade deliberately does
+    not proxy the compiled graph's generic invocation methods: every AI
+    invocation starts from a fresh, minimal state built from the bound evidence
+    contract and safe execution identifiers.
+    """
+
+    def __init__(self, *, workflow: Any, contract: Mapping[str, Any]) -> None:
+        self._workflow = workflow
+        self._contract = contract
+
+    def invoke(
+        self,
+        input: Mapping[str, Any] | None,
+        config: Mapping[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        safe_input = _build_ai_tech_workflow_input(
+            contract=self._contract,
+            supplied=input or {},
+        )
+        result = self._workflow.invoke(
+            safe_input,
+            config=_sanitize_ai_tech_workflow_config(config),
+            **kwargs,
+        )
+        return dict(result)
+
+    def get_state_history(
+        self,
+        config: Mapping[str, Any] | None,
+        **kwargs: Any,
+    ) -> Any:
+        return self._workflow.get_state_history(
+            _sanitize_ai_tech_workflow_config(config),
+            **kwargs,
+        )
 
 
 def build_playbook_workflow(
@@ -50,6 +102,8 @@ def build_playbook_workflow(
     checkpointer: object | None = None,
     skill_context_resolver: SkillContextResolver | None = None,
     content_quality_judge_backend: object | None = None,
+    ai_tech_evidence: Mapping[str, Any] | None = None,
+    ai_tech_evidence_manifest: Mapping[str, Any] | None = None,
 ):
     """Build a workflow for a specific playbook/domain pair."""
     execution_memory = memory or InMemoryExecutionMemory()
@@ -59,6 +113,22 @@ def build_playbook_workflow(
     skill_loader = SkillLoader(skills)
     settings = settings or get_settings()
     playbook_def = playbooks.get(playbook_id)
+    normalized_ai_tech_evidence: dict[str, Any] | None = None
+    normalized_ai_tech_evidence_manifest: dict[str, Any] | None = None
+    if playbook_id == AI_TECH_PLAYBOOK_ID:
+        if ai_tech_evidence is None:
+            raise ValueError("ai_tech_daily_post requires a normalized AI evidence contract")
+        if ai_tech_evidence_manifest is None:
+            raise ValueError("ai_tech_daily_post requires an opaque AI evidence manifest")
+        try:
+            normalized_ai_tech_evidence = parse_ai_tech_runtime_contract(ai_tech_evidence)
+            normalized_ai_tech_evidence_manifest = AiTechEvidenceManifest.model_validate(
+                ai_tech_evidence_manifest
+            ).model_dump(mode="json")
+        except ValidationError as exc:
+            raise ValueError("invalid normalized AI evidence contract or manifest") from exc
+    elif ai_tech_evidence is not None or ai_tech_evidence_manifest is not None:
+        raise ValueError("AI evidence contracts are only valid for ai_tech_daily_post")
     max_attempts = max_attempts if max_attempts != 2 else playbook_def.max_attempts
     drafting_model = playbook_def.drafting_model or None
     skill_context_resolver = skill_context_resolver or build_skill_context_resolver(
@@ -78,7 +148,12 @@ def build_playbook_workflow(
     )
     drafting_provider = getattr(drafting_agent, "provider_name", "custom")
     artifact_store = artifact_store or FileArtifactStore()
-    return build_execution_graph(
+    ai_tech_draft_gate = (
+        _build_ai_tech_draft_gate(normalized_ai_tech_evidence)
+        if normalized_ai_tech_evidence is not None
+        else None
+    )
+    workflow = build_execution_graph(
         ingest=build_ingest_node(drafting_provider=drafting_provider),
         planner=build_planner_node(
             domain=domain,
@@ -88,19 +163,39 @@ def build_playbook_workflow(
             skills=skills,
             skill_loader=skill_loader,
             skill_context_resolver=skill_context_resolver,
+            ai_tech_evidence=normalized_ai_tech_evidence,
         ),
-        memory=build_memory_node(execution_memory=execution_memory),
-        executor=build_executor_node(drafting_agent=drafting_agent),
+        memory=build_memory_node(
+            execution_memory=execution_memory,
+            evidence_gated=normalized_ai_tech_evidence is not None,
+        ),
+        executor=build_executor_node(
+            drafting_agent=drafting_agent,
+            ai_tech_draft_gate=(
+                (lambda draft: ai_tech_draft_gate({}, draft))
+                if ai_tech_draft_gate is not None
+                else None
+            ),
+        ),
         reflector=build_reflector_node(
             max_attempts=max_attempts,
             content_quality_judge=content_quality_judge,
+            ai_tech_draft_gate=ai_tech_draft_gate,
         ),
         finalize=build_finalize_node(
             execution_memory=execution_memory,
             artifact_store=artifact_store,
+            ai_tech_evidence=normalized_ai_tech_evidence,
+            ai_tech_evidence_manifest=normalized_ai_tech_evidence_manifest,
         ),
         checkpointer=checkpointer or InMemorySaver(),
     )
+    if normalized_ai_tech_evidence is not None:
+        return _BoundAiTechWorkflow(
+            workflow=workflow,
+            contract=normalized_ai_tech_evidence,
+        )
+    return workflow
 
 
 def build_fengkuang_workflow(
@@ -136,6 +231,92 @@ def _playbook_requires_content_quality_judge(playbook_id: str) -> bool:
     return isinstance(judge, dict) and judge.get("gate_level") == "required"
 
 
+def _build_ai_tech_draft_gate(
+    contract: Mapping[str, Any],
+):
+    """Bind a normalized contract outside graph state and checkpoint input."""
+
+    def gate(_: ExecutionState, draft: dict[str, object]) -> list[str]:
+        return validate_ai_tech_draft_contract(contract, draft)
+
+    return gate
+
+
+def _build_ai_tech_workflow_input(
+    *,
+    contract: Mapping[str, Any],
+    supplied: Mapping[str, Any],
+) -> dict[str, str]:
+    """Construct the complete initial AI graph state from an allowlist only."""
+    account_id = supplied.get("account_id")
+    if not isinstance(account_id, str) or not _SAFE_AI_RUNTIME_IDENTIFIER.fullmatch(
+        account_id
+    ):
+        raise ValueError("AI tech workflow requires a safe account_id")
+
+    platform = supplied.get("platform")
+    if platform != "xiaohongshu":
+        raise ValueError("AI tech workflow only supports platform xiaohongshu")
+
+    return {
+        "scene": _build_ai_tech_runtime_scene_from_contract(contract),
+        "platform": "xiaohongshu",
+        "account_id": account_id,
+    }
+
+
+def _build_ai_tech_runtime_scene_from_contract(contract: Mapping[str, Any]) -> str:
+    payload = contract.get("drafting_payload")
+    if not isinstance(payload, Mapping):
+        raise ValueError("AI tech workflow requires a valid evidence payload")
+    mode = contract.get("mode")
+    if mode == "news_brief":
+        items = payload.get("news_items")
+        if not isinstance(items, (list, tuple)):
+            raise ValueError("AI tech news brief payload is invalid")
+        labels = [
+            item.get("label", "").strip()
+            for item in items
+            if isinstance(item, Mapping) and isinstance(item.get("label"), str)
+        ]
+        if not labels:
+            raise ValueError("AI tech news brief requires safe item labels")
+        return f"AI 科技资讯简报：{' / '.join(labels)}"
+
+    topic = payload.get("topic")
+    if not isinstance(topic, str) or not topic.strip():
+        raise ValueError("AI tech evidence payload requires a safe topic")
+    if mode == "hands_on":
+        hands_on = payload.get("hands_on")
+        if not isinstance(hands_on, Mapping):
+            raise ValueError("AI tech hands-on payload is invalid")
+        product = hands_on.get("product")
+        version = hands_on.get("version")
+        task = hands_on.get("task")
+        if not all(isinstance(value, str) and value.strip() for value in (product, version, task)):
+            raise ValueError("AI tech hands-on payload is incomplete")
+        return f"AI 科技实测：{topic.strip()}；{product.strip()} {version.strip()}；任务：{task.strip()}"
+    if mode == "fact_translation":
+        return f"AI 科技事实转译：{topic.strip()}"
+    raise ValueError("AI tech workflow requires a known evidence mode")
+
+
+def _sanitize_ai_tech_workflow_config(
+    config: Mapping[str, Any] | None,
+) -> dict[str, dict[str, str]] | None:
+    if config is None:
+        return None
+    configurable = config.get("configurable")
+    if not isinstance(configurable, Mapping):
+        return {}
+    thread_id = configurable.get("thread_id")
+    if thread_id is None:
+        return {}
+    if not isinstance(thread_id, str) or not _SAFE_AI_RUNTIME_IDENTIFIER.fullmatch(thread_id):
+        raise ValueError("AI tech workflow requires a safe thread_id")
+    return {"configurable": {"thread_id": thread_id}}
+
+
 def build_file_backed_runtime_state(
     base_dir: Path | str = DEFAULT_RUNTIME_STATE_DIR,
 ) -> tuple[FileExecutionMemory, FileCheckpointSaver]:
@@ -150,32 +331,78 @@ def build_finalize_node(
     *,
     execution_memory: ExecutionMemoryStore,
     artifact_store: FileArtifactStore,
+    ai_tech_evidence: Mapping[str, Any] | None = None,
+    ai_tech_evidence_manifest: Mapping[str, Any] | None = None,
 ):
+    normalized_ai_tech_manifest = (
+        AiTechEvidenceManifest.model_validate(ai_tech_evidence_manifest).model_dump(mode="json")
+        if ai_tech_evidence_manifest is not None
+        else None
+    )
+
     def finalize(state: ExecutionState) -> ExecutionState:
         if state.get("reflection_decision") == "fail" or not state.get("final_content"):
             return {"status": "failed"}
+
+        final_content = state["final_content"]
+        if ai_tech_evidence is not None:
+            validation_errors = validate_ai_tech_draft_contract(
+                ai_tech_evidence,
+                final_content,
+            )
+            if validation_errors:
+                # The reflector owns retry feedback; this duplicate gate is the
+                # durable-write backstop for future graph/custom node changes.
+                return {
+                    "status": "ai_tech_draft_invalid",
+                    "reflection_decision": "fail",
+                    "reflection_feedback": "; ".join(validation_errors),
+                }
+            if normalized_ai_tech_manifest is None:
+                # A valid-looking draft without an opaque audit receipt is not
+                # a completed AI evidence run.  This protects direct callers
+                # of the finalize node as well as normal workflow assembly.
+                return {
+                    "status": "ai_tech_evidence_receipt_required",
+                    "reflection_decision": "fail",
+                    "reflection_feedback": "opaque AI evidence manifest is required",
+                }
 
         content_review = _build_content_review(state)
         activated_skills = list(state.get("activated_skills", []))
         activated_skill_details = list(state.get("activated_skill_details", []))
         runtime_skill_details = list(state.get("runtime_skill_details", []))
+        artifact_payload: dict[str, object] = {
+            "playbook_id": state["playbook_id"],
+            "drafting_provider": state["drafting_provider"],
+            "loaded_skills": activated_skills,
+            "activated_skills": activated_skills,
+            "activated_skill_details": activated_skill_details,
+            # AI contract facts remain prompt-only runtime context. The
+            # finalizer writes only the opaque evidence manifest below.
+            "runtime_skill_contents": (
+                []
+                if ai_tech_evidence is not None
+                else list(state.get("runtime_skill_contents", []))
+            ),
+            "runtime_skill_details": runtime_skill_details,
+            "step_outputs": _build_step_outputs(state),
+            "final_content": state["final_content"],
+            "content_review": content_review,
+        }
+        if ai_tech_evidence is not None:
+            assert normalized_ai_tech_manifest is not None
+            artifact_payload.update(
+                _build_ai_tech_evidence_receipt(
+                    contract=ai_tech_evidence,
+                    manifest=normalized_ai_tech_manifest,
+                )
+            )
         artifact_path = artifact_store.write(
-            {
-                "playbook_id": state["playbook_id"],
-                "drafting_provider": state["drafting_provider"],
-                "loaded_skills": activated_skills,
-                "activated_skills": activated_skills,
-                "activated_skill_details": activated_skill_details,
-                "runtime_skill_contents": list(state.get("runtime_skill_contents", [])),
-                "runtime_skill_details": runtime_skill_details,
-                "step_outputs": _build_step_outputs(state),
-                "final_content": state["final_content"],
-                "content_review": content_review,
-            },
+            artifact_payload,
             run_key=f"{state['account_id']}-{state['playbook_id']}-{state['attempt_count']}",
         )
 
-        final_content = state["final_content"]
         execution_memory.record(
             namespace=("accounts", state["account_id"], "lessons"),
             item={
@@ -195,6 +422,28 @@ def build_finalize_node(
         }
 
     return finalize
+
+
+def _build_ai_tech_evidence_receipt(
+    *,
+    contract: Mapping[str, Any],
+    manifest: Mapping[str, Any],
+) -> dict[str, object]:
+    """Build the only AI evidence data that may be written to an artifact."""
+    normalized_contract = parse_ai_tech_runtime_contract(contract)
+    normalized_manifest = AiTechEvidenceManifest.model_validate(manifest).model_dump(mode="json")
+    mode = normalized_contract["mode"]
+    return {
+        "ai_tech_content_mode": mode,
+        "ai_tech_evidence_manifest": normalized_manifest,
+        "ai_tech_evidence_gate": {
+            "status": "passed",
+            "mode": mode,
+            "validator": "ai_tech_draft_contract",
+            "validator_version": "1",
+            "errors": [],
+        },
+    }
 
 
 def _build_step_outputs(state: ExecutionState) -> dict[str, object]:

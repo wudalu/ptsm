@@ -2,7 +2,7 @@
 title: Topic Radar
 status: active
 owner: ptsm
-last_verified: 2026-07-22
+last_verified: 2026-07-23
 source_of_truth: true
 related_paths:
   - src/topic_radar
@@ -15,6 +15,7 @@ related_paths:
   - src/ptsm/application/use_cases/hotspot_discovery.py
   - src/ptsm/domain/hotspot_routing.py
   - src/ptsm/application/use_cases/run_playbook.py
+  - src/ptsm/domain/ai_tech_content.py
   - src/ptsm/skills/runtime_context.py
   - src/ptsm/domain/xhs_patterns.py
   - src/ptsm/infrastructure/xhs_patterns
@@ -211,7 +212,9 @@ result = await run_scan(options=ScanOptions(max_recommendations=6, history_days=
 ## 与 PTSM 协作
 
 PTSM 有两个不同的 Topic Radar surface：`hotspot-discovery` 是先开放发现、后路由，
-`--fresh-topic-research` 则保留为已选 playbook 内的 fresh 选题。
+`--fresh-topic-research` 则保留为大多数已选 playbook 内的 fresh 选题。AI 科技 evidence
+mode 是明确例外：它必须先 discovery、再由 operator 独立整理事实或测试 evidence file，不能
+让 scan 直接进入 AI drafting。
 
 ```bash
 # 默认泛热点入口：先读 route receipt，再由 operator 选择已有 playbook 或处理 unmapped
@@ -250,6 +253,28 @@ ptsm run-fengkuang --fresh-topic-research --account-id acct-fk-local --auto-gene
 3. 终端交互只展示 evidence-backed 的推荐角度。选定的垂类、角度和讨论诱因构成 enriched scene；`cluster_id`、`event_fingerprint`、`evidence_ids` 和 scan receipt 仅保留在 response/run/artifact 的 traceability metadata。
 4. drafting context never receives raw source titles, authors, URLs, feed IDs, or tokens。选定后 runtime 也不会再启动第二次 live scan 或叠加竞争性的 `topic_research` 方向。
 5. workflow 继续按普通 playbook 的安全、标签、来源和文案合同生成内容。
+
+### AI Tech Evidence Modes
+
+`ai_tech_daily_post` 不接受 Topic Radar 的 headline、angle 或 cluster 作为 publishable fact。
+当 operator 选择 AI 科技路由时，先完成 `hotspot-discovery`，再核验并写入
+`--ai-evidence-file`：`news_brief` 需要 3–5 条独立 facts，`hands_on` 需要一条完整、可复现
+的测试记录，`fact_translation` 需要至少两条 facts 和人群判断。scan 的可用输出最多作为
+opaque `trend_support`（`cluster_id` / `evidence_ids`），仍不能代替 `source_refs` 或
+`test_evidence_refs`。
+
+因此不要这样运行 AI playbook：
+
+```bash
+# 返回 ai_tech_fresh_research_separate，不会把 scan 注入 AI 草稿
+ptsm run-playbook --fresh-topic-research --account-id acct-ai-tech-local \
+  --playbook-id ai_tech_daily_post --ai-content-mode news_brief \
+  --ai-evidence-file /path/to/ai-evidence.json
+```
+
+正确流程是 discovery → operator evidence collection → evidence-gated dry-run。原始 source
+title、author、URL、feed ID、token 和完整 Topic Radar artifact 都留在研究边界；AI artifact
+只保存 opaque evidence manifest 与通过的 gate receipt。
 
 topic_radar 不依赖 PTSM。PTSM 还可以：
 - 通过 CLI 命令独立运行，人工参考结果

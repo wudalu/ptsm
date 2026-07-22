@@ -7,9 +7,21 @@ from ptsm.infrastructure.memory.store import ExecutionMemoryStore
 
 
 def build_memory_node(
-    *, execution_memory: ExecutionMemoryStore, max_lessons: int = 3
+    *,
+    execution_memory: ExecutionMemoryStore,
+    max_lessons: int = 3,
+    evidence_gated: bool = False,
 ):
     def memory(state: ExecutionState) -> ExecutionState:
+        if evidence_gated:
+            # AI-tech evidence contracts are intentionally self-contained.
+            # A historical title/body can contain unverified claims or raw
+            # provenance, so it must never become drafting context for this run.
+            return {
+                "memory_hits": [],
+                "runtime_skill_contents": list(state.get("runtime_skill_contents", [])),
+                "runtime_skill_details": list(state.get("runtime_skill_details", [])),
+            }
         namespace = ("accounts", state["account_id"], "lessons")
         lessons = execution_memory.search(namespace=namespace)
         playbook_id = state["playbook_id"]

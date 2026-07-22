@@ -1,0 +1,20 @@
+{
+  "mode": "fact_translation",
+  "topic": {
+    "label": "团队版模型更新"
+  },
+  "facts": [
+    {
+      "statement": "团队版新增了权限分组设置。",
+      "source_refs": ["official-team-release-001"]
+    },
+    {
+      "statement": "管理员可以关闭外部连接器。",
+      "source_refs": ["official-team-release-002"]
+    }
+  ],
+  "audience": {
+    "who_should_care": "正在管理团队权限的管理员",
+    "who_can_wait": "暂时没有团队协作需求的个人用户"
+  }
+}

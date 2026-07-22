@@ -2,7 +2,7 @@
 title: XHS Topic Index
 status: active
 owner: ptsm
-last_verified: 2026-07-22
+last_verified: 2026-07-23
 source_of_truth: false
 related_paths:
   - docs/index.md
@@ -19,6 +19,7 @@ related_paths:
   - src/ptsm/application/use_cases/guide_post.py
   - src/ptsm/application/use_cases/topic_guidance_packs.py
   - src/ptsm/domain/topic_guidance.py
+  - src/ptsm/domain/ai_tech_content.py
   - src/ptsm/application/use_cases/hotspot_discovery.py
   - src/ptsm/domain/hotspot_routing.py
   - integrations/openclaw/ptsm-topic-radar-discovery/SKILL.md
@@ -41,6 +42,7 @@ related_paths:
 - 2026-05-23 爆品梗调研已经进入现有 playbook/skill 资产层：共享 `xhs_human_voice` 负责温暖、真人、不格式化的横向语气，各领域 style/persona/prompt 再把丝瓜汤、爱你老己、三明治拒绝法、适我主义、AI 生活搭子、文化力、老款人格等机制消化成自己的主题表达。该研究现已进一步收敛为“角色认领、可保存工具、低成本动作、评论续写”的产品化 hook 框架，特别补充了苏轼/怀民这类文化角色梗如何把评论区变成关系入口。详见 [`docs/research/2026-05-23-xhs-viral-meme-product-hooks.md`](../research/2026-05-23-xhs-viral-meme-product-hooks.md)。
 - 2026-05-30 领域机会复核把现有九个 playbook 和候选新领域放到同一张证据表里：短期 `世界杯` 热度最高，常青新增优先级是 `轻养生 / 睡眠恢复 / 办公室恢复`，`情绪疗愈` 应继续由心理学安全边界承接，`人类丰容 + 修复系手作` 和 `苏轼 + 文博非遗` 先作为现有 playbook 子线推进。详见 [`docs/research/2026-05-30-xhs-domain-opportunity-and-workflow-review.md`](../research/2026-05-30-xhs-domain-opportunity-and-workflow-review.md)。
 - `guide-post` 已把 hook 框架产品化为本地确定性的跨领域选题引导，覆盖当前九个 playbook：心理学、发疯文学、人类丰容、苏轼诗词、武侠人物、AI科技、每日英语、世界杯和 Reddit英文讨论转译。它默认只读取本地 topic pack，不做 live MCP 或 web scan；显式 `--fresh-topic-research` 由 public Topic Radar 默认八平台扫描提供一次性、可追溯的选题证据，周期性 XHS pattern 仍由 `collect-xhs-patterns` 和 `analyze-xhs-patterns` 负责。
+- AI 科技选题不把“热点”误当正文证据：先用 `hotspot-discovery` 无方向发现并映射到 AI playbook，再选 `news_brief` / `hands_on` / `fact_translation` 之一并提供独立 evidence file。热点 cluster 只可留下 opaque `trend_support`；3–5 条新闻事实、可复现实测记录或事实转译的人群判断必须另行核验。AI run 不使用 `--fresh-topic-research` 直接扫描，避免 raw headline/provenance 穿进草稿。
 - 真正可复用的外部能力在小红书 MCP / OpenClaw skill 生态；PTSM 更适合在这些能力之上做自己的 research skill，而不是直接照搬外部 workflow。
 - 当前泛热点主路径已经改为 discovery-first：先运行 `hotspot-discovery` 的无方向八平台发现，再把 evidence-backed cluster 映射为现有 playbook、多候选或未映射。`xhs-domain-opportunity` 只保留给明确候选关键词的 bounded XHS 比较；未映射不是失败，而是监测或新领域复盘的输入。
 

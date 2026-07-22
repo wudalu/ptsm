@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
@@ -23,6 +25,9 @@ class PlaybookRequest(BaseModel):
     fresh_topic_research: bool = False
     format_pattern_path: str | None = None
     local_image_style: str | None = None
+    ai_content_mode: str | None = None
+    ai_evidence_bundle: dict[str, Any] | None = None
+    ai_evidence_file_path: str | None = None
 
 
 class FengkuangRequest(PlaybookRequest):

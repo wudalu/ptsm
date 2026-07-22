@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
 from langgraph.graph import END, START, StateGraph
 
@@ -28,7 +28,14 @@ def build_execution_graph(
     graph.add_node("reflector", reflector)
     graph.add_node("finalize", finalize)
     graph.add_edge(START, "ingest")
-    graph.add_edge("ingest", "planner")
+    graph.add_conditional_edges(
+        "ingest",
+        _route_after_ingest,
+        {
+            "continue": "planner",
+            "fail": "finalize",
+        },
+    )
     if memory is None:
         graph.add_edge("planner", "executor")
     else:
@@ -53,3 +60,10 @@ def build_execution_graph(
 
 def _route_after_reflection(state: ExecutionState) -> ReflectionDecision:
     return state.get("reflection_decision", "fail")
+
+
+def _route_after_ingest(state: ExecutionState) -> Literal["continue", "fail"]:
+    """Stop invalid evidence before planner, memory, or executor can run."""
+    if state.get("status") == "ai_tech_evidence_invalid":
+        return "fail"
+    return "continue"

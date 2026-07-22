@@ -21,6 +21,8 @@ IMAGE_STYLE_CHOICES = ("note_card", "iphone_notes", "wechat_chat")
 SUPPORTED_PLAYBOOK_IDS = (SUPPORTED_PLAYBOOK_ID, *TOPIC_GUIDANCE_PACKS.keys())
 TOPIC_GUIDANCE_SELECTION_POLICY = "dynamic_scene_diversity_rerank"
 IMAGE_RECOMMENDATION_DECISION_STAGE = "after_topic_direction_confirmation"
+AI_TECH_PLAYBOOK_ID = "ai_tech_daily_post"
+AI_TECH_CONTENT_MODES = ("news_brief", "hands_on", "fact_translation")
 PROVIDER_IMAGE_PROVIDER = "bailian"
 PROVIDER_IMAGE_MODEL = "qwen-image-2.0-pro"
 CHAT_IMAGE_KEYWORDS = (
@@ -131,6 +133,8 @@ class GuidePostRequest:
     save_tool: str | None = None
     image_style: str | None = None
     comment_prompt: str | None = None
+    ai_content_mode: str | None = None
+    ai_evidence_file_path: str | None = None
 
 
 @dataclass(frozen=True)
@@ -744,7 +748,92 @@ def run_guide_post(request: GuidePostRequest) -> dict[str, Any]:
         raise ValueError(
             f"guide-post supports {supported}; got {request.playbook_id!r}"
         )
+    if pack.playbook_id == AI_TECH_PLAYBOOK_ID:
+        return _run_ai_tech_guide_post(request=request, pack=pack)
     return _run_generic_guide_post(request=request, pack=pack)
+
+
+def _run_ai_tech_guide_post(
+    *,
+    request: GuidePostRequest,
+    pack: TopicPack,
+) -> dict[str, Any]:
+    content_mode = _require_ai_tech_content_mode(request.ai_content_mode)
+    lane = resolve_topic_lane(
+        lanes=pack.lanes,
+        lane=request.lane,
+        scene=request.scene,
+    )
+    scene = _clean_or_default(request.scene, lane.default_scene)
+    image_style = _clean_or_default(request.image_style, pack.default_image_style)
+    if image_style not in IMAGE_STYLE_CHOICES:
+        raise ValueError(
+            f"Unknown image style {image_style!r}. Available styles: {', '.join(IMAGE_STYLE_CHOICES)}"
+        )
+    account_id = _resolve_account_id(
+        request_account_id=request.account_id,
+        playbook_id=pack.playbook_id,
+        default_account_id=pack.default_account_id,
+    )
+    evidence_required = _ai_tech_evidence_requirement(content_mode)
+    brief = {
+        "lane": lane.name,
+        "scene": scene,
+        "content_mode": content_mode,
+        "evidence_required": evidence_required,
+        "image_style": image_style,
+        "image_form": {
+            "backend": "local_social_screenshot",
+            "style": image_style,
+            "role": "cover_hook",
+            "text_density": "low",
+            "max_text_units": 2,
+        },
+    }
+    topic_guidance = build_topic_guidance(
+        pack=pack,
+        scene=scene,
+        lane_name=lane.name,
+        brief=brief,
+        content_mode=content_mode,
+    )
+    image_recommendation = topic_guidance["image_recommendation"]
+    matched_direction_id = str(topic_guidance["matched_direction_id"])
+    recommended_scene = _build_ai_tech_recommended_scene(
+        content_mode=content_mode,
+        evidence_required=evidence_required,
+        image_recommendation=image_recommendation,
+        brief=brief,
+    )
+    command = _build_run_playbook_command(
+        account_id=account_id,
+        playbook_id=pack.playbook_id,
+        scene=None,
+        image_style=(
+            str(image_recommendation["local_style"])
+            if image_recommendation["recommended_backend"] == "local_social_screenshot"
+            else None
+        ),
+        topic_direction_id=matched_direction_id,
+        ai_content_mode=content_mode,
+        ai_evidence_file_path=request.ai_evidence_file_path,
+    )
+    return {
+        "status": "completed",
+        "playbook_id": pack.playbook_id,
+        "account_id": account_id,
+        "brief": brief,
+        "topic_guidance": topic_guidance,
+        "recommended_scene": recommended_scene,
+        "run_playbook_command": command,
+        "run_playbook_command_text": shlex.join(command),
+        "quality_checklist": _build_ai_tech_quality_checklist(content_mode),
+        "safety_notes": [
+            "热点只用于选择方向；正文只能使用证据文件中的已核验事实或测试记录。",
+            "不要把来源 URL、作者、原始标题或未记录的体验写进正文。",
+            "提示词相关内容也必须是一次可复现的 hands_on 测试复盘，不提供通用可复制模板。",
+        ],
+    }
 
 
 def _run_psychology_guide_post(request: GuidePostRequest) -> dict[str, Any]:
@@ -915,6 +1004,43 @@ def format_guide_post_markdown(result: dict[str, Any]) -> str:
     image_recommendation = _format_image_recommendation(
         result.get("topic_guidance", {}).get("image_recommendation")
     )
+    if "content_mode" in brief:
+        return "\n".join(
+            [
+                "# AI Tech Evidence Brief",
+                "",
+                f"- playbook_id: {result['playbook_id']}",
+                f"- account_id: {result['account_id']}",
+                f"- lane: {brief['lane']}",
+                f"- content_mode: {brief['content_mode']}",
+                f"- evidence_required: {brief['evidence_required']}",
+                f"- image_style: {brief['image_style']}",
+                "",
+                "## Topic Directions",
+                "",
+                directions,
+                "",
+                "## Image Recommendation",
+                "",
+                image_recommendation,
+                "",
+                "## Evidence Gate",
+                "",
+                result["recommended_scene"],
+                "",
+                "## Quality Checklist",
+                "",
+                checklist,
+                "",
+                "## Safety Notes",
+                "",
+                safety_notes,
+                "",
+                "## Dry-run Command",
+                "",
+                f"`{result['run_playbook_command_text']}`",
+            ]
+        )
     if "mechanism" not in brief:
         return "\n".join(
             [
@@ -1000,6 +1126,7 @@ def _format_topic_direction_markdown(direction: dict[str, Any]) -> str:
     return (
         f"- {direction['name']}（trend: {direction['trend_signal']} / "
         f"type: {direction.get('direction_type', 'curated')} / "
+        f"mode: {direction.get('content_mode', '')} / "
         f"hook: {direction['viral_hook']} / "
         f"format: {format_recommendation.get('format_archetype', '')} / "
         f"cover: {format_recommendation.get('cover_role', '')} / "
@@ -1068,17 +1195,27 @@ def build_topic_guidance(
     scene: str = "",
     lane_name: str = "",
     brief: dict[str, Any] | None = None,
+    content_mode: str | None = None,
 ) -> dict[str, Any]:
     directions = select_topic_directions(
         directions=pack.directions,
         scene=scene,
         lane_name=lane_name,
-        include_open_slot=True,
-        dynamic_breadth=True,
+        include_open_slot=content_mode is None,
+        dynamic_breadth=content_mode is None,
+        content_mode=content_mode,
     )
+    if content_mode is not None and not directions:
+        raise ValueError(
+            f"No evidence-backed topic direction is available for ai_content_mode={content_mode!r}"
+        )
     return {
         "status": "available",
-        "message": pack.guidance_message,
+        "message": (
+            _ai_tech_guidance_message(content_mode)
+            if pack.playbook_id == AI_TECH_PLAYBOOK_ID and content_mode is not None
+            else pack.guidance_message
+        ),
         "directions": directions,
         **_topic_guidance_selection_metadata(directions=directions),
         "image_recommendation": _build_image_recommendation(
@@ -1335,6 +1472,49 @@ def _build_generic_recommended_scene(
     )
 
 
+def _require_ai_tech_content_mode(value: str | None) -> str:
+    content_mode = (value or "").strip()
+    if content_mode not in AI_TECH_CONTENT_MODES:
+        choices = ", ".join(AI_TECH_CONTENT_MODES)
+        raise ValueError(
+            f"ai_content_mode is required for AI tech guidance; choose one of: {choices}"
+        )
+    return content_mode
+
+
+def _ai_tech_evidence_requirement(content_mode: str) -> str:
+    return {
+        "news_brief": "3–5 条互不重复的事件；每条都要有标签、已核验事实和不透明来源引用。",
+        "hands_on": "一个主题的一次可复现实测：产品、版本、日期、任务、输入、观察结果、局限和测试引用。",
+        "fact_translation": "一个主题、至少两条已核验事实，以及“谁该关注 / 谁可以等等”的明确边界。",
+    }[content_mode]
+
+
+def _ai_tech_guidance_message(content_mode: str) -> str:
+    return {
+        "news_brief": "选择一个快讯方向后，先补齐 3–5 条独立事件的核验事实，再生成短简报。",
+        "hands_on": "选择一个实测方向后，先记录一次可复现任务的输入、输出与局限，再生成复盘帖。",
+        "fact_translation": "选择一个转译方向后，先补齐至少两条核验事实和受众边界，再生成判断帖。",
+    }[content_mode]
+
+
+def _build_ai_tech_recommended_scene(
+    *,
+    content_mode: str,
+    evidence_required: str,
+    image_recommendation: dict[str, Any],
+    brief: dict[str, Any],
+) -> str:
+    return "\n".join(
+        [
+            f"内容模式：{content_mode}",
+            f"证据门槛：{evidence_required}",
+            "运行时只读取 --ai-evidence-file 中的安全事实/测试记录，不读取自由场景。",
+            f"封面形式：{_image_recommendation_scene_summary(image_recommendation, brief)}",
+        ]
+    )
+
+
 def _image_recommendation_scene_summary(
     recommendation: dict[str, Any] | None,
     brief: dict[str, Any],
@@ -1369,8 +1549,11 @@ def _build_run_playbook_command(
     *,
     account_id: str,
     playbook_id: str,
-    scene: str,
+    scene: str | None,
     image_style: str | None,
+    topic_direction_id: str | None = None,
+    ai_content_mode: str | None = None,
+    ai_evidence_file_path: str | None = None,
 ) -> list[str]:
     command = [
         "uv",
@@ -1379,8 +1562,10 @@ def _build_run_playbook_command(
         "-m",
         "ptsm.bootstrap",
         "run-playbook",
-        "--scene",
-        scene,
+    ]
+    if scene:
+        command.extend(["--scene", scene])
+    command.extend([
         "--account-id",
         account_id,
         "--playbook-id",
@@ -1388,10 +1573,53 @@ def _build_run_playbook_command(
         "--publish-mode",
         "dry-run",
         "--auto-generate-image",
-    ]
+    ])
     if image_style:
         command.extend(["--local-image-style", image_style])
+    if topic_direction_id:
+        command.extend(["--topic-direction-id", topic_direction_id])
+    if ai_content_mode:
+        command.extend(["--ai-content-mode", ai_content_mode])
+    if ai_content_mode:
+        command.extend([
+            "--ai-evidence-file",
+            ai_evidence_file_path or "<operator-ai-evidence.json>",
+        ])
     return command
+
+
+def _build_ai_tech_quality_checklist(content_mode: str) -> list[dict[str, str]]:
+    shared = [
+        {
+            "item": "短帖与事实边界",
+            "done_when": "标题短、正文可扫读；不加证据文件之外的事实、来源路径或个人体验。",
+        },
+        {
+            "item": "低密度封面",
+            "done_when": "封面只放一个模式钩子或一个事实标签，不把正文塞进图里。",
+        },
+    ]
+    by_mode = {
+        "news_brief": [
+            {
+                "item": "三到五条独立快讯",
+                "done_when": "每条都有事件标签和原样核验事实；不串成一段泛泛感受。",
+            },
+        ],
+        "hands_on": [
+            {
+                "item": "可复现实测记录",
+                "done_when": "完整写出产品/版本/日期/任务/输入/观察结果/局限，读者能判断测试范围。",
+            },
+        ],
+        "fact_translation": [
+            {
+                "item": "事实与决策边界",
+                "done_when": "至少两条核验事实后，明确写出谁该关注、谁可以等等。",
+            },
+        ],
+    }
+    return [*by_mode[content_mode], *shared]
 
 
 def _build_generic_quality_checklist() -> list[dict[str, str]]:

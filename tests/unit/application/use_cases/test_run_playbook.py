@@ -2684,6 +2684,701 @@ def test_run_playbook_supports_classic_poetry_repo_assets(
     )
 
 
+def test_run_playbook_requires_ai_evidence_before_starting_a_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class NoRunStart:
+        def start(self, **_: object) -> object:
+            raise AssertionError("RunStore.start must not be called")
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        lambda **_: pytest.fail("workflow must not be built"),
+    )
+
+    result = run_playbook(
+        PlaybookRequest(
+            scene="Kimi K3 更新",
+            account_id="acct-ai-tech-local",
+            playbook_id="ai_tech_daily_post",
+        ),
+        run_store=NoRunStart(),  # type: ignore[arg-type]
+    )
+
+    assert result["status"] == "ai_tech_evidence_required"
+    assert result["playbook_id"] == "ai_tech_daily_post"
+
+
+def test_run_playbook_does_not_echo_free_text_scene_in_ai_preflight_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_scene = "Example 原始标题 https://example.com/release by Example Author"
+    result = run_playbook(
+        PlaybookRequest(
+            scene=raw_scene,
+            account_id="acct-ai-tech-local",
+            playbook_id="ai_tech_daily_post",
+        ),
+        run_store=RunStore(),
+    )
+
+    serialized = json.dumps(result, ensure_ascii=False)
+
+    assert result["status"] == "ai_tech_evidence_required"
+    assert raw_scene not in serialized
+    assert "https://example.com/release" not in serialized
+
+
+def test_run_playbook_never_runs_or_renders_fresh_radar_inside_ai_evidence_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class NoRunStart:
+        def start(self, **_: object) -> object:
+            raise AssertionError("RunStore.start must not be called")
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook._run_topic_radar_scan",
+        lambda **_: pytest.fail("AI evidence mode must not run Topic Radar inline"),
+    )
+    raw_scene = "Example 原始标题 https://example.com/release by Example Author"
+
+    result = run_playbook(
+        PlaybookRequest(
+            scene=raw_scene,
+            account_id="acct-ai-tech-local",
+            playbook_id="ai_tech_daily_post",
+            ai_content_mode="news_brief",
+            ai_evidence_bundle=_valid_ai_news_brief_bundle(),
+            fresh_topic_research=True,
+        ),
+        run_store=NoRunStart(),  # type: ignore[arg-type]
+    )
+
+    serialized = json.dumps(result, ensure_ascii=False)
+
+    assert result["status"] == "ai_tech_fresh_research_separate"
+    assert raw_scene not in serialized
+    assert "https://example.com/release" not in serialized
+
+
+@pytest.mark.parametrize(
+    ("ai_content_mode", "ai_evidence_bundle"),
+    (("news_brief", {"mode": "news_brief", "news_items": []}),),
+)
+def test_run_playbook_rejects_invalid_or_mismatched_ai_evidence_before_starting_a_run(
+    monkeypatch: pytest.MonkeyPatch,
+    ai_content_mode: str,
+    ai_evidence_bundle: dict[str, object],
+) -> None:
+    class NoRunStart:
+        def start(self, **_: object) -> object:
+            raise AssertionError("RunStore.start must not be called")
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        lambda **_: pytest.fail("workflow must not be built"),
+    )
+
+    result = run_playbook(
+        PlaybookRequest(
+            scene="Kimi K3 更新",
+            account_id="acct-ai-tech-local",
+            playbook_id="ai_tech_daily_post",
+            ai_content_mode=ai_content_mode,
+            ai_evidence_bundle=ai_evidence_bundle,
+        ),
+        run_store=NoRunStart(),  # type: ignore[arg-type]
+    )
+
+    assert result["status"] == "ai_tech_evidence_invalid"
+    assert result["playbook_id"] == "ai_tech_daily_post"
+
+
+def test_run_playbook_rejects_mismatched_valid_ai_evidence_before_starting_a_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class NoRunStart:
+        def start(self, **_: object) -> object:
+            raise AssertionError("RunStore.start must not be called")
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        lambda **_: pytest.fail("workflow must not be built"),
+    )
+
+    result = run_playbook(
+        PlaybookRequest(
+            scene="Kimi K3 更新",
+            account_id="acct-ai-tech-local",
+            playbook_id="ai_tech_daily_post",
+            ai_content_mode="hands_on",
+            ai_evidence_bundle=_valid_ai_news_brief_bundle(),
+        ),
+        run_store=NoRunStart(),  # type: ignore[arg-type]
+    )
+
+    assert result["status"] == "ai_tech_evidence_invalid"
+    assert result["diagnostic"] == "content_mode_mismatch"
+
+
+def test_run_playbook_validates_ai_evidence_without_passing_raw_bundle_to_workflow(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    final_content = {
+        "title": "AI 科技三条更新",
+        "image_text": "今天该看哪三件事",
+        "body": (
+            "模型发布：产品发布了新的推理模型。\n"
+            "开发者工具：开发者工具新增了批量处理能力。\n"
+            "行业应用：功能面向团队协作场景开放。"
+        ),
+        "hashtags": ["#AI资讯"],
+    }
+    artifact_path = tmp_path / "outputs" / "artifacts" / "artifact.json"
+    artifact_path.parent.mkdir(parents=True)
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "ai_tech_daily_post",
+                "final_content": final_content,
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    class ValidAiWorkflow(CapturingWorkflow):
+        def invoke(
+            self,
+            payload: dict[str, object],
+            config: dict[str, object] | None = None,
+        ) -> dict[str, object]:
+            result = super().invoke(payload, config)
+            result["final_content"] = final_content
+            return result
+
+    workflow = ValidAiWorkflow(artifact_path)
+    workflow_build_arguments: dict[str, object] = {}
+
+    def build_workflow(**kwargs: object) -> ValidAiWorkflow:
+        workflow_build_arguments.update(kwargs)
+        return workflow
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        build_workflow,
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = run_playbook(
+        PlaybookRequest(
+            scene="Raw release title https://example.com/release by Example Author",
+            account_id="acct-ai-tech-local",
+            playbook_id="ai_tech_daily_post",
+            ai_content_mode="news_brief",
+            ai_evidence_bundle=_valid_ai_news_brief_bundle(),
+            ai_evidence_file_path="inputs/ai-evidence.json",
+        ),
+        publisher=SuccessfulPublisher(),
+        run_store=RunStore(base_dir=tmp_path / "runs"),
+    )
+
+    assert result["status"] == "completed"
+    assert workflow.payload is not None
+    assert "ai_evidence_bundle" not in workflow.payload
+    assert "ai_content_mode" not in workflow.payload
+    assert "ai_evidence_file_path" not in workflow.payload
+    assert "ai_tech_evidence" not in workflow.payload
+    assert set(workflow_build_arguments["ai_tech_evidence"]) == {
+        "mode",
+        "drafting_payload",
+        "requirements",
+    }
+    assert workflow_build_arguments["ai_tech_evidence_manifest"] == {
+        "source_refs": [
+            "official-release-001",
+            "official-release-002",
+            "official-release-003",
+        ],
+        "test_evidence_refs": [],
+        "event_fingerprints": [
+            "event-model-release-001",
+            "event-developer-tools-002",
+            "event-industry-use-003",
+        ],
+        "trend_support": [],
+    }
+    assert workflow_build_arguments["ai_tech_evidence"]["mode"] == "news_brief"
+    assert "https://example.com/release" not in str(workflow.payload["scene"])
+    assert "Example Author" not in str(workflow.payload["scene"])
+    assert "产品发布了新的推理模型。" in json.dumps(
+        workflow_build_arguments["ai_tech_evidence"], ensure_ascii=False
+    )
+    assert "official-release-001" not in json.dumps(
+        workflow_build_arguments["ai_tech_evidence"], ensure_ascii=False
+    )
+    assert "ai_tech_evidence" not in result
+
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+    assert artifact["ai_tech_evidence_manifest"]["source_refs"] == [
+        "official-release-001",
+        "official-release-002",
+        "official-release-003",
+    ]
+    assert "ai_tech_evidence" not in artifact
+    assert result["ai_tech_evidence_manifest"] == artifact["ai_tech_evidence_manifest"]
+    assert artifact["ai_tech_content_mode"] == "news_brief"
+    assert artifact["ai_tech_evidence_gate"] == {
+        "status": "passed",
+        "mode": "news_brief",
+        "validator": "ai_tech_draft_contract",
+        "validator_version": "1",
+        "errors": [],
+    }
+    assert result["ai_tech_evidence_gate"] == artifact["ai_tech_evidence_gate"]
+    serialized_artifact = json.dumps(artifact, ensure_ascii=False)
+    assert "https://example.com/release" not in serialized_artifact
+    assert "Example Author" not in serialized_artifact
+
+
+def test_run_playbook_blocks_ai_publish_when_workflow_did_not_write_an_artifact(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    class MissingArtifactWorkflow:
+        def invoke(
+            self,
+            payload: dict[str, object],
+            config: dict[str, object] | None = None,
+        ) -> dict[str, object]:
+            return {
+                "status": "completed",
+                "artifact_path": str(tmp_path / "missing-artifact.json"),
+                "final_content": {
+                    "title": "AI 科技三条更新",
+                    "image_text": "今天该看哪三件事",
+                    "body": (
+                        "模型发布：产品发布了新的推理模型。\n"
+                        "开发者工具：开发者工具新增了批量处理能力。\n"
+                        "行业应用：功能面向团队协作场景开放。"
+                    ),
+                    "hashtags": ["#AI资讯"],
+                },
+                "runtime_skill_contents": [],
+                "activated_skills": [],
+                "activated_skill_details": [],
+                "runtime_skill_details": [],
+            }
+
+    publisher = CountingPublisher()
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        lambda **_: MissingArtifactWorkflow(),
+    )
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_image_backend",
+        lambda _: pytest.fail("image generation must not be reached"),
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = run_playbook(
+        PlaybookRequest(
+            scene="Raw release title https://example.com/release by Example Author",
+            account_id="acct-ai-tech-local",
+            playbook_id="ai_tech_daily_post",
+            ai_content_mode="news_brief",
+            ai_evidence_bundle=_valid_ai_news_brief_bundle(),
+            auto_generate_images=True,
+        ),
+        publisher=publisher,
+        run_store=RunStore(base_dir=tmp_path / "runs"),
+    )
+
+    assert result["status"] == "ai_tech_artifact_required"
+    assert publisher.calls == 0
+
+
+def test_run_playbook_blocks_unsafe_ai_custom_workflow_before_image_or_publish(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    class UnsafeAiWorkflow(CapturingWorkflow):
+        def invoke(
+            self,
+            payload: dict[str, object],
+            config: dict[str, object] | None = None,
+        ) -> dict[str, object]:
+            self.payload = payload
+            return {
+                "status": "completed",
+                "artifact_path": str(self.artifact_path),
+                "final_content": {
+                    "title": "今天的 AI 更新",
+                    "image_text": "别只看参数",
+                    "body": "我实测后发现，这次速度提升明显。",
+                    "hashtags": ["#AI资讯"],
+                },
+                "runtime_skill_contents": [],
+                "activated_skills": [],
+                "activated_skill_details": [],
+                "runtime_skill_details": [],
+            }
+
+    artifact_path = tmp_path / "artifact.json"
+    artifact_path.write_text(
+        json.dumps({"playbook_id": "ai_tech_daily_post"}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    publisher = CountingPublisher()
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        lambda **_: UnsafeAiWorkflow(artifact_path),
+    )
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_image_backend",
+        lambda _: pytest.fail("image generation must not be reached"),
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = run_playbook(
+        PlaybookRequest(
+            account_id="acct-ai-tech-local",
+            playbook_id="ai_tech_daily_post",
+            ai_content_mode="news_brief",
+            ai_evidence_bundle=_valid_ai_news_brief_bundle(),
+            auto_generate_images=True,
+        ),
+        publisher=publisher,
+        run_store=RunStore(base_dir=tmp_path / "runs"),
+    )
+
+    assert result["status"] == "ai_tech_draft_invalid"
+    assert result["publish_result"] is None
+    assert publisher.calls == 0
+    assert "我实测" in result["ai_tech_draft_validation"]["errors"]
+
+
+def test_ai_login_rerun_preserves_evidence_file_arguments(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    publisher = LoginRequiredPreflightPublisher()
+    evidence_path = tmp_path / "ai evidence.json"
+    evidence_path.write_text(json.dumps(_valid_ai_news_brief_bundle()), encoding="utf-8")
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.xhs_login.fetch_xhs_login_qrcode_via_api",
+        lambda server_url: {
+            "timeout": "4m0s",
+            "is_logged_in": False,
+            "img": "data:image/png;base64,"
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aF9sAAAAASUVORK5CYII=",
+        },
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = run_playbook(
+        PlaybookRequest(
+            scene="Raw release title https://example.com/release by Example Author",
+            account_id="acct-ai-tech-local",
+            playbook_id="ai_tech_daily_post",
+            publish_mode="mcp-real",
+            ai_content_mode="news_brief",
+            ai_evidence_bundle=_valid_ai_news_brief_bundle(),
+            ai_evidence_file_path=str(evidence_path),
+        ),
+        publisher=publisher,
+        run_store=RunStore(base_dir=tmp_path / "runs"),
+    )
+
+    rerun_instruction = result["publish_result"]["login_instructions"][-1]
+
+    assert result["status"] == "login_required"
+    assert "--ai-content-mode news_brief" in rerun_instruction
+    assert "--ai-evidence-file" in rerun_instruction
+    assert str(evidence_path) in rerun_instruction
+    assert "--scene" not in rerun_instruction
+    assert "https://example.com/release" not in rerun_instruction
+    assert "https://example.com/release" not in result["scene"]
+
+
+def test_ai_login_without_evidence_file_uses_api_recovery_instruction(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    publisher = LoginRequiredPreflightPublisher()
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.xhs_login.fetch_xhs_login_qrcode_via_api",
+        lambda server_url: {"timeout": "4m0s", "is_logged_in": False},
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = run_playbook(
+        PlaybookRequest(
+            account_id="acct-ai-tech-local",
+            playbook_id="ai_tech_daily_post",
+            publish_mode="mcp-real",
+            ai_content_mode="news_brief",
+            ai_evidence_bundle=_valid_ai_news_brief_bundle(),
+        ),
+        publisher=publisher,
+        run_store=RunStore(base_dir=tmp_path / "runs"),
+    )
+
+    recovery_instruction = result["publish_result"]["login_instructions"][-1]
+
+    assert result["status"] == "login_required"
+    assert "original API request" in recovery_instruction
+    assert "ai_evidence_bundle" in recovery_instruction
+    assert "Then rerun:" not in recovery_instruction
+
+
+def test_ai_login_rerun_uses_equals_form_for_leading_dash_evidence_path(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    publisher = LoginRequiredPreflightPublisher()
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.xhs_login.fetch_xhs_login_qrcode_via_api",
+        lambda server_url: {"timeout": "4m0s", "is_logged_in": False},
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = run_playbook(
+        PlaybookRequest(
+            account_id="acct-ai-tech-local",
+            playbook_id="ai_tech_daily_post",
+            publish_mode="mcp-real",
+            ai_content_mode="news_brief",
+            ai_evidence_bundle=_valid_ai_news_brief_bundle(),
+            ai_evidence_file_path="-ai-evidence.json",
+        ),
+        publisher=publisher,
+        run_store=RunStore(base_dir=tmp_path / "runs"),
+    )
+
+    rerun_instruction = result["publish_result"]["login_instructions"][-1]
+
+    assert "--ai-evidence-file=-ai-evidence.json" in rerun_instruction
+
+
+def test_non_ai_login_rerun_ignores_unrelated_ai_evidence_fields(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    publisher = LoginRequiredPreflightPublisher()
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.xhs_login.fetch_xhs_login_qrcode_via_api",
+        lambda server_url: {"timeout": "4m0s", "is_logged_in": False},
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = run_playbook(
+        PlaybookRequest(
+            scene="读到李白长风破浪会有时",
+            account_id="acct-classic-poetry-local",
+            playbook_id="classic_poetry_quote_post",
+            publish_mode="mcp-real",
+            ai_content_mode="news_brief",
+        ),
+        publisher=publisher,
+        run_store=RunStore(base_dir=tmp_path / "runs"),
+    )
+
+    rerun_instruction = result["publish_result"]["login_instructions"][-1]
+
+    assert "Then rerun:" in rerun_instruction
+    assert "--ai-content-mode" not in rerun_instruction
+
+
+def _valid_ai_news_brief_bundle() -> dict[str, object]:
+    return {
+        "mode": "news_brief",
+        "news_items": [
+            {
+                "label": "模型发布",
+                "event_fingerprint": "event-model-release-001",
+                "facts": ["产品发布了新的推理模型。"],
+                "source_refs": ["official-release-001"],
+            },
+            {
+                "label": "开发者工具",
+                "event_fingerprint": "event-developer-tools-002",
+                "facts": ["开发者工具新增了批量处理能力。"],
+                "source_refs": ["official-release-002"],
+            },
+            {
+                "label": "行业应用",
+                "event_fingerprint": "event-industry-use-003",
+                "facts": ["功能面向团队协作场景开放。"],
+                "source_refs": ["official-release-003"],
+            },
+        ],
+    }
+
+
+@pytest.mark.parametrize(
+    "topic_direction_id",
+    ("missing-ai-direction", "ai_prompt_context_card"),
+)
+def test_run_playbook_rejects_unknown_or_wrong_mode_ai_topic_direction_before_starting(
+    monkeypatch: pytest.MonkeyPatch,
+    topic_direction_id: str,
+) -> None:
+    class NoRunStart:
+        def start(self, **_: object) -> object:
+            raise AssertionError("RunStore.start must not be called")
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        lambda **_: pytest.fail("workflow must not be built"),
+    )
+
+    result = run_playbook(
+        PlaybookRequest(
+            account_id="acct-ai-tech-local",
+            playbook_id="ai_tech_daily_post",
+            ai_content_mode="news_brief",
+            ai_evidence_bundle=_valid_ai_news_brief_bundle(),
+            topic_direction_id=topic_direction_id,
+        ),
+        run_store=NoRunStart(),  # type: ignore[arg-type]
+    )
+
+    assert result["status"] == "ai_tech_topic_direction_invalid"
+    assert result["diagnostic"] == "unknown_or_mode_mismatched_topic_direction"
+
+
+def test_run_playbook_rejects_custom_ai_artifact_with_raw_provenance_before_merge_or_publish(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    artifact_path = tmp_path / "outputs" / "artifacts" / "foreign-ai-artifact.json"
+    artifact_path.parent.mkdir(parents=True)
+    raw_url = "https://example.com/release"
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "ai_tech_daily_post",
+                "raw_source_url": raw_url,
+                "source_title": "Example 模型发布原始标题",
+                "author": "Example Author",
+                "feed_id": "feed-secret-7",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    class UnsafeArtifactWorkflow:
+        def invoke(
+            self,
+            payload: dict[str, object],
+            config: dict[str, object] | None = None,
+        ) -> dict[str, object]:
+            return {
+                "status": "completed",
+                "artifact_path": str(artifact_path),
+                "final_content": {
+                    "title": "AI 科技三条更新",
+                    "image_text": "今天该看哪三件事",
+                    "body": (
+                        "模型发布：产品发布了新的推理模型。\n"
+                        "开发者工具：开发者工具新增了批量处理能力。\n"
+                        "行业应用：功能面向团队协作场景开放。"
+                    ),
+                    "hashtags": ["#AI资讯"],
+                },
+                "runtime_skill_contents": [],
+                "activated_skills": [],
+                "activated_skill_details": [],
+                "runtime_skill_details": [],
+            }
+
+    publisher = CountingPublisher()
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        lambda **_: UnsafeArtifactWorkflow(),
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = run_playbook(
+        PlaybookRequest(
+            account_id="acct-ai-tech-local",
+            playbook_id="ai_tech_daily_post",
+            ai_content_mode="news_brief",
+            ai_evidence_bundle=_valid_ai_news_brief_bundle(),
+        ),
+        publisher=publisher,
+        run_store=RunStore(base_dir=tmp_path / "runs"),
+    )
+
+    assert result["status"] == "ai_tech_artifact_invalid"
+    assert publisher.calls == 0
+    persisted = artifact_path.read_text(encoding="utf-8")
+    assert raw_url in persisted
+    assert "ai_tech_evidence_manifest" not in persisted
+
+
+def test_run_playbook_rejects_custom_ai_artifact_outside_owned_artifact_store(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    foreign_artifact_path = tmp_path / "foreign-ai-artifact.json"
+    foreign_artifact_path.write_text(
+        json.dumps({"playbook_id": "ai_tech_daily_post"}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    class ForeignArtifactWorkflow:
+        def invoke(
+            self,
+            payload: dict[str, object],
+            config: dict[str, object] | None = None,
+        ) -> dict[str, object]:
+            return {
+                "status": "completed",
+                "artifact_path": str(foreign_artifact_path),
+                "final_content": {
+                    "title": "AI 科技三条更新",
+                    "image_text": "今天该看哪三件事",
+                    "body": (
+                        "模型发布：产品发布了新的推理模型。\n"
+                        "开发者工具：开发者工具新增了批量处理能力。\n"
+                        "行业应用：功能面向团队协作场景开放。"
+                    ),
+                    "hashtags": ["#AI资讯"],
+                },
+                "runtime_skill_contents": [],
+                "activated_skills": [],
+                "activated_skill_details": [],
+                "runtime_skill_details": [],
+            }
+
+    publisher = CountingPublisher()
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        lambda **_: ForeignArtifactWorkflow(),
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = run_playbook(
+        PlaybookRequest(
+            account_id="acct-ai-tech-local",
+            playbook_id="ai_tech_daily_post",
+            ai_content_mode="news_brief",
+            ai_evidence_bundle=_valid_ai_news_brief_bundle(),
+        ),
+        publisher=publisher,
+        run_store=RunStore(base_dir=tmp_path / "runs"),
+    )
+
+    assert result["status"] == "ai_tech_artifact_invalid"
+    assert publisher.calls == 0
+    assert "ai_tech_evidence_manifest" not in foreign_artifact_path.read_text(
+        encoding="utf-8"
+    )
+
+
 def _write_account_definition(
     path: Path,
     *,

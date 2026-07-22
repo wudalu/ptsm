@@ -2,7 +2,7 @@
 title: XHS Skills Landscape
 status: active
 owner: ptsm
-last_verified: 2026-07-22
+last_verified: 2026-07-23
 source_of_truth: false
 related_paths:
   - docs/xhs-topics/index.md
@@ -16,6 +16,7 @@ related_paths:
   - src/ptsm/application/use_cases/xhs_domain_opportunity.py
   - src/ptsm/application/use_cases/hotspot_discovery.py
   - src/ptsm/domain/hotspot_routing.py
+  - src/ptsm/domain/ai_tech_content.py
   - integrations/openclaw/ptsm-topic-radar-discovery/SKILL.md
   - src/ptsm/infrastructure/publishers/xiaohongshu_mcp_publisher.py
   - src/ptsm/application/use_cases/xhs_browser.py
@@ -27,8 +28,9 @@ related_paths:
 
 - 2026-04-22 用 `skill-installer` 的官方脚本复核 OpenAI curated skills 时，没有任何 XiaoHongShu-specific skill。
 - 当前仓库内已有 `xhs_trend_scan` 这个本地 pattern-context builtin skill；`xhs_hashtagging` 和 `xhs_classic_poetry_hashtagging` 仍然负责发帖后处理，其中古诗词金句默认要求 `#古诗词` 而不是苏轼专属标签。
-- 所以后续如果要继续做“不限定方向的小红书/全平台热点分析”，主路径是 discovery-first 的 `hotspot-discovery`；public Topic Radar fresh scan 只保留给已选 playbook 的发帖前 research（默认八平台、证据/去重/新颖度 artifact），小红书领域比较则走 bounded `xhs-domain-opportunity`；不是让普通 drafting 在 `xhs_trend_scan` 中做实时搜索。
+- 所以后续如果要继续做“不限定方向的小红书/全平台热点分析”，主路径是 discovery-first 的 `hotspot-discovery`；public Topic Radar fresh scan 只保留给大多数已选 playbook 的发帖前 research（默认八平台、证据/去重/新颖度 artifact），小红书领域比较则走 bounded `xhs-domain-opportunity`；不是让普通 drafting 在 `xhs_trend_scan` 中做实时搜索。AI 科技 evidence mode 不在 run 内发起 fresh scan：热点先独立发现，之后以 opaque trend support 辅助 operator 收集 facts 或 test record。
 - 对宽泛“有什么热点”请求，OpenClaw/Codex 应加载 `ptsm-topic-radar-discovery`，运行 discovery-first 的 `hotspot-discovery`，然后让用户在 mapped / ambiguous / unmapped 结果之间选择；不能先由已有 playbook 关键词决定扫描范围。
+- 对 AI 科技帖子，skill/wrapper 还必须阻止另一个常见误用：不能把热点 headline 改写成“我实测”的泛感受。调用 `guide-post` 前先选三种 evidence mode 之一；`news_brief` 只写 3–5 条核验事实，`hands_on` 才能写可复现实测，`fact_translation` 必须给出谁该关注 / 谁可等待。来源字段保持 opaque，raw URL、author、feed ID 和原始标题不进入 drafting。
 
 ## Generic Skills Worth Reusing
 

@@ -5,17 +5,28 @@ from collections.abc import Callable
 from ptsm.agent_runtime.state import ExecutionState
 
 ContentQualityJudge = Callable[[ExecutionState, dict[str, object]], dict[str, object]]
+AiTechDraftGate = Callable[[ExecutionState, dict[str, object]], list[str]]
 
 
 def build_reflector_node(
-    *, max_attempts: int, content_quality_judge: ContentQualityJudge | None = None
+    *,
+    max_attempts: int,
+    content_quality_judge: ContentQualityJudge | None = None,
+    ai_tech_draft_gate: AiTechDraftGate | None = None,
 ):
     def reflector(state: ExecutionState) -> ExecutionState:
         rules = state["reflection_rules"]
         draft = state["draft_content"]
         body = str(draft["body"])
         missing = _missing_requirements(rules=rules, draft=draft, body=body)
+        executor_errors = state.get("ai_tech_executor_errors")
+        if isinstance(executor_errors, list):
+            missing.extend(
+                str(error).strip() for error in executor_errors if str(error).strip()
+            )
         quality_eval: dict[str, object] | None = None
+        if not missing and ai_tech_draft_gate is not None:
+            missing.extend(ai_tech_draft_gate(state, draft))
         if not missing and content_quality_judge is not None:
             quality_eval = content_quality_judge(state, draft)
             if quality_eval.get("status") != "passed":

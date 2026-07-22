@@ -41,6 +41,10 @@ ptsm run-plan --plan docs/plans/2026-03-24-ptsm-agent-platform-rebaseline.md --d
 ptsm runs --account-id acct-fk-local --status completed --limit 5
 ptsm run-events --account-id acct-fk-local --event publish_finished --group-by status
 ptsm hotspot-discovery --max-hotspots 12
+# AI 科技内容必须显式选择证据模式并提供本地 JSON 证据文件
+ptsm run-playbook --account-id acct-ai-tech-local --playbook-id ai_tech_daily_post \
+  --ai-content-mode hands_on --ai-evidence-file /path/to/ai-evidence.json \
+  --publish-mode dry-run
 ```
 
 `hotspot-discovery` is the generic discovery-first entrypoint: it scans the
@@ -50,3 +54,9 @@ fits, ambiguities, and unmapped candidates. Use `--max-hotspots` only to change
 the returned-list size, never to choose a direction before discovery. A separate,
 non-duplicated routed-candidate view may surface lower-ranked existing-playbook
 fits without changing that all-platform ranking.
+
+`ai_tech_daily_post` 不接受仅靠场景文字的生成。它只支持 `news_brief`
+（3–5 条已核验快讯）、`hands_on`（一条可复现测试记录）和
+`fact_translation`（已核验事实 + 谁该关注/谁可等待）三种模式；运行前必须传
+`--ai-content-mode` 与 `--ai-evidence-file`。先找全平台热点时仍使用
+`hotspot-discovery`：热点只能作为选择方向的 `trend_support`，不能代替事实或测试证据。

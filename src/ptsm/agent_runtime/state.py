@@ -37,3 +37,4 @@ class ExecutionState(TypedDict, total=False):
     memory_hits: list[dict[str, Any]]
     content_quality_eval: dict[str, Any]
     content_review: dict[str, Any]
+    ai_tech_executor_errors: list[str]

@@ -55,7 +55,7 @@ BODY_LENGTH_BANDS = {
     "human_enrichment_daily_post": (120, 280),
     "classic_poetry_quote_post": (120, 280),
     "daily_english_post": (140, 300),
-    "ai_tech_daily_post": (180, 420),
+    "ai_tech_daily_post": (40, 360),
     "world_cup_daily_post": (180, 420),
     "reddit_curation_daily_post": (180, 420),
     "wuxia_character_post": (450, 750),
@@ -79,7 +79,6 @@ TITLE_CONCRETE_ENTRY_MARKERS = {
     "human_enrichment_daily_post": ["丰容", "变量", "角落", "书桌", "路线", "材料", "床头", "一厘米", "那条路"],
     "classic_poetry_quote_post": ["古诗词", "金句", "这一句", "李白", "李清照", "月亮", "王维", "定风波"],
     "daily_english_post": ["开会", "私聊", "例句", "这句", "英语"],
-    "ai_tech_daily_post": ["AI", "普通人", "搭子", "工具", "更新"],
     "world_cup_daily_post": ["世界杯", "赛前", "看球", "开球", "终场", "阿根廷", "法国"],
     "reddit_curation_daily_post": ["AI", "工具", "消息", "压力", "普通人"],
     "wuxia_character_post": ["令狐冲", "黄蓉", "郭靖", "老款", "边界", "自由"],
@@ -91,7 +90,6 @@ BODY_SCENE_SIGNAL_MARKERS = {
     "human_enrichment_daily_post": ["角落", "书桌", "床头", "路线", "材料", "今天", "十分钟", "手边"],
     "classic_poetry_quote_post": ["古诗词", "金句", "这一句", "李白", "李清照", "月亮", "今天"],
     "daily_english_post": ["今天", "开会", "私聊", "这句", "例句", "评论区", "你会怎么说"],
-    "ai_tech_daily_post": ["AI", "工具", "普通人", "今天", "工作流", "试", "边界"],
     "world_cup_daily_post": ["赛前", "看球", "普通球迷", "今晚", "这场", "评论区"],
     "reddit_curation_daily_post": ["AI", "工具", "压力", "消息", "普通人", "今天", "你现在"],
     "wuxia_character_post": ["令狐冲", "黄蓉", "郭靖", "这一段", "原文", "今天", "职场"],
@@ -147,6 +145,21 @@ class TestPlaybookEvalContract:
         nc = contract.node_contracts.get("executor", {})
         assert "title" in nc.get("required_fields", [])
         assert "hashtags" in nc.get("required_fields", [])
+
+    def test_ai_tech_contract_requires_auditable_evidence_receipt(self):
+        root = Path(__file__).parent.parent.parent.parent / "src" / "ptsm" / "playbooks" / "definitions"
+        contract = load_playbook_eval_contract(root, "ai_tech_daily_post")
+
+        assert contract is not None
+        assert contract.uses["ai_tech_evidence_receipt"] == "ai_tech_evidence_receipt.v1"
+        finalize = contract.node_contracts["finalize"]
+        assert {
+            "playbook_id",
+            "final_content",
+            "ai_tech_content_mode",
+            "ai_tech_evidence_manifest",
+            "ai_tech_evidence_gate",
+        }.issubset(finalize["required_fields"])
 
     def test_to_dict(self):
         contract = PlaybookEvalContract(
@@ -338,7 +351,6 @@ class TestPlaybookEvalContract:
         [
             ("fengkuang_daily_post", ["工牌", "群聊", "周报", "早会", "下班", "领导", "物件", "地铁", "周六", "需求"]),
             ("human_enrichment_daily_post", ["丰容", "变量", "角落", "书桌", "路线", "材料", "床头", "一厘米", "那条路"]),
-            ("ai_tech_daily_post", ["AI", "普通人", "搭子", "工具", "更新"]),
             ("classic_poetry_quote_post", ["古诗词", "金句", "这一句", "李白", "李清照", "月亮", "王维", "定风波"]),
             ("wuxia_character_post", ["令狐冲", "黄蓉", "郭靖", "老款", "边界", "自由"]),
         ],
@@ -361,7 +373,6 @@ class TestPlaybookEvalContract:
         [
             ("classic_poetry_quote_post", ["#古诗词"], ["这一句", "古诗词", "金句"]),
             ("wuxia_character_post", ["#金庸", "#古龙"], ["《笑傲江湖》", "《射雕英雄传》"]),
-            ("ai_tech_daily_post", ["#AI资讯"], ["是什么", "为什么重要", "普通人"]),
             ("daily_english_post", ["#每日英语"], ["音标", "词性", "例句", "翻译"]),
         ],
     )
@@ -397,3 +408,24 @@ class TestPlaybookEvalContract:
         quality_judge = contract.quality_judges["executor_content_quality"]
         assert quality_judge["evaluator_id"] == "llm.executor.content_quality"
         assert quality_judge["gate_level"] == "required"
+
+    def test_ai_tech_contract_uses_short_mode_aware_evidence_rules(self):
+        root = Path(__file__).parent.parent.parent.parent / "src" / "ptsm" / "playbooks" / "definitions"
+        contract = load_playbook_eval_contract(root, "ai_tech_daily_post")
+
+        assert contract is not None
+        constraints = contract.node_contracts["executor"]["constraints"]
+        assert constraints["body_min_chars"] == 40
+        assert constraints["body_max_chars"] == 360
+        assert constraints["hashtags_must_include_any"] == ["#AI资讯"]
+        assert "body_must_include_any" not in constraints
+        assert "body_must_include_comment_prompt_any" not in constraints
+        assert "body_must_include_save_trigger_any" not in constraints
+        assert "body_must_include_scene_signal" not in constraints
+        assert "body_scene_signal_any" not in constraints
+        assert "body_human_anchor_any" not in constraints
+        assert "title_must_include_any" not in constraints
+        for marker in ["万能提示词", "直接复制", "变体要求", "comment_chain"]:
+            assert marker in constraints["body_must_not_include_any"]
+        for marker in ["万能提示词", "直接复制"]:
+            assert marker in constraints["combined_must_not_include_any"]

@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 from ptsm.evaluations.contracts import EvalTarget
 from ptsm.evaluations.contracts_eval import (
+    contract_ai_tech_evidence_receipt,
     contract_artifact_root_fields,
     contract_playbook_node_contract,
     contract_skill_details_match,
@@ -85,6 +86,197 @@ class TestSkillDetailsMatch:
         target = _target(phase="planner", target_type="node_output", output_ref=None)
         result = contract_skill_details_match(target)
         assert result.status == "skipped"
+
+
+def _ai_tech_receipt(
+    *,
+    mode: str = "news_brief",
+    manifest: dict | None = None,
+    gate: dict | None = None,
+) -> dict:
+    default_manifest = {
+        "source_refs": ["source:official-1"],
+        "test_evidence_refs": [],
+        "event_fingerprints": [
+            "event:model-1",
+            "event:tool-2",
+            "event:industry-3",
+        ],
+        "trend_support": [],
+    }
+    return {
+        "ai_tech_content_mode": mode,
+        "ai_tech_evidence_manifest": (
+            default_manifest if manifest is None else manifest
+        ),
+        "ai_tech_evidence_gate": gate
+        if gate is not None
+        else {
+            "status": "passed",
+            "mode": mode,
+            "validator": "ai_tech_draft_contract",
+            "validator_version": "1",
+            "errors": [],
+        },
+    }
+
+
+class TestAiTechEvidenceReceipt:
+    def test_accepts_complete_news_receipt(self):
+        target = _target(
+            playbook_id="ai_tech_daily_post",
+            output_ref={
+                **_ai_tech_receipt(),
+                "final_content": {
+                    "title": "AI 三条更新",
+                    "body": "模型发布：已开放推理能力。\n开发者工具：新增批处理。\n行业应用：支持团队协作。",
+                    "hashtags": ["#AI资讯"],
+                },
+            },
+        )
+
+        result = contract_ai_tech_evidence_receipt(target)
+
+        assert result.status == "passed"
+        assert result.evaluator_id == "ai_tech.evidence_receipt"
+
+    def test_rejects_missing_receipt_fields_without_echoing_raw_values(self):
+        raw_url = "https://private.example.com/release?token=secret"
+        target = _target(
+            playbook_id="ai_tech_daily_post",
+            output_ref={
+                "ai_tech_content_mode": "news_brief",
+                "ai_tech_evidence_manifest": {"source_url": raw_url},
+                "final_content": {"body": raw_url},
+            },
+        )
+
+        result = contract_ai_tech_evidence_receipt(target)
+
+        assert result.status == "failed"
+        assert "ai_tech_evidence_gate" in result.reason
+        serialized = str(result.to_dict())
+        assert raw_url not in serialized
+        assert "private.example.com" not in serialized
+
+    @pytest.mark.parametrize(
+        ("mode", "manifest"),
+        [
+            (
+                "hands_on",
+                {
+                    "source_refs": [],
+                    "test_evidence_refs": ["test:run-1"],
+                    "event_fingerprints": [],
+                    "trend_support": [],
+                },
+            ),
+            (
+                "fact_translation",
+                {
+                    "source_refs": ["source:official-1"],
+                    "test_evidence_refs": [],
+                    "event_fingerprints": [],
+                    "trend_support": [],
+                },
+            ),
+        ],
+    )
+    def test_accepts_mode_specific_safe_manifest(self, mode, manifest):
+        target = _target(
+            playbook_id="ai_tech_daily_post",
+            output_ref=_ai_tech_receipt(mode=mode, manifest=manifest),
+        )
+
+        result = contract_ai_tech_evidence_receipt(target)
+
+        assert result.status == "passed"
+
+    def test_rejects_wrong_news_item_count_and_non_hands_on_experience(self):
+        target = _target(
+            playbook_id="ai_tech_daily_post",
+            output_ref={
+                **_ai_tech_receipt(
+                    manifest={
+                        "source_refs": ["source:official-1"],
+                        "test_evidence_refs": [],
+                        "event_fingerprints": ["event:only-1", "event:only-2"],
+                        "trend_support": [],
+                    }
+                ),
+                "final_content": {
+                    "title": "AI 更新",
+                    "body": "我实测后发现这次更新很好用。",
+                    "hashtags": ["#AI资讯"],
+                },
+            },
+        )
+
+        result = contract_ai_tech_evidence_receipt(target)
+
+        assert result.status == "failed"
+        assert "event fingerprints" in result.reason
+        assert "experiential language" in result.reason
+
+    def test_rejects_duplicate_news_event_fingerprints(self):
+        target = _target(
+            playbook_id="ai_tech_daily_post",
+            output_ref=_ai_tech_receipt(
+                manifest={
+                    "source_refs": ["source:official-1"],
+                    "test_evidence_refs": [],
+                    "event_fingerprints": [
+                        "event:duplicate",
+                        "event:duplicate",
+                        "event:industry-3",
+                    ],
+                    "trend_support": [],
+                }
+            ),
+        )
+
+        result = contract_ai_tech_evidence_receipt(target)
+
+        assert result.status == "failed"
+        assert "distinct event fingerprints" in result.reason
+
+    def test_rejects_non_hands_on_experience_without_an_explicit_test_claim(self):
+        target = _target(
+            playbook_id="ai_tech_daily_post",
+            output_ref={
+                **_ai_tech_receipt(),
+                "final_content": {
+                    "title": "AI 更新",
+                    "body": "上手体验后，这项功能比预期顺手。",
+                    "hashtags": ["#AI资讯"],
+                },
+            },
+        )
+
+        result = contract_ai_tech_evidence_receipt(target)
+
+        assert result.status == "failed"
+        assert "experiential language" in result.reason
+
+    def test_rejects_gate_that_does_not_prove_the_matching_validator(self):
+        target = _target(
+            playbook_id="ai_tech_daily_post",
+            output_ref=_ai_tech_receipt(
+                gate={
+                    "status": "passed",
+                    "mode": "fact_translation",
+                    "validator": "other_gate",
+                    "validator_version": "2",
+                    "errors": ["raw source https://private.example.com"],
+                }
+            ),
+        )
+
+        result = contract_ai_tech_evidence_receipt(target)
+
+        assert result.status == "failed"
+        assert "gate mode does not match receipt mode" in result.reason
+        assert "https://private.example.com" not in str(result.to_dict())
 
 
 class TestPlaybookNodeContract:

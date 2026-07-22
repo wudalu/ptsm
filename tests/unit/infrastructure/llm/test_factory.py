@@ -1,16 +1,19 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 from ptsm.config.settings import Settings
+from ptsm.domain.ai_tech_content import parse_ai_tech_evidence_bundle, validate_ai_tech_draft
 from ptsm.evaluations.contracts import EvalTarget
 from ptsm.evaluations.contracts_eval import contract_playbook_node_contract
 from ptsm.evaluations.playbook_contracts import load_playbook_eval_contract
 from ptsm.infrastructure.llm.factory import (
     DeterministicDraftBackend,
+    _build_deepseek_hard_requirements,
     _parse_json_payload,
     build_drafting_backend,
 )
@@ -329,77 +332,21 @@ def test_deterministic_backend_can_follow_wuxia_context() -> None:
     assert "发疯文学" not in draft["body"]
 
 
-def test_deterministic_backend_can_follow_ai_tech_context() -> None:
-    backend = DeterministicDraftBackend()
-
-    draft = backend.generate(
-        scene="OpenAI 发布一项新的多模态助手更新，普通用户想知道到底值不值得试",
-        planner_prompt="# AI科技资讯 Planner\n目标：写一条适合小红书的 AI/科技资讯。",
-        skill_contents=[
-            "# AI Tech Style\n需要 3秒核心信息、普通人影响、收藏清单、非投资建议。",
-            "# AI Tech Hashtagging\n标签必须包含 `#AI资讯`。",
-        ],
-    )
-
-    assert "是什么" in draft["body"]
-    assert "为什么重要" in draft["body"]
-    assert "普通人" in draft["body"]
-    assert "收藏" in draft["body"]
-    assert "清单" in draft["body"]
-    assert "评论区" in draft["body"]
-    assert "非投资建议" in draft["body"]
-    assert "#AI资讯" in draft["hashtags"]
-    assert "发疯文学" not in draft["body"]
-
-
-def test_deterministic_backend_can_follow_ai_prompt_builder_context() -> None:
-    backend = DeterministicDraftBackend()
-
-    draft = backend.generate(
-        scene="想模拟一条教普通人写好 prompt 的小红书帖子，重点是让 AI 先问清楚再输出",
-        planner_prompt="# AI科技资讯 Planner\n目标：写一条适合小红书的 AI/科技资讯。",
-        skill_contents=[
-            "# AI Tech Style\n需要 3秒核心信息、普通人影响、收藏清单、非投资建议。",
-            "# AI Tech Hashtagging\n标签必须包含 `#AI资讯`。",
-        ],
-    )
-
-    body = draft["body"]
-    assert "是什么" in body
-    assert "为什么重要" in body
-    assert "普通人" in body
-    assert "任务" in body
-    assert "背景" in body
-    assert "输出格式" in body
-    assert "反例" in body or "失败样例" in body
-    assert "直接复制" in body
-    assert "你是一个" in body
-    assert "如果信息不够" in body
-    assert "请先问我" in body
-    assert "不要编造" in body
-    assert "评论区" in body
-    assert "好用" in body
-    assert "互相抄" in body
-    assert "帮你改" not in body
-    assert "我试着帮" not in body
-    assert "非投资建议" in body
-    assert "#AI资讯" in draft["hashtags"]
-    assert not any(
-        leaked in body
-        for leaked in ("save_tool", "comment_chain", "模板要求")
-    )
-
-
-def test_deterministic_ai_news_question_does_not_activate_runnable_prompt_exception() -> None:
-    draft = DeterministicDraftBackend().generate(
-        scene="OpenAI 新模型支持实时提问，普通人想知道能不能省事",
-        planner_prompt="# AI科技资讯 Planner\n目标：写一条适合小红书的 AI/科技资讯。",
-        skill_contents=["# AI Tech Style\n需要普通人影响和收藏清单。"],
-    )
-
-    assert 180 <= len(draft["body"]) <= 420
-    assert "任务：" not in draft["body"]
-    assert "输出格式：" not in draft["body"]
+@pytest.mark.parametrize(
+    "scene",
+    (
+        "OpenAI 发布一项新的多模态助手更新，普通用户想知道到底值不值得试",
+        "想模拟一条教普通人写好 prompt 的小红书帖子，重点是让 AI 先问清楚再输出",
+        "OpenAI 新模型支持实时提问，普通人想知道能不能省事",
+    ),
+)
+def test_deterministic_backend_rejects_ai_tech_context_without_evidence(scene: str) -> None:
+    with pytest.raises(ValueError, match="bound evidence contract"):
+        DeterministicDraftBackend().generate(
+            scene=scene,
+            planner_prompt="# AI科技资讯 Planner\n目标：写一条适合小红书的 AI/科技资讯。",
+            skill_contents=["# AI Tech Style\n证据模式优先。"],
+        )
 
 
 def test_deterministic_backend_can_follow_daily_english_context() -> None:
@@ -1578,3 +1525,200 @@ def test_parse_json_payload_normalizes_string_hashtags() -> None:
         "#精神内耗",
         "#社畜日常",
     ]
+
+
+def _ai_tech_runtime_context(evidence: dict[str, object]) -> str:
+    contract = parse_ai_tech_evidence_bundle(evidence).runtime_contract
+    return "# AI Tech Evidence Contract\n" + json.dumps(contract, ensure_ascii=False)
+
+
+def test_deterministic_backend_builds_short_evidence_backed_news_brief() -> None:
+    evidence = {
+        "mode": "news_brief",
+        "news_items": [
+            {
+                "label": "模型发布",
+                "event_fingerprint": "event-model-001",
+                "facts": ["产品新增了长文本处理能力。"],
+                "source_refs": ["official-001"],
+            },
+            {
+                "label": "开发工具",
+                "event_fingerprint": "event-tool-002",
+                "facts": ["开发者控制台加入批量任务入口。"],
+                "source_refs": ["official-002"],
+            },
+            {
+                "label": "团队功能",
+                "event_fingerprint": "event-team-003",
+                "facts": ["团队空间开放了共享项目设置。"],
+                "source_refs": ["official-003"],
+            },
+        ],
+    }
+
+    draft = DeterministicDraftBackend().generate(
+        scene="AI 科技资讯简报",
+        planner_prompt="# AI科技资讯 Planner",
+        skill_contents=["# AI Tech Style"],
+        runtime_skill_contents=[_ai_tech_runtime_context(evidence)],
+    )
+
+    assert len(draft["title"]) <= 22
+    assert draft["body"].count("\n") == 2
+    assert all(
+        marker in draft["body"]
+        for marker in (
+            "1. 模型发布｜产品新增了长文本处理能力。",
+            "2. 开发工具｜开发者控制台加入批量任务入口。",
+            "3. 团队功能｜团队空间开放了共享项目设置。",
+        )
+    )
+    assert "我" not in draft["body"]
+    assert validate_ai_tech_draft(evidence, draft) == []
+
+
+def test_deterministic_backend_builds_reproducible_hands_on_record() -> None:
+    evidence = {
+        "mode": "hands_on",
+        "topic": {"label": "提示词追问实测"},
+        "hands_on": {
+            "product": "示例助手",
+            "version": "2026.07",
+            "tested_at": "2026-07-22",
+            "task": "把三条会议记录整理成周报",
+            "input_summary": "三条含项目进度的匿名会议记录",
+            "observed_output": "先追问缺失负责人，再给出三段式周报。",
+            "limitation": "没有负责人信息时，输出仍需人工核对。",
+            "test_evidence_refs": ["test-run-001"],
+        },
+    }
+
+    draft = DeterministicDraftBackend().generate(
+        scene="AI 科技实测",
+        planner_prompt="# AI科技资讯 Planner",
+        skill_contents=["# AI Tech Style"],
+        runtime_skill_contents=[_ai_tech_runtime_context(evidence)],
+    )
+
+    for marker in (
+        "提示词追问实测",
+        "示例助手",
+        "2026.07",
+        "2026-07-22",
+        "把三条会议记录整理成周报",
+        "三条含项目进度的匿名会议记录",
+        "先追问缺失负责人，再给出三段式周报。",
+        "没有负责人信息时，输出仍需人工核对。",
+    ):
+        assert marker in draft["body"]
+    assert "#AI资讯" in draft["hashtags"]
+    assert validate_ai_tech_draft(evidence, draft) == []
+
+
+def test_deterministic_backend_builds_fact_translation_with_decision_boundary() -> None:
+    evidence = {
+        "mode": "fact_translation",
+        "topic": {"label": "团队版模型更新"},
+        "facts": [
+            {"statement": "团队版新增了权限分组设置。", "source_refs": ["official-001"]},
+            {"statement": "管理员可以关闭外部连接器。", "source_refs": ["official-002"]},
+        ],
+        "audience": {
+            "who_should_care": "正在给团队接入 AI 工具的管理员。",
+            "who_can_wait": "只在个人设备上试用基础功能的用户。",
+        },
+    }
+
+    draft = DeterministicDraftBackend().generate(
+        scene="AI 科技事实转译",
+        planner_prompt="# AI科技资讯 Planner",
+        skill_contents=["# AI Tech Style"],
+        runtime_skill_contents=[_ai_tech_runtime_context(evidence)],
+    )
+
+    for marker in (
+        "团队版模型更新",
+        "团队版新增了权限分组设置。",
+        "管理员可以关闭外部连接器。",
+        "正在给团队接入 AI 工具的管理员。",
+        "只在个人设备上试用基础功能的用户。",
+    ):
+        assert marker in draft["body"]
+    assert "我" not in draft["body"]
+    assert validate_ai_tech_draft(evidence, draft) == []
+
+
+@pytest.mark.parametrize(
+    ("mode", "expected_requirement"),
+    (
+        ("news_brief", "3-5 个编号条目"),
+        ("hands_on", "可复核实测记录"),
+        ("fact_translation", "谁该关注、谁可等待"),
+    ),
+)
+def test_deepseek_ai_evidence_modes_override_generic_human_voice_rules(
+    mode: str,
+    expected_requirement: str,
+) -> None:
+    evidence_by_mode: dict[str, dict[str, object]] = {
+        "news_brief": {
+            "mode": "news_brief",
+            "news_items": [
+                {
+                    "label": "模型发布",
+                    "event_fingerprint": "event-model-001",
+                    "facts": ["产品新增了长文本处理能力。"],
+                    "source_refs": ["official-001"],
+                },
+                {
+                    "label": "开发工具",
+                    "event_fingerprint": "event-tool-002",
+                    "facts": ["开发者控制台加入批量任务入口。"],
+                    "source_refs": ["official-002"],
+                },
+                {
+                    "label": "团队功能",
+                    "event_fingerprint": "event-team-003",
+                    "facts": ["团队空间开放了共享项目设置。"],
+                    "source_refs": ["official-003"],
+                },
+            ],
+        },
+        "hands_on": {
+            "mode": "hands_on",
+            "topic": {"label": "提示词追问实测"},
+            "hands_on": {
+                "product": "示例助手",
+                "version": "2026.07",
+                "tested_at": "2026-07-22",
+                "task": "把三条会议记录整理成周报",
+                "input_summary": "三条含项目进度的匿名会议记录",
+                "observed_output": "先追问缺失负责人，再给出三段式周报。",
+                "limitation": "没有负责人信息时，输出仍需人工核对。",
+                "test_evidence_refs": ["test-run-001"],
+            },
+        },
+        "fact_translation": {
+            "mode": "fact_translation",
+            "topic": {"label": "团队版模型更新"},
+            "facts": [
+                {"statement": "团队版新增了权限分组设置。", "source_refs": ["official-001"]},
+                {"statement": "管理员可以关闭外部连接器。", "source_refs": ["official-002"]},
+            ],
+            "audience": {
+                "who_should_care": "正在给团队接入 AI 工具的管理员。",
+                "who_can_wait": "只在个人设备上试用基础功能的用户。",
+            },
+        },
+    }
+
+    requirements = _build_deepseek_hard_requirements(
+        scene="AI 科技资讯",
+        extra_context="# AI Tech Style",
+        runtime_context=_ai_tech_runtime_context(evidence_by_mode[mode]),
+    )
+
+    assert expected_requirement in requirements
+    assert "真人视角" not in requirements
+    assert "任务：”“背景：”“输出格式：”“不要编造" not in requirements

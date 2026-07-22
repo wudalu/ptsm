@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any
+from typing import Any, Mapping
 
+from pydantic import ValidationError
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.prompt_values import StringPromptValue
 from langchain_core.prompts import PromptTemplate
@@ -12,6 +13,7 @@ from langchain_core.exceptions import OutputParserException
 from langchain_core.utils.json import parse_and_check_json_markdown, parse_json_markdown
 
 from ptsm.config.settings import Settings
+from ptsm.domain.ai_tech_content import parse_ai_tech_runtime_contract
 from ptsm.infrastructure.llm.contextual_drafts import build_contextual_deterministic_draft
 
 XHS_DRAFT_SYSTEM_PROMPT = (
@@ -587,6 +589,10 @@ def _build_deepseek_hard_requirements(
     runtime_context: str,
     scene: str = "",
 ) -> str:
+    ai_tech_contract = _extract_ai_tech_runtime_contract(runtime_context)
+    if ai_tech_contract is not None:
+        return _build_ai_tech_evidence_hard_requirements(ai_tech_contract)
+
     requirements = [
         "只输出 JSON 对象，不要 Markdown 代码块，不要额外解释。",
         "默认采用 xhs_compact_native_v1：标题最多 22 个字符，优先 12-18 字；用具体场景、物件、关系、一句原话或领域对象做入口，不得写成泛标题，不要只写“日常”“实录”“干货分享”“小红书爆款”。",
@@ -627,6 +633,50 @@ def _build_deepseek_hard_requirements(
     if _is_classic_poetry_context(scene="", extra_context=extra_context):
         requirements.append("正文必须围绕一句经典古诗词金句展开，并给出可保存的“这一句”读法；不要伪造作者、篇名或原句。")
     return " ".join(requirements)
+
+
+def _extract_ai_tech_runtime_contract(runtime_context: str) -> dict[str, Any] | None:
+    """Read the provenance-safe AI contract rendered by the planner, if any."""
+    marker = "# AI Tech Evidence Contract"
+    marker_index = runtime_context.find(marker)
+    if marker_index < 0:
+        return None
+    json_start = runtime_context.find("{", marker_index + len(marker))
+    if json_start < 0:
+        return None
+    try:
+        value, _ = json.JSONDecoder().raw_decode(runtime_context[json_start:])
+        return parse_ai_tech_runtime_contract(value)
+    except (TypeError, ValueError, ValidationError, json.JSONDecodeError):
+        return None
+
+
+def _build_ai_tech_evidence_hard_requirements(contract: Mapping[str, Any]) -> str:
+    """Return the mode-specific model instruction for evidence-gated AI posts."""
+    mode = str(contract.get("mode") or "")
+    shared = [
+        "只输出 JSON 对象，不要 Markdown 代码块，不要额外解释。",
+        "这是证据受限的 AI 科技帖子：只可使用 AI Tech Evidence Contract 里的字段，不能补充任何未记录的功能、表现、来源、作者、标题、feed 或 URL。",
+        "标题最多 22 个字符；正文用短行和清晰标签，像小红书信息卡，不写泛泛感受、营销口号、非投资建议、收藏/评论引导或通用 prompt 模板。",
+        "禁止输出原始链接、域名、第一人称未记录体验和无证据的性能结论。",
+    ]
+    if mode == "news_brief":
+        shared.append(
+            "news_brief：正文必须是 3-5 个编号条目，每条保留对应标签和所有已批准事实；不写我/实测/体验，也不把热点当作事实。"
+        )
+    elif mode == "hands_on":
+        shared.append(
+            "hands_on：正文只写一条可复核实测记录，必须完整包含主题、产品、版本、测试日期、任务、输入、观察结果和局限；只能陈述合同中已记录的测试。"
+        )
+    elif mode == "fact_translation":
+        shared.append(
+            "fact_translation：正文必须完整保留主题和所有已批准事实，并明确谁该关注、谁可等待；不写我/实测/体验。"
+        )
+    else:
+        # This function is only reached after strict domain parsing; retain a
+        # fail-closed instruction if a future caller changes that boundary.
+        shared.append("未知证据模式：不要生成正文。")
+    return " ".join(shared)
 
 
 def _infer_xhs_body_length_range(extra_context: str) -> str | None:
