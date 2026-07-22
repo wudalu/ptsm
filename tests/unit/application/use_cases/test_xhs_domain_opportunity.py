@@ -8,7 +8,6 @@ import pytest
 from topic_radar.platforms.xiaohongshu import FeedItem
 
 from ptsm.application.use_cases.xhs_domain_opportunity import (
-    DEFAULT_DOMAIN_OPPORTUNITY_KEYWORDS,
     _normalize_keywords,
     _strongest_title,
     run_xhs_domain_opportunity,
@@ -445,25 +444,23 @@ def test_xhs_domain_opportunity_keeps_idless_sample_after_known_identity_becomes
 
 
 @pytest.mark.parametrize("keywords", [",", "，", " , ， \n "])
-def test_xhs_domain_opportunity_uses_defaults_for_separator_only_keywords(
+def test_xhs_domain_opportunity_requires_explicit_keywords_for_separator_only_input(
     tmp_path: Path,
     keywords: str,
 ) -> None:
     platform = DefaultKeywordsOpportunityXhs()
 
-    result = run_xhs_domain_opportunity(
-        keywords=keywords,
-        sample_limit_per_keyword=5,
-        output_dir=tmp_path,
-        xhs_platform=platform,
-        delay_seconds=0,
-        collected_at="2026-06-01T00:00:05Z",
-    )
+    with pytest.raises(ValueError, match="at least one explicit keyword"):
+        run_xhs_domain_opportunity(
+            keywords=keywords,
+            sample_limit_per_keyword=5,
+            output_dir=tmp_path,
+            xhs_platform=platform,
+            delay_seconds=0,
+            collected_at="2026-06-01T00:00:05Z",
+        )
 
-    assert platform.calls == list(DEFAULT_DOMAIN_OPPORTUNITY_KEYWORDS)
-    assert {row["keyword"] for row in result["keywords"]} == set(
-        DEFAULT_DOMAIN_OPPORTUNITY_KEYWORDS
-    )
+    assert platform.calls == []
 
 
 def test_xhs_domain_opportunity_accepts_mixed_ascii_and_full_width_separators() -> None:

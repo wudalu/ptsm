@@ -79,7 +79,7 @@ topic-radar scan --platforms xiaohongshu
 ```
 
 这会：
-1. 用默认关键词（"打工人", "治愈"）调用 `search_feeds`
+1. 在未指定关键词时调用 `list_feeds`，收集 bounded 的 open feed listing sample；不会隐式搜索“打工人”或“治愈”
 2. 解析返回的 FeedItem 列表
 3. 聚类到候选垂类
 4. 输出 `outputs/artifacts/topic-scan-{date}.json` 和 Markdown 报告；没有有效 evidence 时仍会输出 diagnostic artifact，但不会调用 LLM 或给出推荐
@@ -109,7 +109,7 @@ CLI 可接受 `xhs`/`小红书`、`微博`、`抖音`、`知乎`、`B站`、`头
 topic-radar scan --platforms xiaohongshu --keywords "情绪疗愈,修复系手作,AI效率"
 ```
 
-用指定关键词替换默认关键词搜索，每个关键词都会搜索一次，结果合并。ASCII `,` 与中文 `，` 都可分隔关键词；只含分隔符/空白的 `--keywords` 会安全回退到默认关键词，不会令扫描崩溃。XHS 会优先按 `feed_id` 去重；完整标题+作者只桥接一条缺 ID 观察到其首个真实 ID，之后同标题/作者的不同真实 ID 仍会保留；若已经有多个真实 ID，后续缺 ID 观察保持 unresolved。相同来源的 `matched_queries` 和 `source_observation_count` 会合并。`raw_trending` 仍会保留 `feed_id`、`xsec_token`、作者和互动数，后续可以直接拿来跑 `topic-radar teardown`，但 PTSM drafting context 不会接收这些原始字段。
+用指定关键词执行 query-scoped `search_feeds`，每个关键词都会搜索一次，结果合并。ASCII `,` 与中文 `，` 都可分隔关键词；只含分隔符/空白的 `--keywords` 等同于无关键词，改用 open feed listing，不会隐式回退到固定领域词。XHS 会优先按 `feed_id` 去重；完整标题+作者只桥接一条缺 ID 观察到其首个真实 ID，之后同标题/作者的不同真实 ID 仍会保留；若已经有多个真实 ID，后续缺 ID 观察保持 unresolved。相同来源的 `matched_queries` 和 `source_observation_count` 会合并。`raw_trending` 仍会保留 `feed_id`、`xsec_token`、作者和互动数，后续可以直接拿来跑 `topic-radar teardown`，但 PTSM drafting context 不会接收这些原始字段。
 
 ### Step 5 — Domain Opportunity Scan
 
@@ -144,7 +144,7 @@ uv run python -m ptsm.bootstrap xhs-domain-opportunity \
 - 这是搜索级证据，不是全站热榜，也不是详情/评论拆解。
 - 分数使用 `likes + comments * 4 + collects * 2 + shares * 6`，用于同批关键词之间的方向性比较。
 - 默认登录预检若返回 `login_required`，说明还未启动关键词搜索；读取 `_login` diagnostic，执行 `ptsm xhs-login-qrcode` 恢复会话后重跑。它没有 fit、排序推荐或 `new_domain_candidate`；`--skip-login-check` 只跳过预检，不会绕过实际搜索的登录要求。
-- 跨关键词会优先按同一 XHS `feed_id` 去重；完整标题+作者只用于桥接缺 ID 的同一观察，首个真实 ID 会消费这条 bridge，后续不同真实 ID 不折叠；已有多个真实 ID 后的缺 ID 样本保持 unresolved。标题单独不折叠不同笔记。ASCII `,` 与中文 `，` 都可分隔关键词；只含分隔符/空白时使用 bounded 默认基线。若没有 successful unique samples，结果为 `insufficient_evidence`，不会输出 fit、排序推荐或 `new_domain_candidate`；不要把静态 keyword mapping 当作 live 发现。
+- 跨关键词会优先按同一 XHS `feed_id` 去重；完整标题+作者只用于桥接缺 ID 的同一观察，首个真实 ID 会消费这条 bridge，后续不同真实 ID 不折叠；已有多个真实 ID 后的缺 ID 样本保持 unresolved。标题单独不折叠不同笔记。ASCII `,` 与中文 `，` 都可分隔关键词；只含分隔符/空白会被拒绝，必须显式给出候选。若没有 successful unique samples，结果为 `insufficient_evidence`，不会输出 fit、排序推荐或 `new_domain_candidate`；不要把静态 keyword mapping 当作 live 发现。
 - `new_domain_candidate` 表示有真实搜索样本、值得进入新领域计划，不表示可以跳过完整 playbook/skill/harness 文档面。
 - 普通 `guide-post` 和 `run-playbook` 不会因为这个命令存在而默认 live-scan；发帖仍优先读取本地 topic pack 和 pattern snapshot。
 
@@ -303,6 +303,22 @@ topic-radar scan --mcp-check              # 仅检查 MCP 健康
 topic-radar scan --output-dir /tmp/test   # 指定输出目录
 topic-radar teardown <feed_id>            # 单帖拆解
 topic-radar teardown <feed_id> --xsec-token <token>
+uv run python -m ptsm.bootstrap hotspot-discovery --max-hotspots 12  # 先开放发现、后路由
 ```
 
 同一输出目录中重跑同一天的 scan 时，JSON 和 Markdown 会使用相同 suffix 配对（如 `topic-scan-2026-07-22-2.json` 与 `topic-brief-2026-07-22-2.md`），不会覆盖上一份。`topic-radar-history.jsonl` 是 append-only 的 14 天 event+angle cooldown 索引；若需要重新测试同一角度，请换输出目录，而不是手改历史行。
+
+## Open Discovery Versus Targeted Search
+
+不传 `--keywords` 的默认 scan 会让 XHS 走 open feed listing 样本（`collection_mode=open_feed_listing`），
+不再注入固定领域搜索词；它是 open feed listing，不是官方或 exhaustive whole-site ranking。传入
+`--keywords` 才是 query-scoped `search_feeds`。XHS 登录/MCP 不可用时要查看 `partial` 和
+platform diagnostics，不能用其他平台结果声称完整全平台覆盖。
+
+如果操作目标是“先看看热点再决定赛道”，运行 `hotspot-discovery`，默认读取按 score 排序的前 12 个；
+`--max-hotspots` 只影响可读列表长度，artifact 的 `eligible_hotspot_count` / `returned_hotspot_count`
+会说明是否截断；若主列表外有可用既有领域候选，再读不重复的 `routed_hotspots` 补充视图（每行至少
+引入一个未展示 playbook；`ambiguous` 保留完整候选），它不改变全平台排名。再读取其独立 artifact 中的
+`existing_playbook_fit`、`ambiguous`、`unmapped` 和可能的 `new_domain_candidate`；不要先调用
+`run-playbook --fresh-topic-research`，后者仍是已选 playbook 内的 fresh research。必须让
+operator 选择 route 后才进入 `guide-post` 或 drafting；`insufficient_evidence` 时不提供静态热点。

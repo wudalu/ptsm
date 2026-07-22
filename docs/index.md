@@ -2,7 +2,7 @@
 title: PTSM Docs Index
 status: active
 owner: ptsm
-last_verified: 2026-05-03
+last_verified: 2026-07-22
 source_of_truth: true
 related_paths:
   - README.md
@@ -46,9 +46,10 @@ related_paths:
 1. 先看 [`architecture.md`](architecture.md) 了解仓库分层和目录职责。
 2. 再看 [`runtime.md`](runtime.md) 理解 `plan -> execute -> reflect` 运行时。
 3. 做内容与策略改动时，先看 [`playbooks.md`](playbooks.md) 和 [`skills.md`](skills.md)，再按需进入 [`xhs-topics/index.md`](xhs-topics/index.md)。
-4. 排查运行结果时，转到 [`observability.md`](observability.md) 和 [`operations.md`](operations.md)。
-5. 设计未来扩展合同时，转到 [`shared-contracts.md`](shared-contracts.md)。
-6. 做新增功能、新增领域或新增发布链路这类大型开发时，按 [`development-workflow.md`](development-workflow.md) 收敛需求、计划和验证。
+4. 用户要先找泛热点时，先看 [`topic-radar.md`](topic-radar.md) 的 discovery-first 路径，再由 [`playbooks.md`](playbooks.md) 选择已有路线或处理未映射结果；不要把候选赛道比较当作开放发现。
+5. 排查运行结果时，转到 [`observability.md`](observability.md) 和 [`operations.md`](operations.md)。
+6. 设计未来扩展合同时，转到 [`shared-contracts.md`](shared-contracts.md)。
+7. 做新增功能、新增领域或新增发布链路这类大型开发时，按 [`development-workflow.md`](development-workflow.md) 收敛需求、计划和验证。
 
 ## Historical Context
 

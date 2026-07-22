@@ -4,6 +4,7 @@ import argparse
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+import re
 import sys
 from typing import Sequence
 import uuid
@@ -28,6 +29,7 @@ from ptsm.application.use_cases.harness_check import run_harness_check
 from ptsm.application.use_cases.harness_evals import run_harness_evals
 from ptsm.application.use_cases.harness_gc import run_harness_gc
 from ptsm.application.use_cases.harness_report import run_harness_report
+from ptsm.application.use_cases.hotspot_discovery import run_hotspot_discovery
 from ptsm.application.use_cases.install_git_hooks import install_git_hooks
 from ptsm.application.use_cases.logs import run_logs
 from ptsm.application.use_cases.plan_runs import run_plan_runs
@@ -63,6 +65,22 @@ from ptsm.plan_runner.runner import (
 )
 
 LOCAL_IMAGE_STYLE_CHOICES = ("note_card", "iphone_notes", "wechat_chat")
+
+
+def _positive_int(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be an integer") from exc
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("must be at least 1")
+    return parsed
+
+
+def _explicit_keywords(value: str) -> str:
+    if not any(part.strip() for part in re.split(r"[,，]", value)):
+        raise argparse.ArgumentTypeError("requires at least one explicit keyword")
+    return value
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -317,7 +335,11 @@ def build_parser() -> argparse.ArgumentParser:
     collect_xhs_patterns.add_argument("--tool-timeout-seconds", type=float)
 
     xhs_domain_opportunity = subparsers.add_parser("xhs-domain-opportunity")
-    xhs_domain_opportunity.add_argument("--keywords", required=True)
+    xhs_domain_opportunity.add_argument(
+        "--keywords",
+        required=True,
+        type=_explicit_keywords,
+    )
     xhs_domain_opportunity.add_argument("--lane", default="xhs_domain_opportunity")
     xhs_domain_opportunity.add_argument("--sample-limit-per-keyword", type=int, default=5)
     xhs_domain_opportunity.add_argument(
@@ -328,6 +350,14 @@ def build_parser() -> argparse.ArgumentParser:
     xhs_domain_opportunity.add_argument("--delay-seconds", type=float, default=0.8)
     xhs_domain_opportunity.add_argument("--skip-login-check", action="store_true")
     xhs_domain_opportunity.add_argument("--tool-timeout-seconds", type=float)
+
+    hotspot_discovery = subparsers.add_parser("hotspot-discovery")
+    hotspot_discovery.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path("outputs/artifacts/hotspot-discovery"),
+    )
+    hotspot_discovery.add_argument("--max-hotspots", type=_positive_int, default=12)
 
     analyze_xhs_patterns = subparsers.add_parser("analyze-xhs-patterns")
     analyze_xhs_patterns.add_argument("--sample-path", type=Path, required=True)
@@ -659,6 +689,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             delay_seconds=args.delay_seconds,
             skip_login_check=args.skip_login_check,
             tool_timeout_seconds=args.tool_timeout_seconds,
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "hotspot-discovery":
+        result = run_hotspot_discovery(
+            output_dir=args.output_dir,
+            max_hotspots=args.max_hotspots,
         )
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0

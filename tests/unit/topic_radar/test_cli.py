@@ -411,12 +411,12 @@ def test_scan_xiaohongshu_reports_meaningful_error_when_every_keyword_fails(monk
     )
 
 
-@pytest.mark.parametrize("keywords", [" , , ", "，", " , ， \n "])
-def test_scan_xiaohongshu_uses_default_keywords_when_input_has_only_separators(
+@pytest.mark.parametrize("keywords", [None, " , , ", "，", " , ， \n "])
+def test_scan_xiaohongshu_uses_open_feed_listing_without_keywords(
     monkeypatch,
-    keywords: str,
+    keywords: str | None,
 ):
-    calls: list[str] = []
+    listing_calls: list[int] = []
 
     class LoggedInXiaohongshu:
         def __init__(self, client):
@@ -426,7 +426,10 @@ def test_scan_xiaohongshu_uses_default_keywords_when_input_has_only_separators(
             return True, None
 
         async def search_feeds(self, keyword: str, limit: int = 20):
-            calls.append(keyword)
+            raise AssertionError("open discovery must not issue a keyword search")
+
+        async def list_feeds(self, limit: int = 20):
+            listing_calls.append(limit)
             return []
 
     monkeypatch.setattr("topic_radar.cli.XiaohongshuPlatform", LoggedInXiaohongshu)
@@ -443,8 +446,51 @@ def test_scan_xiaohongshu_uses_default_keywords_when_input_has_only_separators(
         )
     )
 
-    assert calls == ["打工人", "治愈"]
-    assert errors["xiaohongshu"] == "no search results returned for requested keywords"
+    assert listing_calls == [8]
+    assert errors["xiaohongshu"] == "no open feed listing results returned"
+
+
+def test_scan_xiaohongshu_marks_open_listing_samples_without_a_keyword(
+    monkeypatch,
+):
+    class LoggedInXiaohongshu:
+        def __init__(self, client):
+            pass
+
+        async def check_login(self):
+            return True, None
+
+        async def search_feeds(self, keyword: str, limit: int = 20):
+            raise AssertionError("open discovery must not issue a keyword search")
+
+        async def list_feeds(self, limit: int = 20):
+            return [
+                FeedItem(
+                    feed_id="open-note",
+                    title="开放样本",
+                    author="作者A",
+                    likes=12,
+                )
+            ]
+
+    monkeypatch.setattr("topic_radar.cli.XiaohongshuPlatform", LoggedInXiaohongshu)
+    all_trending = {}
+    errors = {}
+
+    asyncio.run(
+        _scan_xiaohongshu(
+            client=object(),
+            config=SimpleNamespace(scan_sample_limit=8),
+            keywords=None,
+            all_trending=all_trending,
+            errors=errors,
+        )
+    )
+
+    item = all_trending["xiaohongshu"][0]
+    assert errors == {}
+    assert item.metadata["collection_mode"] == "open_feed_listing"
+    assert "keyword" not in item.metadata
 
 
 def test_empty_collector_results_become_platform_errors(monkeypatch):

@@ -1,16 +1,16 @@
 ---
 name: ptsm-xhs-domain-opportunity
-description: 当用户想分析小红书哪些领域更容易爆、比较内容赛道、寻找新增 PTSM 领域、评估现有 playbook 覆盖缺口，或要求运行 XHS domain opportunity scan 时，先调用 PTSM 的领域机会扫描，再给出下一步建议。
+description: 当用户给出明确候选领域或关键词，想比较它们在小红书的搜索证据、评估现有 playbook 覆盖缺口，或要求运行 XHS domain opportunity scan 时，先调用 PTSM 的领域机会扫描，再给出下一步建议。
 metadata: {"openclaw": {"requires": {"bins": ["uv"]}}}
 ---
 
 # PTSM XHS Domain Opportunity
 
-Use this skill when the user asks OpenClaw or Codex to compare Xiaohongshu domains, find likely breakout niches, or decide whether PTSM should add a new domain/playbook.
+Use this skill when the user asks OpenClaw or Codex to compare named Xiaohongshu domains/keywords or evaluate a concrete possible coverage gap. It is a bounded candidate comparison, not generic hotspot discovery.
 
 ## Required Flow
 
-1. Resolve a keyword list from the user's request. If the request is broad, include current PTSM domains plus likely new candidates such as sleep recovery, light wellness, human enrichment, repair handcraft, Su Shi, World Cup, daily English, AI tools, pet life, and wuxia.
+1. Require explicit candidate domains or keywords from the operator. The operator must supply at least one explicit keyword. If the request is broad (“找热点”“现在有什么值得写”), switch to `ptsm-topic-radar-discovery` and its `hotspot-discovery` command; do not invent a keyword list from current playbooks.
 
 2. Run the PTSM scan. PTSM owns the scan, scoring, mapping, and artifact format.
 

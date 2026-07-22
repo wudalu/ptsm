@@ -15,18 +15,22 @@ related_paths:
   - src/ptsm/application/use_cases/collect_xhs_patterns.py
   - src/ptsm/application/use_cases/analyze_xhs_patterns.py
   - src/ptsm/application/use_cases/xhs_domain_opportunity.py
+  - src/ptsm/application/use_cases/hotspot_discovery.py
   - src/ptsm/application/use_cases/run_playbook.py
   - src/ptsm/skills/runtime_context.py
   - src/ptsm/agent_runtime
   - src/ptsm/agent_runtime/state.py
   - src/ptsm/domain
   - src/ptsm/domain/topic_guidance.py
+  - src/ptsm/domain/hotspot_routing.py
+  - src/ptsm/playbooks/registry.py
   - src/ptsm/evaluations
   - src/ptsm/infrastructure
   - src/ptsm/infrastructure/evaluations
   - src/ptsm/infrastructure/reddit
   - src/ptsm/infrastructure/xhs_patterns
   - src/topic_radar/cli.py
+  - src/topic_radar/platforms/xiaohongshu.py
   - src/topic_radar/analysis/evidence.py
   - src/ptsm/interfaces
 ---
@@ -129,3 +133,29 @@ helper 中增加 prompt 构建方向。
 - Playbook 结构见 [`playbooks.md`](playbooks.md)
 - Skill 结构见 [`skills.md`](skills.md)
 - 观测与回放见 [`observability.md`](observability.md)
+
+## Discovery-First Hotspot Routing
+
+`ptsm hotspot-discovery` 是发帖前的只读 application use case：它先调用 public
+`topic_radar.cli.run_scan()`，且不传 account、playbook、domain、platform 或 keywords；
+只有 scan 完成后才消费校验通过的 `topic_clusters`。PTSM 不使用 Topic Radar 规则回退的
+vertical labels 作为路由事实。
+
+后置路由在 `ptsm.domain.hotspot_routing` 中是纯函数。每个现有 playbook 的
+`hotspot_routing` YAML metadata 与 `trend_keywords` 分离：前者只描述发现后的保守覆盖，
+后者仍只可为已经选择的 playbook 提供 fresh research hints。结果必须是
+`existing_playbook_fit`、`ambiguous` 或 `unmapped`；跨平台、证据充分的未映射事件才标记
+`new_domain_candidate` 进入人工新领域复盘，绝不自动创建 playbook/account。
+
+进入路由前，cluster 的每个 evidence id、fingerprint、platform 和 `representative_title` 都必须一致：
+代表标题必须来自本 cluster 的 canonical evidence。非有限 score 归零，未知 scan quality fail closed 为
+`insufficient_evidence`，避免损坏 scan 被误写成 completed 或误路由到既有 playbook。
+
+artifact 保留一个按 score 的全平台 Top-N 主列表，并可从同一批已验证 cluster 提供不重复的
+`routed_hotspots` 补充视图。每条补充行必须引入至少一个未展示的 playbook；`ambiguous` 行保留
+完整候选集。后者只帮助运营者发现主列表外的已有 playbook 候选，不改变发现
+或全平台排序，也不回写任何 scan 输入。
+
+该用例写独立 routing artifact；`operator_headline` 仅供操作者理解热点。任何原始标题、
+作者、URL、feed id、token 和 headline 都不进入 drafting handoff，后续仍需用户选择已有
+playbook/account 后才能进入 `guide-post` / `run-playbook`。Topic Radar 仍不 import PTSM。

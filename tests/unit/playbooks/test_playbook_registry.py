@@ -174,6 +174,51 @@ def test_registry_loads_ai_tech_playbook_with_image_strategy() -> None:
     assert "ai_tech_style" in playbook.required_skills
     assert "ai_tech_hashtagging" in playbook.required_skills
     assert "xhs_image_strategy" in playbook.required_skills
+    assert playbook.hotspot_routing == {
+        "include_any": ["OpenAI", "ChatGPT", "Claude", "大模型", "AI Agent", "提示词"]
+    }
+    assert playbook.trend_keywords == []
+
+
+def test_hotspot_routing_metadata_is_opt_in_and_separate_from_trend_keywords() -> None:
+    registry = PlaybookRegistry(
+        playbook_root=Path("src/ptsm/playbooks/definitions"),
+    )
+
+    assert registry.get("ai_tech_daily_post").hotspot_routing == {
+        "include_any": ["OpenAI", "ChatGPT", "Claude", "大模型", "AI Agent", "提示词"]
+    }
+    assert registry.get("classic_poetry_quote_post").hotspot_routing == {
+        "include_any": ["古诗词", "诗词金句", "苏轼", "东坡", "李白", "杜甫"]
+    }
+    assert registry.get("daily_english_post").hotspot_routing == {
+        "include_any": ["每日英语", "英语", "English", "单词", "短语", "例句"]
+    }
+    assert registry.get("fengkuang_daily_post").hotspot_routing == {
+        "include_any": ["发疯文学", "丝瓜汤"]
+    }
+    assert registry.get("human_enrichment_daily_post").hotspot_routing == {
+        "include_any": ["人类丰容", "Colorwalk", "适我主义"],
+        "require_all": [["手作", "钩织"], ["手作", "拼豆"]],
+    }
+    assert registry.get("modern_psychology_post").hotspot_routing == {
+        "include_any": ["情绪内耗", "关系边界", "孤独感", "短视频焦虑"]
+    }
+    assert registry.get("world_cup_daily_post").hotspot_routing == {
+        "include_any": ["世界杯", "美加墨", "FIFA World Cup"]
+    }
+    assert registry.get("wuxia_character_post").hotspot_routing == {
+        "include_any": ["武侠", "金庸", "古龙", "令狐冲", "射雕"]
+    }
+    assert registry.get("reddit_curation_daily_post").hotspot_routing == {}
+    assert registry.get("modern_psychology_post").trend_keywords == [
+        "职场焦虑",
+        "情绪内耗",
+        "关系边界",
+        "孤独感",
+        "短视频焦虑",
+        "睡眠恢复",
+    ]
 
 
 def test_registry_loads_daily_english_playbook() -> None:

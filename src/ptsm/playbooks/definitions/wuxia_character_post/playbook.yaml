@@ -10,6 +10,13 @@ required_skills:
   - wuxia_commentary_style
   - xhs_wuxia_hashtagging
 optional_skills: []
+hotspot_routing:
+  include_any:
+    - 武侠
+    - 金庸
+    - 古龙
+    - 令狐冲
+    - 射雕
 reflection:
   must_include_phrase: ""
   required_hashtag: "#金庸"

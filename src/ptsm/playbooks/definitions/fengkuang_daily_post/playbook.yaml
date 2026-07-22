@@ -12,6 +12,10 @@ required_skills:
   - positive_reframe
   - xhs_hashtagging
 optional_skills: []
+hotspot_routing:
+  include_any:
+    - 发疯文学
+    - 丝瓜汤
 reflection:
   required_hashtag: "#发疯文学"
   title_must_not_equal_any:

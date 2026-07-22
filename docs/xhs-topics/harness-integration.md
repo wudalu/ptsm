@@ -17,6 +17,8 @@ related_paths:
   - src/ptsm/agent_runtime/runtime.py
   - src/ptsm/infrastructure/artifacts/file_store.py
   - src/ptsm/infrastructure/publishers/xiaohongshu_mcp_publisher.py
+  - src/ptsm/application/use_cases/hotspot_discovery.py
+  - src/ptsm/domain/hotspot_routing.py
 ---
 
 # XHS Topic Harness Integration
@@ -77,7 +79,7 @@ PTSM 已经有：
 
 `xhs_trend_scan` 仍作为现有 XiaoHongShu playbook 的 `required_skills`，但它的职责已经收窄为把本地 XHS pattern library snapshot（或静态 guidance）写进独立的 `runtime_skill_contents`。普通 drafting 不从该 skill 调用 `xiaohongshu-mcp`，也不会因缺少 snapshot 而启动实时搜索。
 
-显式 `--fresh-topic-research` 则由 `run_playbook` 调用 public Topic Radar API：默认八个平台只扫描一次，产物保留证据、质量状态和候选事件簇；进入 drafting 的只有本次 receipt 已选方向/角度等安全元数据，不包含原始标题、作者、URL、feed ID 或 token。普通/local-only runtime 不会回读旧 Topic Radar artifact。`partial` 会保留诊断，`insufficient_evidence` 在启动 workflow 前停止。
+泛热点先由 `hotspot-discovery` 调用 public Topic Radar API，再让 operator 选择 post-scan route；显式 `--fresh-topic-research` 则仍由已选 playbook 的 `run_playbook` 调用同一 API。默认八个平台只扫描一次，产物保留证据、质量状态和候选事件簇；进入 drafting 的只有本次 receipt 已选方向/角度等安全元数据，不包含原始标题、作者、URL、feed ID 或 token。普通/local-only runtime 不会回读旧 Topic Radar artifact。`partial` 会保留诊断，`insufficient_evidence` 在启动 workflow 前停止。
 
 若运营问题只需要小红书领域机会，使用 `xhs-domain-opportunity`：它是 bounded `search_feeds` 证据报告，不是全站或跨平台热榜；没有成功的唯一样本时只返回 `insufficient_evidence` 与恢复建议，不产出排名、匹配或新领域候选。
 
@@ -110,11 +112,22 @@ PTSM 已经有：
 当前已经落地的是分层 research 边界：
 
 1. 普通小红书生成只消费本地 pattern snapshot 或静态 skill guidance。
-2. 需要最新跨平台选题时，显式运行一次 public Topic Radar fresh scan，并从其 artifact/诊断复盘。
+2. 需要最新且不限定方向的跨平台热点时，先运行 `hotspot-discovery`；只有已选 playbook 的发帖前 research 才显式运行一次 public Topic Radar fresh scan，并从其 artifact/诊断复盘。
 3. 需要小红书领域比较时，运行 bounded `xhs-domain-opportunity`，只把成功的唯一样本作为证据。
 4. `get_feed_detail` / 评论信号等更重的单帖拆解仍应作为未来独立 research artifact，而不是塞回普通 drafting prompt。
 
 这样保持普通生成可预测，也让实时研究的来源、失败和新颖度都能被独立追溯。
+
+## Current Discovery-First Route Receipt
+
+当前泛热点流程不再把垂类作为 scan 输入：`hotspot-discovery` 先请求 Topic Radar 默认集合，验证
+cluster/evidence 关系，再写独立 receipt。receipt 可展示 `operator_headline`、cluster/evidence
+traceability、平台范围和 `existing_playbook_fit` / `ambiguous` / `unmapped`；它不保存原始 URL、
+author、feed id 或 token 到下游 drafting handoff。跨平台充分证据的未映射 cluster 可标为
+`new_domain_candidate` 进入人工复盘，不能自动接入 playbook。
+
+默认 Top-N 是全平台 score 排名；若其中没有适合现有领域的候选，receipt 可额外给出不重复的
+`routed_hotspots`，但该补充不会改变 scan、排名或自动进入 drafting。
 
 ## Mapping To Current Playbooks
 

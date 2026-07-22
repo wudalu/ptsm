@@ -11,6 +11,14 @@ required_skills:
   - classic_poetry_style
   - xhs_classic_poetry_hashtagging
 optional_skills: []
+hotspot_routing:
+  include_any:
+    - 古诗词
+    - 诗词金句
+    - 苏轼
+    - 东坡
+    - 李白
+    - 杜甫
 reflection:
   must_include_phrase: 这一句
   required_hashtag: "#古诗词"

@@ -12,6 +12,14 @@ required_skills:
   - xhs_enrichment_visuals
   - xhs_enrichment_hashtagging
 optional_skills: []
+hotspot_routing:
+  include_any:
+    - 人类丰容
+    - Colorwalk
+    - 适我主义
+  require_all:
+    - [手作, 钩织]
+    - [手作, 拼豆]
 reflection:
   required_hashtag: "#人类丰容计划"
   body_must_include_any:

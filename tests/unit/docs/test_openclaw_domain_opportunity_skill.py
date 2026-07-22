@@ -27,6 +27,7 @@ def test_openclaw_domain_opportunity_skill_wraps_ptsm_cli() -> None:
     assert "--tool-timeout-seconds" in text
     assert "domain-opportunity-<date>.md" in text
     assert "domain-opportunity-<date>.json" in text
+    assert "at least one explicit keyword" in text
 
 
 def test_openclaw_domain_opportunity_skill_documents_thin_wrapper_boundaries() -> None:
@@ -61,3 +62,12 @@ def test_openclaw_domain_opportunity_skill_routes_next_actions() -> None:
 
     assert "ptsm-xhs-topic-guide" in text
     assert "ptsm-xhs-psychology" in text
+
+
+def test_openclaw_domain_opportunity_skill_does_not_turn_generic_hotspot_requests_into_keywords() -> None:
+    text = SKILL_PATH.read_text(encoding="utf-8")
+
+    assert "If the request is broad, include current PTSM domains" not in text
+    assert "ptsm-topic-radar-discovery" in text
+    assert "hotspot-discovery" in text
+    assert "explicit candidate domains or keywords" in text

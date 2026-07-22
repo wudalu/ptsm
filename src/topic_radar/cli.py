@@ -467,7 +467,50 @@ async def _scan_xiaohongshu(
         return
 
     keywords_list = re.split(r"[,，]", keywords or "") if keywords else []
-    kws = [kw.strip() for kw in keywords_list if kw.strip()] or ["打工人", "治愈"]
+    kws = [kw.strip() for kw in keywords_list if kw.strip()]
+    if not kws:
+        try:
+            feeds = await xhs.list_feeds(limit=config.scan_sample_limit)
+        except Exception as exc:
+            errors["xiaohongshu"] = _collection_error(exc)
+            return
+
+        xhs_items = [
+            TrendingItem(
+                rank=index,
+                title=feed.title,
+                hot_score=feed.engagement_score,
+                url=(
+                    f"https://www.xiaohongshu.com/explore/{feed.feed_id}"
+                    if feed.feed_id
+                    else ""
+                ),
+                platform="xiaohongshu",
+                metadata={
+                    "feed_id": feed.feed_id,
+                    "xsec_token": feed.xsec_token,
+                    "author": feed.author,
+                    "likes": feed.likes,
+                    "comments": feed.comments,
+                    "collects": feed.collects,
+                    "shares": feed.shares,
+                    "collection_mode": "open_feed_listing",
+                    "cover_width": feed.cover_width,
+                    "cover_height": feed.cover_height,
+                    "has_cover_url": feed.has_cover_url,
+                },
+            )
+            for index, feed in enumerate(feeds, start=1)
+        ]
+        _store_collected_items(
+            "xiaohongshu",
+            xhs_items,
+            all_trending,
+            errors,
+            empty_error="no open feed listing results returned",
+        )
+        return
+
     xhs_items: list[TrendingItem] = []
     keyword_failures: list[str] = []
     successful_searches = 0

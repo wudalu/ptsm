@@ -8,9 +8,12 @@ related_paths:
   - src/topic_radar
   - src/topic_radar/analysis/evidence.py
   - src/topic_radar/cli.py
+  - src/topic_radar/platforms/xiaohongshu.py
   - src/ptsm/application/use_cases/collect_xhs_patterns.py
   - src/ptsm/application/use_cases/analyze_xhs_patterns.py
   - src/ptsm/application/use_cases/xhs_domain_opportunity.py
+  - src/ptsm/application/use_cases/hotspot_discovery.py
+  - src/ptsm/domain/hotspot_routing.py
   - src/ptsm/application/use_cases/run_playbook.py
   - src/ptsm/skills/runtime_context.py
   - src/ptsm/domain/xhs_patterns.py
@@ -43,6 +46,9 @@ uv run python -m ptsm.bootstrap xhs-domain-opportunity \
   --keywords "睡眠恢复,轻养生,人类丰容,苏轼,世界杯" \
   --sample-limit-per-keyword 5 \
   --output-dir outputs/artifacts/xhs-domain-opportunity
+
+# PTSM 泛热点：不预设赛道，先发现后路由（默认展示前 12 个）
+uv run python -m ptsm.bootstrap hotspot-discovery --max-hotspots 12
 ```
 
 ## 架构
@@ -53,7 +59,7 @@ src/topic_radar/
 ├── config.py              # pydantic-settings 配置
 ├── mcp_client.py          # MCP client (HTTP + stdio)
 ├── platforms/
-│   ├── xiaohongshu.py     # search_feeds, get_feed_detail
+│   ├── xiaohongshu.py     # list_feeds, search_feeds, get_feed_detail
 │   └── weibo.py           # Weibo/Douyin via mcp-trends-hub
 ├── analysis/
 │   ├── evidence.py        # canonical evidence、质量状态、事件簇、历史去重
@@ -72,7 +78,7 @@ src/topic_radar/
 
 **默认路径：canonical evidence → 保守事件聚类 → LLM 或 rules → 多样性/新颖度筛选**
 
-1. 八个平台的 collector 先产生原始观察；小红书 HTTP MCP 与 trends-hub stdio MCP 分 server 加载和缓存，工具发现也有 bounded timeout。任一服务不可用或卡住只记录它覆盖的平台诊断，不能阻断另一服务的健康采集。空结果、未登录、不可用平台和不支持的平台都记为显式诊断，绝不把空列表当作成功采样。
+1. 八个平台的 collector 先产生原始观察；小红书 HTTP MCP 与 trends-hub stdio MCP 分 server 加载和缓存，工具发现也有 bounded timeout。未传关键词时小红书使用 `list_feeds` 的 `open_feed_listing`，明确关键词才使用 `search_feeds`；任一服务不可用或卡住只记录它覆盖的平台诊断，不能阻断另一服务的健康采集。空结果、未登录、不可用平台和不支持的平台都记为显式诊断，绝不把空列表当作成功采样。
 2. canonical evidence 在分析前去重。小红书优先按 `feed_id`；完整标题+作者只可桥接一条缺 ID 观察到其第一个真实 ID，随后同标题/作者的不同真实 ID 仍是独立来源。若同一可见身份已有多个真实 ID，后来的缺 ID 观察保持 unresolved，不会任意并到其中一篇。URL 或保守 fallback 只在 ID 不可用时参与识别；多关键词命中会合并 `matched_queries` 并累计 `source_observation_count`。热度只在各自平台内归一化，不把不同平台的绝对热度直接相加比较。
 3. 相近标题以保守 complete-link 规则聚成 event cluster；天气现象、AI 内容形态等互斥核心词不能被模糊匹配合并。AI 视觉同义词（如绘图、绘画、作图、图像、图片）属于同一槽位，和写作、编程等不同槽位仍互斥。只有一个簇确实有至少两个实际平台的 evidence 时，才会生成跨平台扩散信号；单次快照只说明共现，不会声称 `accelerating` 等时序速度。
 4. LLM 只能引用 prompt 中给出的 `evidence_id` / `cluster_id`，输出会在落盘前验证；八平台 prompt 有明确上限（每平台 12 条热搜、48 条 evidence、24 个事件簇），并以 round-robin 保留各平台可见证据。事件簇只可引用本次 prompt 内可见的 evidence，避免 raw rows/evidence/clusters 三重展开失控。任何与 canonical source title 等价的 `vertical`、`angle` 或 `why` 都会被拒绝，较具体 title 的内嵌复写也会被拒绝。像 `AI` 这样的短泛词可以作为新角度里的普通语言；raw author/URL/feed/token 仍无论长短一律阻断，不能作为 drafting-facing 二次创作角度。未展开的 `{placeholder}` 会在 LLM 结果验证阶段拒绝，因此不会把 rules fallback 错误地压成空结果；rules 产出的角度同样必须绑定真实 event evidence，且不得包含未展开的 `{placeholder}`。
@@ -106,8 +112,9 @@ JSON schema 已升级为 `schema_version: 2`。除兼容保留的 `raw_trending`
 `xiaohongshu,weibo,douyin,zhihu,bilibili,toutiao,douban,sspai`。CLI 同时接受
 `xhs`、`小红书`、`微博`、`抖音`、`知乎`、`B站`、`头条`、`豆瓣`、`少数派`等常用别名；未知平台会保留为 diagnostic，而不会被悄悄忽略。
 平台列表与小红书关键词都接受 ASCII `,` 和中文 `，`，例如
-`--platforms "小红书，微博"` 会请求两个平台；关键词只传分隔符或空白时会回退到默认的
-`打工人,治愈` 查询，不会启动零关键词扫描。
+`--platforms "小红书，微博"` 会请求两个平台。未传关键词（或只传分隔符/空白）时 XHS
+采集 `open_feed_listing`，不会偷偷注入 `打工人,治愈`；这只是 open feed listing sample，
+not an exhaustive whole-site ranking，登录/MCP 问题会如实成为 `partial` diagnostic。
 
 ## XHS Periodic Pattern Collection
 
@@ -150,7 +157,7 @@ HTTP 500、timeout 或登录波动时，会把已成功关键词的样本先落�
 
 - `xhs-domain-opportunity` 面向 operator，按一组关键词做 bounded `search_feeds`，
   计算 `likes + comments * 4 + collects * 2 + shares * 6`，再映射到现有
-  playbook、候选 sublane 或新领域建议。跨关键词优先按 `feed_id` 去重；完整标题+作者只用于桥接缺失 ID 的同一观察，首个真实 ID 会消费该 bridge，后续同标题/作者的不同真实 ID 仍保留；若已知多个真实 ID，后来的缺 ID 样本保持 unresolved。标题单独不能折叠不同笔记。ASCII `,` 与中文 `，` 都能分隔关键词；只传分隔符或空白时回退到 bounded 默认基线查询。出现
+  playbook、候选 sublane 或新领域建议。跨关键词优先按 `feed_id` 去重；完整标题+作者只用于桥接缺失 ID 的同一观察，首个真实 ID 会消费该 bridge，后续同标题/作者的不同真实 ID 仍保留；若已知多个真实 ID，后来的缺 ID 样本保持 unresolved。标题单独不能折叠不同笔记。ASCII `,` 与中文 `，` 都能分隔关键词；只传分隔符或空白时会被拒绝，必须由 operator 给出明确候选，而不会回退到默认赛道。出现
   no successful unique samples 时，不会产出 playbook fit、排序推荐或 `new_domain_candidate`。
 - `guide-post` 面向发帖前选题确认，默认只读本地 topic pack，不触发 live XHS
   搜索，不展示原始来源或 provenance。
@@ -193,11 +200,8 @@ programmatic API，返回 `TopicScanResult`：
 ```python
 from topic_radar.cli import ScanOptions, run_scan
 
-result = await run_scan(
-    platforms="xiaohongshu,weibo",
-    keywords="打工人,治愈",
-    options=ScanOptions(max_recommendations=6, history_days=14),
-)
+result = await run_scan(options=ScanOptions(max_recommendations=6, history_days=14))
+# no platforms / keywords: configured default platforms, no hidden XHS query seed
 # result.discovered_verticals  — 发现的垂类
 # result.recommended_angles    — 推荐角度
 # result.scan_quality          — completed | partial | insufficient_evidence
@@ -206,7 +210,30 @@ result = await run_scan(
 
 ## 与 PTSM 协作
 
-PTSM 通过 `--fresh-topic-research` 将 topic-radar 集成到发帖流程：
+PTSM 有两个不同的 Topic Radar surface：`hotspot-discovery` 是先开放发现、后路由，
+`--fresh-topic-research` 则保留为已选 playbook 内的 fresh 选题。
+
+```bash
+# 默认泛热点入口：先读 route receipt，再由 operator 选择已有 playbook 或处理 unmapped
+uv run python -m ptsm.bootstrap hotspot-discovery --max-hotspots 12
+```
+
+`hotspot-discovery` 不传 account、playbook、domain、platform 或 keyword filter。它只消费与
+canonical evidence 一致的 `topic_clusters`，按 score 输出 `existing_playbook_fit`、`ambiguous`、
+`unmapped` 和可能的 `new_domain_candidate`。默认展示前 12 个；`--max-hotspots` 只控制已验证
+cluster 的返回数量，不能用来指定赛道或关键词。receipt 会同时写入 `eligible_hotspot_count`、
+`returned_hotspot_count` 与 `hotspot_limit`，避免把截断列表伪装成完整热榜。`operator_headline`
+仅供报告阅读，不能进入 drafting；`partial` 不得称为完整全平台结果，`insufficient_evidence`
+不产生静态推荐。
+
+为避免 Top-N 恰好全是未映射新闻而掩盖扫描中真实存在的内容机会，receipt 还会给出不与主列表
+重复的 `routed_hotspots` 补充视图（最多 6 个）。它只从同一次、已经完成的无方向扫描结果中挑出
+`existing_playbook_fit` / `ambiguous`，不改变全平台排名；`route_status_counts` 和
+`eligible_supplemental_routed_hotspot_count` / `returned_supplemental_routed_hotspot_count` 会明确范围。
+为避免重复推荐，每条补充候选至少引入一个未展示的 playbook；若它是 `ambiguous`，仍保留完整候选集，
+不能因其中一个 playbook 已展示就吞掉另一个可选项。主列表仍保留完整的热点路由事实。
+
+`--fresh-topic-research` 将 topic-radar 集成到已经选择的发帖流程：
 
 ```bash
 # 选题驱动发帖（topic-radar 扫描 → 交互选题 → 自动生成内容）
@@ -218,7 +245,7 @@ ptsm run-fengkuang --fresh-topic-research --account-id acct-fk-local --auto-gene
 ```
 
 流程：
-1. `run-playbook --fresh-topic-research` 只在这条显式路径调用 public `topic_radar.cli.run_scan()`；它不传入平台参数，因此使用 Topic Radar 配置的八平台默认集合。
+1. `run-playbook --fresh-topic-research` 在已解析 account/playbook 后调用 public `topic_radar.cli.run_scan()`；它不传入平台参数，因此使用 Topic Radar 配置的八平台默认集合。它不是泛发现或自动换 playbook 的入口。
 2. 如果结果为 `insufficient_evidence`，PTSM 在启动 workflow 前返回可操作诊断，不会用静态映射伪造一个“热点方向”。`partial` 会保留平台错误和 artifact/report 路径，供 operator 判断是否继续。
 3. 终端交互只展示 evidence-backed 的推荐角度。选定的垂类、角度和讨论诱因构成 enriched scene；`cluster_id`、`event_fingerprint`、`evidence_ids` 和 scan receipt 仅保留在 response/run/artifact 的 traceability metadata。
 4. drafting context never receives raw source titles, authors, URLs, feed IDs, or tokens。选定后 runtime 也不会再启动第二次 live scan 或叠加竞争性的 `topic_research` 方向。
