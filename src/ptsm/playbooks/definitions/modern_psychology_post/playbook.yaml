@@ -12,6 +12,12 @@ required_skills:
   - psychology_safety
   - xhs_psychology_hashtagging
 optional_skills: []
+hotspot_routing:
+  include_any:
+    - 情绪内耗
+    - 关系边界
+    - 孤独感
+    - 短视频焦虑
 reflection:
   must_include_phrase: "专业"
   required_hashtag: "#心理学"

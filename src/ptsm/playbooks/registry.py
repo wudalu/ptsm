@@ -20,6 +20,7 @@ class PlaybookDefinition:
     optional_skills: list[str] = field(default_factory=list)
     reflection: dict[str, object] = field(default_factory=dict)
     trend_keywords: list[str] = field(default_factory=list)
+    hotspot_routing: dict[str, object] = field(default_factory=dict)
     max_attempts: int = 2
     drafting_model: str = ""
     source_path: Path | None = None
@@ -78,6 +79,7 @@ class PlaybookRegistry:
                     optional_skills=list(payload.get("optional_skills", [])),
                     reflection=dict(payload.get("reflection", {})),
                     trend_keywords=list(payload.get("trend_keywords", [])),
+                    hotspot_routing=dict(payload.get("hotspot_routing", {})),
                     max_attempts=int(payload.get("max_attempts", 2)),
                     drafting_model=str(payload.get("drafting_model", "")),
                     source_path=path,

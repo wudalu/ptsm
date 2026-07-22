@@ -11,6 +11,14 @@ required_skills:
   - daily_english_style
   - daily_english_hashtagging
 optional_skills: []
+hotspot_routing:
+  include_any:
+    - 每日英语
+    - 英语
+    - English
+    - 单词
+    - 短语
+    - 例句
 reflection:
   must_include_phrase: ""
   required_hashtag: "#每日英语"

@@ -11,6 +11,14 @@ required_skills:
   - ai_tech_style
   - ai_tech_hashtagging
 optional_skills: []
+hotspot_routing:
+  include_any:
+    - OpenAI
+    - ChatGPT
+    - Claude
+    - 大模型
+    - AI Agent
+    - 提示词
 reflection:
   must_include_phrase: ""
   required_hashtag: "#AI资讯"

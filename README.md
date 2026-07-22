@@ -40,4 +40,13 @@ ptsm run-fengkuang --scene "周一早高峰地铁通勤"
 ptsm run-plan --plan docs/plans/2026-03-24-ptsm-agent-platform-rebaseline.md --dry-run
 ptsm runs --account-id acct-fk-local --status completed --limit 5
 ptsm run-events --account-id acct-fk-local --event publish_finished --group-by status
+ptsm hotspot-discovery --max-hotspots 12
 ```
+
+`hotspot-discovery` is the generic discovery-first entrypoint: it scans the
+configured public platforms without a playbook or keyword filter, then reports
+the top 12 evidence-backed clusters by Topic Radar score, with existing-playbook
+fits, ambiguities, and unmapped candidates. Use `--max-hotspots` only to change
+the returned-list size, never to choose a direction before discovery. A separate,
+non-duplicated routed-candidate view may surface lower-ranked existing-playbook
+fits without changing that all-platform ranking.

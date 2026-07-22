@@ -15,6 +15,8 @@ related_paths:
   - src/ptsm/application/use_cases/guide_post.py
   - src/ptsm/application/use_cases/topic_guidance_packs.py
   - src/ptsm/domain/topic_guidance.py
+  - src/ptsm/domain/hotspot_routing.py
+  - src/ptsm/application/use_cases/hotspot_discovery.py
   - src/ptsm/infrastructure/llm/factory.py
   - src/ptsm/infrastructure/llm/contextual_drafts.py
   - src/ptsm/evaluations/llm_judge.py
@@ -105,6 +107,8 @@ Playbook 是 PTSM 的业务编排单元。它把领域、平台、技能需求�
 - `acct-fk-local` 默认落到 `fengkuang_daily_post`，`acct-classic-poetry-local` 默认落到 `classic_poetry_quote_post`，`acct-daily-english-local` 默认落到 `daily_english_post`，`acct-psychology-local` 默认落到 `modern_psychology_post`，`acct-enrichment-local` 默认落到 `human_enrichment_daily_post`，`acct-world-cup-local` 默认落到 `world_cup_daily_post`，`acct-reddit-curation-local` 默认落到 `reddit_curation_daily_post`。
 - `caller=openclaw` 不是新的 playbook 路由条件；它只是在已解析为 `modern_psychology_post` 后启用发帖前选题引导门禁。没有 `guidance_ack` 时返回 `topic_guidance_required`，不会启动生成或发布。非心理学 playbook 的 OpenClaw 选题顺序由通用 wrapper 引导，runtime 不对这些 playbook 增加 hard preflight gate。确认后的 `topic_direction_id` 只作为 artifact/run 元数据持久化，不参与 playbook 选择。
 - 兼容入口 `run-fengkuang` 仍保留，但多 playbook 场景优先使用通用 `run-playbook`。
+- `hotspot-discovery` 发生在 playbook 选择之前，但它不按静态领域词筛选扫描。各 YAML 的可选 `hotspot_routing` 仅在 evidence-backed cluster 已发现后表达保守覆盖，字段为 `include_any`、`require_all` 和可选 `exclude_any`；它与已选 playbook 的 `trend_keywords` 明确分离。一个命中返回 `existing_playbook_fit`，多个返回 `ambiguous`，没有命中返回 `unmapped`，不得用心理学、养生或任何默认 playbook 兜底。`reddit_curation_daily_post` 没有泛热点直连 coverage。
+- `unmapped` 是合法且有价值的输出；只有至少两个 evidence、至少两个平台支持的未映射 cluster 才会附带 `new_domain_candidate`，作为人工新领域评估信号，不新增 playbook、账号、skill 或发布权限。
 
 ## Related Files
 

@@ -10,11 +10,13 @@ related_paths:
   - src/ptsm/agent_runtime/nodes
   - src/ptsm/agent_runtime/nodes/planner.py
   - src/ptsm/application/use_cases/run_playbook.py
+  - src/ptsm/application/use_cases/hotspot_discovery.py
   - src/ptsm/skills/runtime_context.py
   - src/ptsm/application/use_cases/guide_post.py
   - src/ptsm/application/use_cases/topic_guidance_packs.py
   - src/ptsm/application/models.py
   - src/ptsm/domain/topic_guidance.py
+  - src/ptsm/domain/hotspot_routing.py
   - src/ptsm/application/use_cases/runs.py
   - src/ptsm/evaluations/contracts_eval.py
   - src/ptsm/infrastructure/llm
@@ -49,7 +51,7 @@ related_paths:
 - 当前通用运行时入口是 `build_playbook_workflow()`，`build_fengkuang_workflow()` 只是兼容 wrapper。
 - 运行结果会落到 artifact，并写入本地 run store。
 - `run_playbook()` 默认会在 `.ptsm/agent_runtime/` 下创建持久 execution memory 和 checkpoint。
-- `--fresh-topic-research` 是唯一允许 PTSM 发起 Topic Radar live collection 的运行路径。它调用 public `topic_radar.cli.run_scan()`，不传 `platforms`，因此由 Topic Radar 统一控制当前八平台默认集合、canonical evidence、事件簇、history novelty 与 quality 状态。普通 `run-playbook`、deterministic provider、`guide-post` 和本地 topic pack 路径都不触发该 scan，也不会回读当天或其他运行遗留的 `topic-scan-*.json`。
+- PTSM 有两个显式 live research application surface：`hotspot-discovery` 是 playbook 前的开放发现（不启动 workflow/run/publish），`--fresh-topic-research` 是已选 playbook 内的兼容路径。后者调用 public `topic_radar.cli.run_scan()`，不传 `platforms`，因此由 Topic Radar 统一控制当前八平台默认集合、canonical evidence、事件簇、history novelty 与 quality 状态；普通 `run-playbook`、deterministic provider、`guide-post` 和本地 topic pack 路径都不触发该 scan，也不会回读当天或其他运行遗留的 `topic-scan-*.json`。
 - fresh scan 为 `insufficient_evidence` 时，`run_playbook()` 在 workflow/发布前返回 operator-safe receipt（quality、platform diagnostics、artifact/report path），不会继续拿静态建议冒充实时热点。`partial` 可以继续到交互选择，但 artifact 会保留失败平台/关键词/LLM 诊断，operator 不得把它解释为完整全平台覆盖。
 - fresh 交互只允许选择已经绑定真实 cluster/evidence 的角度。drafting runtime context 只接收安全的 `vertical`、`angle`、`why_discussion_likely` 与构造场景；it never receives raw source titles, authors, URLs, feed IDs, or tokens。canonical evidence title guard 会拒绝等价 title 和较具体 title 的内嵌复写；像 `AI` 这样的短泛词可作为新角度语言。author/URL/feed/token 的规范化值仍无论长短一律阻断，避免异常 LLM/旧 artifact 穿透。builder 只接受本次 fresh `run_scan()` receipt 明示且存在的常规 artifact 文件，缺失或不可读 receipt 会 fail closed；`fresh_topic_research=False` 或 local-only builder 只保留本地 pattern context。`cluster_id`、`event_fingerprint`、`evidence_ids`、quality 和 artifact receipt 留在 `topic_selection` metadata 供审计；终端展示用的 `scan_summary` 和一切原始来源材料都不写入该 metadata。选择完成后 workflow payload 关闭 fresh builder，does not start a second live scan，也不会把竞争性的 `topic_research` context 叠加进同一草稿。
 - `guide-post` 是应用层只读选题引导，不启动 workflow、不创建 run、不发布、不调用 live XHS / topic-radar。它用 `ptsm.domain.topic_guidance` 的确定性 selector、open-scene composer、`application/use_cases/topic_guidance_packs.py` 的非心理学本地 topic pack 和心理学专用 brief 数据，为当前九个 playbook 返回 4 个场景相关方向：`modern_psychology_post`、`fengkuang_daily_post`、`human_enrichment_daily_post`、`classic_poetry_quote_post`、`wuxia_character_post`、`ai_tech_daily_post`、`daily_english_post`、`world_cup_daily_post`、`reddit_curation_daily_post`。公开方向采用 `selection_policy == "dynamic_scene_diversity_rerank"`：selector 先从 authored curated 候选和多个本地组合的 `direction_type == "open_scene"` 候选中建立候选池，再按场景相关性、未覆盖 facets、`diversity_key`、direction source type 和 open-scene mechanism 做确定性重排。第一条仍优先保留最强 curated 场景锚点，后续方向不再固定 curated 数量；公开元数据包含 `open_direction_ids`、兼容字段 `open_direction_id` 和 `direction_type_counts`。`open_scene` 由当前 scene/lane facets 和可复制句式、保存卡、评论区模式、小任务、看点清单、工具交接等内容机制本地组合。每个方向带 `direction_type`、`scene_fit`、趋势信号、病毒式 hook、适合场景、内容角度、保存工具、评论提示、避坑和 `format_recommendation`。`format_recommendation` 是生成前的图文形态约束，包含 `format_archetype`、`cover_role`、`body_shape`、`visual_evidence_need` 和 `avoid_format`；人类丰容/手作/Colorwalk 倾向 `provider_scene` 或 `carousel` 视觉证据，AI prompt、边界句和睡眠恢复倾向低密度 `note_card` / `iphone_notes` 保存卡。`ai_tech_daily_post` 现在把 prompt / 提示词 / AI 提问场景路由为 `提示词构建 / 好用 prompt` 子线，优先返回 `ai_prompt_context_card`，要求正文先给用户能直接复制的完整 prompt 成品，再用 `任务 / 背景 / 输出格式 / 反例` 拆解它为什么有效；这仍是本地 topic pack，不是 live XHS 采样结果。输出还包含 `topic_guidance.image_recommendation`，用于用户确认选题方向后决定封面方式：消息/回复场景推荐 `local_social_screenshot` + `wechat_chat`，但亲密关系等待消息、分手脑补或猫归谁这类不确定感场景会优先推荐 `iphone_notes` + `save_tool`，承接 `事实 / 脑补 / 我需要什么`；边界句、清单、练习、英语句型和 prompt 成品拆解卡推荐 `iphone_notes`，短判断/诗意重构推荐 `note_card`，空间、物件、材料、人物或场景证据推荐 `provider_image` + `bailian` / `qwen-image-2.0-pro`。输出不包含内部 research 文档路径、原始来源说明、URL 或 provenance。
@@ -101,3 +103,17 @@ related_paths:
 - 内存适配: [`src/ptsm/infrastructure/memory/store.py`](../src/ptsm/infrastructure/memory/store.py)
 - 运行查询: [`src/ptsm/application/use_cases/runs.py`](../src/ptsm/application/use_cases/runs.py)
 - 发布后检查: [`src/ptsm/application/use_cases/xhs_publish_status.py`](../src/ptsm/application/use_cases/xhs_publish_status.py)
+
+## Discovery Before Runtime
+
+`hotspot-discovery` 不属于 LangGraph runtime，也不修改现有 `run-playbook --fresh-topic-research`
+的既定 playbook 路径。它先进行开放扫描、验证 cluster/evidence 关系，再把候选映射为已有
+playbook、多个候选或未映射；用户完成选择后才调用现有选题/生成入口。
+
+route receipt 的 Top-N 主列表保持全平台 score 顺序；可选的 `routed_hotspots` 补充区只呈现同一次
+scan 中每行至少引入一个未展示 playbook 的既有领域候选；`ambiguous` 保留完整候选集，不参与 scan 或 runtime 的 playbook 选择。
+
+routing artifact 中的 `operator_headline` 只用于操作者阅读。它 does not enter drafting：
+下游只可使用 profile-derived `generation_seed`、选定 playbook 和 opaque
+`cluster_id` / `event_fingerprint` / `evidence_ids` traceability。原始来源字段和 headline
+均不能被用作 scene、runtime context 或 draft text。

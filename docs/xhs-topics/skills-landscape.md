@@ -14,6 +14,9 @@ related_paths:
   - src/ptsm/skills/builtin
   - src/ptsm/skills/builtin/xhs_trend_scan/SKILL.md
   - src/ptsm/application/use_cases/xhs_domain_opportunity.py
+  - src/ptsm/application/use_cases/hotspot_discovery.py
+  - src/ptsm/domain/hotspot_routing.py
+  - integrations/openclaw/ptsm-topic-radar-discovery/SKILL.md
   - src/ptsm/infrastructure/publishers/xiaohongshu_mcp_publisher.py
   - src/ptsm/application/use_cases/xhs_browser.py
 ---
@@ -24,7 +27,8 @@ related_paths:
 
 - 2026-04-22 用 `skill-installer` 的官方脚本复核 OpenAI curated skills 时，没有任何 XiaoHongShu-specific skill。
 - 当前仓库内已有 `xhs_trend_scan` 这个本地 pattern-context builtin skill；`xhs_hashtagging` 和 `xhs_classic_poetry_hashtagging` 仍然负责发帖后处理，其中古诗词金句默认要求 `#古诗词` 而不是苏轼专属标签。
-- 所以后续如果要继续做“小红书热点分析”，主路径是 public Topic Radar 的显式 fresh scan（默认八平台、证据/去重/新颖度 artifact），小红书领域比较则走 bounded `xhs-domain-opportunity`；不是让普通 drafting 在 `xhs_trend_scan` 中做实时搜索。
+- 所以后续如果要继续做“不限定方向的小红书/全平台热点分析”，主路径是 discovery-first 的 `hotspot-discovery`；public Topic Radar fresh scan 只保留给已选 playbook 的发帖前 research（默认八平台、证据/去重/新颖度 artifact），小红书领域比较则走 bounded `xhs-domain-opportunity`；不是让普通 drafting 在 `xhs_trend_scan` 中做实时搜索。
+- 对宽泛“有什么热点”请求，OpenClaw/Codex 应加载 `ptsm-topic-radar-discovery`，运行 discovery-first 的 `hotspot-discovery`，然后让用户在 mapped / ambiguous / unmapped 结果之间选择；不能先由已有 playbook 关键词决定扫描范围。
 
 ## Generic Skills Worth Reusing
 
@@ -147,18 +151,18 @@ related_paths:
 - 让热点研究从“看了很多帖”变成“可复用的帖子模式”
 - 能直接服务 planner，而不仅是做外部报告
 
-### `xhs_vertical_router` `next`
+### `hotspot_discovery` + post-scan router `landed`
 
 职责：
 
-- 给一个候选主题或帖子草案
-- 判断它更适合哪个垂类
-- 返回对应的标签、语气、选题风险和建议 playbook lane
+- 先运行无方向的默认 Topic Radar scan
+- 只验证并消费 evidence-backed event cluster
+- 返回 existing playbook fit、多个候选或 unmapped/new-domain review，不自动选择账号或生成帖子
 
 为什么适合现在做：
 
-- 解决“选题发散，账号定位不稳定”的问题
-- 能把下面的垂类索引真正接到运行时输入
+- 避免“先按现有赛道搜、再证明现有赛道”的循环
+- 保持未知热点未映射，等用户选择或人工领域评估后才进入现有运行时
 
 ## Install Or Reference?
 

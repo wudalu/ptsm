@@ -689,3 +689,19 @@ Do not start MCP without `COOKIES_PATH` if the account is supposed to reuse an e
 - `仅自己可见` posts still cannot be auto-verified if upstream didn't return `post_id`/`post_url`; they return `manual_check_required`.
 - Real publish requires a reachable `xiaohongshu-mcp` server and valid login state.
 - The `search_feeds` MCP tool uses keyword search — trending posts are derived from engagement, not official XHS trend rankings.
+
+## Discovery-First Hotspot Operation
+
+当问题是“现在有什么热点、先找热点再决定写什么”时，先执行：
+
+```bash
+uv run python -m ptsm.bootstrap hotspot-discovery --max-hotspots 12
+```
+
+阅读 `outputs/artifacts/hotspot-discovery/` 的 JSON/Markdown 和 scan status。默认只展示按 score
+排序的前 12 个，`eligible_hotspot_count` / `returned_hotspot_count` / `hotspot_limit` 会说明截断；
+主列表外的已有领域候选从 `routed_hotspots` 读取（每行至少引入一个未展示 playbook；`ambiguous` 保留完整候选），且不会改变全平台排名。`partial` 时先处理 platform diagnostics；`insufficient_evidence` 时不要生成静态热点列表。`operator_headline` 只是
+操作者阅读字段，选择映射后的 playbook/account 后才运行 `guide-post` 或 `run-playbook`。
+
+当操作目标是比较明确的 XHS 候选赛道，才使用 `xhs-domain-opportunity --keywords "..."`。该命令
+不再接受空白/仅分隔符关键词的默认回退，因此它不能取代 `hotspot-discovery`。

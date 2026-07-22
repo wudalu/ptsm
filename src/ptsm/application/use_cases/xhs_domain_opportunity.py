@@ -18,24 +18,6 @@ DEFAULT_DOMAIN_OPPORTUNITY_DIR = (
 )
 SCORE_FORMULA = "likes + comments * 4 + collects * 2 + shares * 6"
 MAX_DISPLAY_TITLE_LENGTH = 120
-# A separator-only CLI value is an input formatting mistake, not a request to
-# silently run a zero-query scan. Keep this bounded baseline aligned with the
-# existing PTSM coverage and opportunity lanes.
-DEFAULT_DOMAIN_OPPORTUNITY_KEYWORDS = (
-    "人类丰容",
-    "修复系手作",
-    "普通人用AI",
-    "轻养生",
-    "睡眠恢复",
-    "宠物户外",
-    "文博非遗",
-    "情绪疗愈",
-    "发疯文学",
-    "苏轼",
-    "武侠",
-    "每日英语",
-    "世界杯",
-)
 
 
 @dataclass(frozen=True)
@@ -615,7 +597,9 @@ def _normalize_keywords(keywords: Sequence[str] | str) -> list[str]:
     else:
         raw = keywords
     normalized = [str(keyword).strip() for keyword in raw if str(keyword).strip()]
-    return normalized or list(DEFAULT_DOMAIN_OPPORTUNITY_KEYWORDS)
+    if not normalized:
+        raise ValueError("xhs-domain-opportunity requires at least one explicit keyword")
+    return normalized
 
 
 def _artifact_path(output_dir: Path, collected_at: str) -> Path:

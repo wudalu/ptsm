@@ -21,6 +21,9 @@ related_paths:
   - integrations/openclaw/ptsm-xhs-topic-guide/SKILL.md
   - integrations/openclaw/ptsm-xhs-psychology/SKILL.md
   - integrations/openclaw/ptsm-xhs-domain-opportunity/SKILL.md
+  - integrations/openclaw/ptsm-topic-radar-discovery/SKILL.md
+  - src/ptsm/application/use_cases/hotspot_discovery.py
+  - src/ptsm/domain/hotspot_routing.py
   - src/ptsm/evaluations/contracts_eval.py
   - src/ptsm/playbooks/definitions
   - src/topic_radar/analysis/evidence.py
@@ -140,3 +143,19 @@ uv run python -m ptsm.bootstrap harness-check --changed-path docs/<changed-doc>.
 - minimal merge gates on external side-effecting publish flows
 - assumptions that every agent-generated pattern is worth preserving
 - policies optimized for a million-line, high-throughput product without local adaptation
+
+## Discovery-First Hotspot Contracts
+
+`hotspot-discovery` 的 deterministic contract 覆盖：调用 public scan 时没有
+domain/playbook/account/keyword filter、只消费 evidence-consistent cluster、按 score 稳定排序并以
+透明的 Top-N receipt 截断，同时从同一次完整 scan 以不重复补充视图保留低排名的 routed candidate、
+保留 `completed` / `partial` / `insufficient_evidence` 诊断，并在 artifact 中隔离来源字段。
+cluster 的 representative title 必须由其 evidence 支持，非有限 score 必须归零，未知质量状态必须 fail closed，
+避免损坏 artifact 影响路由或被误报为 completed。
+测试还锁定 `existing_playbook_fit` / `ambiguous` / `unmapped` 与 evidence-rich
+`new_domain_candidate`：后者只能触发 review，不得自动创建新 playbook。
+
+文档 wrapper contract 同时锁定 `ptsm-topic-radar-discovery` 对宽泛热点请求运行
+`hotspot-discovery`，而 `ptsm-xhs-domain-opportunity` 必须要求显式关键词并转交泛发现请求。
+任何修改这些入口、artifact 或 operator 状态语义的变更都应更新 focused docs test，并运行
+`harness-check --changed-path ...`。

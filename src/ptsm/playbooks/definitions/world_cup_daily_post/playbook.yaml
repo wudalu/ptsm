@@ -12,6 +12,11 @@ required_skills:
   - xhs_world_cup_visuals
   - xhs_world_cup_hashtagging
 optional_skills: []
+hotspot_routing:
+  include_any:
+    - 世界杯
+    - 美加墨
+    - FIFA World Cup
 reflection:
   required_hashtag: "#世界杯"
   body_must_include_any:

@@ -561,6 +561,55 @@ def test_xhs_domain_opportunity_cli_dispatches_to_use_case(
     assert captured["tool_timeout_seconds"] == 70.0
 
 
+def test_hotspot_discovery_cli_dispatches_without_direction_filters(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_discovery(**kwargs: object) -> dict[str, object]:
+        captured.update(kwargs)
+        return {"status": "partial", "hotspots": []}
+
+    monkeypatch.setattr(
+        "ptsm.interfaces.cli.main.run_hotspot_discovery",
+        fake_discovery,
+    )
+
+    exit_code = main(
+        [
+            "hotspot-discovery",
+            "--output-dir",
+            "outputs/artifacts/hotspot-discovery-test",
+            "--max-hotspots",
+            "5",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload == {"status": "partial", "hotspots": []}
+    assert captured == {
+        "output_dir": Path("outputs/artifacts/hotspot-discovery-test"),
+        "max_hotspots": 5,
+    }
+
+
+def test_hotspot_discovery_cli_rejects_non_positive_display_limit() -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        main(["hotspot-discovery", "--max-hotspots", "0"])
+
+    assert exc_info.value.code == 2
+
+
+def test_xhs_domain_opportunity_cli_rejects_separator_only_keywords() -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        main(["xhs-domain-opportunity", "--keywords", "，"])
+
+    assert exc_info.value.code == 2
+
+
 def test_analyze_xhs_patterns_cli_dispatches_to_use_case(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
