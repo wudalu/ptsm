@@ -21,12 +21,6 @@ NEW_TOPIC_GUIDANCE_CASES = (
         "wuxia_",
     ),
     (
-        "ai_tech_daily_post",
-        "acct-ai-tech-local",
-        "Google 发布 Gemini 3，想写普通人能懂的 AI 工具变化",
-        "ai_",
-    ),
-    (
         "daily_english_post",
         "acct-daily-english-local",
         "学一个表示坚持的高级词汇，想配真实职场例句",
@@ -71,12 +65,6 @@ GENERIC_DIVERSE_TOPIC_CASES = (
         "acct-wuxia-local",
         "想用令狐冲写一种当代职场里的自由人格",
         "想写郭靖那种慢慢长出来的笨拙可靠",
-    ),
-    (
-        "ai_tech_daily_post",
-        "acct-ai-tech-local",
-        "Google 发布 Gemini 3，想写普通人能懂的 AI 工具变化",
-        "想写 AI agent 自动执行任务时普通人该怎么交接",
     ),
     (
         "daily_english_post",
@@ -225,12 +213,14 @@ def test_run_guide_post_returns_productized_topic_directions_without_internal_so
     assert '"source"' not in serialized
 
 
-def test_ai_tech_topic_guidance_routes_prompt_builder_sublane() -> None:
+def test_ai_tech_topic_guidance_routes_prompt_test_replay_with_explicit_mode() -> None:
     result = run_guide_post(
         GuidePostRequest(
             playbook_id="ai_tech_daily_post",
             account_id="acct-ai-tech-local",
-            scene="想模拟一条教普通人写好 prompt 的小红书帖子，重点是让 AI 先问清楚再输出",
+            scene="同一任务补背景后输出有没有变，想复盘一次提示词测试",
+            ai_content_mode="hands_on",
+            ai_evidence_file_path="inputs/ai-evidence.json",
         )
     )
 
@@ -238,34 +228,34 @@ def test_ai_tech_topic_guidance_routes_prompt_builder_sublane() -> None:
     assert guidance["matched_direction_id"] == "ai_prompt_context_card"
     first_direction = guidance["directions"][0]
     assert first_direction["id"] == "ai_prompt_context_card"
+    assert first_direction["content_mode"] == "hands_on"
     assert (
         "prompt" in first_direction["name"].lower()
         or "提示词" in first_direction["name"]
     )
-    assert "直接复制" in first_direction["viral_hook"]
-    assert "直接复制" in first_direction["saveable_tool"]
-    assert "任务" in first_direction["saveable_tool"]
-    assert "背景" in first_direction["saveable_tool"]
-    assert "输出格式" in first_direction["saveable_tool"]
-    assert "直接复制" in result["recommended_scene"]
+    assert "直接复制" not in first_direction["viral_hook"]
+    assert "直接复制" not in first_direction["saveable_tool"]
+    assert "测试任务" in first_direction["saveable_tool"]
+    assert "输入摘要" in first_direction["saveable_tool"]
+    assert "局限" in first_direction["saveable_tool"]
+    assert "内容模式：hands_on" in result["recommended_scene"]
     assert any(
         marker in first_direction["comment_prompt"]
         for marker in ("prompt", "提示词", "失败")
     )
-    assert "好用" in first_direction["comment_prompt"]
-    assert "互相抄" in first_direction["comment_prompt"]
+    assert "失败" in first_direction["comment_prompt"]
     assert "我帮" not in first_direction["comment_prompt"]
     assert "帮你改" not in first_direction["comment_prompt"]
     prompt_format = _format_recommendation(first_direction)
     assert prompt_format["format_archetype"] == "note_card"
-    assert prompt_format["cover_role"] == "save_tool"
-    assert "prompt" in prompt_format["body_shape"].lower() or "提示词" in prompt_format["body_shape"]
+    assert prompt_format["cover_role"] == "evidence_or_scene"
+    assert "test" in prompt_format["body_shape"].lower() or "测试" in prompt_format["body_shape"]
 
     recommendation = _image_recommendation(result)
     assert recommendation["recommended_backend"] == "local_social_screenshot"
-    assert recommendation["local_style"] == "iphone_notes"
-    assert recommendation["role"] == "save_tool"
-    assert recommendation["command_hint"] == "--local-image-style iphone_notes"
+    assert recommendation["local_style"] == "note_card"
+    assert recommendation["role"] == "cover_hook"
+    assert recommendation["command_hint"] == "--local-image-style note_card"
 
     _assert_no_internal_source_leakage(result)
 
@@ -495,6 +485,8 @@ def test_psychology_topic_guidance_returns_dynamic_open_scene_directions() -> No
 
 def test_generic_topic_guidance_returns_dynamic_open_scene_metadata_for_all_packs() -> None:
     for playbook_id, pack in TOPIC_GUIDANCE_PACKS.items():
+        if playbook_id == "ai_tech_daily_post":
+            continue
         result = run_guide_post(
             GuidePostRequest(
                 playbook_id=playbook_id,
@@ -906,3 +898,74 @@ def test_run_guide_post_rejects_unsupported_playbook() -> None:
                 scene="想写一条看球笔记",
             )
         )
+
+
+def test_ai_tech_topic_guidance_requires_an_explicit_evidence_mode() -> None:
+    with pytest.raises(ValueError, match="ai_content_mode"):
+        run_guide_post(
+            GuidePostRequest(
+                playbook_id="ai_tech_daily_post",
+                account_id="acct-ai-tech-local",
+                scene="想写一条 AI 科技资讯",
+            )
+        )
+
+
+@pytest.mark.parametrize(
+    ("mode", "scene"),
+    (
+        ("news_brief", "今天想做一条 AI 科技热点快讯"),
+        ("hands_on", "复盘一次让 AI 先追问再输出的提示词测试"),
+        ("fact_translation", "解释一项 AI 模型更新到底影响谁"),
+    ),
+)
+def test_ai_tech_topic_guidance_only_returns_directions_for_requested_mode(
+    mode: str,
+    scene: str,
+) -> None:
+    result = run_guide_post(
+        GuidePostRequest(
+            playbook_id="ai_tech_daily_post",
+            account_id="acct-ai-tech-local",
+            scene=scene,
+            ai_content_mode=mode,
+            ai_evidence_file_path="inputs/ai-evidence.json",
+        )
+    )
+
+    guidance = result["topic_guidance"]
+    directions = guidance["directions"]
+    command = result["run_playbook_command"]
+
+    assert result["brief"]["content_mode"] == mode
+    assert result["brief"]["evidence_required"]
+    assert directions
+    assert all(direction["content_mode"] == mode for direction in directions)
+    assert not any(direction["direction_type"] == "open_scene" for direction in directions)
+    assert "第一人称微场景" not in result["recommended_scene"]
+    assert "--scene" not in command
+    assert command[command.index("--ai-content-mode") + 1] == mode
+    assert command[command.index("--ai-evidence-file") + 1] == "inputs/ai-evidence.json"
+    assert command[command.index("--topic-direction-id") + 1] == guidance["matched_direction_id"]
+
+
+def test_ai_prompt_direction_is_a_hands_on_test_replay_not_a_copyable_lane() -> None:
+    result = run_guide_post(
+        GuidePostRequest(
+            playbook_id="ai_tech_daily_post",
+            account_id="acct-ai-tech-local",
+            scene="复盘一次让 AI 先追问再输出的提示词测试",
+            ai_content_mode="hands_on",
+        )
+    )
+
+    prompt_direction = next(
+        direction
+        for direction in result["topic_guidance"]["directions"]
+        if direction["id"] == "ai_prompt_context_card"
+    )
+
+    assert prompt_direction["content_mode"] == "hands_on"
+    assert "实测" in prompt_direction["name"] or "复盘" in prompt_direction["name"]
+    assert "直接复制" not in prompt_direction["viral_hook"]
+    assert "直接复制" not in prompt_direction["saveable_tool"]

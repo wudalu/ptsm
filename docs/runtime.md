@@ -2,7 +2,7 @@
 title: PTSM Runtime
 status: active
 owner: ptsm
-last_verified: 2026-07-22
+last_verified: 2026-07-23
 source_of_truth: true
 related_paths:
   - src/ptsm/agent_runtime/runtime.py
@@ -16,6 +16,7 @@ related_paths:
   - src/ptsm/application/use_cases/topic_guidance_packs.py
   - src/ptsm/application/models.py
   - src/ptsm/domain/topic_guidance.py
+  - src/ptsm/domain/ai_tech_content.py
   - src/ptsm/domain/hotspot_routing.py
   - src/ptsm/application/use_cases/runs.py
   - src/ptsm/evaluations/contracts_eval.py
@@ -46,15 +47,49 @@ related_paths:
 6. finalize 写入 artifact、执行 lessons memory，并生成 `content_review` 供人工确认。
 7. 应用层根据结果决定是否生成发布图片、发布、查状态、开浏览器。
 
+## AI Tech Evidence Boundary
+
+`ai_tech_daily_post` 在任何 run、workflow、artifact、图片生成或 publisher 建立前先经过
+application preflight。operator 必须同时传入 `--ai-content-mode` 和
+`--ai-evidence-file`；缺失、JSON/结构无效或 mode 不匹配会返回
+`ai_tech_evidence_required` 或 `ai_tech_evidence_invalid`，不创建 run，也不会退回到
+free-text scene 草稿。AI run 的 scene 由已验证 contract 重建，不能把 operator 的原始
+headline、URL、作者或 feed 值回显到 response。
+
+- `news_brief` 只能由 3–5 个不同事件组成；每项只有显示 label 和已核验 facts 可进入
+  drafting，不能写成第一人称体验。
+- `hands_on` 只能写一个主题，且必须有 product、version、tested_at、task、input summary、
+  observed output、limitation 和 opaque test-evidence ref；它是唯一允许写实测/观察的模式。
+- `fact_translation` 只能写一个主题、至少两个已核验 facts，以及 `who_should_care` /
+  `who_can_wait` 判断；不能伪装成测试。
+
+`guide-post --playbook-id ai_tech_daily_post` 也必须显式选择 mode，只显示相同
+`content_mode` 的静态方向，不生成 `open_scene` 兜底方向；传回的
+`topic_direction_id` 必须仍存在且匹配 evidence mode，否则 `run-playbook` 在启动前返回
+`ai_tech_topic_direction_invalid`。提示词方向仅归入 `hands_on`，输出应是一次可复现实验
+记录，而不是无条件可复制模板。
+
+通过 preflight 后，runtime 只接收 provenance-safe contract（mode、safe facts/测试字段和
+mode policy）及独立 opaque manifest。AI workflow facade 在 LangGraph 写入初始 checkpoint
+之前重建 allowlisted input；planner 的 `# AI Tech Evidence Contract`、draft validator、
+reflector retry 和应用层 publish 前复核都使用同一 contract。原始 source URL、author、feed
+ID、raw title、完整 evidence bundle 和无效 model draft 不进入 prompt、state、checkpoint、
+reader-visible content 或 artifact。
+
+对 AI evidence mode，`--fresh-topic-research` 不在 `run-playbook` 内执行 scan，而是返回
+`ai_tech_fresh_research_separate`。先用 `hotspot-discovery` 找全平台热点；只有 operator
+自行整理出的 opaque `trend_support` 可放进 evidence manifest，不能把 Topic Radar headline、
+cluster 或热度当成事实/测试证据。
+
 ## Current Runtime Facts
 
 - 当前通用运行时入口是 `build_playbook_workflow()`，`build_fengkuang_workflow()` 只是兼容 wrapper。
 - 运行结果会落到 artifact，并写入本地 run store。
 - `run_playbook()` 默认会在 `.ptsm/agent_runtime/` 下创建持久 execution memory 和 checkpoint。
-- PTSM 有两个显式 live research application surface：`hotspot-discovery` 是 playbook 前的开放发现（不启动 workflow/run/publish），`--fresh-topic-research` 是已选 playbook 内的兼容路径。后者调用 public `topic_radar.cli.run_scan()`，不传 `platforms`，因此由 Topic Radar 统一控制当前八平台默认集合、canonical evidence、事件簇、history novelty 与 quality 状态；普通 `run-playbook`、deterministic provider、`guide-post` 和本地 topic pack 路径都不触发该 scan，也不会回读当天或其他运行遗留的 `topic-scan-*.json`。
+- PTSM 有两个显式 live research application surface：`hotspot-discovery` 是 playbook 前的开放发现（不启动 workflow/run/publish），`--fresh-topic-research` 是非 AI-evidence playbook 的兼容路径。后者调用 public `topic_radar.cli.run_scan()`，不传 `platforms`，因此由 Topic Radar 统一控制当前八平台默认集合、canonical evidence、事件簇、history novelty 与 quality 状态；普通 `run-playbook`、deterministic provider、`guide-post` 和本地 topic pack 路径都不触发该 scan，也不会回读当天或其他运行遗留的 `topic-scan-*.json`。`ai_tech_daily_post` 使用 `--fresh-topic-research` 时返回 `ai_tech_fresh_research_separate`，避免把 scan 结果误当成可发表 evidence。
 - fresh scan 为 `insufficient_evidence` 时，`run_playbook()` 在 workflow/发布前返回 operator-safe receipt（quality、platform diagnostics、artifact/report path），不会继续拿静态建议冒充实时热点。`partial` 可以继续到交互选择，但 artifact 会保留失败平台/关键词/LLM 诊断，operator 不得把它解释为完整全平台覆盖。
 - fresh 交互只允许选择已经绑定真实 cluster/evidence 的角度。drafting runtime context 只接收安全的 `vertical`、`angle`、`why_discussion_likely` 与构造场景；it never receives raw source titles, authors, URLs, feed IDs, or tokens。canonical evidence title guard 会拒绝等价 title 和较具体 title 的内嵌复写；像 `AI` 这样的短泛词可作为新角度语言。author/URL/feed/token 的规范化值仍无论长短一律阻断，避免异常 LLM/旧 artifact 穿透。builder 只接受本次 fresh `run_scan()` receipt 明示且存在的常规 artifact 文件，缺失或不可读 receipt 会 fail closed；`fresh_topic_research=False` 或 local-only builder 只保留本地 pattern context。`cluster_id`、`event_fingerprint`、`evidence_ids`、quality 和 artifact receipt 留在 `topic_selection` metadata 供审计；终端展示用的 `scan_summary` 和一切原始来源材料都不写入该 metadata。选择完成后 workflow payload 关闭 fresh builder，does not start a second live scan，也不会把竞争性的 `topic_research` context 叠加进同一草稿。
-- `guide-post` 是应用层只读选题引导，不启动 workflow、不创建 run、不发布、不调用 live XHS / topic-radar。它用 `ptsm.domain.topic_guidance` 的确定性 selector、open-scene composer、`application/use_cases/topic_guidance_packs.py` 的非心理学本地 topic pack 和心理学专用 brief 数据，为当前九个 playbook 返回 4 个场景相关方向：`modern_psychology_post`、`fengkuang_daily_post`、`human_enrichment_daily_post`、`classic_poetry_quote_post`、`wuxia_character_post`、`ai_tech_daily_post`、`daily_english_post`、`world_cup_daily_post`、`reddit_curation_daily_post`。公开方向采用 `selection_policy == "dynamic_scene_diversity_rerank"`：selector 先从 authored curated 候选和多个本地组合的 `direction_type == "open_scene"` 候选中建立候选池，再按场景相关性、未覆盖 facets、`diversity_key`、direction source type 和 open-scene mechanism 做确定性重排。第一条仍优先保留最强 curated 场景锚点，后续方向不再固定 curated 数量；公开元数据包含 `open_direction_ids`、兼容字段 `open_direction_id` 和 `direction_type_counts`。`open_scene` 由当前 scene/lane facets 和可复制句式、保存卡、评论区模式、小任务、看点清单、工具交接等内容机制本地组合。每个方向带 `direction_type`、`scene_fit`、趋势信号、病毒式 hook、适合场景、内容角度、保存工具、评论提示、避坑和 `format_recommendation`。`format_recommendation` 是生成前的图文形态约束，包含 `format_archetype`、`cover_role`、`body_shape`、`visual_evidence_need` 和 `avoid_format`；人类丰容/手作/Colorwalk 倾向 `provider_scene` 或 `carousel` 视觉证据，AI prompt、边界句和睡眠恢复倾向低密度 `note_card` / `iphone_notes` 保存卡。`ai_tech_daily_post` 现在把 prompt / 提示词 / AI 提问场景路由为 `提示词构建 / 好用 prompt` 子线，优先返回 `ai_prompt_context_card`，要求正文先给用户能直接复制的完整 prompt 成品，再用 `任务 / 背景 / 输出格式 / 反例` 拆解它为什么有效；这仍是本地 topic pack，不是 live XHS 采样结果。输出还包含 `topic_guidance.image_recommendation`，用于用户确认选题方向后决定封面方式：消息/回复场景推荐 `local_social_screenshot` + `wechat_chat`，但亲密关系等待消息、分手脑补或猫归谁这类不确定感场景会优先推荐 `iphone_notes` + `save_tool`，承接 `事实 / 脑补 / 我需要什么`；边界句、清单、练习、英语句型和 prompt 成品拆解卡推荐 `iphone_notes`，短判断/诗意重构推荐 `note_card`，空间、物件、材料、人物或场景证据推荐 `provider_image` + `bailian` / `qwen-image-2.0-pro`。输出不包含内部 research 文档路径、原始来源说明、URL 或 provenance。
+- `guide-post` 是应用层只读选题引导，不启动 workflow、不创建 run、不发布、不调用 live XHS / Topic Radar。八个非 AI-evidence playbook 使用 `ptsm.domain.topic_guidance` 的动态 selector、open-scene composer、本地 topic packs 和心理学 brief，返回 4 个场景相关 directions，并附 `direction_type`、`scene_fit`、hook、format recommendation 与 image recommendation。AI 科技不走 `dynamic_scene_diversity_rerank`：必须显式选择 `news_brief`、`hands_on` 或 `fact_translation`，只得到同 mode 的 authored directions，且没有 `open_scene` / scene-only fallback。提示词方向只在 `hands_on` 中出现，提示的是记录一次任务、输出与局限的复现，而不是让模型生成通用 prompt。所有 guide payload 均不含 research 路径、raw source 或 provenance。
 - `classic_poetry_quote_post` 的 topic pack 把诗词、古诗词金句、经典诗句、李白、李清照、王维、杜甫、月亮乡愁、节气和明确苏轼场景路由到古诗词金句方向。默认标签是 `#古诗词`，苏轼只是可选子方向；泛诗词场景不再强制 `#苏轼`、怀民或苏轼赏析入口。古诗词金句方向的图片建议通常是低密度 `note_card` / `iphone_notes` 保存卡。
 - 心理学 `guide-post` 还把睡眠恢复、轻养生、办公室恢复作为既有 `modern_psychology_post` 子线实验处理：相关场景会路由到 `睡眠恢复 / 轻养生` lane，优先返回 `sleep_recovery_shutdown_card` 等低成本保存工具方向，并推荐 `iphone_notes` / `save_tool` 低密度封面。该路径仍不 live-scan；2026-06-02 的 domain opportunity 尝试没有真实样本，只能作为子线假设背景。
 - 心理学 `guide-post` 还包含三类本地 authored 增长假设方向：`relationship_mixed_signal_camp_vote` 命中忽冷忽热、暧昧和要不要问清楚场景，输出 `事实 / 信号 / 我要不要问清楚` 与 A/B 阵营评论；`social_battery_cancel_plan_boundary` 命中社交电量、约好的局临时不想去和扫兴愧疚场景，输出取消局三句；`after_hours_message_body_alarm` 命中 18:57 在吗、下班消息和身体被拉回工位场景，输出下班消息三步和 A/B/C 评论入口。这些方向只是 deterministic guidance payload 和后续 metrics loop 的分组维度，不代表已经有真实浏览/点赞 uplift。
@@ -66,7 +101,7 @@ related_paths:
 - DeepSeek prompt assembly 还会注入正文人味硬约束：正文要先有现场锚点和真人视角，用时间、物件、关系、一句原话、材料、路线或动作开场，少用 `本文`、`本篇`、`建议大家`、`从本质上`、`核心逻辑是`、`总体来说` 这类总述/文章腔；正文还要像朋友安利一个刚发现或刚试出来的东西，少解释多交付，给出一个可抄作业式模板、prompt、清单、句式、判断框架或动作。保存和评论/回复可以自然合在同一句，不能露出内部写作标签或靠通用补字段落凑长度。
 - `xhs_trend_scan` 的 runtime context 读取本地 `outputs/artifacts/xhs-pattern-library/current.json` 里的 approved/candidate format patterns；普通 `run-playbook` 不实时搜索小红书，snapshot 缺失时回退静态 skill guidance。显式 fresh research 的 live collection 统一由 `run_playbook` 的 public Topic Radar scan 完成，选定方向进入 workflow 后不会让 `xhs_trend_scan` 再回退到 live MCP。`topic_research` 在普通路径可追加同一份本地 pattern summary；fresh selection 已存在时不再追加竞争性 Topic Radar 方向。
 - `reddit_discussion_scan` 的 runtime context 服务 `reddit_curation_daily_post`，优先通过已获批的 Reddit app-only OAuth 读取公开英文讨论的 hot/top 列表；当 OAuth app 创建受阻时，可用 `REDDIT_PUBLIC_JSON_FALLBACK=true` 和非占位 `REDDIT_USER_AGENT` 读取 Reddit public `.json` 列表页作为低频只读 fallback。两种路径都会按 AI 工具焦虑、心理/生活压力和工作流相关性筛选适合中文读者的内部素材。缺少可用 Reddit 环境变量时会注入 `missing_credentials` 上下文，提示配置 public JSON fallback 或按 Reddit Responsible Builder Policy 取得 explicit approval 后配置 `REDDIT_CLIENT_ID`、`REDDIT_CLIENT_SECRET` 和 `REDDIT_USER_AGENT`。读者可见内容不得暴露 Reddit、subreddit、英文讨论、翻译过程或来源 URL，来源追踪只保留在 runtime context / artifact。
-- deterministic drafting backend 可以通过小型 contextual draft helper 为特定 playbook 提供离线 dry-run 草稿，供 harness 和 e2e 测试在没有真实 LLM 调用时验证领域硬约束；当前覆盖现代心理学、武侠人物评述、古诗词金句、AI 科技资讯、每日英语学习、人类丰容实验、世界杯主题和 Reddit英文讨论转译的基础结构。所有 deterministic XHS 标题都要落在 22 字以内，并满足该领域的具体入口/禁用词规则，而不是机械插入同一组张力 cue。现代心理学 deterministic 分支覆盖职场反刍、亲密关系不确定感、忽冷忽热、社交电量取消局、关系边界、消息压力、数字生活/信息过载、孤独/比较焦虑、三明治拒绝法、睡眠恢复/轻养生/办公室恢复等 lane，避免所有离线样例退化成同一标题形状；其中“他3小时没回消息，我已经想好分手后猫归谁了”这类 scene 会输出 `事实 / 脑补 / 我需要什么`，忽冷忽热 scene 会输出 `事实 / 信号 / 我要不要问清楚`，社交电量取消局 scene 会输出取消局三句，并禁止 `你这边多久能回`、`处理优先级` 等工作式回复口吻或教人失联；睡眠恢复/轻养生 scene 会输出 5 分钟下班信号和身体收口，不给医疗养生建议或睡眠改善承诺。它还会保持标题不暴露心理机制或 `不是你` 句式，把机制名放在场景铺开后轻量出现一次以内，正文控制在 200-380 字，并使用角色/阵营/填空式评论提示。人类丰容 deterministic 分支覆盖桌面/角落、路线/感官、手作/材料流、适我主义/新独居角落等场景；AI 科技 deterministic 分支除模型更新外还覆盖 prompt 构建场景，输出可直接复制的完整 prompt 成品、`任务 / 背景 / 输出格式 / 反例` 拆解、追问边界、读者互晒好用 prompt / 失败输出和改后版本的评论入口，以及隐私/机密提醒；发疯文学 deterministic fallback 也覆盖丝瓜汤式沟通和职场物件发疯样例；世界杯 deterministic 分支覆盖赛前看点、赛后复盘和看球局/球迷氛围三类场景，并禁止输出赌球、盘口、预测比分或伪装内部消息；Reddit英文讨论转译 deterministic 分支要求把外网素材改写成中文热点帖，保留自然可保存的小结和评论区问题，同时禁止读者可见内容泄漏 Reddit/source URL、subreddit、英文讨论、翻译过程或“可收藏小结：”这类内部标签。contextual draft 领域识别只使用明确 playbook/style skill 标记或 scene 语义，不能因为共享 `xhs_image_strategy` catalog 里提到其他领域而误路由。
+- deterministic drafting backend 可以通过小型 contextual draft helper 为特定 playbook 提供离线 dry-run 草稿，供 harness 和 e2e 测试在没有真实 LLM 调用时验证领域硬约束；当前覆盖现代心理学、武侠人物评述、古诗词金句、AI 科技资讯、每日英语学习、人类丰容实验、世界杯主题和 Reddit英文讨论转译的基础结构。所有 deterministic XHS 标题都要落在 22 字以内，并满足该领域的具体入口/禁用词规则，而不是机械插入同一组张力 cue。AI 科技 deterministic 分支只读取已绑定的 `# AI Tech Evidence Contract`：news 输出 3–5 条编号事实，hands-on 输出可复现任务/观察/局限，fact translation 输出 facts + audience decision；contract 缺失时 fail closed，不退化为泛感受或可复制 prompt。现代心理学 deterministic 分支覆盖职场反刍、亲密关系不确定感、忽冷忽热、社交电量取消局、关系边界、消息压力、数字生活/信息过载、孤独/比较焦虑、三明治拒绝法、睡眠恢复/轻养生/办公室恢复等 lane，避免所有离线样例退化成同一标题形状；其中“他3小时没回消息，我已经想好分手后猫归谁了”这类 scene 会输出 `事实 / 脑补 / 我需要什么`，忽冷忽热 scene 会输出 `事实 / 信号 / 我要不要问清楚`，社交电量取消局 scene 会输出取消局三句，并禁止 `你这边多久能回`、`处理优先级` 等工作式回复口吻或教人失联；睡眠恢复/轻养生 scene 会输出 5 分钟下班信号和身体收口，不给医疗养生建议或睡眠改善承诺。它还会保持标题不暴露心理机制或 `不是你` 句式，把机制名放在场景铺开后轻量出现一次以内，正文控制在 200-380 字，并使用角色/阵营/填空式评论提示。人类丰容 deterministic 分支覆盖桌面/角落、路线/感官、手作/材料流、适我主义/新独居角落等场景；发疯文学 deterministic fallback 也覆盖丝瓜汤式沟通和职场物件发疯样例；世界杯 deterministic 分支覆盖赛前看点、赛后复盘和看球局/球迷氛围三类场景，并禁止输出赌球、盘口、预测比分或伪装内部消息；Reddit英文讨论转译 deterministic 分支要求把外网素材改写成中文热点帖，保留自然可保存的小结和评论区问题，同时禁止读者可见内容泄漏 Reddit/source URL、subreddit、英文讨论、翻译过程或“可收藏小结：”这类内部标签。contextual draft 领域识别只使用明确 playbook/style skill 标记或 scene 语义，不能因为共享 `xhs_image_strategy` catalog 里提到其他领域而误路由。
 - 显式注入依赖时，运行时仍兼容 `InMemoryExecutionMemory` 和 `InMemorySaver`。
 - 持久 checkpoint 以 `thread_id` 为键保存；复用同一个 `thread_id` 才能跨进程读取同一条执行线程。
 - 当前 side-effect ledger 只复用成功 publish 结果，不缓存失败 publish 或只读状态检查。

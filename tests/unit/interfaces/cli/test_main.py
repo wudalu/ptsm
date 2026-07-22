@@ -244,6 +244,209 @@ def test_run_playbook_cli_passes_generic_request_fields(
     assert captured["thread_id"] == "thread-classic-poetry-001"
 
 
+def test_run_playbook_cli_loads_ai_evidence_file_without_scene(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    captured: dict[str, object] = {}
+    evidence_path = tmp_path / "ai-evidence.json"
+    evidence_path.write_text(
+        json.dumps(
+            {
+                "mode": "news_brief",
+                "news_items": [
+                    {
+                        "label": "模型发布",
+                        "event_fingerprint": "event-model-release-001",
+                        "facts": ["产品发布了新的推理模型。"],
+                        "source_refs": ["official-release-001"],
+                    },
+                    {
+                        "label": "开发者工具",
+                        "event_fingerprint": "event-developer-tools-002",
+                        "facts": ["开发者工具新增了批量处理能力。"],
+                        "source_refs": ["official-release-002"],
+                    },
+                    {
+                        "label": "行业应用",
+                        "event_fingerprint": "event-industry-use-003",
+                        "facts": ["功能面向团队协作场景开放。"],
+                        "source_refs": ["official-release-003"],
+                    },
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_run_playbook(
+        request: PlaybookRequest,
+        **_: object,
+    ) -> dict[str, object]:
+        captured["request"] = request
+        return {"status": "completed", "playbook_id": request.playbook_id}
+
+    monkeypatch.setattr("ptsm.interfaces.cli.main.run_playbook", fake_run_playbook)
+
+    exit_code = main(
+        [
+            "run-playbook",
+            "--account-id",
+            "acct-ai-tech-local",
+            "--playbook-id",
+            "ai_tech_daily_post",
+            "--ai-content-mode",
+            "news_brief",
+            "--ai-evidence-file",
+            str(evidence_path),
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload["status"] == "completed"
+    request = captured["request"]
+    assert isinstance(request, PlaybookRequest)
+    assert request.scene == ""
+    assert request.ai_content_mode == "news_brief"
+    assert request.ai_evidence_bundle["mode"] == "news_brief"
+    assert request.ai_evidence_file_path == str(evidence_path)
+
+
+def test_run_playbook_cli_reports_malformed_ai_evidence_json_cleanly(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    evidence_path = tmp_path / "bad-ai-evidence.json"
+    evidence_path.write_text("{not json", encoding="utf-8")
+
+    with pytest.raises(SystemExit) as exc_info:
+        main(
+            [
+                "run-playbook",
+                "--scene",
+                "AI 更新",
+                "--account-id",
+                "acct-ai-tech-local",
+                "--playbook-id",
+                "ai_tech_daily_post",
+                "--ai-content-mode",
+                "news_brief",
+                "--ai-evidence-file",
+                str(evidence_path),
+            ]
+        )
+
+    captured = capsys.readouterr()
+
+    assert exc_info.value.code == 2
+    assert "ai evidence file" in captured.err
+
+
+def test_run_playbook_cli_allows_ai_request_without_scene_to_reach_preflight(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    exit_code = main(
+        [
+            "run-playbook",
+            "--account-id",
+            "acct-ai-tech-local",
+            "--playbook-id",
+            "ai_tech_daily_post",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload["status"] == "ai_tech_evidence_required"
+
+
+def test_run_playbook_cli_resolves_default_ai_playbook_before_scene_gate(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    exit_code = main(
+        [
+            "run-playbook",
+            "--account-id",
+            "acct-ai-tech-local",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload["playbook_id"] == "ai_tech_daily_post"
+    assert payload["status"] == "ai_tech_evidence_required"
+
+
+def test_run_playbook_cli_keeps_scene_requirement_for_non_ai_evidence_file(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    evidence_path = tmp_path / "ai-evidence.json"
+    evidence_path.write_text("{}", encoding="utf-8")
+
+    with pytest.raises(SystemExit) as exc_info:
+        main(
+            [
+                "run-playbook",
+                "--account-id",
+                "acct-classic-poetry-local",
+                "--playbook-id",
+                "classic_poetry_quote_post",
+                "--ai-evidence-file",
+                str(evidence_path),
+            ]
+        )
+
+    captured = capsys.readouterr()
+
+    assert exc_info.value.code == 2
+    assert "requires --scene" in captured.err
+
+
+def test_run_playbook_cli_reports_non_utf8_ai_evidence_cleanly(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    evidence_path = tmp_path / "bad-ai-evidence.json"
+    evidence_path.write_bytes(b"\xff\xfe")
+
+    with pytest.raises(SystemExit) as exc_info:
+        main(
+            [
+                "run-playbook",
+                "--scene",
+                "AI 更新",
+                "--account-id",
+                "acct-ai-tech-local",
+                "--playbook-id",
+                "ai_tech_daily_post",
+                "--ai-evidence-file",
+                str(evidence_path),
+            ]
+        )
+
+    captured = capsys.readouterr()
+
+    assert exc_info.value.code == 2
+    assert "ai evidence file" in captured.err
+
+
 def test_run_playbook_cli_passes_openclaw_guidance_fields(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -752,12 +955,6 @@ def test_guide_post_cli_outputs_non_interactive_human_enrichment_brief(
             "wuxia_",
         ),
         (
-            "ai_tech_daily_post",
-            "acct-ai-tech-local",
-            "Google 发布 Gemini 3，想写普通人能懂的 AI 工具变化",
-            "ai_",
-        ),
-        (
             "daily_english_post",
             "acct-daily-english-local",
             "学一个表示坚持的高级词汇，想配真实职场例句",
@@ -868,3 +1065,50 @@ def test_guide_post_cli_prompts_for_missing_fields(
     assert "lane: 孤独 / 比较焦虑" in captured.out
     assert "mechanism: 比较焦虑" in captured.out
     assert "comment_prompt: 你会把这句话送给哪一个瞬间？" in captured.out
+
+
+def test_guide_post_cli_requires_and_forwards_ai_evidence_mode(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        main(
+            [
+                "guide-post",
+                "--playbook-id",
+                "ai_tech_daily_post",
+                "--account-id",
+                "acct-ai-tech-local",
+                "--scene",
+                "今天想做一条 AI 科技热点快讯",
+                "--non-interactive",
+            ]
+        )
+
+    assert exc_info.value.code == 2
+    assert "--ai-content-mode" in capsys.readouterr().err
+
+    exit_code = main(
+        [
+            "guide-post",
+            "--playbook-id",
+            "ai_tech_daily_post",
+            "--account-id",
+            "acct-ai-tech-local",
+            "--scene",
+            "今天想做一条 AI 科技热点快讯",
+            "--ai-content-mode",
+            "news_brief",
+            "--ai-evidence-file",
+            "inputs/ai-evidence.json",
+            "--non-interactive",
+            "--format",
+            "json",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload["brief"]["content_mode"] == "news_brief"
+    assert payload["run_playbook_command"][-1] == "note_card" or "--local-image-style" in payload["run_playbook_command"]
+    assert "--ai-evidence-file inputs/ai-evidence.json" in payload["run_playbook_command_text"]

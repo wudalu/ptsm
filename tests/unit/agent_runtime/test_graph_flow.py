@@ -108,3 +108,43 @@ def test_graph_supports_replan_branch() -> None:
 
     assert result["status"] == "completed"
     assert result["planner_iterations"] == 2
+
+
+def test_graph_routes_invalid_evidence_from_ingest_without_drafting() -> None:
+    calls: list[str] = []
+
+    def ingest(_: dict[str, object]) -> dict[str, object]:
+        calls.append("ingest")
+        return {
+            "status": "ai_tech_evidence_invalid",
+            "reflection_decision": "fail",
+        }
+
+    def planner(_: dict[str, object]) -> dict[str, object]:
+        calls.append("planner")
+        return {}
+
+    def executor(_: dict[str, object]) -> dict[str, object]:
+        calls.append("executor")
+        return {}
+
+    def reflector(_: dict[str, object]) -> dict[str, object]:
+        calls.append("reflector")
+        return {}
+
+    def finalize(state: dict[str, object]) -> dict[str, object]:
+        calls.append("finalize")
+        return {"status": state["status"]}
+
+    workflow = runtime.build_execution_graph(
+        ingest=ingest,
+        planner=planner,
+        executor=executor,
+        reflector=reflector,
+        finalize=finalize,
+    )
+
+    result = workflow.invoke({})
+
+    assert result["status"] == "ai_tech_evidence_invalid"
+    assert calls == ["ingest", "finalize"]

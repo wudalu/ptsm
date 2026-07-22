@@ -107,3 +107,41 @@ def test_memory_node_hides_reddit_source_markers_from_prompt_context() -> None:
     )
     assert "这个热点" in context
     assert "same internal-source curation scene" in context
+
+
+def test_memory_node_skips_history_for_evidence_gated_ai_drafts() -> None:
+    memory = InMemoryExecutionMemory()
+    namespace = ("accounts", "acct-ai-tech-local", "lessons")
+    memory.record(
+        namespace=namespace,
+        item={
+            "playbook_id": "ai_tech_daily_post",
+            "scene": "Raw release title https://example.com/release",
+            "title": "Raw source title",
+            "image_text": "Example Author",
+            "final_body": "legacy body with https://example.com/release",
+        },
+    )
+    safe_context = "# AI Tech Evidence Contract\n只使用本次已核验事实。"
+    node = build_memory_node(execution_memory=memory, evidence_gated=True)
+
+    result = node(
+        {
+            "account_id": "acct-ai-tech-local",
+            "playbook_id": "ai_tech_daily_post",
+            "runtime_skill_contents": [safe_context],
+            "runtime_skill_details": [
+                {
+                    "skill_name": "ai_tech_evidence_contract",
+                    "resource_type": "runtime_context",
+                    "resource_id": "ai_tech_evidence_contract:runtime_context",
+                    "source_path": None,
+                    "content_preview": "# AI Tech Evidence Contract",
+                }
+            ],
+        }
+    )
+
+    assert result["memory_hits"] == []
+    assert result["runtime_skill_contents"] == [safe_context]
+    assert "Recent Account Memory" not in "\n".join(result["runtime_skill_contents"])

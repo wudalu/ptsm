@@ -1,0 +1,23 @@
+{
+  "mode": "news_brief",
+  "news_items": [
+    {
+      "label": "模型发布",
+      "event_fingerprint": "event-model-release-001",
+      "facts": ["产品新增了长文本处理能力。"],
+      "source_refs": ["official-release-001"]
+    },
+    {
+      "label": "开发工具",
+      "event_fingerprint": "event-developer-tool-002",
+      "facts": ["开发者控制台加入批量任务入口。"],
+      "source_refs": ["official-release-002"]
+    },
+    {
+      "label": "团队功能",
+      "event_fingerprint": "event-team-feature-003",
+      "facts": ["团队空间开放了共享项目设置。"],
+      "source_refs": ["official-release-003"]
+    }
+  ]
+}

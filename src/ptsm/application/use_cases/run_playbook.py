@@ -3,8 +3,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import re
+import shlex
 import sys
 from typing import Any, Sequence
+
+from pydantic import ValidationError
 
 from ptsm.accounts.registry import AccountRegistry
 from ptsm.agent_runtime.runtime import (
@@ -42,6 +45,12 @@ from ptsm.infrastructure.publishers.factory import build_publisher
 from ptsm.infrastructure.publishers.xiaohongshu_mcp_publisher import PublisherPreflightError
 from ptsm.playbooks.registry import PlaybookRegistry
 from ptsm.domain.topic_guidance import resolve_topic_lane
+from ptsm.domain.ai_tech_content import (
+    AiTechEvidenceBundle,
+    is_ai_tech_drafting_safe_text,
+    parse_ai_tech_evidence_bundle,
+    validate_ai_tech_draft,
+)
 from ptsm.skills.runtime_context import (
     PatternAwareTopicResearchContextBuilder,
     RedditDiscussionContextBuilder,
@@ -58,6 +67,7 @@ DEFAULT_SIDE_EFFECT_LEDGER_PATH = Path(".ptsm") / "agent_runtime" / "side-effect
 DEFAULT_GENERATED_IMAGES_DIR = Path("outputs") / "generated_images"
 WAIT_FOR_PUBLISH_STATUS_SEARCH_RETRY_ATTEMPTS = 4
 WAIT_FOR_PUBLISH_STATUS_SEARCH_RETRY_INTERVAL_SECONDS = 2.0
+AI_TECH_PLAYBOOK_ID = "ai_tech_daily_post"
 
 
 def _run_topic_radar_scan(*, output_dir: str) -> dict[str, Any]:
@@ -291,6 +301,171 @@ def _resolve_topic_direction_payload(
     return None
 
 
+def _resolve_ai_tech_evidence_preflight(
+    *,
+    request: PlaybookRequest,
+    platform: str,
+    playbook_id: str,
+) -> tuple[AiTechEvidenceBundle | None, dict[str, Any] | None]:
+    """Validate AI evidence before a run, workflow, artifact, or publisher exists."""
+    response_context = {
+        # An AI evidence failure occurs before the free-form scene has been
+        # normalized.  Never echo that operator input back in an application
+        # response: it can contain raw headlines, URLs, authors, or feeds.
+        "scene": "AI 科技证据模式",
+        "platform": platform,
+        "account_id": request.account_id,
+        "playbook_id": playbook_id,
+    }
+    if not request.ai_content_mode or request.ai_evidence_bundle is None:
+        return None, {
+            **response_context,
+            "status": "ai_tech_evidence_required",
+            "next_step": (
+                "Choose --ai-content-mode and provide --ai-evidence-file with "
+                "the required evidence bundle before drafting AI tech content."
+            ),
+        }
+
+    try:
+        evidence_bundle = parse_ai_tech_evidence_bundle(request.ai_evidence_bundle)
+    except ValidationError:
+        return None, {
+            **response_context,
+            "status": "ai_tech_evidence_invalid",
+            "diagnostic": "invalid_evidence_bundle",
+        }
+
+    if request.ai_content_mode != evidence_bundle.mode:
+        return None, {
+            **response_context,
+            "status": "ai_tech_evidence_invalid",
+            "diagnostic": "content_mode_mismatch",
+        }
+    return evidence_bundle, None
+
+
+def _is_matching_ai_tech_topic_direction(
+    *,
+    topic_direction_id: str,
+    content_mode: str,
+) -> bool:
+    """Accept only a current static AI direction for the selected evidence mode."""
+    pack = TOPIC_GUIDANCE_PACKS.get(AI_TECH_PLAYBOOK_ID)
+    if pack is None:
+        return False
+    return any(
+        direction.id == topic_direction_id and direction.content_mode == content_mode
+        for direction in pack.directions
+    )
+
+
+def _build_ai_tech_runtime_scene(evidence: AiTechEvidenceBundle) -> str:
+    """Build the only scene text an evidence-gated AI run may receive.
+
+    ``scene`` is still consumed by the generic executor, artifact flow, and
+    image helpers.  For AI tech it therefore cannot be the operator's free
+    text (which may contain raw headlines or provenance); derive a compact
+    label solely from the already-validated drafting payload instead.
+    """
+    payload = evidence.drafting_payload
+    if evidence.mode == "news_brief":
+        labels = [
+            str(item.get("label") or "").strip()
+            for item in payload["news_items"]
+            if isinstance(item, dict)
+        ]
+        return f"AI 科技资讯简报：{' / '.join(label for label in labels if label)}"
+
+    topic = str(payload.get("topic") or "").strip()
+    if evidence.mode == "hands_on":
+        hands_on = payload.get("hands_on")
+        if isinstance(hands_on, dict):
+            product = str(hands_on.get("product") or "").strip()
+            version = str(hands_on.get("version") or "").strip()
+            task = str(hands_on.get("task") or "").strip()
+            return f"AI 科技实测：{topic}；{product} {version}；任务：{task}"
+    return f"AI 科技事实转译：{topic}"
+
+
+def _build_ai_tech_evidence_receipt(evidence: AiTechEvidenceBundle) -> dict[str, object]:
+    """Return the opaque receipt that an AI artifact may retain or expose."""
+    return {
+        "ai_tech_content_mode": evidence.mode,
+        "ai_tech_evidence_manifest": evidence.manifest.model_dump(mode="json"),
+        "ai_tech_evidence_gate": {
+            "status": "passed",
+            "mode": evidence.mode,
+            "validator": "ai_tech_draft_contract",
+            "validator_version": "1",
+            "errors": [],
+        },
+    }
+
+
+def _is_safe_ai_tech_artifact(
+    *,
+    artifact_store: FileArtifactStore,
+    artifact_path: str,
+    expected_final_content: dict[str, Any],
+) -> bool:
+    """Check an AI artifact before adding an opaque receipt or publishing.
+
+    A custom workflow may return a path it did not create.  Never merge into a
+    foreign or provenance-bearing JSON document: that would persist raw source
+    data even when the final draft itself passed the AI evidence gate.
+    """
+    path = Path(artifact_path)
+    try:
+        owned_root = artifact_store.base_dir.resolve()
+        path.resolve().relative_to(owned_root)
+        artifact = artifact_store.read(path)
+    except (OSError, ValueError, json.JSONDecodeError):
+        return False
+
+    if artifact.get("playbook_id") != AI_TECH_PLAYBOOK_ID:
+        return False
+    if artifact.get("final_content") != expected_final_content:
+        return False
+    return not _contains_raw_ai_tech_provenance(artifact)
+
+
+def _contains_raw_ai_tech_provenance(value: object) -> bool:
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            if _is_raw_ai_tech_provenance_key(str(key)):
+                return True
+            if _contains_raw_ai_tech_provenance(nested):
+                return True
+        return False
+    if isinstance(value, list):
+        return any(_contains_raw_ai_tech_provenance(item) for item in value)
+    if isinstance(value, tuple):
+        return any(_contains_raw_ai_tech_provenance(item) for item in value)
+    return (
+        isinstance(value, str)
+        and bool(value.strip())
+        and not is_ai_tech_drafting_safe_text(value)
+    )
+
+
+def _is_raw_ai_tech_provenance_key(key: str) -> bool:
+    normalized = re.sub(r"[^a-z0-9]", "", key.lower())
+    return normalized in {
+        "author",
+        "authorname",
+        "feed",
+        "feedid",
+        "feedidentifier",
+        "rawheadline",
+        "rawsourcetitle",
+        "rawsourceurl",
+        "sourceauthor",
+        "sourcetitle",
+        "sourceurl",
+    }
+
+
 def run_playbook(
     request: PlaybookRequest,
     *,
@@ -331,6 +506,53 @@ def run_playbook(
         platform=resolved_platform,
         playbook_id=request.playbook_id,
     )
+    ai_tech_evidence_bundle: AiTechEvidenceBundle | None = None
+    if playbook.playbook_id == AI_TECH_PLAYBOOK_ID:
+        ai_tech_evidence_bundle, preflight_failure = _resolve_ai_tech_evidence_preflight(
+            request=request,
+            platform=resolved_platform,
+            playbook_id=playbook.playbook_id,
+        )
+        if preflight_failure is not None:
+            return preflight_failure
+        if (
+            request.topic_direction_id
+            and not _is_matching_ai_tech_topic_direction(
+                topic_direction_id=request.topic_direction_id,
+                content_mode=ai_tech_evidence_bundle.mode,
+            )
+        ):
+            return {
+                "scene": _build_ai_tech_runtime_scene(ai_tech_evidence_bundle),
+                "platform": resolved_platform,
+                "account_id": request.account_id,
+                "playbook_id": playbook.playbook_id,
+                "status": "ai_tech_topic_direction_invalid",
+                "diagnostic": "unknown_or_mode_mismatched_topic_direction",
+            }
+    effective_scene = (
+        _build_ai_tech_runtime_scene(ai_tech_evidence_bundle)
+        if ai_tech_evidence_bundle is not None
+        else request.scene
+    )
+    if ai_tech_evidence_bundle is not None and request.fresh_topic_research:
+        # Topic Radar is intentionally a separate discovery operation for AI
+        # evidence modes.  Its public output can assist an operator in
+        # collecting an opaque trend reference, but it cannot supply the
+        # verified facts or reproducible test record required for drafting.
+        # Returning here also ensures raw scan output is never printed,
+        # checkpointed, or attached to this AI run.
+        return {
+            "scene": effective_scene,
+            "platform": resolved_platform,
+            "account_id": request.account_id,
+            "playbook_id": playbook.playbook_id,
+            "status": "ai_tech_fresh_research_separate",
+            "next_step": (
+                "Run hotspot discovery separately, collect only eligible opaque "
+                "trend support, then provide a complete --ai-evidence-file before drafting."
+            ),
+        }
     if _requires_openclaw_psychology_guidance(
         caller=request.caller,
         guidance_ack=request.guidance_ack,
@@ -390,17 +612,31 @@ def run_playbook(
                 ),
             }
         enriched_scene = _build_enriched_scene(topic_selection)
-        request.scene = enriched_scene
+        if ai_tech_evidence_bundle is None:
+            request.scene = enriched_scene
+            effective_scene = enriched_scene
         print(f"\n{'='*60}")
         print(f"Scene built from topic selection:")
-        print(f"{enriched_scene}")
+        print(
+            effective_scene
+            if ai_tech_evidence_bundle is not None
+            else enriched_scene
+        )
         print(f"{'='*60}\n")
 
-    topic_selection_metadata = _topic_selection_metadata(
-        topic_selection,
-        request.topic_direction_id,
-        playbook_id=playbook.playbook_id,
-        scene=request.scene,
+    # Fresh Topic Radar is selection support only for AI evidence modes.  Its
+    # free-form vertical/angle metadata must not enter graph state, checkpoints,
+    # or the publish artifact; any eligible trend reference is already carried
+    # as an opaque ID in the operator's evidence manifest.
+    topic_selection_metadata = (
+        None
+        if ai_tech_evidence_bundle is not None
+        else _topic_selection_metadata(
+            topic_selection,
+            request.topic_direction_id,
+            playbook_id=playbook.playbook_id,
+            scene=effective_scene,
+        )
     )
 
     run = run_store.start(
@@ -433,15 +669,21 @@ def run_playbook(
                 output_path=qrcode_output_path,
             )
             if preflight.get("status") != "ready":
+                login_request = (
+                    request.model_copy(update={"scene": effective_scene})
+                    if ai_tech_evidence_bundle is not None
+                    else request
+                )
                 publish_result = _build_login_required_result(
                     account_id=account.account_id,
                     account_nickname=account.nickname,
                     platform=account.platform,
                     provider=getattr(publisher, "provider_name", publisher.__class__.__name__),
                     preflight=preflight,
-                    request=request,
+                    request=login_request,
                     command_name=command_name,
                     resolved_platform=resolved_platform,
+                    playbook_id=playbook.playbook_id,
                 )
                 if request.open_browser_if_needed:
                     browser_result = open_xhs_browser(
@@ -454,7 +696,7 @@ def run_playbook(
                     post_publish_checks["browser_result"] = browser_result
                 post_publish_checks["publish_status"] = "login_required"
                 return {
-                    "scene": request.scene,
+                    "scene": effective_scene,
                     "platform": resolved_platform,
                     "account_id": request.account_id,
                     "playbook_id": playbook.playbook_id,
@@ -477,12 +719,30 @@ def run_playbook(
         checkpointer=checkpointer,
         settings=settings,
         format_pattern_path=request.format_pattern_path,
+        ai_tech_evidence=(
+            ai_tech_evidence_bundle.runtime_contract
+            if ai_tech_evidence_bundle is not None
+            else None
+        ),
+        ai_tech_evidence_manifest=(
+            ai_tech_evidence_bundle.manifest.model_dump(mode="json")
+            if ai_tech_evidence_bundle is not None
+            else None
+        ),
     )
     effective_thread_id = thread_id or run.run_id
     config = {"configurable": {"thread_id": effective_thread_id}}
     workflow_payload: dict[str, Any] = {
-        **request.model_dump(mode="python"),
+        **request.model_dump(
+            mode="python",
+            exclude={
+                "ai_content_mode",
+                "ai_evidence_bundle",
+                "ai_evidence_file_path",
+            },
+        ),
         "platform": resolved_platform,
+        "scene": effective_scene,
     }
     if topic_selection_metadata is not None:
         workflow_payload["topic_selection"] = topic_selection_metadata
@@ -493,6 +753,46 @@ def run_playbook(
             workflow_payload["fresh_topic_research"] = False
     result = workflow.invoke(workflow_payload, config=config)
     result = {"playbook_id": playbook.playbook_id, **result}
+    # Evidence is a workflow-construction capability, never a graph/input
+    # state field.  The artifact receipt retains only the opaque manifest.
+    if ai_tech_evidence_bundle is not None and result.get("status") == "completed":
+        draft = result.get("final_content")
+        draft_mapping = draft if isinstance(draft, dict) else {}
+        validation_errors = validate_ai_tech_draft(ai_tech_evidence_bundle, draft_mapping)
+        if validation_errors:
+            result["status"] = "ai_tech_draft_invalid"
+            result["ai_tech_draft_validation"] = {"errors": validation_errors}
+        else:
+            artifact_path = result.get("artifact_path")
+            if not isinstance(artifact_path, str) or not Path(artifact_path).is_file():
+                result["status"] = "ai_tech_artifact_required"
+                result["ai_tech_artifact_validation"] = {
+                    "error": "completed AI workflow must write an artifact before publish"
+                }
+            elif not _is_safe_ai_tech_artifact(
+                artifact_store=artifact_store,
+                artifact_path=artifact_path,
+                expected_final_content=draft_mapping,
+            ):
+                result["status"] = "ai_tech_artifact_invalid"
+                result["ai_tech_artifact_validation"] = {
+                    "error": "AI artifact failed ownership or provenance validation"
+                }
+            else:
+                evidence_receipt = _build_ai_tech_evidence_receipt(ai_tech_evidence_bundle)
+                try:
+                    # Standard workflows write this receipt during finalization.
+                    # Replacing the same safe values here also closes the
+                    # custom-workflow path without trusting a caller-supplied
+                    # receipt or copying the full evidence bundle.
+                    artifact_store.merge(artifact_path, evidence_receipt)
+                except (OSError, json.JSONDecodeError):
+                    result["status"] = "ai_tech_artifact_invalid"
+                    result["ai_tech_artifact_validation"] = {
+                        "error": "could not persist AI evidence receipt before publish"
+                    }
+                else:
+                    result.update(evidence_receipt)
     format_patterns_used = _extract_format_patterns_used(
         result,
         pattern_path=request.format_pattern_path or settings.xhs_pattern_library_path,
@@ -519,7 +819,11 @@ def run_playbook(
             auto_generate_images=request.auto_generate_images,
         ):
             image_backend = build_image_backend(settings)
-            runtime_skill_contents = list(result.get("runtime_skill_contents") or [])
+            runtime_skill_contents = (
+                []
+                if ai_tech_evidence_bundle is not None
+                else list(result.get("runtime_skill_contents") or [])
+            )
             runtime_context_summary = _summarize_runtime_skill_contents(
                 runtime_skill_contents
             )
@@ -531,7 +835,7 @@ def run_playbook(
             if image_decision["route"] == "local":
                 image_generation = NoteCardImageBackend().generate(
                     prompt=_build_note_card_image_payload(
-                        scene=request.scene,
+                        scene=effective_scene,
                         runtime_context_summary=runtime_context_summary,
                         final_content=result["final_content"],
                         local_image_style=str(image_decision.get("requested_style") or ""),
@@ -557,7 +861,7 @@ def run_playbook(
                     raise RuntimeError("image backend decision selected provider without backend")
                 image_generation = image_backend.generate(
                     prompt=_build_image_generation_prompt(
-                        scene=request.scene,
+                        scene=effective_scene,
                         persona_prompt=str(result.get("persona_prompt") or ""),
                         runtime_skill_contents=runtime_skill_contents,
                         content_review=result.get("content_review"),
@@ -670,6 +974,7 @@ def run_playbook(
                         request=request,
                         command_name=command_name,
                         resolved_platform=resolved_platform,
+                        playbook_id=playbook.playbook_id,
                     ),
                     "artifact_path": result["artifact_path"],
                     "error": str(exc),
@@ -692,7 +997,7 @@ def run_playbook(
                     result=publish_result,
                 )
         artifact_update = {
-            "scene": request.scene,
+            "scene": effective_scene,
             "platform": request.platform,
             "account": account.to_dict(),
             "publish_mode": publish_mode,
@@ -835,6 +1140,7 @@ def _build_login_required_result(
     request: PlaybookRequest,
     command_name: str,
     resolved_platform: str,
+    playbook_id: str,
 ) -> dict[str, Any]:
     qrcode_output_path = None
     qrcode = preflight.get("qrcode")
@@ -844,7 +1150,16 @@ def _build_login_required_result(
         command_name=command_name,
         request=request,
         resolved_platform=resolved_platform,
+        resolved_playbook_id=playbook_id,
+        requires_ai_evidence=playbook_id == AI_TECH_PLAYBOOK_ID,
     )
+    recovery_instruction = None
+    if rerun_command is None:
+        recovery_instruction = (
+            "After login, retry the original API request with the same "
+            "ai_content_mode and ai_evidence_bundle. No evidence-file path was "
+            "supplied, so PTSM intentionally omits a CLI rerun command."
+        )
     return {
         "status": "login_required",
         "platform": platform,
@@ -855,6 +1170,7 @@ def _build_login_required_result(
         "login_instructions": build_xhs_login_instructions(
             qrcode_output_path=str(qrcode_output_path) if qrcode_output_path else None,
             rerun_command=rerun_command,
+            recovery_instruction=recovery_instruction,
         ),
     }
 
@@ -867,6 +1183,8 @@ def _build_workflow_for_playbook(
     checkpointer: object,
     settings: Settings,
     format_pattern_path: str | None = None,
+    ai_tech_evidence: dict[str, Any] | None = None,
+    ai_tech_evidence_manifest: dict[str, Any] | None = None,
 ):
     skill_context_resolver = _build_runtime_skill_context_resolver(
         settings,
@@ -886,6 +1204,8 @@ def _build_workflow_for_playbook(
         checkpointer=checkpointer,
         settings=settings,
         skill_context_resolver=skill_context_resolver,
+        ai_tech_evidence=ai_tech_evidence,
+        ai_tech_evidence_manifest=ai_tech_evidence_manifest,
     )
 
 
@@ -942,8 +1262,14 @@ def _build_rerun_command(
     command_name: str,
     request: PlaybookRequest,
     resolved_platform: str,
-) -> str:
-    if command_name == "run-fengkuang" or request.playbook_id in {None, "fengkuang_daily_post"}:
+    resolved_playbook_id: str,
+    requires_ai_evidence: bool,
+) -> str | None:
+    if requires_ai_evidence and not request.ai_evidence_file_path:
+        return None
+    if not requires_ai_evidence and (
+        command_name == "run-fengkuang" or request.playbook_id in {None, "fengkuang_daily_post"}
+    ):
         return (
             f"ptsm run-fengkuang --scene '{request.scene}' --platform {resolved_platform} "
             f"--account-id {request.account_id} --publish-mode mcp-real"
@@ -951,13 +1277,20 @@ def _build_rerun_command(
     parts = [
         "ptsm run-playbook",
         f"--account-id {request.account_id}",
-        f"--scene '{request.scene}'",
         f"--publish-mode mcp-real",
     ]
-    if request.playbook_id:
-        parts.append(f"--playbook-id {request.playbook_id}")
+    if not requires_ai_evidence:
+        parts.append(f"--scene '{request.scene}'")
+    if request.playbook_id or requires_ai_evidence:
+        parts.append(f"--playbook-id {request.playbook_id or resolved_playbook_id}")
     if request.platform:
         parts.append(f"--platform {resolved_platform}")
+    if requires_ai_evidence and request.ai_content_mode:
+        parts.append(f"--ai-content-mode {shlex.quote(request.ai_content_mode)}")
+    if requires_ai_evidence and request.ai_evidence_file_path:
+        parts.append(
+            f"--ai-evidence-file={shlex.quote(request.ai_evidence_file_path)}"
+        )
     return " ".join(parts)
 
 

@@ -24,9 +24,59 @@ Use this skill when the user asks OpenClaw to create, prepare, draft, save, or p
 
 If the request is 模糊 or multiple playbooks fit, ask one short 澄清 / clarification question before calling PTSM. If the caller already resolved the target, accept the explicit `--playbook-id`.
 
-Prompt / 提示词 / AI提问 scenes stay under `ai_tech_daily_post`; do not create a new playbook. Let PTSM return the prompt-building lane/directions such as `ai_prompt_context_card`.
+Prompt / 提示词 / AI提问 scenes stay under `ai_tech_daily_post`; do not create a new playbook. `ai_prompt_context_card` is now a `hands_on` test-replay direction, never a generic copyable-prompt lane.
+
+## AI 科技证据门槛
+
+For `ai_tech_daily_post`, do not turn a free-text scene or a hot headline into a post. Require one evidence mode and its evidence file before generating or publishing:
+
+| Mode | Required evidence | Reader-facing shape |
+| --- | --- | --- |
+| `news_brief` | 3–5 independent events; each has a label, verified fact, and opaque source reference | numbered short news cards |
+| `hands_on` | 一条可复现的记录：product、version、date、task、input、observed output、limitation 和 test reference | one test replay |
+| `fact_translation` | one topic, at least two verified facts, 谁该关注、谁可以等 | fact / decision card |
+
+- A hotspot can help choose a direction, but 热点不能 supply facts or a test record. 不要生成或发布仅靠 trend support 的内容。
+- For an unconstrained request such as “今天 AI 有什么热点”, run discovery separately first. Do not inline its raw output into an AI drafting request:
+
+```bash
+uv run python -m ptsm.bootstrap hotspot-discovery --max-hotspots 12
+```
+
+After the operator chooses a safe direction and prepares evidence, continue with the mode-specific flow below. Never show raw source URLs, authors, feed IDs, or original headlines to the user.
 
 ## Required Flow
+
+### AI 科技
+
+1. Ask for or receive the evidence mode and evidence JSON path. If either is missing, stop: do not draft from the scene.
+
+```bash
+uv run python -m ptsm.bootstrap guide-post \
+  --playbook-id ai_tech_daily_post \
+  --account-id "<account id>" \
+  --ai-content-mode "<news_brief|hands_on|fact_translation>" \
+  --ai-evidence-file "<evidence.json>" \
+  --non-interactive \
+  --format json
+```
+
+2. Show only the returned direction(s) for that exact mode. Do not invent an `open_scene` direction. Confirm one returned `topic_direction_id`.
+
+3. Generate only through PTSM with the same mode and evidence file. Do not pass a free-text `--scene` for this AI run.
+
+```bash
+uv run python -m ptsm.bootstrap run-playbook \
+  --caller openclaw \
+  --account-id "<account id>" \
+  --playbook-id ai_tech_daily_post \
+  --topic-direction-id "<returned direction id>" \
+  --ai-content-mode "<news_brief|hands_on|fact_translation>" \
+  --ai-evidence-file "<evidence.json>" \
+  --publish-mode dry-run
+```
+
+### Other supported non-psychology playbooks
 
 1. Call PTSM guidance first. Do not write or publish the post before this step.
 
@@ -75,4 +125,6 @@ uv run python -m ptsm.bootstrap run-playbook \
 - Do not invent, expand, or replace PTSM-returned open_scene direction(s); only display them when they are present in `topic_guidance.directions`.
 - Do not invent, expand, or replace PTSM-returned format recommendation; only display `format_recommendation` when PTSM returns it.
 - Do not invent, expand, or replace PTSM-returned image recommendation; only display `topic_guidance.image_recommendation` when PTSM returns it.
+- For AI tech, never substitute a headline, trend score, generic opinion, or reusable prompt template for the selected evidence mode.
+- For AI `news_brief` and `fact_translation`, do not claim personal use or testing. For `hands_on`, describe only the recorded test and its limitation.
 - For psychology, switch to `ptsm-xhs-psychology`; this generic skill does not own psychology safety boundaries or the `--guidance-ack` gate.

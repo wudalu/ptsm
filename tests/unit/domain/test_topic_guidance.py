@@ -471,3 +471,83 @@ def test_resolve_topic_lane_matches_number_name_and_scene_keywords() -> None:
     assert resolve_topic_lane(lanes=lanes, lane="2").name == "通勤路线 / 感官变量"
     assert resolve_topic_lane(lanes=lanes, lane="一平米").name == "一平米角落 / 低成本变量"
     assert resolve_topic_lane(lanes=lanes, scene="想写书桌角落").name == "一平米角落 / 低成本变量"
+
+
+def test_select_topic_directions_filters_and_serializes_explicit_content_mode() -> None:
+    directions = (
+        TopicDirection(
+            id="news",
+            name="News",
+            trend_signal="signal",
+            viral_hook="hook",
+            why_it_may_work="why",
+            best_scenes=("scene",),
+            content_angle="angle",
+            saveable_tool="tool",
+            comment_prompt="prompt",
+            avoid="avoid",
+            content_mode="news_brief",
+            base_priority=9,
+        ),
+        TopicDirection(
+            id="hands",
+            name="Hands",
+            trend_signal="signal",
+            viral_hook="hook",
+            why_it_may_work="why",
+            best_scenes=("scene",),
+            content_angle="angle",
+            saveable_tool="tool",
+            comment_prompt="prompt",
+            avoid="avoid",
+            content_mode="hands_on",
+            base_priority=8,
+        ),
+        TopicDirection(
+            id="translation",
+            name="Translation",
+            trend_signal="signal",
+            viral_hook="hook",
+            why_it_may_work="why",
+            best_scenes=("scene",),
+            content_angle="angle",
+            saveable_tool="tool",
+            comment_prompt="prompt",
+            avoid="avoid",
+            content_mode="fact_translation",
+            base_priority=7,
+        ),
+    )
+
+    result = select_topic_directions(
+        directions=directions,
+        scene="想复盘一次提示词测试",
+        lane_name="AI 科技",
+        content_mode="hands_on",
+        include_open_slot=False,
+    )
+
+    assert result == [
+        {
+            "id": "hands",
+            "name": "Hands",
+            "direction_type": "curated",
+            "content_mode": "hands_on",
+            "trend_signal": "signal",
+            "viral_hook": "hook",
+            "why_it_may_work": "why",
+            "best_scenes": ["scene"],
+            "content_angle": "angle",
+            "saveable_tool": "tool",
+            "comment_prompt": "prompt",
+            "avoid": "avoid",
+            "format_recommendation": {
+                "format_archetype": "note_card",
+                "cover_role": "save_tool",
+                "body_shape": "scene hook / 3-step save tool / comment handoff",
+                "visual_evidence_need": "low",
+                "avoid_format": ["dense_text_poster"],
+            },
+            "scene_fit": "补充视角：给当前场景一个不同表达角度。",
+        }
+    ]

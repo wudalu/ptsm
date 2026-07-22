@@ -201,7 +201,7 @@ The `xhs_trend_scan` skill runs during the planner phase. Ordinary generation is
 1. Try to load `outputs/artifacts/xhs-pattern-library/current.json`.
 2. If a matching lane exists, inject pattern ids, hook archetypes, body structures and image sequences as `runtime_skill_contents`.
 3. If no snapshot exists, ordinary generation skips dynamic context and falls back to static `SKILL.md` guidance.
-4. This skill does not itself fall back to live MCP. Explicit `--fresh-topic-research` uses the public Topic Radar eight-platform scan once before workflow selection; direct XHS collection remains the separate `collect-xhs-patterns` job.
+4. This skill does not itself fall back to live MCP. Except for AI evidence mode, explicit `--fresh-topic-research` uses the public Topic Radar eight-platform scan once before workflow selection; direct XHS collection remains the separate `collect-xhs-patterns` job. AI 科技必须先单独运行 `hotspot-discovery`，再提供 facts/test record evidence file；其 `--fresh-topic-research` 调用只返回分流提示。
 
 This prevents normal content runs from depending on current XHS login state. The periodic collection command is:
 
@@ -248,11 +248,13 @@ uv run python -m ptsm.bootstrap run-playbook \
   --account-id acct-wuxia-local \
   --playbook-id wuxia_character_post
 
-# AI tech news dry-run
+# AI tech evidence-gated dry-run (the file must be a valid hands_on bundle)
 uv run python -m ptsm.bootstrap run-playbook \
-  --scene "Google发布Gemini 3模型" \
   --account-id acct-ai-tech-local \
-  --playbook-id ai_tech_daily_post
+  --playbook-id ai_tech_daily_post \
+  --ai-content-mode hands_on \
+  --ai-evidence-file /path/to/ai-evidence.json \
+  --publish-mode dry-run
 
 # Daily English dry-run
 uv run python -m ptsm.bootstrap run-playbook \
@@ -326,14 +328,16 @@ uv run python -m ptsm.bootstrap guide-post \
 uv run python -m ptsm.bootstrap guide-post \
   --playbook-id ai_tech_daily_post \
   --account-id acct-ai-tech-local \
-  --scene "Google 发布 Gemini 3，想写普通人能懂的 AI 工具变化" \
+  --ai-content-mode news_brief \
+  --ai-evidence-file /path/to/ai-evidence.json \
   --non-interactive \
   --format json
 
 uv run python -m ptsm.bootstrap guide-post \
   --playbook-id ai_tech_daily_post \
   --account-id acct-ai-tech-local \
-  --scene "想模拟一条教普通人写好 prompt 的小红书帖子，重点是让 AI 先问清楚再输出" \
+  --ai-content-mode hands_on \
+  --ai-evidence-file /path/to/ai-evidence.json \
   --non-interactive \
   --format json
 
@@ -370,6 +374,52 @@ uv run python -m ptsm.bootstrap run-playbook \
   --account-id acct-reddit-curation-local \
   --playbook-id reddit_curation_daily_post
 ```
+
+### AI Tech Evidence Files
+
+AI 科技是唯一不能用 `--scene` 直接生成的 playbook。先选 mode，再在本地写 JSON
+evidence file；`run-playbook` 必须同时收到两者。`guide-post` 也要求
+`--ai-content-mode`，它只展示该 mode 的 directions；把返回的 matching
+`topic_direction_id` 原样带回 run 命令。完整三种 JSON 例子见
+[`docs/operations.md`](../operations.md#ai-tech-evidence-gated-runs)。
+
+```bash
+# 先得到与 evidence mode 对应的方向（不会读热点或启动 workflow）
+uv run python -m ptsm.bootstrap guide-post \
+  --playbook-id ai_tech_daily_post \
+  --account-id acct-ai-tech-local \
+  --ai-content-mode hands_on \
+  --ai-evidence-file /path/to/ai-evidence.json \
+  --non-interactive --format json
+
+# 使用上一步返回的 matching id；可不传 scene
+uv run python -m ptsm.bootstrap run-playbook \
+  --account-id acct-ai-tech-local \
+  --playbook-id ai_tech_daily_post \
+  --topic-direction-id ai_prompt_context_card \
+  --ai-content-mode hands_on \
+  --ai-evidence-file /path/to/ai-evidence.json \
+  --publish-mode dry-run
+```
+
+最小 shape 的规则如下：
+
+- `news_brief`：`news_items` 恰为 3–5 个不同事件；每项有 `label`、
+  `event_fingerprint`、至少一条 `facts` 和至少一个 opaque `source_refs`。
+- `hands_on`：一个 `topic` 加一个 `hands_on` record；record 必有 `product`、
+  `version`、`tested_at`、`task`、`input_summary`、`observed_output`、`limitation` 和
+  `test_evidence_refs`。
+- `fact_translation`：一个 `topic`、至少两项 `{statement, source_refs}` 和
+  `audience.who_should_care` / `audience.who_can_wait`。
+
+所有 refs 都是 opaque ID（例如 `source:release-001`），不能写 URL、域名、作者、原始
+标题、feed ID 或 token。`trend_support` 可有 `cluster_id` 或 `evidence_ids`，但只是
+选题依据，不能代替 facts 或 test record。`news_brief` / `fact_translation` 不得写第一人称
+实测；只有 `hands_on` 可说明已测试/已观察，而且只能复述 record 中的内容与局限。
+
+若需要不限定方向的热点，先运行 `hotspot-discovery` 并人工核验。不要给 AI run 加
+`--fresh-topic-research`：它会返回 `ai_tech_fresh_research_separate`，提醒你把 discovery
+与 evidence collection 分开。
 
 ### Reddit Discussion Scan
 
@@ -521,7 +571,7 @@ ptsm accounts
 | 发疯文学 | `acct-fk-local` | `cookies/fk-local.json` | 打工人日常、情绪宣泄、自嘲治愈 |
 | 古诗词金句 | `acct-classic-poetry-local` | `cookies/classic-poetry-local.json` | 经典诗词金句、可保存读法、生活共鸣 |
 | 武侠人物评述 | `acct-wuxia-local` | (未绑定 cookie) | 金庸古龙人物深度评述 |
-| AI科技资讯 | `acct-ai-tech-local` | (未绑定 cookie) | AI/科技趋势速递与解读 |
+| AI科技资讯 | `acct-ai-tech-local` | (未绑定 cookie) | evidence-gated 快讯、实测记录与事实转译 |
 | 每日英语学习 | `acct-daily-english-local` | (未绑定 cookie) | 每日单词学习、陪伴式教育 |
 | 现代心理困境观察 | `acct-psychology-local` | (未绑定 cookie) | 场景化心理科普、情绪解释、安全边界 |
 | 人类丰容实验 | `acct-enrichment-local` | (未绑定 cookie) | 家的丰容计划、低成本改造、日常变量实验 |
@@ -591,14 +641,10 @@ uv run python -m ptsm.bootstrap run-playbook \
 
 # AI科技资讯领域
 uv run python -m ptsm.bootstrap run-playbook \
-  --scene "Google发布Gemini 3模型" \
-  --account-id acct-ai-tech-local \
-  --playbook-id ai_tech_daily_post
-
-uv run python -m ptsm.bootstrap run-playbook \
-  --scene "想模拟一条教普通人写好 prompt 的小红书帖子，重点是让 AI 先问清楚再输出" \
   --account-id acct-ai-tech-local \
   --playbook-id ai_tech_daily_post \
+  --ai-content-mode fact_translation \
+  --ai-evidence-file /path/to/ai-evidence.json \
   --publish-mode dry-run
 
 # 每日英语学习领域

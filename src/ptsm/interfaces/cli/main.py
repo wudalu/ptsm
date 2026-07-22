@@ -35,7 +35,11 @@ from ptsm.application.use_cases.logs import run_logs
 from ptsm.application.use_cases.plan_runs import run_plan_runs
 from ptsm.application.use_cases.run_events import run_run_events
 from ptsm.application.use_cases.runs import run_runs
-from ptsm.application.use_cases.run_playbook import run_fengkuang_playbook, run_playbook
+from ptsm.application.use_cases.run_playbook import (
+    AI_TECH_PLAYBOOK_ID,
+    run_fengkuang_playbook,
+    run_playbook,
+)
 from ptsm.application.use_cases.xhs_browser import open_xhs_browser
 from ptsm.application.use_cases.xhs_domain_opportunity import (
     run_xhs_domain_opportunity,
@@ -63,8 +67,10 @@ from ptsm.plan_runner.runner import (
     run_shell_command,
     run_subprocess_command,
 )
+from ptsm.playbooks.registry import PlaybookRegistry
 
 LOCAL_IMAGE_STYLE_CHOICES = ("note_card", "iphone_notes", "wechat_chat")
+PLAYBOOK_ROOT = Path(__file__).resolve().parents[2] / "playbooks" / "definitions"
 
 
 def _positive_int(value: str) -> int:
@@ -75,6 +81,44 @@ def _positive_int(value: str) -> int:
     if parsed < 1:
         raise argparse.ArgumentTypeError("must be at least 1")
     return parsed
+
+
+def _load_ai_evidence_bundle(
+    *,
+    path: Path,
+    parser: argparse.ArgumentParser,
+) -> dict[str, object]:
+    """Load an operator-provided AI evidence JSON object at the CLI boundary."""
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError) as exc:
+        parser.error(f"could not read ai evidence file {path}: {exc}")
+    except json.JSONDecodeError as exc:
+        parser.error(f"could not parse ai evidence file {path}: {exc.msg}")
+    if not isinstance(payload, dict):
+        parser.error("ai evidence file must contain a JSON object")
+    return payload
+
+
+def _request_resolves_to_ai_tech_playbook(args: argparse.Namespace) -> bool:
+    """Keep CLI scene validation aligned with the playbook selected at runtime."""
+    if args.playbook_id == AI_TECH_PLAYBOOK_ID:
+        return True
+    if args.playbook_id is not None:
+        return False
+    try:
+        account = AccountRegistry().get(args.account_id)
+        platform = args.platform or account.platform
+        if platform != account.platform:
+            return False
+        playbook = PlaybookRegistry(playbook_root=PLAYBOOK_ROOT).select_for_account(
+            account=account,
+            platform=platform,
+            playbook_id=None,
+        )
+    except (LookupError, ValueError):
+        return False
+    return playbook.playbook_id == AI_TECH_PLAYBOOK_ID
 
 
 def _explicit_keywords(value: str) -> str:
@@ -153,6 +197,8 @@ def build_parser() -> argparse.ArgumentParser:
     run_playbook_cli.add_argument("--open-browser-if-needed", action="store_true")
     run_playbook_cli.add_argument("--wait-for-publish-status", action="store_true")
     run_playbook_cli.add_argument("--fresh-topic-research", action="store_true")
+    run_playbook_cli.add_argument("--ai-content-mode")
+    run_playbook_cli.add_argument("--ai-evidence-file", type=Path)
     run_playbook_cli.add_argument("--format-pattern-path", type=Path)
     run_playbook_cli.add_argument("--eval", action="store_true")
     run_playbook_cli.add_argument(
@@ -170,6 +216,11 @@ def build_parser() -> argparse.ArgumentParser:
     guide_post.add_argument("--save-tool")
     guide_post.add_argument("--image-style", choices=LOCAL_IMAGE_STYLE_CHOICES)
     guide_post.add_argument("--comment-prompt")
+    guide_post.add_argument(
+        "--ai-content-mode",
+        choices=("news_brief", "hands_on", "fact_translation"),
+    )
+    guide_post.add_argument("--ai-evidence-file", type=Path)
     guide_post.add_argument("--non-interactive", action="store_true")
     guide_post.add_argument("--format", choices=("json", "markdown"))
 
@@ -541,6 +592,16 @@ def _collect_generic_guide_post_request(args: argparse.Namespace) -> GuidePostRe
             scene=args.scene,
             image_style=args.image_style,
             comment_prompt=args.comment_prompt,
+            ai_content_mode=args.ai_content_mode,
+            ai_evidence_file_path=(
+                str(args.ai_evidence_file) if args.ai_evidence_file is not None else None
+            ),
+        )
+
+    ai_content_mode = args.ai_content_mode
+    if args.playbook_id == "ai_tech_daily_post" and ai_content_mode is None:
+        ai_content_mode = _prompt_to_stderr(
+            "先选证据模式：news_brief / hands_on / fact_translation： "
         )
 
     print("我们先把这条小红书帖子聊成一个可执行选题 brief。", file=sys.stderr)
@@ -580,6 +641,10 @@ def _collect_generic_guide_post_request(args: argparse.Namespace) -> GuidePostRe
         save_tool=args.save_tool,
         image_style=args.image_style,
         comment_prompt=comment_prompt,
+        ai_content_mode=ai_content_mode,
+        ai_evidence_file_path=(
+            str(args.ai_evidence_file) if args.ai_evidence_file is not None else None
+        ),
     )
 
 
@@ -613,7 +678,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     if args.command == "run-playbook":
-        if not args.scene and not args.fresh_topic_research:
+        ai_evidence_bundle = (
+            _load_ai_evidence_bundle(path=args.ai_evidence_file, parser=parser)
+            if args.ai_evidence_file is not None
+            else None
+        )
+        if (
+            not args.scene
+            and not args.fresh_topic_research
+            and not _request_resolves_to_ai_tech_playbook(args)
+        ):
             parser.error("run-playbook requires --scene or --fresh-topic-research")
         result = run_playbook(
             PlaybookRequest(
@@ -633,6 +707,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 open_browser_if_needed=args.open_browser_if_needed,
                 wait_for_publish_status=args.wait_for_publish_status,
                 fresh_topic_research=args.fresh_topic_research,
+                ai_content_mode=args.ai_content_mode,
+                ai_evidence_bundle=ai_evidence_bundle,
+                ai_evidence_file_path=(
+                    str(args.ai_evidence_file) if args.ai_evidence_file is not None else None
+                ),
                 format_pattern_path=(
                     str(args.format_pattern_path) if args.format_pattern_path else None
                 ),
@@ -644,6 +723,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     if args.command == "guide-post":
+        if (
+            args.playbook_id == "ai_tech_daily_post"
+            and args.non_interactive
+            and args.ai_content_mode is None
+        ):
+            parser.error("guide-post for ai_tech_daily_post requires --ai-content-mode")
         request = (
             GuidePostRequest(
                 playbook_id=args.playbook_id,
@@ -654,6 +739,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                 save_tool=args.save_tool,
                 image_style=args.image_style,
                 comment_prompt=args.comment_prompt,
+                ai_content_mode=args.ai_content_mode,
+                ai_evidence_file_path=(
+                    str(args.ai_evidence_file)
+                    if args.ai_evidence_file is not None
+                    else None
+                ),
             )
             if args.non_interactive
             else _collect_guide_post_request(args)

@@ -291,6 +291,77 @@ class TestRunEvalArtifact:
 
             assert result["status"] == "passed"
 
+    def test_scopes_ai_tech_receipt_evaluator_to_ai_final_artifacts_only(self):
+        ai_artifact = {
+            **SAMPLE_ARTIFACT,
+            "playbook_id": "ai_tech_daily_post",
+            "scene": "AI 科技证据模式",
+            "account": {"account_id": "acct-ai-tech-local", "platform": "xiaohongshu"},
+            "final_content": {
+                "title": "AI 三条更新",
+                "image_text": "今天的三条已核验变化",
+                "body": "模型发布：已开放推理能力。\n开发者工具：新增批处理。\n行业应用：支持团队协作。",
+                "hashtags": ["#AI资讯"],
+            },
+            "ai_tech_content_mode": "news_brief",
+            "ai_tech_evidence_manifest": {
+                "source_refs": ["source:official-1"],
+                "test_evidence_refs": [],
+                "event_fingerprints": [
+                    "event:model-1",
+                    "event:tool-2",
+                    "event:industry-3",
+                ],
+                "trend_support": [],
+            },
+            "ai_tech_evidence_gate": {
+                "status": "passed",
+                "mode": "news_brief",
+                "validator": "ai_tech_draft_contract",
+                "validator_version": "1",
+                "errors": [],
+            },
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            non_ai_path = root / "non-ai.json"
+            ai_path = root / "ai.json"
+            non_ai_path.write_text(
+                json.dumps(SAMPLE_ARTIFACT, ensure_ascii=False), encoding="utf-8"
+            )
+            ai_path.write_text(json.dumps(ai_artifact, ensure_ascii=False), encoding="utf-8")
+
+            non_ai_result = run_eval_artifact(
+                artifact_path=non_ai_path,
+                evals_base_dir=root / "non-ai-evals",
+                playbook_definitions_root=root / "missing-definitions",
+            )
+            ai_result = run_eval_artifact(
+                artifact_path=ai_path,
+                evals_base_dir=root / "ai-evals",
+                playbook_definitions_root=root / "missing-definitions",
+            )
+
+            non_ai_rows = [
+                json.loads(line)
+                for line in (
+                    root / "non-ai-evals" / non_ai_result["eval_run_id"] / "results.jsonl"
+                ).read_text(encoding="utf-8").splitlines()
+            ]
+            ai_rows = [
+                json.loads(line)
+                for line in (
+                    root / "ai-evals" / ai_result["eval_run_id"] / "results.jsonl"
+                ).read_text(encoding="utf-8").splitlines()
+            ]
+
+        assert all(row["evaluator_id"] != "ai_tech.evidence_receipt" for row in non_ai_rows)
+        ai_receipt_rows = [
+            row for row in ai_rows if row["evaluator_id"] == "ai_tech.evidence_receipt"
+        ]
+        assert len(ai_receipt_rows) == 1
+        assert ai_receipt_rows[0]["status"] == "passed"
+
     def test_llm_judges_do_not_run_by_default(self):
         with tempfile.TemporaryDirectory() as tmp:
             artifact_path = Path(tmp) / "artifact.json"

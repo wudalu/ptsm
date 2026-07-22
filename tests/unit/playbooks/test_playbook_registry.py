@@ -177,6 +177,24 @@ def test_registry_loads_ai_tech_playbook_with_image_strategy() -> None:
     assert playbook.hotspot_routing == {
         "include_any": ["OpenAI", "ChatGPT", "Claude", "大模型", "AI Agent", "提示词"]
     }
+    assert playbook.ai_content_policy == {
+        "allowed_modes": ["news_brief", "hands_on", "fact_translation"],
+        "news_item_count": {"min": 3, "max": 5},
+        "hands_on_required_fields": [
+            "product",
+            "version",
+            "tested_at",
+            "task",
+            "input_summary",
+            "observed_output",
+            "limitation",
+        ],
+        "fact_translation_required_fields": [
+            "facts",
+            "who_should_care",
+            "who_can_wait",
+        ],
+    }
     assert playbook.trend_keywords == []
 
 

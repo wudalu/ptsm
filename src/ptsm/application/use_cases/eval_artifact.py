@@ -15,6 +15,7 @@ from ptsm.evaluations.rules import (
     rule_no_real_publish_in_dry_run,
 )
 from ptsm.evaluations.contracts_eval import (
+    contract_ai_tech_evidence_receipt,
     contract_artifact_root_fields,
     contract_playbook_node_contract,
     contract_skill_details_match,
@@ -42,17 +43,35 @@ RULE_EVALUATOR_FNS = {
 CONTRACT_EVALUATOR_FNS = {
     "artifact.root_fields": contract_artifact_root_fields,
     "skill_activation.details_match": contract_skill_details_match,
+    "ai_tech.evidence_receipt": contract_ai_tech_evidence_receipt,
 }
 
 
-def _evaluator_applies(evaluator_id: str, specs: list, target_phase: str) -> bool:
+def _evaluator_applies(evaluator_id: str, specs: list, target: object) -> bool:
     for spec in specs:
         if spec.evaluator_id == evaluator_id:
-            phases = spec.applies_to.get("phases", [])
-            if not phases:
-                return True
-            return target_phase in phases
+            applies_to = spec.applies_to
+            return (
+                _scope_allows(
+                    applies_to.get("phases"),
+                    getattr(target, "phase", None),
+                )
+                and _scope_allows(
+                    applies_to.get("playbook_ids"),
+                    getattr(target, "playbook_id", None),
+                )
+                and _scope_allows(
+                    applies_to.get("platforms"),
+                    getattr(target, "platform", None),
+                )
+            )
     return True  # if no spec found, run it anyway
+
+
+def _scope_allows(scope: object, value: object) -> bool:
+    if not isinstance(scope, list) or not scope:
+        return True
+    return value in scope
 
 
 def run_eval_artifact(
@@ -95,7 +114,7 @@ def run_eval_artifact(
     specs_by_id = {spec.evaluator_id: spec for spec in all_specs}
     for target in targets:
         for evaluator_id, fn in RULE_EVALUATOR_FNS.items():
-            if not _evaluator_applies(evaluator_id, all_specs, target.phase):
+            if not _evaluator_applies(evaluator_id, all_specs, target):
                 continue
             result = fn(target)
             _apply_spec_metadata(result, specs_by_id.get(evaluator_id))
@@ -104,7 +123,7 @@ def run_eval_artifact(
             store.append_result(handle.eval_run_id, result)
 
         for evaluator_id, fn in CONTRACT_EVALUATOR_FNS.items():
-            if not _evaluator_applies(evaluator_id, all_specs, target.phase):
+            if not _evaluator_applies(evaluator_id, all_specs, target):
                 continue
             result = fn(target)
             _apply_spec_metadata(result, specs_by_id.get(evaluator_id))

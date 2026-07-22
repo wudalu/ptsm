@@ -30,3 +30,19 @@ def test_ingest_preserves_topic_selection_for_planner_context() -> None:
     )
 
     assert result["topic_selection"] == topic_selection
+
+
+def test_ingest_does_not_copy_ai_evidence_into_graph_state() -> None:
+    ingest = build_ingest_node(drafting_provider="deterministic")
+
+    result = ingest(
+        {
+            "scene": "AI 科技资讯简报",
+            "platform": "xiaohongshu",
+            "account_id": "acct-ai-tech-local",
+            "ai_tech_evidence": {"raw_source_url": "https://example.com/release"},
+        }
+    )
+
+    assert result["status"] == "running"
+    assert "ai_tech_evidence" not in result

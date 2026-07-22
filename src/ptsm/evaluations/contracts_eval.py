@@ -1,8 +1,51 @@
 from __future__ import annotations
 
+from typing import Any, Mapping
+
+from pydantic import ValidationError
+
+from ptsm.domain.ai_tech_content import (
+    AiTechEvidenceManifest,
+    is_ai_tech_drafting_safe_text,
+)
 from ptsm.evaluations.contracts import EvalResult, EvaluatorSpec, EvalTarget
 from ptsm.evaluations.rules import _result  # noqa: F401
 from ptsm.evaluations.playbook_contracts import PlaybookEvalContract
+
+
+_AI_TECH_PLAYBOOK_ID = "ai_tech_daily_post"
+_AI_TECH_CONTENT_MODES = frozenset(
+    ("news_brief", "hands_on", "fact_translation")
+)
+_AI_TECH_GATE_FIELDS = frozenset(
+    ("status", "mode", "validator", "validator_version", "errors")
+)
+_AI_TECH_NON_HANDS_ON_EXPERIENCE_MARKERS = (
+    "我",
+    "本人",
+    "亲自",
+    "我实测",
+    "我试了",
+    "我测了",
+    "我用了",
+    "亲测",
+    "实测",
+    "跑了一遍",
+    "试了",
+    "试过",
+    "测了",
+    "跑了",
+    "跑过",
+    "上手",
+    "用过",
+    "体验",
+    "观察到",
+    "昨晚",
+    "刚刚",
+    "结果很",
+    "效果很",
+    "很稳",
+)
 
 
 def contract_artifact_root_fields(target: EvalTarget) -> EvalResult:
@@ -96,6 +139,304 @@ def contract_skill_details_match(target: EvalTarget) -> EvalResult:
         reason=f"all {len(activated)} skills have details",
         score=1.0,
     )
+
+
+def contract_ai_tech_evidence_receipt(target: EvalTarget) -> EvalResult:
+    """Audit the opaque evidence receipt on a completed AI-tech artifact.
+
+    This is deliberately an offline regression/audit check rather than a
+    publishing gate.  It validates only the receipt that finalize writes: a
+    selected mode, an opaque manifest, and proof that the runtime draft gate
+    passed.  Failure output is intentionally static and never copies artifact
+    values, because a malformed historical artifact may itself contain raw
+    source URLs, titles, authors, or feed identifiers.
+    """
+    evaluator_id = "ai_tech.evidence_receipt"
+    if target.playbook_id != _AI_TECH_PLAYBOOK_ID:
+        return EvalResult(
+            eval_result_id=f"{target.target_id}:{evaluator_id}",
+            eval_run_id="",
+            target_id=target.target_id,
+            evaluator_id=evaluator_id,
+            evaluator_version="1",
+            status="skipped",
+            reason="not an AI tech artifact",
+        )
+
+    ref = target.output_ref
+    if not isinstance(ref, dict):
+        return EvalResult(
+            eval_result_id=f"{target.target_id}:{evaluator_id}",
+            eval_run_id="",
+            target_id=target.target_id,
+            evaluator_id=evaluator_id,
+            evaluator_version="1",
+            status="skipped",
+            reason="no output ref",
+        )
+
+    failures: list[dict[str, str]] = []
+    mode = ref.get("ai_tech_content_mode")
+    if not isinstance(mode, str) or mode not in _AI_TECH_CONTENT_MODES:
+        failures.append(_receipt_failure("ai_tech_content_mode", "unsupported content mode"))
+        normalized_mode: str | None = None
+    else:
+        normalized_mode = mode
+
+    manifest = _parse_ai_tech_manifest(ref, failures)
+    if manifest is not None and normalized_mode is not None:
+        _validate_manifest_for_mode(
+            mode=normalized_mode,
+            manifest=manifest,
+            failures=failures,
+        )
+
+    _validate_receipt_gate(
+        gate=ref.get("ai_tech_evidence_gate"),
+        mode=normalized_mode,
+        failures=failures,
+    )
+    _validate_visible_ai_tech_content(
+        ref=ref,
+        mode=normalized_mode,
+        failures=failures,
+    )
+
+    if failures:
+        return EvalResult(
+            eval_result_id=f"{target.target_id}:{evaluator_id}",
+            eval_run_id="",
+            target_id=target.target_id,
+            evaluator_id=evaluator_id,
+            evaluator_version="1",
+            status="failed",
+            reason="; ".join(
+                f"{item['path']}: {item['observation']}" for item in failures
+            ),
+            score=0.0,
+            evidence=failures,
+        )
+
+    return EvalResult(
+        eval_result_id=f"{target.target_id}:{evaluator_id}",
+        eval_run_id="",
+        target_id=target.target_id,
+        evaluator_id=evaluator_id,
+        evaluator_version="1",
+        status="passed",
+        reason="AI tech evidence receipt is complete and provenance-safe",
+        score=1.0,
+    )
+
+
+def _parse_ai_tech_manifest(
+    ref: Mapping[str, Any],
+    failures: list[dict[str, str]],
+) -> AiTechEvidenceManifest | None:
+    raw_manifest = ref.get("ai_tech_evidence_manifest")
+    if not isinstance(raw_manifest, Mapping):
+        failures.append(
+            _receipt_failure(
+                "ai_tech_evidence_manifest",
+                "AI tech evidence manifest is missing or invalid",
+            )
+        )
+        return None
+    try:
+        return AiTechEvidenceManifest.model_validate(raw_manifest)
+    except (TypeError, ValidationError):
+        failures.append(
+            _receipt_failure(
+                "ai_tech_evidence_manifest",
+                "AI tech evidence manifest is missing or invalid",
+            )
+        )
+        return None
+
+
+def _validate_manifest_for_mode(
+    *,
+    mode: str,
+    manifest: AiTechEvidenceManifest,
+    failures: list[dict[str, str]],
+) -> None:
+    source_refs = manifest.source_refs
+    test_evidence_refs = manifest.test_evidence_refs
+    event_fingerprints = manifest.event_fingerprints
+
+    if mode == "news_brief":
+        if not source_refs:
+            failures.append(
+                _receipt_failure(
+                    "ai_tech_evidence_manifest.source_refs",
+                    "news brief manifest requires opaque source references",
+                )
+            )
+        if not 3 <= len(event_fingerprints) <= 5:
+            failures.append(
+                _receipt_failure(
+                    "ai_tech_evidence_manifest.event_fingerprints",
+                    "news brief manifest requires 3 to 5 event fingerprints",
+                )
+            )
+        elif len(set(event_fingerprints)) != len(event_fingerprints):
+            failures.append(
+                _receipt_failure(
+                    "ai_tech_evidence_manifest.event_fingerprints",
+                    "news brief manifest requires distinct event fingerprints",
+                )
+            )
+        if test_evidence_refs:
+            failures.append(
+                _receipt_failure(
+                    "ai_tech_evidence_manifest.test_evidence_refs",
+                    "news brief manifest cannot contain hands-on test evidence",
+                )
+            )
+        return
+
+    if mode == "hands_on":
+        if not test_evidence_refs:
+            failures.append(
+                _receipt_failure(
+                    "ai_tech_evidence_manifest.test_evidence_refs",
+                    "hands-on manifest requires opaque test evidence references",
+                )
+            )
+        if source_refs or event_fingerprints:
+            failures.append(
+                _receipt_failure(
+                    "ai_tech_evidence_manifest",
+                    "hands-on manifest contains evidence for a different content mode",
+                )
+            )
+        return
+
+    if not source_refs:
+        failures.append(
+            _receipt_failure(
+                "ai_tech_evidence_manifest.source_refs",
+                "fact translation manifest requires opaque source references",
+            )
+        )
+    if test_evidence_refs or event_fingerprints:
+        failures.append(
+            _receipt_failure(
+                "ai_tech_evidence_manifest",
+                "fact translation manifest contains evidence for a different content mode",
+            )
+        )
+
+
+def _validate_receipt_gate(
+    *,
+    gate: object,
+    mode: str | None,
+    failures: list[dict[str, str]],
+) -> None:
+    if not isinstance(gate, Mapping):
+        failures.append(
+            _receipt_failure(
+                "ai_tech_evidence_gate",
+                "AI tech evidence gate is missing or invalid",
+            )
+        )
+        return
+
+    gate_keys = {str(key) for key in gate}
+    if gate_keys != _AI_TECH_GATE_FIELDS:
+        failures.append(
+            _receipt_failure(
+                "ai_tech_evidence_gate",
+                "AI tech evidence gate has an invalid receipt shape",
+            )
+        )
+    if gate.get("status") != "passed":
+        failures.append(
+            _receipt_failure(
+                "ai_tech_evidence_gate.status",
+                "AI tech evidence gate did not pass",
+            )
+        )
+    if mode is not None and gate.get("mode") != mode:
+        failures.append(
+            _receipt_failure(
+                "ai_tech_evidence_gate.mode",
+                "gate mode does not match receipt mode",
+            )
+        )
+    if gate.get("validator") != "ai_tech_draft_contract":
+        failures.append(
+            _receipt_failure(
+                "ai_tech_evidence_gate.validator",
+                "AI tech evidence gate did not use the required validator",
+            )
+        )
+    if gate.get("validator_version") != "1":
+        failures.append(
+            _receipt_failure(
+                "ai_tech_evidence_gate.validator_version",
+                "AI tech evidence gate did not use the required validator version",
+            )
+        )
+    errors = gate.get("errors")
+    if not isinstance(errors, list) or errors:
+        failures.append(
+            _receipt_failure(
+                "ai_tech_evidence_gate.errors",
+                "AI tech evidence gate must record an empty error list",
+            )
+        )
+
+
+def _validate_visible_ai_tech_content(
+    *,
+    ref: Mapping[str, Any],
+    mode: str | None,
+    failures: list[dict[str, str]],
+) -> None:
+    final_content = ref.get("final_content")
+    if not isinstance(final_content, Mapping):
+        return
+
+    visible_texts = _visible_content_texts(final_content)
+    if any(not is_ai_tech_drafting_safe_text(text) for text in visible_texts):
+        failures.append(
+            _receipt_failure(
+                "final_content",
+                "AI tech visible content contains a raw source locator",
+            )
+        )
+    if mode not in {"news_brief", "fact_translation"}:
+        return
+    visible_text = "\n".join(visible_texts)
+    if any(marker in visible_text for marker in _AI_TECH_NON_HANDS_ON_EXPERIENCE_MARKERS):
+        failures.append(
+            _receipt_failure(
+                "final_content",
+                "non-hands-on content contains experiential language",
+            )
+        )
+
+
+def _visible_content_texts(final_content: Mapping[str, Any]) -> tuple[str, ...]:
+    texts = [
+        value.strip()
+        for key in ("title", "image_text", "body")
+        if isinstance((value := final_content.get(key)), str) and value.strip()
+    ]
+    hashtags = final_content.get("hashtags")
+    if isinstance(hashtags, list):
+        texts.extend(tag.strip() for tag in hashtags if isinstance(tag, str) and tag.strip())
+    return tuple(texts)
+
+
+def _receipt_failure(path: str, observation: str) -> dict[str, str]:
+    return {
+        "path": path,
+        "value_preview": "[redacted]",
+        "observation": observation,
+    }
 
 
 def contract_playbook_node_contract(
@@ -500,6 +841,15 @@ ALL_CONTRACT_EVALUATORS: list[EvaluatorSpec] = [
     EvaluatorSpec(
         "skill_activation.details_match", "1", "contract", "shared skill/runtime",
         {"phases": ["planner"], "playbook_ids": [], "platforms": []},
+        1.0, "required",
+    ),
+    EvaluatorSpec(
+        "ai_tech.evidence_receipt", "1", "contract", "ai tech evidence boundary",
+        {
+            "phases": ["final"],
+            "playbook_ids": [_AI_TECH_PLAYBOOK_ID],
+            "platforms": [],
+        },
         1.0, "required",
     ),
 ]

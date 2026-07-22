@@ -4,8 +4,140 @@ import json
 from pathlib import Path
 
 from ptsm.agent_runtime.runtime import build_finalize_node
+from ptsm.domain.ai_tech_content import parse_ai_tech_evidence_bundle
 from ptsm.infrastructure.artifacts.file_store import FileArtifactStore
 from ptsm.infrastructure.memory.store import InMemoryExecutionMemory
+
+
+def _ai_news_contract() -> dict[str, object]:
+    return parse_ai_tech_evidence_bundle(
+        {
+            "mode": "news_brief",
+            "news_items": [
+                {
+                    "label": "模型发布",
+                    "event_fingerprint": "event-model-001",
+                    "facts": ["产品发布了新的推理模型。"],
+                    "source_refs": ["official-001"],
+                },
+                {
+                    "label": "开发者工具",
+                    "event_fingerprint": "event-tools-002",
+                    "facts": ["开发者工具新增了批量处理能力。"],
+                    "source_refs": ["official-002"],
+                },
+                {
+                    "label": "行业应用",
+                    "event_fingerprint": "event-industry-003",
+                    "facts": ["功能面向团队协作场景开放。"],
+                    "source_refs": ["official-003"],
+                },
+            ],
+        }
+    ).runtime_contract
+
+
+def test_finalize_blocks_invalid_ai_draft_before_artifact_or_memory(tmp_path: Path) -> None:
+    memory = InMemoryExecutionMemory()
+    artifact_dir = tmp_path / "artifacts"
+    finalize = build_finalize_node(
+        execution_memory=memory,
+        artifact_store=FileArtifactStore(base_dir=artifact_dir),
+        ai_tech_evidence=_ai_news_contract(),
+    )
+
+    result = finalize(
+        {
+            "account_id": "acct-ai-tech-local",
+            "playbook_id": "ai_tech_daily_post",
+            "reflection_decision": "finalize",
+            "final_content": {
+                "title": "今天的 AI 更新",
+                "body": "我实测后发现，这次速度提升明显。",
+                "hashtags": ["#AI资讯"],
+            },
+        }
+    )
+
+    assert result["status"] == "ai_tech_draft_invalid"
+    assert "artifact_path" not in result
+    assert memory.search(namespace=("accounts", "acct-ai-tech-local", "lessons")) == []
+    assert not artifact_dir.exists()
+
+
+def test_finalize_writes_only_the_safe_ai_evidence_receipt(tmp_path: Path) -> None:
+    evidence = parse_ai_tech_evidence_bundle(
+        {
+            "mode": "news_brief",
+            "news_items": [
+                {
+                    "label": "模型发布",
+                    "event_fingerprint": "event-model-001",
+                    "facts": ["产品发布了新的推理模型。"],
+                    "source_refs": ["official-001"],
+                },
+                {
+                    "label": "开发者工具",
+                    "event_fingerprint": "event-tools-002",
+                    "facts": ["开发者工具新增了批量处理能力。"],
+                    "source_refs": ["official-002"],
+                },
+                {
+                    "label": "行业应用",
+                    "event_fingerprint": "event-industry-003",
+                    "facts": ["功能面向团队协作场景开放。"],
+                    "source_refs": ["official-003"],
+                },
+            ],
+        }
+    )
+    finalize = build_finalize_node(
+        execution_memory=InMemoryExecutionMemory(),
+        artifact_store=FileArtifactStore(base_dir=tmp_path / "artifacts"),
+        ai_tech_evidence=evidence.runtime_contract,
+        ai_tech_evidence_manifest=evidence.manifest.model_dump(mode="json"),
+    )
+    final_content = {
+        "title": "AI 科技三条更新",
+        "image_text": "今天该看哪三件事",
+        "body": (
+            "1. 模型发布｜产品发布了新的推理模型。\n"
+            "2. 开发者工具｜开发者工具新增了批量处理能力。\n"
+            "3. 行业应用｜功能面向团队协作场景开放。"
+        ),
+        "hashtags": ["#AI资讯"],
+    }
+
+    result = finalize(
+        {
+            "account_id": "acct-ai-tech-local",
+            "playbook_id": "ai_tech_daily_post",
+            "drafting_provider": "deterministic",
+            "reflection_decision": "finalize",
+            "scene": "AI 科技资讯简报：模型发布 / 开发者工具 / 行业应用",
+            "attempt_count": 1,
+            "final_content": final_content,
+        }
+    )
+
+    artifact = json.loads(Path(str(result["artifact_path"])).read_text(encoding="utf-8"))
+    assert artifact["ai_tech_content_mode"] == "news_brief"
+    assert artifact["ai_tech_evidence_manifest"] == {
+        "source_refs": ["official-001", "official-002", "official-003"],
+        "test_evidence_refs": [],
+        "event_fingerprints": ["event-model-001", "event-tools-002", "event-industry-003"],
+        "trend_support": [],
+    }
+    assert artifact["ai_tech_evidence_gate"] == {
+        "status": "passed",
+        "mode": "news_brief",
+        "validator": "ai_tech_draft_contract",
+        "validator_version": "1",
+        "errors": [],
+    }
+    serialized = json.dumps(artifact, ensure_ascii=False)
+    assert "drafting_payload" not in serialized
+    assert "https://" not in serialized
 
 
 def test_finalize_persists_step_outputs_for_evaluation(tmp_path: Path) -> None:

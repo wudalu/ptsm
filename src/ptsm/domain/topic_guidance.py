@@ -9,6 +9,7 @@ TOPIC_DIRECTION_PUBLIC_FIELDS = (
     "id",
     "name",
     "direction_type",
+    "content_mode",
     "trend_signal",
     "viral_hook",
     "why_it_may_work",
@@ -62,6 +63,7 @@ class TopicDirection:
     base_priority: int = 0
     diversity_key: str = ""
     direction_type: str = "curated"
+    content_mode: str | None = None
 
 
 @dataclass(frozen=True)
@@ -125,14 +127,24 @@ def select_topic_directions(
     include_open_slot: bool = False,
     dynamic_breadth: bool = False,
     open_candidate_count: int = 3,
+    content_mode: str | None = None,
 ) -> list[dict[str, Any]]:
     if limit <= 0:
         return []
+
+    # Evidence-gated modes are curated-only by design.  An open scene carries
+    # no operator-approved fact or test record, so it must never become an
+    # accidental fourth AI-tech content mode.
+    if content_mode is not None:
+        include_open_slot = False
+        dynamic_breadth = False
 
     scene_text = scene or ""
     lane_text = lane_name or ""
     scored: list[_ScoredTopicDirection] = []
     for index, direction in enumerate(directions):
+        if content_mode is not None and direction.content_mode != content_mode:
+            continue
         scene_matches = _matched_keywords(scene_text, direction.scene_keywords)
         lane_matches = tuple(
             affinity for affinity in direction.lane_affinity if affinity in lane_text

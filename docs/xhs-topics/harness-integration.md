@@ -2,7 +2,7 @@
 title: XHS Topic Harness Integration
 status: active
 owner: ptsm
-last_verified: 2026-07-22
+last_verified: 2026-07-23
 source_of_truth: false
 related_paths:
   - docs/xhs-topics/index.md
@@ -19,6 +19,7 @@ related_paths:
   - src/ptsm/infrastructure/publishers/xiaohongshu_mcp_publisher.py
   - src/ptsm/application/use_cases/hotspot_discovery.py
   - src/ptsm/domain/hotspot_routing.py
+  - src/ptsm/domain/ai_tech_content.py
 ---
 
 # XHS Topic Harness Integration
@@ -69,7 +70,10 @@ PTSM 已经有：
 - `rejected_angles`
 - `source_urls`
 
-这样做的好处是后面既能被 planner 直接消费，也能被 `logs` / `runs` / `diagnose-*` 一类只读 surface 追溯。
+这样做的好处是研究 artifact 可被 `logs` / `runs` / `diagnose-*` 一类只读 surface 追溯。若
+未来把它交给 PTSM drafting，必须先转成 provenance-safe contract：raw `source_urls`、作者、
+feed identity、原始标题与 token 只留在 research artifact，不能直接给 planner、checkpoint、
+reader-visible content 或最终 post artifact。
 
 ## Skill And Playbook Hook Points
 
@@ -79,7 +83,7 @@ PTSM 已经有：
 
 `xhs_trend_scan` 仍作为现有 XiaoHongShu playbook 的 `required_skills`，但它的职责已经收窄为把本地 XHS pattern library snapshot（或静态 guidance）写进独立的 `runtime_skill_contents`。普通 drafting 不从该 skill 调用 `xiaohongshu-mcp`，也不会因缺少 snapshot 而启动实时搜索。
 
-泛热点先由 `hotspot-discovery` 调用 public Topic Radar API，再让 operator 选择 post-scan route；显式 `--fresh-topic-research` 则仍由已选 playbook 的 `run_playbook` 调用同一 API。默认八个平台只扫描一次，产物保留证据、质量状态和候选事件簇；进入 drafting 的只有本次 receipt 已选方向/角度等安全元数据，不包含原始标题、作者、URL、feed ID 或 token。普通/local-only runtime 不会回读旧 Topic Radar artifact。`partial` 会保留诊断，`insufficient_evidence` 在启动 workflow 前停止。
+泛热点先由 `hotspot-discovery` 调用 public Topic Radar API，再让 operator 选择 post-scan route；显式 `--fresh-topic-research` 则仍由大多数已选 playbook 的 `run_playbook` 调用同一 API。默认八个平台只扫描一次，产物保留证据、质量状态和候选事件簇；进入 drafting 的只有本次 receipt 已选方向/角度等安全元数据，不包含原始标题、作者、URL、feed ID 或 token。普通/local-only runtime 不会回读旧 Topic Radar artifact。`partial` 会保留诊断，`insufficient_evidence` 在启动 workflow 前停止。AI 科技 evidence mode 不走这条 run 内 fresh 路径：`--fresh-topic-research` 返回单独 discovery 提示，热点最多作为 opaque `trend_support`，而可发表 facts 或 test record 必须来自 AI evidence file。
 
 若运营问题只需要小红书领域机会，使用 `xhs-domain-opportunity`：它是 bounded `search_feeds` 证据报告，不是全站或跨平台热榜；没有成功的唯一样本时只返回 `insufficient_evidence` 与恢复建议，不产出排名、匹配或新领域候选。
 
@@ -115,6 +119,7 @@ PTSM 已经有：
 2. 需要最新且不限定方向的跨平台热点时，先运行 `hotspot-discovery`；只有已选 playbook 的发帖前 research 才显式运行一次 public Topic Radar fresh scan，并从其 artifact/诊断复盘。
 3. 需要小红书领域比较时，运行 bounded `xhs-domain-opportunity`，只把成功的唯一样本作为证据。
 4. `get_feed_detail` / 评论信号等更重的单帖拆解仍应作为未来独立 research artifact，而不是塞回普通 drafting prompt。
+5. AI 科技内容在 route 选定后还需要 evidence gate：`news_brief` 收集 3–5 条事实，`hands_on` 收集完整复现记录，`fact_translation` 收集至少两条事实和人群判断。任何 raw research material 均不得替代该 evidence file。
 
 这样保持普通生成可预测，也让实时研究的来源、失败和新颖度都能被独立追溯。
 
@@ -128,6 +133,10 @@ author、feed id 或 token 到下游 drafting handoff。跨平台充分证据的
 
 默认 Top-N 是全平台 score 排名；若其中没有适合现有领域的候选，receipt 可额外给出不重复的
 `routed_hotspots`，但该补充不会改变 scan、排名或自动进入 drafting。
+
+当 route 选中 `ai_tech_daily_post` 时，receipt 不是内容输入。operator 先选三种 evidence mode
+之一并核验事实/测试；最终 AI artifact 仅保留 mode、opaque evidence manifest 与通过的 draft-gate
+receipt。离线 evaluator 可审计该 receipt，但不读取或复制 Topic Radar 的 raw provenance。
 
 ## Mapping To Current Playbooks
 

@@ -1,6 +1,15 @@
 from __future__ import annotations
 
+import json
+from typing import Any, Mapping
+
+from pydantic import ValidationError
+
 from ptsm.agent_runtime.state import ExecutionState
+from ptsm.domain.ai_tech_content import (
+    is_ai_tech_drafting_safe_text,
+    parse_ai_tech_runtime_contract,
+)
 from ptsm.playbooks.loader import PlaybookLoader
 from ptsm.playbooks.registry import PlaybookRegistry
 from ptsm.skills.loader import SkillLoader
@@ -18,6 +27,7 @@ def build_planner_node(
     skills: SkillRegistry,
     skill_loader: SkillLoader,
     skill_context_resolver: SkillContextResolver | None = None,
+    ai_tech_evidence: Mapping[str, Any] | None = None,
 ):
     def planner(state: ExecutionState) -> ExecutionState:
         if playbook_id is not None:
@@ -46,21 +56,34 @@ def build_planner_node(
             }
             for skill in loaded_skills
         ]
-        runtime_skill_contexts = (
-            skill_context_resolver.resolve(
-                state=state,
-                playbook=playbook,
-                loaded_skills=loaded_skills,
-            )
-            if skill_context_resolver is not None
-            else {}
-        )
-        topic_direction_context = _build_topic_direction_runtime_context(state)
-        if topic_direction_context:
+        has_ai_tech_evidence = ai_tech_evidence is not None
+        ai_tech_evidence_context = _build_ai_tech_evidence_runtime_context(ai_tech_evidence)
+        if has_ai_tech_evidence:
+            # Evidence-gated AI posts must not call live context builders: their
+            # raw trend headlines and source metadata are selection signals, not
+            # publishable facts or hands-on records.
             runtime_skill_contexts = {
-                **runtime_skill_contexts,
-                "topic_direction_guidance": topic_direction_context,
+                "ai_tech_evidence_contract": (
+                    ai_tech_evidence_context
+                    or _raise_invalid_ai_tech_evidence_contract()
+                ),
             }
+        else:
+            runtime_skill_contexts = (
+                skill_context_resolver.resolve(
+                    state=state,
+                    playbook=playbook,
+                    loaded_skills=loaded_skills,
+                )
+                if skill_context_resolver is not None
+                else {}
+            )
+            topic_direction_context = _build_topic_direction_runtime_context(state)
+            if topic_direction_context:
+                runtime_skill_contexts = {
+                    **runtime_skill_contexts,
+                    "topic_direction_guidance": topic_direction_context,
+                }
         runtime_skill_details = [
             {
                 "skill_name": skill_name,
@@ -134,6 +157,140 @@ def _build_topic_direction_runtime_context(state: ExecutionState) -> str:
         ),
     ]
     return "\n".join(lines)
+
+
+def _build_ai_tech_evidence_runtime_context(
+    evidence: Mapping[str, Any] | None,
+) -> str:
+    """Render only whitelisted, provenance-safe AI evidence for drafting."""
+    if not isinstance(evidence, Mapping):
+        return ""
+    try:
+        normalized = parse_ai_tech_runtime_contract(evidence)
+    except ValidationError:
+        return ""
+    mode = _safe_runtime_text(normalized.get("mode"))
+    drafting_payload = normalized.get("drafting_payload")
+    requirements = normalized.get("requirements")
+    if (
+        mode not in {"news_brief", "hands_on", "fact_translation"}
+        or not isinstance(drafting_payload, dict)
+        or not isinstance(requirements, dict)
+    ):
+        return ""
+
+    payload = _safe_ai_tech_drafting_payload(mode=mode, payload=drafting_payload)
+    if payload is None:
+        return ""
+    safe_requirements = {
+        "mode": mode,
+        "required_sections": _safe_runtime_text_list(requirements.get("required_sections")),
+        "allowed_claim_kinds": _safe_runtime_text_list(
+            requirements.get("allowed_claim_kinds")
+        ),
+        "forbidden_claim_kinds": _safe_runtime_text_list(
+            requirements.get("forbidden_claim_kinds")
+        ),
+        "requires_test_evidence": bool(requirements.get("requires_test_evidence")),
+    }
+    rendered = json.dumps(
+        {
+            "mode": mode,
+            "drafting_payload": payload,
+            "requirements": safe_requirements,
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
+    return (
+        "# AI Tech Evidence Contract\n"
+        "Use only these approved facts and recorded observations. Do not invent "
+        "a personal test, performance conclusion, source title, author, feed, or URL.\n"
+        f"{rendered}"
+    )
+
+
+def _raise_invalid_ai_tech_evidence_contract() -> str:
+    raise ValueError("invalid AI tech evidence contract reached planner")
+
+
+def _safe_ai_tech_drafting_payload(
+    *,
+    mode: str,
+    payload: dict[object, object],
+) -> dict[str, object] | None:
+    if mode == "news_brief":
+        raw_items = payload.get("news_items")
+        if not isinstance(raw_items, list | tuple):
+            return None
+        items: list[dict[str, object]] = []
+        for raw_item in raw_items:
+            if not isinstance(raw_item, dict):
+                return None
+            label = _safe_runtime_text(raw_item.get("label"))
+            facts = _safe_runtime_text_list(raw_item.get("facts"))
+            if not label or not facts:
+                return None
+            items.append({"label": label, "facts": facts})
+        return {"mode": mode, "news_items": items}
+
+    topic = _safe_runtime_text(payload.get("topic"))
+    if not topic:
+        return None
+    if mode == "hands_on":
+        raw_record = payload.get("hands_on")
+        if not isinstance(raw_record, dict):
+            return None
+        record: dict[str, str] = {}
+        for field_name in (
+            "product",
+            "version",
+            "tested_at",
+            "task",
+            "input_summary",
+            "observed_output",
+            "limitation",
+        ):
+            value = _safe_runtime_text(raw_record.get(field_name))
+            if not value:
+                return None
+            record[field_name] = value
+        return {"mode": mode, "topic": topic, "hands_on": record}
+
+    facts = _safe_runtime_text_list(payload.get("facts"))
+    raw_audience = payload.get("audience")
+    if not facts or not isinstance(raw_audience, dict):
+        return None
+    who_should_care = _safe_runtime_text(raw_audience.get("who_should_care"))
+    who_can_wait = _safe_runtime_text(raw_audience.get("who_can_wait"))
+    if not who_should_care or not who_can_wait:
+        return None
+    return {
+        "mode": mode,
+        "topic": topic,
+        "facts": facts,
+        "audience": {
+            "who_should_care": who_should_care,
+            "who_can_wait": who_can_wait,
+        },
+    }
+
+
+def _safe_runtime_text(value: object) -> str:
+    if not is_ai_tech_drafting_safe_text(value):
+        return ""
+    assert isinstance(value, str)
+    return value.strip()
+
+
+def _safe_runtime_text_list(value: object) -> list[str]:
+    if not isinstance(value, list | tuple):
+        return []
+    return [
+        text
+        for item in value
+        if (text := _safe_runtime_text(item))
+    ]
 
 
 def _string_value(value: object, *, default: str = "") -> str:
