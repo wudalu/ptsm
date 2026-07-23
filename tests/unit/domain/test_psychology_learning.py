@@ -232,6 +232,13 @@ def test_custom_series_proposal_rejects_a_tampered_stable_identifier_or_fingerpr
         ("诊\u00b7断 入门", None, "unsafe clinical or crisis content"),
         ("self\u00a0harm journal", None, "unsafe clinical or crisis content"),
         ("self\uff3fharm journal", None, "unsafe clinical or crisis content"),
+        ("self\u2044harm journal", None, "unsafe clinical or crisis content"),
+        ("self\u2215harm journal", None, "unsafe clinical or crisis content"),
+        ("self\uff0bharm journal", None, "unsafe clinical or crisis content"),
+        ("自\ufe0f伤 journal", None, "unsafe clinical or crisis content"),
+        ("诊\u034f断 入门", None, "unsafe clinical or crisis content"),
+        ("自\u20e3伤 journal", None, "unsafe clinical or crisis content"),
+        ("\u0455\u0435lfharm journal", None, "unsupported alphabetic script"),
         ("ＡＤＨＤ日常整理", None, "unsafe clinical or crisis content"),
         (
             "情绪整理",
@@ -271,6 +278,8 @@ def test_custom_series_plan_intent_rejects_unsafe_or_malformed_operator_values(
         "我的\u3000下班整理",
         "我的·下班整理",
         "我的－下班整理",
+        "我的\u2044下班整理",
+        "我的\ufe0f下班整理",
     ),
 )
 def test_proposal_validation_keeps_safe_reader_visible_unicode_text_unchanged(

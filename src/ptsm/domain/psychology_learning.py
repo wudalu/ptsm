@@ -1087,6 +1087,8 @@ def _require_safe_proposal_text(
         or _PROPOSAL_RAW_DOMAIN_PATTERN.search(security_text)
     ):
         raise ValueError(f"{field_name} must not contain a source locator or reference")
+    if _contains_unexpected_proposal_alphabetic_script(text):
+        raise ValueError(f"{field_name} must not contain unsupported alphabetic script")
     marker_text = _proposal_marker_text(security_text)
     if any(marker in marker_text for marker in _PROPOSAL_UNSAFE_CLINICAL_MARKERS):
         raise ValueError(f"{field_name} must not contain unsafe clinical or crisis content")
@@ -1113,11 +1115,32 @@ def _proposal_security_text(value: str) -> str:
 
 
 def _proposal_marker_text(security_text: str) -> str:
-    """Remove punctuation only for contiguous clinical/crisis marker checks."""
+    """Keep only ASCII alphanumerics and CJK Han for danger-marker checks."""
     return "".join(
         character
         for character in security_text
-        if not unicodedata.category(character).startswith("P")
+        if (character.isascii() and character.isalnum()) or _is_cjk_han(character)
+    )
+
+
+def _contains_unexpected_proposal_alphabetic_script(value: str) -> bool:
+    """Reject alphabetic scripts outside the product's Chinese/ASCII boundary."""
+    normalized = unicodedata.normalize("NFKC", value)
+    return any(
+        character.isalpha()
+        and not (character.isascii() or _is_cjk_han(character))
+        for character in normalized
+    )
+
+
+def _is_cjk_han(character: str) -> bool:
+    codepoint = ord(character)
+    return (
+        0x3400 <= codepoint <= 0x4DBF
+        or 0x4E00 <= codepoint <= 0x9FFF
+        or 0xF900 <= codepoint <= 0xFAFF
+        or 0x20000 <= codepoint <= 0x2EBEF
+        or 0x30000 <= codepoint <= 0x323AF
     )
 
 
