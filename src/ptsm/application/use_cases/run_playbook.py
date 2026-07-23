@@ -55,6 +55,7 @@ from ptsm.domain.ai_tech_content import (
     validate_ai_tech_draft,
 )
 from ptsm.domain.psychology_learning import (
+    DEFAULT_PSYCHOLOGY_LEARNING_SERIES_CATALOG_ROOT,
     PSYCHOLOGY_LEARNING_MODE,
     PsychologyLearningBundle,
     PsychologyLearningEvidenceManifest,
@@ -845,14 +846,24 @@ def _owned_psychology_learning_artifact_path(
     artifact_store: FileArtifactStore,
     artifact_path: str,
 ) -> Path | None:
-    """Resolve an artifact only when it is inside the configured artifact root."""
+    """Resolve an artifact only when it is owned and outside reserved storage."""
     try:
         owned_root = artifact_store.base_dir.resolve()
         path = Path(artifact_path).resolve()
         path.relative_to(owned_root)
+        reserved_catalog_root = (
+            DEFAULT_PSYCHOLOGY_LEARNING_SERIES_CATALOG_ROOT.resolve()
+        )
     except (OSError, ValueError):
         return None
-    return path
+    try:
+        path.relative_to(reserved_catalog_root)
+    except ValueError:
+        return path
+    # The default custom-series store shares the artifact parent directory,
+    # but it is application-owned persistence rather than a workflow artifact.
+    # Reject its entire tree before any read, replace, or cleanup operation.
+    return None
 
 
 def _remove_owned_unsafe_psychology_learning_artifact(

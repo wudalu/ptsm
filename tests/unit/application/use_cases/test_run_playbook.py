@@ -16,6 +16,7 @@ from ptsm.application.use_cases.run_playbook import (
     _build_image_generation_prompt,
     _build_note_card_image_payload,
     _build_runtime_skill_context_resolver,
+    _owned_psychology_learning_artifact_path,
     _resolve_psychology_learning_preflight,
     run_playbook,
     run_fengkuang_playbook,
@@ -23,9 +24,11 @@ from ptsm.application.use_cases.run_playbook import (
 from ptsm.config.settings import Settings
 from ptsm.domain.psychology_learning import (
     build_psychology_learning_catalog_receipt,
+    psychology_learning_series_catalog_snapshot_path,
     render_psychology_learning_draft,
     resolve_psychology_learning_selection,
 )
+from ptsm.infrastructure.artifacts.file_store import FileArtifactStore
 from ptsm.infrastructure.memory.checkpoint import FileCheckpointSaver
 from ptsm.infrastructure.memory.store import FileExecutionMemory
 from ptsm.infrastructure.observability.run_store import RunStore
@@ -3483,6 +3486,125 @@ def test_run_playbook_accepts_confirmed_custom_catalog_at_preflight(
     assert preflight_bundle == bundle
     assert failure is None
     assert proposal_goal not in json.dumps(preflight_bundle.model_dump(), ensure_ascii=False)
+
+
+@pytest.mark.parametrize(
+    "reserved_relative_path",
+    (
+        "proposals/proposal.json",
+        "catalogs/series/v1.json",
+        "confirmations/series/v1.json",
+        "progress/series/v1.json",
+        "progress/series/v1.json.lock",
+        "progress/.staging/v1.json.pending.tmp",
+    ),
+)
+def test_psychology_learning_artifact_ownership_excludes_every_catalog_store_descendant(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    reserved_relative_path: str,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    artifact_store = FileArtifactStore()
+    reserved_path = (
+        tmp_path
+        / "outputs"
+        / "artifacts"
+        / "psychology-learning-series"
+        / reserved_relative_path
+    )
+
+    assert _owned_psychology_learning_artifact_path(
+        artifact_store=artifact_store,
+        artifact_path=str(reserved_path),
+    ) is None
+
+
+def test_run_playbook_preserves_custom_catalog_snapshot_when_workflow_returns_it_as_artifact(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """An immutable catalog snapshot is never an owned workflow artifact."""
+    monkeypatch.chdir(tmp_path)
+    private_goal = "确认前私有目标，不得在失败响应中泄露"
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻", "goal": private_goal},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    store = PsychologyLearningSeriesStore()
+    store.persist_proposal(proposal)
+    catalog = store.confirm(
+        proposal_id=proposal.proposal_id,
+        proposal_fingerprint=proposal.proposal_fingerprint,
+    )
+    bundle = resolve_psychology_learning_selection(
+        series_id=catalog.series_id,
+        lesson_id="notice",
+        curriculum_version=catalog.curriculum_version,
+    )
+    snapshot_path = psychology_learning_series_catalog_snapshot_path(
+        series_id=catalog.series_id,
+        curriculum_version=catalog.curriculum_version,
+    )
+    snapshot_before = snapshot_path.read_bytes()
+    final_content = render_psychology_learning_draft(bundle.runtime_contract)
+
+    class SnapshotReturningWorkflow:
+        def invoke(
+            self,
+            payload: dict[str, object],
+            config: dict[str, object] | None = None,
+        ) -> dict[str, object]:
+            return {
+                "status": "completed",
+                "artifact_path": str(snapshot_path),
+                "final_content": final_content,
+                "runtime_skill_contents": [],
+                "activated_skills": [],
+                "activated_skill_details": [],
+                "runtime_skill_details": [],
+            }
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        lambda **_: SnapshotReturningWorkflow(),
+    )
+
+    result = run_playbook(
+        PlaybookRequest(
+            account_id="acct-psychology-local",
+            playbook_id="modern_psychology_post",
+            psychology_content_mode="learning_series",
+            psychology_series_id=bundle.series_id,
+            psychology_lesson_id=bundle.lesson_id,
+            psychology_curriculum_version=catalog.curriculum_version,
+            topic_direction_id=bundle.direction_id,
+        ),
+        publisher=SuccessfulPublisher(),
+        run_store=RunStore(base_dir=tmp_path / "runs"),
+    )
+
+    assert result["status"] == "psychology_learning_artifact_invalid"
+    assert result["psychology_learning_artifact_validation"] == {
+        "error": "learning artifact failed ownership or provenance validation"
+    }
+    assert snapshot_path.read_bytes() == snapshot_before
+    assert resolve_psychology_learning_selection(
+        series_id=catalog.series_id,
+        lesson_id="notice",
+        curriculum_version=catalog.curriculum_version,
+    ) == bundle
+    assert store.read_production_progress(
+        series_id=catalog.series_id,
+        curriculum_version=catalog.curriculum_version,
+    ).completed_lesson_ids == ()
+    serialized = json.dumps(result, ensure_ascii=False)
+    assert private_goal not in serialized
+    assert proposal.proposal_id not in serialized
+    assert snapshot_before.decode("utf-8") not in serialized
 
 
 def test_run_playbook_completes_a_confirmed_custom_lesson_and_marks_production_progress(
