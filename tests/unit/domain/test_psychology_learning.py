@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from copy import deepcopy
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
@@ -35,6 +36,55 @@ def _starter_bundle():
 
 def _valid_draft(bundle) -> dict[str, object]:
     return render_psychology_learning_draft(bundle.runtime_contract)
+
+
+def _closed_learning_artifact(bundle) -> dict[str, object]:
+    """Build the persisted shape used by the strict learning-artifact scanner."""
+    contract = bundle.runtime_contract
+    artifact: dict[str, object] = {
+        "playbook_id": "modern_psychology_post",
+        "account": {
+            "account_id": "acct-psychology-local",
+            "platform": "xiaohongshu",
+        },
+        "platform": "xiaohongshu",
+        "scene": f"心理学学习专题：{contract['series_badge']}｜{contract['lesson_title']}",
+        "publish_mode": "dry-run",
+        "activated_skills": [],
+        "activated_skill_details": [],
+        "final_content": _valid_draft(bundle),
+        "format_patterns_used": {"status": "not_used"},
+        "publish_result": {"status": "dry_run"},
+        "topic_selection": {
+            "source": "psychology-learning-series",
+            "psychology_learning": {
+                "series_id": bundle.series_id,
+                "curriculum_version": contract["curriculum_version"],
+                "lesson_id": bundle.lesson_id,
+                "lesson_number": bundle.lesson_number,
+            },
+        },
+        "psychology_learning_mode": PSYCHOLOGY_LEARNING_MODE,
+        "psychology_learning_series_id": bundle.series_id,
+        "psychology_learning_curriculum_version": contract["curriculum_version"],
+        "psychology_learning_lesson_id": bundle.lesson_id,
+        "psychology_learning_lesson_number": bundle.lesson_number,
+        "psychology_learning_evidence_manifest": bundle.manifest,
+        "psychology_learning_gate": {
+            "status": "passed",
+            "series_id": bundle.series_id,
+            "lesson_id": bundle.lesson_id,
+            "validator": "psychology_learning_draft_contract",
+            "validator_version": "1",
+            "errors": [],
+        },
+    }
+    catalog_receipt = psychology_learning.build_psychology_learning_catalog_receipt(
+        bundle
+    )
+    if catalog_receipt is not None:
+        artifact["psychology_learning_catalog_receipt"] = catalog_receipt
+    return artifact
 
 
 def test_starter_catalog_resolves_a_closed_six_lesson_series() -> None:
@@ -160,6 +210,100 @@ def test_non_strict_artifact_scan_allows_only_empty_runtime_context_source_paths
         artifact,
         strict_artifact_shape=False,
     )
+
+
+def test_non_strict_artifact_scan_preserves_custom_catalog_pre_envelope_receipts(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """The application may close a generic workflow artifact after this check."""
+    monkeypatch.chdir(tmp_path)
+    store = PsychologyLearningSeriesStore()
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    store.persist_proposal(proposal)
+    catalog = store.confirm(
+        proposal_id=proposal.proposal_id,
+        proposal_fingerprint=proposal.proposal_fingerprint,
+    )
+    bundle = resolve_psychology_learning_selection(
+        series_id=catalog.series_id,
+        lesson_id="notice",
+        curriculum_version=catalog.curriculum_version,
+    )
+    catalog_receipt = psychology_learning.build_psychology_learning_catalog_receipt(
+        bundle
+    )
+    assert catalog_receipt is not None
+    generic_pre_envelope_artifact = {
+        "playbook_id": "modern_psychology_post",
+        "final_content": _valid_draft(bundle),
+        "psychology_learning_series_id": bundle.series_id,
+        "psychology_learning_curriculum_version": catalog.curriculum_version,
+        "psychology_learning_lesson_id": bundle.lesson_id,
+        "psychology_learning_catalog_receipt": catalog_receipt,
+    }
+
+    assert not contains_psychology_learning_raw_provenance(
+        generic_pre_envelope_artifact,
+        strict_artifact_shape=False,
+    )
+
+
+@pytest.mark.parametrize(
+    "tamper_field",
+    (
+        "psychology_learning_mode",
+        "psychology_learning_gate",
+        "psychology_learning_evidence_manifest",
+    ),
+)
+def test_strict_artifact_scan_rejects_forged_learning_receipt_fields(
+    tamper_field: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A shape-valid receipt still has to exactly match its selected lesson."""
+    monkeypatch.chdir(tmp_path)
+    store = PsychologyLearningSeriesStore()
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    store.persist_proposal(proposal)
+    catalog = store.confirm(
+        proposal_id=proposal.proposal_id,
+        proposal_fingerprint=proposal.proposal_fingerprint,
+    )
+    bundle = resolve_psychology_learning_selection(
+        series_id=catalog.series_id,
+        lesson_id="notice",
+        curriculum_version=catalog.curriculum_version,
+    )
+    artifact = _closed_learning_artifact(bundle)
+
+    if tamper_field == "psychology_learning_mode":
+        artifact[tamper_field] = "not-learning-series"
+    elif tamper_field == "psychology_learning_gate":
+        artifact[tamper_field] = {
+            **artifact[tamper_field],  # type: ignore[arg-type]
+            "status": "failed",
+        }
+    else:
+        artifact[tamper_field] = {
+            **artifact[tamper_field],  # type: ignore[arg-type]
+            "lesson_fingerprint": "lesson:forged-manifest",
+        }
+
+    assert contains_psychology_learning_raw_provenance(artifact)
 
 
 def test_custom_series_proposal_is_safe_and_cannot_become_a_runtime_contract() -> None:

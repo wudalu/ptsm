@@ -2951,6 +2951,118 @@ def is_psychology_learning_drafting_safe_text(value: object) -> bool:
     return not _contains_source_reference(value)
 
 
+def verify_psychology_learning_artifact_receipt(
+    artifact: Mapping[object, object],
+) -> PsychologyLearningBundle:
+    """Rebuild and verify every catalog-owned field in a closed lesson artifact.
+
+    This is deliberately a single fail-closed authority for persisted learning
+    artifacts.  A publisher may add operational metadata after the application
+    seals the artifact, but it may not alter any catalog identity, evidence, or
+    draft-gate field and still have the artifact count as a completed lesson.
+    Error messages intentionally describe only receipt classes, never private
+    custom catalog content.
+    """
+    if artifact.get("psychology_learning_mode") != PSYCHOLOGY_LEARNING_MODE:
+        raise ValueError("psychology learning artifact has an unsupported mode")
+
+    series_id = artifact.get("psychology_learning_series_id")
+    curriculum_version = artifact.get("psychology_learning_curriculum_version")
+    lesson_id = artifact.get("psychology_learning_lesson_id")
+    if not all(
+        isinstance(value, str) and value.strip()
+        for value in (series_id, curriculum_version, lesson_id)
+    ):
+        raise ValueError("psychology learning artifact is missing its selection")
+    try:
+        bundle = resolve_psychology_learning_selection(
+            series_id=series_id,
+            lesson_id=lesson_id,
+            curriculum_version=curriculum_version,
+        )
+    except ValueError as exc:
+        raise ValueError(
+            "psychology learning artifact selection is not an approved lesson"
+        ) from exc
+
+    expected_identity = {
+        "psychology_learning_series_id": bundle.series_id,
+        "psychology_learning_curriculum_version": bundle.runtime_contract[
+            "curriculum_version"
+        ],
+        "psychology_learning_lesson_id": bundle.lesson_id,
+        "psychology_learning_lesson_number": bundle.lesson_number,
+    }
+    if any(
+        artifact.get(field_name) != expected
+        for field_name, expected in expected_identity.items()
+    ) or type(artifact.get("psychology_learning_lesson_number")) is not int:
+        raise ValueError(
+            "psychology learning artifact identity does not match its approved lesson"
+        )
+
+    raw_manifest = artifact.get("psychology_learning_evidence_manifest")
+    if not isinstance(raw_manifest, Mapping):
+        raise ValueError("psychology learning artifact manifest is invalid")
+    try:
+        manifest = PsychologyLearningEvidenceManifest.model_validate(raw_manifest)
+    except (TypeError, ValidationError) as exc:
+        raise ValueError("psychology learning artifact manifest is invalid") from exc
+    if manifest.model_dump(mode="json") != bundle.manifest:
+        raise ValueError(
+            "psychology learning artifact manifest does not match its approved lesson"
+        )
+
+    expected_gate = _expected_psychology_learning_artifact_gate(bundle)
+    raw_gate = artifact.get("psychology_learning_gate")
+    if not isinstance(raw_gate, Mapping) or dict(raw_gate) != expected_gate:
+        raise ValueError(
+            "psychology learning artifact gate does not match its approved lesson"
+        )
+
+    receipt_key = "psychology_learning_catalog_receipt"
+    has_catalog_receipt = receipt_key in artifact
+    raw_catalog_receipt = artifact.get(receipt_key)
+    if has_catalog_receipt and not isinstance(raw_catalog_receipt, Mapping):
+        raise ValueError("psychology learning artifact catalog receipt is invalid")
+    try:
+        verify_psychology_learning_catalog_receipt(
+            bundle=bundle,
+            receipt=(
+                raw_catalog_receipt
+                if isinstance(raw_catalog_receipt, Mapping)
+                else None
+            ),
+        )
+    except ValueError as exc:
+        raise ValueError(
+            "psychology learning artifact catalog receipt does not match its approved catalog"
+        ) from exc
+
+    final_content = artifact.get("final_content")
+    if not isinstance(final_content, Mapping) or validate_psychology_learning_draft_contract(
+        bundle.runtime_contract,
+        final_content,
+    ):
+        raise ValueError(
+            "psychology learning artifact content does not match its approved lesson"
+        )
+    return bundle
+
+
+def _expected_psychology_learning_artifact_gate(
+    bundle: PsychologyLearningBundle,
+) -> dict[str, object]:
+    return {
+        "status": "passed",
+        "series_id": bundle.series_id,
+        "lesson_id": bundle.lesson_id,
+        "validator": "psychology_learning_draft_contract",
+        "validator_version": "1",
+        "errors": [],
+    }
+
+
 def contains_psychology_learning_raw_provenance(
     value: object,
     *,
@@ -3294,7 +3406,23 @@ def _artifact_declares_psychology_learning_selection(
 def _verified_psychology_learning_artifact_bundle(
     artifact: Mapping[object, object],
 ) -> PsychologyLearningBundle | None:
-    """Resolve artifact identity and exact custom receipt without exposing storage."""
+    """Resolve a full persisted receipt without exposing catalog storage details."""
+    try:
+        return verify_psychology_learning_artifact_receipt(artifact)
+    except (TypeError, ValueError):
+        return None
+
+
+def _catalog_receipt_bundle_for_pre_envelope_artifact(
+    artifact: Mapping[object, object],
+) -> PsychologyLearningBundle | None:
+    """Verify only the catalog receipt retained by a generic pre-envelope artifact.
+
+    The application validates this generic artifact before replacing it with the
+    strict, closed learning envelope.  It intentionally retains the previous
+    narrower check here; the full verifier above is reserved for persisted
+    artifact scans and cannot be bypassed after the envelope exists.
+    """
     try:
         bundle = resolve_psychology_learning_selection(
             series_id=str(artifact["psychology_learning_series_id"]),
@@ -3318,7 +3446,7 @@ def _is_valid_psychology_learning_catalog_receipt(
 ) -> bool:
     if artifact is None or not isinstance(value, Mapping):
         return False
-    bundle = _verified_psychology_learning_artifact_bundle(artifact)
+    bundle = _catalog_receipt_bundle_for_pre_envelope_artifact(artifact)
     if bundle is None or bundle.catalog is None:
         return False
     expected = build_psychology_learning_catalog_receipt(bundle)

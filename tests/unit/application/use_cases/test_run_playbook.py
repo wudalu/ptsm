@@ -3589,6 +3589,116 @@ def test_run_playbook_completes_a_confirmed_custom_lesson_and_marks_production_p
     assert str(store.catalog_root) not in serialized
 
 
+def test_run_playbook_rejects_a_post_envelope_tampered_custom_lesson_without_progress(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """The final strict check is authoritative even when offline eval is disabled."""
+    monkeypatch.chdir(tmp_path)
+    private_goal = "只在确认前可见的私人目标"
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {
+                "id": "notice",
+                "title": "先识别重复时刻",
+                "goal": private_goal,
+            },
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    store = PsychologyLearningSeriesStore()
+    store.persist_proposal(proposal)
+    catalog = store.confirm(
+        proposal_id=proposal.proposal_id,
+        proposal_fingerprint=proposal.proposal_fingerprint,
+    )
+    bundle = resolve_psychology_learning_selection(
+        series_id=catalog.series_id,
+        lesson_id="notice",
+        curriculum_version=catalog.curriculum_version,
+    )
+    final_content = render_psychology_learning_draft(bundle.runtime_contract)
+    artifact_path = tmp_path / "outputs" / "artifacts" / "tampered-custom-learning.json"
+    artifact_path.parent.mkdir(parents=True, exist_ok=True)
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "modern_psychology_post",
+                "final_content": final_content,
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    class ValidCustomLearningWorkflow:
+        def invoke(
+            self,
+            payload: dict[str, object],
+            config: dict[str, object] | None = None,
+        ) -> dict[str, object]:
+            return {
+                "status": "completed",
+                "artifact_path": str(artifact_path),
+                "final_content": final_content,
+                "runtime_skill_contents": [],
+                "activated_skills": [],
+                "activated_skill_details": [],
+                "runtime_skill_details": [],
+            }
+
+    class PostEnvelopeMutatingPublisher:
+        def publish(self, **kwargs: object) -> dict[str, object]:
+            persisted_path = Path(str(kwargs["artifact_path"]))
+            artifact = json.loads(persisted_path.read_text(encoding="utf-8"))
+            artifact["psychology_learning_mode"] = "not-learning-series"
+            artifact["psychology_learning_gate"] = {
+                **artifact["psychology_learning_gate"],
+                "status": "failed",
+            }
+            persisted_path.write_text(
+                json.dumps(artifact, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            return {
+                "status": "published",
+                "platform": "xiaohongshu",
+                "provider": "post-envelope-mutator",
+                "artifact_path": str(persisted_path),
+            }
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        lambda **_: ValidCustomLearningWorkflow(),
+    )
+
+    result = run_playbook(
+        PlaybookRequest(
+            account_id="acct-psychology-local",
+            playbook_id="modern_psychology_post",
+            psychology_content_mode="learning_series",
+            psychology_series_id=bundle.series_id,
+            psychology_lesson_id=bundle.lesson_id,
+            psychology_curriculum_version=catalog.curriculum_version,
+            topic_direction_id=bundle.direction_id,
+        ),
+        publisher=PostEnvelopeMutatingPublisher(),
+        run_store=RunStore(base_dir=tmp_path / "runs"),
+    )
+
+    assert result["status"] == "psychology_learning_artifact_invalid"
+    assert result["psychology_learning_artifact_validation"] == {
+        "error": "learning artifact failed final provenance validation"
+    }
+    assert not artifact_path.exists()
+    assert store.read_production_progress(
+        series_id=catalog.series_id,
+        curriculum_version=catalog.curriculum_version,
+    ).completed_lesson_ids == ()
+    assert private_goal not in json.dumps(result, ensure_ascii=False)
+
+
 def test_run_playbook_does_not_mark_custom_progress_when_eval_fails(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
