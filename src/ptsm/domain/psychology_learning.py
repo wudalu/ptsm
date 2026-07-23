@@ -1170,10 +1170,11 @@ def _normalize_obfuscated_url_schemes(value: str) -> str:
 def _contains_split_source_domain_shape(value: str) -> bool:
     """Detect an obfuscated domain boundary without a suffix allowlist.
 
-    A non-whitespace Unicode punctuation, symbol, mark, or ignorable character
-    between ASCII label tokens is treated as a hidden domain boundary. This
-    deliberately rejects values such as ``note·card`` as a safe proposal-input
-    tradeoff; normal ASCII-space prose is not treated as a source locator.
+    A gap with a Unicode punctuation, symbol, mark, or ignorable character
+    between ASCII label tokens is treated as a hidden domain boundary, even
+    when ordinary whitespace surrounds it. This deliberately rejects values
+    such as ``note · card`` as a safe proposal-input tradeoff; pure ASCII-space
+    prose is not treated as a source locator.
     """
     normalized = _normalize_obfuscated_url_schemes(value)
     runs = tuple(re.finditer(r"[a-z0-9]+", normalized))
@@ -1189,10 +1190,11 @@ def _contains_split_source_domain_shape(value: str) -> bool:
 
 
 def _is_split_source_domain_separator(value: str) -> bool:
-    if (
-        not value
-        or not any(not character.isascii() for character in value)
-        or any(character.isspace() for character in value)
+    non_whitespace_characters = tuple(
+        character for character in value if not character.isspace()
+    )
+    if not non_whitespace_characters or not any(
+        not character.isascii() for character in non_whitespace_characters
     ):
         return False
     return all(
@@ -1201,7 +1203,7 @@ def _is_split_source_domain_separator(value: str) -> bool:
             not character.isascii()
             and unicodedata.category(character).startswith(("C", "M", "S", "P"))
         )
-        for character in value
+        for character in non_whitespace_characters
     )
 
 
