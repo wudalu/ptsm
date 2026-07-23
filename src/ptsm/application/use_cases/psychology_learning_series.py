@@ -3,18 +3,23 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 from ptsm.domain.psychology_learning import (
     PsychologyLearningCatalog,
+    PsychologyLearningCatalogRevisionRecord,
     PsychologyLearningOutlineItem,
     PsychologyLearningProductionProgress,
     PsychologyLearningSeriesPlanIntent,
     PsychologyLearningSeriesProposal,
     _build_confirmed_psychology_learning_catalog,
     _build_psychology_learning_catalog_revision_record,
+    _confirmed_catalog_snapshot_versions,
+    _load_confirmed_psychology_learning_catalog_snapshot,
+    _read_psychology_learning_catalog_revision_records,
     build_psychology_learning_series_proposal,
     list_confirmed_psychology_learning_catalog_revisions,
     load_confirmed_psychology_learning_catalog,
@@ -112,10 +117,20 @@ class PsychologyLearningSeriesStore:
         proposal = self.read_proposal(proposal_id=proposal_id)
         if proposal.proposal_fingerprint != proposal_fingerprint:
             raise ValueError("psychology learning proposal fingerprint does not match")
-        revisions = list_confirmed_psychology_learning_catalog_revisions(
+        records = _read_psychology_learning_catalog_revision_records(
             series_id=proposal.series_id_candidate,
             catalog_root=self.catalog_root,
         )
+        try:
+            revisions = list_confirmed_psychology_learning_catalog_revisions(
+                series_id=proposal.series_id_candidate,
+                catalog_root=self.catalog_root,
+            )
+        except ValueError:
+            return self._recover_pending_catalog_snapshot(
+                proposal=proposal,
+                records=records,
+            )
         existing = next(
             (
                 catalog
@@ -134,6 +149,87 @@ class PsychologyLearningSeriesStore:
             proposal,
             curriculum_version=next_version,
         )
+        self._persist_confirmation_record(catalog)
+        return self._persist_catalog_snapshot(catalog)
+
+    def _recover_pending_catalog_snapshot(
+        self,
+        *,
+        proposal: PsychologyLearningSeriesProposal,
+        records: tuple[PsychologyLearningCatalogRevisionRecord, ...],
+    ) -> PsychologyLearningCatalog:
+        """Complete only the single pending snapshot bound to this proposal."""
+        pending_records = tuple(
+            record
+            for record in records
+            if not psychology_learning_series_catalog_snapshot_path(
+                series_id=record.series_id,
+                curriculum_version=record.curriculum_version,
+                catalog_root=self.catalog_root,
+            ).exists()
+        )
+        if len(pending_records) != 1:
+            raise ValueError("invalid psychology learning catalog revision history")
+        pending = pending_records[0]
+        if pending.curriculum_version != records[-1].curriculum_version:
+            raise ValueError("invalid psychology learning catalog revision history")
+        if (
+            pending.approval.proposal_id != proposal.proposal_id
+            or pending.approval.proposal_fingerprint != proposal.proposal_fingerprint
+        ):
+            raise ValueError("invalid psychology learning catalog revision history")
+        catalog = _build_confirmed_psychology_learning_catalog(
+            proposal,
+            curriculum_version=pending.curriculum_version,
+        )
+        if _build_psychology_learning_catalog_revision_record(catalog) != pending:
+            raise ValueError("invalid psychology learning catalog revision history")
+        self._validate_recoverable_catalog_history(records=records, pending=pending)
+        return self._persist_catalog_snapshot(catalog)
+
+    def _validate_recoverable_catalog_history(
+        self,
+        *,
+        records: tuple[PsychologyLearningCatalogRevisionRecord, ...],
+        pending: PsychologyLearningCatalogRevisionRecord,
+    ) -> None:
+        """Reject corruption before completing one ledger-backed snapshot."""
+        catalog_directory = self.catalog_root / "catalogs" / pending.series_id
+        expected_existing_versions = [
+            int(record.curriculum_version)
+            for record in records
+            if record.curriculum_version != pending.curriculum_version
+        ]
+        if catalog_directory.exists():
+            try:
+                versions = _confirmed_catalog_snapshot_versions(catalog_directory)
+            except ValueError as exc:
+                raise ValueError("invalid psychology learning catalog revision history") from exc
+        else:
+            versions = []
+        if versions != expected_existing_versions:
+            raise ValueError("invalid psychology learning catalog revision history")
+        for record in records:
+            if record.curriculum_version == pending.curriculum_version:
+                continue
+            try:
+                catalog = _load_confirmed_psychology_learning_catalog_snapshot(
+                    series_id=record.series_id,
+                    curriculum_version=record.curriculum_version,
+                    catalog_root=self.catalog_root,
+                )
+            except ValueError as exc:
+                raise ValueError("invalid psychology learning catalog revision history") from exc
+            if (
+                catalog.approval != record.approval
+                or catalog.catalog_digest != record.catalog_digest
+            ):
+                raise ValueError("invalid psychology learning catalog revision history")
+
+    def _persist_catalog_snapshot(
+        self,
+        catalog: PsychologyLearningCatalog,
+    ) -> PsychologyLearningCatalog:
         path = psychology_learning_series_catalog_snapshot_path(
             series_id=catalog.series_id,
             curriculum_version=catalog.curriculum_version,
@@ -150,7 +246,6 @@ class PsychologyLearningSeriesStore:
             if existing != catalog:
                 raise ValueError("psychology learning catalog revision is immutable")
             return existing
-        self._persist_confirmation_record(catalog)
         return catalog
 
     def _persist_confirmation_record(self, catalog: PsychologyLearningCatalog) -> None:
@@ -163,12 +258,19 @@ class PsychologyLearningSeriesStore:
         try:
             _write_new_json(path, record.model_dump(mode="json"))
         except FileExistsError:
-            existing = load_confirmed_psychology_learning_catalog(
+            records = _read_psychology_learning_catalog_revision_records(
                 series_id=catalog.series_id,
-                curriculum_version=catalog.curriculum_version,
                 catalog_root=self.catalog_root,
             )
-            if existing != catalog:
+            existing = next(
+                (
+                    existing_record
+                    for existing_record in records
+                    if existing_record.curriculum_version == catalog.curriculum_version
+                ),
+                None,
+            )
+            if existing != record:
                 raise ValueError("psychology learning catalog revision is immutable")
 
     def read_production_progress(
@@ -274,9 +376,25 @@ def confirm_psychology_learning_series_proposal(
 
 
 def _write_new_json(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("x", encoding="utf-8") as handle:
-        handle.write(_canonical_json(payload))
+    staging_directory = path.parent.parent / ".staging"
+    staging_directory.mkdir(parents=True, exist_ok=True)
+    temp_path = staging_directory / f"{path.name}.{uuid4().hex}.tmp"
+    try:
+        temp_path.write_text(_canonical_json(payload), encoding="utf-8")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        os.link(temp_path, path)
+    except OSError:
+        if not path.exists():
+            try:
+                path.parent.rmdir()
+            except OSError:
+                pass
+        raise
+    finally:
+        try:
+            temp_path.unlink()
+        except OSError:
+            pass
 
 
 def _replace_json(path: Path, payload: dict[str, Any]) -> None:

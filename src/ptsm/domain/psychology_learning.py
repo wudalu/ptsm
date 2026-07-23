@@ -2242,9 +2242,8 @@ def psychology_learning_series_catalog_confirmation_path(
     version = _require_psychology_learning_curriculum_version(curriculum_version)
     return (
         psychology_learning_series_catalog_root(catalog_root)
-        / "catalogs"
-        / series_id
         / "confirmations"
+        / series_id
         / f"v{version}.json"
     )
 
@@ -2332,6 +2331,12 @@ def _validated_confirmed_psychology_learning_catalog_revisions(
     )
     if not records:
         return ()
+    catalog_directory = (
+        psychology_learning_series_catalog_root(catalog_root) / "catalogs" / series_id
+    )
+    versions = [int(record.curriculum_version) for record in records]
+    if _confirmed_catalog_snapshot_versions(catalog_directory) != versions:
+        raise ValueError("invalid psychology learning catalog revision history")
     catalogs: list[PsychologyLearningCatalog] = []
     for record in records:
         try:
@@ -2401,9 +2406,9 @@ def _read_psychology_learning_catalog_revision_records(
 ) -> tuple[PsychologyLearningCatalogRevisionRecord, ...]:
     root = psychology_learning_series_catalog_root(catalog_root)
     catalog_directory = root / "catalogs" / series_id
-    directory = catalog_directory / "confirmations"
+    directory = root / "confirmations" / series_id
     if not directory.is_dir():
-        if catalog_directory.exists():
+        if directory.exists() or catalog_directory.exists():
             raise ValueError("invalid psychology learning catalog revision history")
         return ()
     records: list[tuple[int, PsychologyLearningCatalogRevisionRecord]] = []
@@ -2411,6 +2416,10 @@ def _read_psychology_learning_catalog_revision_records(
         paths = tuple(directory.iterdir())
     except OSError as exc:
         raise ValueError("invalid psychology learning catalog revision history") from exc
+    if not paths:
+        if catalog_directory.exists():
+            raise ValueError("invalid psychology learning catalog revision history")
+        return ()
     for path in paths:
         match = re.fullmatch(r"v([1-9][0-9]{0,3})\.json", path.name)
         if match is None or not path.is_file():
@@ -2432,26 +2441,20 @@ def _read_psychology_learning_catalog_revision_records(
     versions = [version for version, _ in records]
     if not versions or versions != list(range(1, versions[-1] + 1)):
         raise ValueError("invalid psychology learning catalog revision history")
-    if _confirmed_catalog_snapshot_versions(catalog_directory) != versions:
-        raise ValueError("invalid psychology learning catalog revision history")
     return tuple(record for _, record in records)
 
 
 def _confirmed_catalog_snapshot_versions(catalog_directory: Path) -> list[int]:
-    """Return the immutable snapshot versions, excluding the confirmation ledger."""
+    """Return the immutable snapshot versions for one catalog directory."""
     try:
         paths = tuple(catalog_directory.iterdir())
     except OSError as exc:
         raise ValueError("invalid psychology learning catalog revision history") from exc
     versions: list[int] = []
     for path in paths:
-        if path.name == "confirmations":
-            continue
         match = re.fullmatch(r"v([1-9][0-9]{0,3})\.json", path.name)
         if match is None:
-            if path.suffix == ".json":
-                raise ValueError("invalid psychology learning catalog revision history")
-            continue
+            raise ValueError("invalid psychology learning catalog revision history")
         if not path.is_file():
             raise ValueError("invalid psychology learning catalog revision history")
         versions.append(int(match.group(1)))

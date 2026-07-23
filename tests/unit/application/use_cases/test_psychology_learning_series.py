@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import shutil
+from pathlib import Path
 
 import pytest
 
+import ptsm.application.use_cases.psychology_learning_series as psychology_learning_series_use_case
 from ptsm.application.use_cases.psychology_learning_series import (
     PsychologyLearningSeriesStore,
     plan_psychology_learning_series,
@@ -360,6 +363,317 @@ def test_confirmation_never_reuses_a_deleted_terminal_revision_number(
         )
 
 
+def test_deleting_a_series_catalog_directory_preserves_its_confirmation_history(
+    tmp_path,
+) -> None:
+    store = PsychologyLearningSeriesStore(catalog_root=tmp_path / "series-store")
+    first = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    replacement = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "review", "title": "回顾一个有效动作"},
+        ),
+    )
+    store.persist_proposal(first)
+    catalog = store.confirm(
+        proposal_id=first.proposal_id,
+        proposal_fingerprint=first.proposal_fingerprint,
+    )
+    store.persist_proposal(replacement)
+    confirmation_path = psychology_learning_series_catalog_confirmation_path(
+        series_id=catalog.series_id,
+        curriculum_version=catalog.curriculum_version,
+        catalog_root=store.catalog_root,
+    )
+
+    shutil.rmtree(store.catalog_root / "catalogs" / catalog.series_id)
+
+    assert confirmation_path.exists()
+    with pytest.raises(ValueError, match="catalog revision history"):
+        resolve_psychology_learning_selection(
+            series_id=catalog.series_id,
+            lesson_id="notice",
+            curriculum_version=catalog.curriculum_version,
+            catalog_root=store.catalog_root,
+        )
+    with pytest.raises(ValueError, match="catalog revision history"):
+        store.confirm(
+            proposal_id=replacement.proposal_id,
+            proposal_fingerprint=replacement.proposal_fingerprint,
+        )
+
+
+def test_confirmation_does_not_recover_a_nonterminal_missing_snapshot(
+    tmp_path,
+) -> None:
+    store = PsychologyLearningSeriesStore(catalog_root=tmp_path / "series-store")
+    first = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    second = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "review", "title": "回顾一个有效动作"},
+        ),
+    )
+    store.persist_proposal(first)
+    first_catalog = store.confirm(
+        proposal_id=first.proposal_id,
+        proposal_fingerprint=first.proposal_fingerprint,
+    )
+    store.persist_proposal(second)
+    store.confirm(
+        proposal_id=second.proposal_id,
+        proposal_fingerprint=second.proposal_fingerprint,
+    )
+    psychology_learning_series_catalog_snapshot_path(
+        series_id=first_catalog.series_id,
+        curriculum_version=first_catalog.curriculum_version,
+        catalog_root=store.catalog_root,
+    ).unlink()
+
+    with pytest.raises(ValueError, match="catalog revision history"):
+        store.confirm(
+            proposal_id=first.proposal_id,
+            proposal_fingerprint=first.proposal_fingerprint,
+        )
+
+
+def test_confirmation_recovers_only_the_matching_pending_snapshot_write(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    store = PsychologyLearningSeriesStore(catalog_root=tmp_path / "series-store")
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    different_proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "review", "title": "回顾一个有效动作"},
+        ),
+    )
+    store.persist_proposal(proposal)
+    store.persist_proposal(different_proposal)
+    expected_snapshot_path = psychology_learning_series_catalog_snapshot_path(
+        series_id=proposal.series_id_candidate,
+        curriculum_version="1",
+        catalog_root=store.catalog_root,
+    )
+    expected_confirmation_path = psychology_learning_series_catalog_confirmation_path(
+        series_id=proposal.series_id_candidate,
+        curriculum_version="1",
+        catalog_root=store.catalog_root,
+    )
+    original_write_new_json = psychology_learning_series_use_case._write_new_json
+    snapshot_write_failed = False
+
+    def fail_once_for_catalog_snapshot(path, payload) -> None:
+        nonlocal snapshot_write_failed
+        if path == expected_snapshot_path and not snapshot_write_failed:
+            snapshot_write_failed = True
+            raise OSError("injected catalog snapshot write failure")
+        original_write_new_json(path, payload)
+
+    monkeypatch.setattr(
+        psychology_learning_series_use_case,
+        "_write_new_json",
+        fail_once_for_catalog_snapshot,
+    )
+
+    with pytest.raises(OSError, match="injected catalog snapshot write failure"):
+        store.confirm(
+            proposal_id=proposal.proposal_id,
+            proposal_fingerprint=proposal.proposal_fingerprint,
+        )
+
+    assert expected_confirmation_path.exists()
+    assert not expected_snapshot_path.exists()
+    with pytest.raises(ValueError, match="catalog revision history"):
+        resolve_psychology_learning_selection(
+            series_id=proposal.series_id_candidate,
+            lesson_id="notice",
+            curriculum_version="1",
+            catalog_root=store.catalog_root,
+        )
+    with pytest.raises(ValueError, match="catalog revision history"):
+        list_psychology_learning_series(
+            series_id=proposal.series_id_candidate,
+            curriculum_version="1",
+            catalog_root=store.catalog_root,
+        )
+    with pytest.raises(ValueError, match="catalog revision history"):
+        store.confirm(
+            proposal_id=different_proposal.proposal_id,
+            proposal_fingerprint=different_proposal.proposal_fingerprint,
+        )
+
+    monkeypatch.setattr(
+        psychology_learning_series_use_case,
+        "_write_new_json",
+        original_write_new_json,
+    )
+    recovered = store.confirm(
+        proposal_id=proposal.proposal_id,
+        proposal_fingerprint=proposal.proposal_fingerprint,
+    )
+
+    assert recovered.curriculum_version == "1"
+    assert expected_snapshot_path.exists()
+    assert resolve_psychology_learning_selection(
+        series_id=recovered.series_id,
+        lesson_id="notice",
+        curriculum_version=recovered.curriculum_version,
+        catalog_root=store.catalog_root,
+    ).lesson.lesson_id == "notice"
+
+
+def test_confirmation_retry_after_ledger_write_failure_leaves_no_snapshot_orphan(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    store = PsychologyLearningSeriesStore(catalog_root=tmp_path / "series-store")
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    store.persist_proposal(proposal)
+    expected_snapshot_path = psychology_learning_series_catalog_snapshot_path(
+        series_id=proposal.series_id_candidate,
+        curriculum_version="1",
+        catalog_root=store.catalog_root,
+    )
+    expected_confirmation_path = psychology_learning_series_catalog_confirmation_path(
+        series_id=proposal.series_id_candidate,
+        curriculum_version="1",
+        catalog_root=store.catalog_root,
+    )
+    original_link = psychology_learning_series_use_case.os.link
+
+    def fail_for_confirmation_record(source, destination, *args, **kwargs) -> None:
+        if destination == expected_confirmation_path:
+            raise OSError("injected confirmation ledger write failure")
+        return original_link(source, destination, *args, **kwargs)
+
+    monkeypatch.setattr(
+        psychology_learning_series_use_case.os,
+        "link",
+        fail_for_confirmation_record,
+    )
+
+    with pytest.raises(OSError, match="injected confirmation ledger write failure"):
+        store.confirm(
+            proposal_id=proposal.proposal_id,
+            proposal_fingerprint=proposal.proposal_fingerprint,
+        )
+
+    assert not expected_confirmation_path.exists()
+    assert not expected_snapshot_path.exists()
+    assert not expected_confirmation_path.parent.exists()
+
+    monkeypatch.setattr(
+        psychology_learning_series_use_case.os,
+        "link",
+        original_link,
+    )
+    confirmed = store.confirm(
+        proposal_id=proposal.proposal_id,
+        proposal_fingerprint=proposal.proposal_fingerprint,
+    )
+
+    assert confirmed.curriculum_version == "1"
+    assert expected_confirmation_path.exists()
+    assert expected_snapshot_path.exists()
+
+
+def test_confirmation_retries_after_an_abandoned_empty_ledger_directory(
+    tmp_path,
+) -> None:
+    store = PsychologyLearningSeriesStore(catalog_root=tmp_path / "series-store")
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    store.persist_proposal(proposal)
+    confirmation_path = psychology_learning_series_catalog_confirmation_path(
+        series_id=proposal.series_id_candidate,
+        curriculum_version="1",
+        catalog_root=store.catalog_root,
+    )
+    confirmation_path.parent.mkdir(parents=True)
+
+    confirmed = store.confirm(
+        proposal_id=proposal.proposal_id,
+        proposal_fingerprint=proposal.proposal_fingerprint,
+    )
+
+    assert confirmed.curriculum_version == "1"
+    assert confirmation_path.exists()
+
+
+def test_confirmation_ignores_staging_cleanup_failure_after_durable_ledger_write(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    store = PsychologyLearningSeriesStore(catalog_root=tmp_path / "series-store")
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    store.persist_proposal(proposal)
+    original_unlink = Path.unlink
+    cleanup_failed = False
+
+    def fail_one_temp_cleanup(path, *args, **kwargs) -> None:
+        nonlocal cleanup_failed
+        if path.suffix == ".tmp" and not cleanup_failed:
+            cleanup_failed = True
+            raise OSError("injected staging cleanup failure")
+        return original_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", fail_one_temp_cleanup)
+
+    catalog = store.confirm(
+        proposal_id=proposal.proposal_id,
+        proposal_fingerprint=proposal.proposal_fingerprint,
+    )
+
+    assert cleanup_failed
+    assert tuple((store.catalog_root / "confirmations" / ".staging").glob("*.tmp"))
+    assert resolve_psychology_learning_selection(
+        series_id=catalog.series_id,
+        lesson_id="notice",
+        curriculum_version=catalog.curriculum_version,
+        catalog_root=store.catalog_root,
+    ).lesson.lesson_id == "notice"
+
+
 def test_custom_revision_history_fails_closed_when_a_confirmation_record_is_missing(
     tmp_path,
 ) -> None:
@@ -465,7 +779,7 @@ def test_confirmed_custom_lessons_are_controlled_and_progress_is_a_separate_side
         )
 
 
-def test_custom_catalog_resolution_fails_closed_for_missing_or_tampered_snapshots(
+def test_custom_catalog_resolution_fails_closed_until_matching_retry_and_for_tampered_snapshots(
     tmp_path,
 ) -> None:
     store = PsychologyLearningSeriesStore(catalog_root=tmp_path / "series-store")
@@ -495,11 +809,13 @@ def test_custom_catalog_resolution_fails_closed_for_missing_or_tampered_snapshot
             curriculum_version=catalog.curriculum_version,
             catalog_root=store.catalog_root,
         )
-    with pytest.raises(ValueError, match="catalog revision history"):
-        store.confirm(
-            proposal_id=proposal.proposal_id,
-            proposal_fingerprint=proposal.proposal_fingerprint,
-        )
+    recovered = store.confirm(
+        proposal_id=proposal.proposal_id,
+        proposal_fingerprint=proposal.proposal_fingerprint,
+    )
+
+    assert recovered == catalog
+    assert catalog_path.exists()
 
     tampered_store = PsychologyLearningSeriesStore(
         catalog_root=tmp_path / "tampered-series-store"
