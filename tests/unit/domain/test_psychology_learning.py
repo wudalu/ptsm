@@ -553,6 +553,138 @@ def test_proposal_validation_rejects_invalid_raw_shapes_before_scanning(
         PsychologyLearningSeriesPlanIntent.model_validate(payload)
 
 
+@pytest.mark.parametrize(
+    ("payload", "error"),
+    (
+        (
+            {"topic": "情绪整理", "x" * 1007: "unexpected"},
+            "plan intent field names must contain at most 80 characters",
+        ),
+        (
+            {
+                "topic": "情绪整理",
+                "outline": [
+                    {"title": "先记录感受", "x" * 1007: "unexpected"},
+                    {"title": "再回顾线索"},
+                ],
+            },
+            "outline item field names must contain at most 80 characters",
+        ),
+    ),
+)
+def test_proposal_validation_bounds_unknown_field_names_before_scanning_or_normalizing(
+    monkeypatch: pytest.MonkeyPatch,
+    payload: dict[str, object],
+    error: str,
+) -> None:
+    def should_not_scan(value: object) -> None:
+        raise AssertionError(f"raw scanner should not receive {value!r}")
+
+    def should_not_normalize(value: object) -> str:
+        raise AssertionError(f"key normalizer should not receive {value!r}")
+
+    monkeypatch.setattr(
+        psychology_learning,
+        "_assert_no_raw_provenance",
+        should_not_scan,
+    )
+    monkeypatch.setattr(
+        psychology_learning,
+        "_normalized_security_key",
+        should_not_normalize,
+    )
+
+    with pytest.raises(ValidationError, match=error):
+        PsychologyLearningSeriesPlanIntent.model_validate(payload)
+
+
+def test_proposal_validation_rejects_too_many_raw_field_names_before_normalizing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def should_not_normalize(value: object) -> str:
+        raise AssertionError(f"key normalizer should not receive {value!r}")
+
+    monkeypatch.setattr(
+        psychology_learning,
+        "_normalized_security_key",
+        should_not_normalize,
+    )
+
+    with pytest.raises(
+        ValidationError,
+        match="plan intent must not contain unknown fields",
+    ):
+        PsychologyLearningSeriesPlanIntent.model_validate(
+            {
+                "topic": "情绪整理",
+                "outline": [{"title": "先记录感受"}, {"title": "再回顾线索"}],
+                "extra": "unexpected",
+            }
+        )
+
+
+def test_proposal_validation_rejects_non_string_raw_field_names_before_normalizing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def should_not_normalize(value: object) -> str:
+        raise AssertionError(f"key normalizer should not receive {value!r}")
+
+    monkeypatch.setattr(
+        psychology_learning,
+        "_normalized_security_key",
+        should_not_normalize,
+    )
+
+    with pytest.raises(
+        ValidationError,
+        match="plan intent field names must be strings",
+    ):
+        PsychologyLearningSeriesPlanIntent.model_validate(
+            {"topic": "情绪整理", 1: "unexpected"}
+        )
+
+
+def test_proposal_validation_keeps_bounded_obfuscated_provenance_key_detection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_normalizer = psychology_learning._normalized_security_key
+    normalized_values: list[object] = []
+
+    def track_normalizer(value: object) -> str:
+        normalized_values.append(value)
+        return original_normalizer(value)
+
+    def should_not_scan(value: object) -> None:
+        raise AssertionError(f"raw scanner should not receive {value!r}")
+
+    monkeypatch.setattr(
+        psychology_learning,
+        "_normalized_security_key",
+        track_normalizer,
+    )
+    monkeypatch.setattr(
+        psychology_learning,
+        "_assert_no_raw_provenance",
+        should_not_scan,
+    )
+
+    with pytest.raises(ValidationError, match="provenance"):
+        PsychologyLearningSeriesPlanIntent.model_validate(
+            {
+                "topic": "情绪整理",
+                "outline": [
+                    {
+                        "title": "先记录感受",
+                        "source\u200b_refs": "hidden-reference",
+                    },
+                    {"title": "再回顾线索"},
+                ],
+            }
+        )
+
+    assert normalized_values == ["source\u200b_refs"]
+
+
 def test_proposal_validation_rejects_custom_top_level_mapping_before_scanning(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

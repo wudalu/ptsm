@@ -32,6 +32,7 @@ _PROPOSAL_OUTLINE_MIN_LESSON_COUNT = 2
 _PROPOSAL_OUTLINE_MAX_LESSON_COUNT = 6
 _PROPOSAL_PLAN_INTENT_RAW_FIELDS = frozenset({"topic", "outline"})
 _PROPOSAL_OUTLINE_ITEM_RAW_FIELDS = frozenset({"id", "title", "goal"})
+_PROPOSAL_RAW_FIELD_NAME_MAX_LENGTH = 80
 
 _IDENTIFIER_PATTERN = re.compile(r"^[a-z][a-z0-9_]{1,79}$")
 _OPAQUE_REFERENCE_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_:-]{0,127}$")
@@ -1265,10 +1266,19 @@ def _require_raw_concrete_dict(
     """Accept a known raw object shape without traversing custom mappings."""
     if type(value) is not dict:
         raise ValueError(f"{field_name} must be a concrete dict")
+    if len(value) > len(allowed_fields):
+        raise ValueError(f"{field_name} must not contain unknown fields")
+    for field in value:
+        if type(field) is not str:
+            raise ValueError(f"{field_name} field names must be strings")
+        if len(field) > _PROPOSAL_RAW_FIELD_NAME_MAX_LENGTH:
+            raise ValueError(
+                f"{field_name} field names must contain at most "
+                f"{_PROPOSAL_RAW_FIELD_NAME_MAX_LENGTH} characters"
+            )
     unknown_fields = set(value).difference(allowed_fields)
     if any(
-        isinstance(field, str)
-        and _normalized_security_key(field) in _RAW_PROVENANCE_KEYS
+        _normalized_security_key(field) in _RAW_PROVENANCE_KEYS
         for field in unknown_fields
     ):
         raise ValueError("runtime psychology learning contract cannot contain provenance")
