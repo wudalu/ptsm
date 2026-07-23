@@ -5,6 +5,7 @@ import pytest
 from ptsm.application.use_cases.psychology_learning_series import (
     plan_psychology_learning_series,
 )
+from ptsm.domain.psychology_learning import PsychologyLearningOutlineItem
 
 
 def test_plan_psychology_learning_series_synthesizes_a_stable_safe_four_step_proposal() -> None:
@@ -72,6 +73,21 @@ def test_plan_psychology_learning_series_accepts_concrete_outline_containers(
     )
 
     assert len(proposal.catalog.lessons) == 2
+
+
+def test_plan_psychology_learning_series_accepts_validated_outline_items() -> None:
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            PsychologyLearningOutlineItem(id="notice", title="先记录感受"),
+            PsychologyLearningOutlineItem(id="review", title="再回顾线索"),
+        ),
+    )
+
+    assert [lesson.lesson_id for lesson in proposal.catalog.lessons] == [
+        "notice",
+        "review",
+    ]
 
 
 def test_plan_psychology_learning_series_rejects_oversized_concrete_outline() -> None:

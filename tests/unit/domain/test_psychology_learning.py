@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from copy import deepcopy
 
 import pytest
@@ -506,6 +507,81 @@ def test_proposal_validation_rejects_raw_oversized_outline_id_before_scanning(
             id=" " * 1000 + "valid_id",
             title="先记录感受",
         )
+
+
+@pytest.mark.parametrize(
+    ("payload", "error"),
+    (
+        (
+            {"topic": "情绪整理", "extra": "x" * 1007},
+            "plan intent must not contain unknown fields",
+        ),
+        (
+            {
+                "topic": "情绪整理",
+                "outline": [
+                    {"title": "先记录感受", "extra": "x" * 1007},
+                    {"title": "再回顾线索"},
+                ],
+            },
+            "outline item must not contain unknown fields",
+        ),
+        (
+            {
+                "topic": "情绪整理",
+                "outline": ["x" * 1007, {"title": "再回顾线索"}],
+            },
+            "outline item must be a concrete dict",
+        ),
+    ),
+)
+def test_proposal_validation_rejects_invalid_raw_shapes_before_scanning(
+    monkeypatch: pytest.MonkeyPatch,
+    payload: dict[str, object],
+    error: str,
+) -> None:
+    def should_not_scan(value: object) -> None:
+        raise AssertionError(f"raw scanner should not receive {value!r}")
+
+    monkeypatch.setattr(
+        psychology_learning,
+        "_assert_no_raw_provenance",
+        should_not_scan,
+    )
+
+    with pytest.raises(ValidationError, match=error):
+        PsychologyLearningSeriesPlanIntent.model_validate(payload)
+
+
+def test_proposal_validation_rejects_custom_top_level_mapping_before_scanning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class CustomTopLevelMapping(Mapping[str, object]):
+        def __getitem__(self, key: str) -> object:
+            if key == "topic":
+                return "情绪整理"
+            raise KeyError(key)
+
+        def __iter__(self):
+            return iter(("topic",))
+
+        def __len__(self) -> int:
+            return 1
+
+        def items(self):
+            raise AssertionError("raw scanner should not iterate custom mappings")
+
+    def should_not_scan(value: object) -> None:
+        raise AssertionError(f"raw scanner should not receive {value!r}")
+
+    monkeypatch.setattr(
+        psychology_learning,
+        "_assert_no_raw_provenance",
+        should_not_scan,
+    )
+
+    with pytest.raises(ValidationError, match="plan intent must be a concrete dict"):
+        PsychologyLearningSeriesPlanIntent.model_validate(CustomTopLevelMapping())
 
 
 def test_proposal_validation_rejects_deceptive_outline_sequence_before_iteration() -> None:

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from typing import Any
 
 from ptsm.domain.psychology_learning import (
@@ -16,8 +15,8 @@ from ptsm.domain.psychology_learning import (
 def plan_psychology_learning_series(
     *,
     topic: str,
-    outline: list[Mapping[str, Any] | PsychologyLearningOutlineItem]
-    | tuple[Mapping[str, Any] | PsychologyLearningOutlineItem, ...]
+    outline: list[dict[str, Any] | PsychologyLearningOutlineItem]
+    | tuple[dict[str, Any] | PsychologyLearningOutlineItem, ...]
     | None = None,
 ) -> PsychologyLearningSeriesProposal:
     """Return a safe review proposal without writing or resolving a catalog.

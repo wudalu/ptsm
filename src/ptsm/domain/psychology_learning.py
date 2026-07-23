@@ -30,6 +30,8 @@ STARTER_SERIES_ID = "after_work_rumination"
 PSYCHOLOGY_LEARNING_PROPOSAL_SCHEMA_VERSION = "1"
 _PROPOSAL_OUTLINE_MIN_LESSON_COUNT = 2
 _PROPOSAL_OUTLINE_MAX_LESSON_COUNT = 6
+_PROPOSAL_PLAN_INTENT_RAW_FIELDS = frozenset({"topic", "outline"})
+_PROPOSAL_OUTLINE_ITEM_RAW_FIELDS = frozenset({"id", "title", "goal"})
 
 _IDENTIFIER_PATTERN = re.compile(r"^[a-z][a-z0-9_]{1,79}$")
 _OPAQUE_REFERENCE_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_:-]{0,127}$")
@@ -790,6 +792,8 @@ class PsychologyLearningOutlineItem(_FrozenDomainModel):
     @model_validator(mode="before")
     @classmethod
     def _reject_raw_provenance(cls, value: Any) -> Any:
+        if type(value) is cls:
+            return value
         _assert_raw_outline_item_text_bounds(value)
         _assert_no_raw_provenance(value)
         return value
@@ -833,6 +837,8 @@ class PsychologyLearningSeriesPlanIntent(_FrozenDomainModel):
     @model_validator(mode="before")
     @classmethod
     def _reject_raw_provenance(cls, value: Any) -> Any:
+        if type(value) is cls:
+            return value
         _assert_raw_series_plan_intent_bounds(value)
         _assert_no_raw_provenance(value)
         return value
@@ -1126,7 +1132,7 @@ class PsychologyLearningSeriesProposal(_FrozenDomainModel):
 
 
 def build_psychology_learning_series_proposal(
-    intent: PsychologyLearningSeriesPlanIntent | Mapping[str, Any],
+    intent: PsychologyLearningSeriesPlanIntent | dict[str, Any],
 ) -> PsychologyLearningSeriesProposal:
     """Build a pure, deterministic proposal from sanitized operator intent.
 
@@ -1202,15 +1208,18 @@ def build_psychology_learning_series_proposal(
 
 def _assert_raw_series_plan_intent_bounds(value: Any) -> None:
     """Reject oversized operator text before trim, provenance checks, or parsing."""
-    if not isinstance(value, Mapping):
-        return
+    payload = _require_raw_concrete_dict(
+        value,
+        field_name="plan intent",
+        allowed_fields=_PROPOSAL_PLAN_INTENT_RAW_FIELDS,
+    )
     _require_raw_proposal_text_bounds(
-        value.get("topic"),
+        payload.get("topic"),
         field_name="topic",
         min_length=2,
         max_length=60,
     )
-    raw_outline = value.get("outline")
+    raw_outline = payload.get("outline")
     if raw_outline is None:
         return
     outline = _require_concrete_proposal_outline(raw_outline)
@@ -1220,26 +1229,52 @@ def _assert_raw_series_plan_intent_bounds(value: Any) -> None:
 
 def _assert_raw_outline_item_text_bounds(value: Any) -> None:
     """Apply raw display bounds to one operator-supplied outline item."""
-    if not isinstance(value, Mapping):
+    if type(value) is PsychologyLearningOutlineItem:
         return
+    payload = _require_raw_concrete_dict(
+        value,
+        field_name="outline item",
+        allowed_fields=_PROPOSAL_OUTLINE_ITEM_RAW_FIELDS,
+    )
     _require_raw_proposal_text_bounds(
-        value.get("id"),
+        payload.get("id"),
         field_name="outline id",
         min_length=2,
         max_length=80,
     )
     _require_raw_proposal_text_bounds(
-        value.get("title"),
+        payload.get("title"),
         field_name="outline title",
         min_length=2,
         max_length=60,
     )
     _require_raw_proposal_text_bounds(
-        value.get("goal"),
+        payload.get("goal"),
         field_name="outline goal",
         min_length=2,
         max_length=120,
     )
+
+
+def _require_raw_concrete_dict(
+    value: object,
+    *,
+    field_name: str,
+    allowed_fields: frozenset[str],
+) -> dict[str, Any]:
+    """Accept a known raw object shape without traversing custom mappings."""
+    if type(value) is not dict:
+        raise ValueError(f"{field_name} must be a concrete dict")
+    unknown_fields = set(value).difference(allowed_fields)
+    if any(
+        isinstance(field, str)
+        and _normalized_security_key(field) in _RAW_PROVENANCE_KEYS
+        for field in unknown_fields
+    ):
+        raise ValueError("runtime psychology learning contract cannot contain provenance")
+    if unknown_fields:
+        raise ValueError(f"{field_name} must not contain unknown fields")
+    return value
 
 
 def _require_raw_proposal_text_bounds(
@@ -1250,8 +1285,10 @@ def _require_raw_proposal_text_bounds(
     max_length: int,
 ) -> None:
     """Limit the original display string before any lossy normalization."""
-    if not isinstance(value, str):
+    if value is None:
         return
+    if type(value) is not str:
+        raise ValueError(f"{field_name} must be a string")
     if not min_length <= len(value) <= max_length:
         raise ValueError(
             f"{field_name} must contain between {min_length} and {max_length} characters"
