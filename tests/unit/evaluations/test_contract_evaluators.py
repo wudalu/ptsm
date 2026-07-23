@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from copy import deepcopy
+
 import pytest
 from ptsm.application.use_cases.psychology_learning_series import (
     PsychologyLearningSeriesStore,
@@ -15,6 +17,7 @@ from ptsm.evaluations.contracts_eval import (
     ALL_CONTRACT_EVALUATORS,
 )
 from ptsm.domain.psychology_learning import (
+    build_psychology_learning_catalog_receipt,
     render_psychology_learning_draft,
     resolve_psychology_learning_selection,
 )
@@ -295,7 +298,7 @@ def _psychology_learning_receipt(*, bundle=None) -> dict:
             lesson_id="notice_the_loop",
         )
     contract = bundle.runtime_contract
-    return {
+    receipt = {
         "psychology_learning_mode": "learning_series",
         "psychology_learning_series_id": bundle.series_id,
         "psychology_learning_curriculum_version": contract["curriculum_version"],
@@ -312,6 +315,10 @@ def _psychology_learning_receipt(*, bundle=None) -> dict:
         },
         "final_content": render_psychology_learning_draft(contract),
     }
+    catalog_receipt = build_psychology_learning_catalog_receipt(bundle)
+    if catalog_receipt is not None:
+        receipt["psychology_learning_catalog_receipt"] = catalog_receipt
+    return receipt
 
 
 class TestPsychologyLearningReceipt:
@@ -326,7 +333,7 @@ class TestPsychologyLearningReceipt:
         assert result.status == "passed"
         assert result.evaluator_id == "psychology.learning_receipt"
 
-    def test_rejects_default_custom_catalog_receipt_pending_runtime_binding(
+    def test_accepts_confirmed_custom_catalog_receipt(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path,
@@ -359,8 +366,62 @@ class TestPsychologyLearningReceipt:
             )
         )
 
+        assert result.status == "passed"
+
+    @pytest.mark.parametrize(
+        "tamper_field",
+        (
+            "missing",
+            "catalog_digest",
+            "approval_id",
+            "proposal_fingerprint",
+            "publication_plan",
+        ),
+    )
+    def test_rejects_every_tampered_custom_catalog_receipt_field(
+        self,
+        tamper_field: str,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path,
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        private_goal = "只在确认前可见的私人目标"
+        proposal = plan_psychology_learning_series(
+            topic="下班后的脑内回放",
+            outline=(
+                {"id": "notice", "title": "先识别重复时刻", "goal": private_goal},
+                {"id": "practice", "title": "练习一个小步骤"},
+            ),
+        )
+        store = PsychologyLearningSeriesStore()
+        store.persist_proposal(proposal)
+        catalog = store.confirm(
+            proposal_id=proposal.proposal_id,
+            proposal_fingerprint=proposal.proposal_fingerprint,
+        )
+        bundle = resolve_psychology_learning_selection(
+            series_id=catalog.series_id,
+            lesson_id="notice",
+            curriculum_version=catalog.curriculum_version,
+        )
+        receipt = _psychology_learning_receipt(bundle=bundle)
+        catalog_receipt = deepcopy(receipt["psychology_learning_catalog_receipt"])
+        if tamper_field == "missing":
+            receipt.pop("psychology_learning_catalog_receipt")
+        elif tamper_field == "publication_plan":
+            catalog_receipt["publication_plan"]["items"][0]["rationale"] = "另一个安全理由"
+            receipt["psychology_learning_catalog_receipt"] = catalog_receipt
+        else:
+            catalog_receipt[tamper_field] = f"{tamper_field}:tampered"
+            receipt["psychology_learning_catalog_receipt"] = catalog_receipt
+
+        result = contract_psychology_learning_receipt(
+            _target(playbook_id="modern_psychology_post", output_ref=receipt)
+        )
+
         assert result.status == "failed"
-        assert "custom catalog requires runtime receipt binding" in result.reason
+        assert "catalog receipt" in result.reason
+        assert private_goal not in str(result.to_dict())
 
     def test_accepts_the_framework_owned_catalog_topic_selection_marker(self):
         receipt = _psychology_learning_receipt()

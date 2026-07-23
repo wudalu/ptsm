@@ -28,6 +28,7 @@ from ptsm.domain.psychology_learning import (
     parse_psychology_learning_runtime_contract,
     resolve_psychology_learning_selection,
     validate_psychology_learning_draft_contract,
+    verify_psychology_learning_catalog_receipt,
 )
 from ptsm.infrastructure.artifacts.file_store import FileArtifactStore
 from ptsm.infrastructure.evaluations.content_quality_gate import (
@@ -157,6 +158,7 @@ def build_playbook_workflow(
     ai_tech_evidence_manifest: Mapping[str, Any] | None = None,
     psychology_learning_contract: Mapping[str, Any] | None = None,
     psychology_learning_manifest: Mapping[str, Any] | None = None,
+    psychology_learning_catalog_receipt: Mapping[str, Any] | None = None,
 ):
     """Build a workflow for a specific playbook/domain pair."""
     execution_memory = memory or InMemoryExecutionMemory()
@@ -170,6 +172,7 @@ def build_playbook_workflow(
     normalized_ai_tech_evidence_manifest: dict[str, Any] | None = None
     normalized_psychology_learning_contract: dict[str, Any] | None = None
     normalized_psychology_learning_manifest: dict[str, Any] | None = None
+    normalized_psychology_learning_catalog_receipt: dict[str, Any] | None = None
     if playbook_id == AI_TECH_PLAYBOOK_ID:
         if ai_tech_evidence is None:
             raise ValueError("ai_tech_daily_post requires a normalized AI evidence contract")
@@ -191,6 +194,9 @@ def build_playbook_workflow(
         ) or (
             psychology_learning_contract is not None
             and psychology_learning_manifest is None
+        ) or (
+            psychology_learning_contract is None
+            and psychology_learning_catalog_receipt is not None
         ):
             raise ValueError(
                 "psychology learning requires both a normalized catalog contract and opaque manifest"
@@ -214,11 +220,17 @@ def build_playbook_workflow(
             (
                 normalized_psychology_learning_contract,
                 normalized_psychology_learning_manifest,
+                normalized_psychology_learning_catalog_receipt,
             ) = _resolve_verified_psychology_learning_catalog_contract(
                 contract=normalized_psychology_learning_contract,
                 manifest=normalized_psychology_learning_manifest,
+                catalog_receipt=psychology_learning_catalog_receipt,
             )
-    elif psychology_learning_contract is not None or psychology_learning_manifest is not None:
+    elif (
+        psychology_learning_contract is not None
+        or psychology_learning_manifest is not None
+        or psychology_learning_catalog_receipt is not None
+    ):
         raise ValueError(
             "psychology learning contracts are only valid for modern_psychology_post"
         )
@@ -299,6 +311,7 @@ def build_playbook_workflow(
             ai_tech_evidence_manifest=normalized_ai_tech_evidence_manifest,
             psychology_learning_contract=normalized_psychology_learning_contract,
             psychology_learning_manifest=normalized_psychology_learning_manifest,
+            psychology_learning_catalog_receipt=normalized_psychology_learning_catalog_receipt,
         ),
         checkpointer=checkpointer or InMemorySaver(),
     )
@@ -374,7 +387,8 @@ def _resolve_verified_psychology_learning_catalog_contract(
     *,
     contract: Mapping[str, Any],
     manifest: Mapping[str, Any],
-) -> tuple[dict[str, Any], dict[str, Any]]:
+    catalog_receipt: Mapping[str, Any] | None = None,
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any] | None]:
     """Rebuild the selected lesson so public runtime calls cannot forge it."""
     if any(
         contract.get(field_name) != manifest.get(field_name)
@@ -391,17 +405,17 @@ def _resolve_verified_psychology_learning_catalog_contract(
         )
     except (KeyError, ValueError) as exc:
         raise ValueError("psychology learning catalog selection is invalid") from exc
-    if bundle.catalog is not None:
-        raise ValueError(
-            "custom psychology learning catalog requires runtime receipt binding"
-        )
     expected_contract = bundle.runtime_contract
     expected_manifest = bundle.manifest
     if dict(contract) != expected_contract or dict(manifest) != expected_manifest:
         raise ValueError(
             "psychology learning contract or manifest does not exactly match the approved catalog"
         )
-    return expected_contract, expected_manifest
+    expected_catalog_receipt = verify_psychology_learning_catalog_receipt(
+        bundle=bundle,
+        receipt=catalog_receipt,
+    )
+    return expected_contract, expected_manifest, expected_catalog_receipt
 
 
 def _build_ai_tech_workflow_input(
@@ -565,6 +579,7 @@ def build_finalize_node(
     ai_tech_evidence_manifest: Mapping[str, Any] | None = None,
     psychology_learning_contract: Mapping[str, Any] | None = None,
     psychology_learning_manifest: Mapping[str, Any] | None = None,
+    psychology_learning_catalog_receipt: Mapping[str, Any] | None = None,
 ):
     normalized_ai_tech_manifest = (
         AiTechEvidenceManifest.model_validate(ai_tech_evidence_manifest).model_dump(mode="json")
@@ -627,6 +642,7 @@ def build_finalize_node(
             _resolve_verified_psychology_learning_catalog_contract(
                 contract=psychology_learning_contract,
                 manifest=normalized_psychology_learning_manifest,
+                catalog_receipt=psychology_learning_catalog_receipt,
             )
 
         content_review = _build_content_review(state)
@@ -665,6 +681,7 @@ def build_finalize_node(
                 _build_psychology_learning_receipt(
                     contract=psychology_learning_contract,
                     manifest=normalized_psychology_learning_manifest,
+                    catalog_receipt=psychology_learning_catalog_receipt,
                 )
             )
         artifact_path = artifact_store.write(
@@ -720,17 +737,23 @@ def _build_psychology_learning_receipt(
     *,
     contract: Mapping[str, Any],
     manifest: Mapping[str, Any],
+    catalog_receipt: Mapping[str, Any] | None = None,
 ) -> dict[str, object]:
     """Build the only catalog-audit data permitted in a lesson artifact."""
     normalized_contract = parse_psychology_learning_runtime_contract(contract)
     normalized_manifest = PsychologyLearningEvidenceManifest.model_validate(
         manifest
     ).model_dump(mode="json")
-    normalized_contract, normalized_manifest = _resolve_verified_psychology_learning_catalog_contract(
+    (
+        normalized_contract,
+        normalized_manifest,
+        normalized_catalog_receipt,
+    ) = _resolve_verified_psychology_learning_catalog_contract(
         contract=normalized_contract,
         manifest=normalized_manifest,
+        catalog_receipt=catalog_receipt,
     )
-    return {
+    receipt: dict[str, object] = {
         "psychology_learning_mode": PSYCHOLOGY_LEARNING_MODE,
         "psychology_learning_series_id": normalized_contract["series_id"],
         "psychology_learning_curriculum_version": normalized_contract[
@@ -748,6 +771,9 @@ def _build_psychology_learning_receipt(
             "errors": [],
         },
     }
+    if normalized_catalog_receipt is not None:
+        receipt["psychology_learning_catalog_receipt"] = normalized_catalog_receipt
+    return receipt
 
 
 def _build_step_outputs(state: ExecutionState) -> dict[str, object]:

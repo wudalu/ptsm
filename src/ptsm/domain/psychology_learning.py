@@ -41,6 +41,7 @@ PSYCHOLOGY_LEARNING_CATALOG_SNAPSHOT_SCHEMA_VERSION = (
 )
 CURRENT_PSYCHOLOGY_LEARNING_CONTROLLED_TEMPLATE_VERSION = "1"
 PSYCHOLOGY_LEARNING_PROGRESS_SCHEMA_VERSION = "1"
+PSYCHOLOGY_LEARNING_CATALOG_RECEIPT_SCHEMA_VERSION = "1"
 DEFAULT_PSYCHOLOGY_LEARNING_SERIES_CATALOG_ROOT = (
     Path("outputs") / "artifacts" / "psychology-learning-series"
 )
@@ -359,6 +360,7 @@ _PSYCHOLOGY_LEARNING_ARTIFACT_ROOT_KEYS = frozenset(
         "publish_mode",
         "publish_result",
         "psychology_learning_curriculum_version",
+        "psychology_learning_catalog_receipt",
         "psychology_learning_evidence_manifest",
         "psychology_learning_gate",
         "psychology_learning_lesson_id",
@@ -1287,6 +1289,33 @@ class PsychologyLearningCatalog(_FrozenDomainModel):
         if self.catalog_digest != expected_digest:
             raise ValueError("confirmed catalog digest does not match its snapshot")
         return self
+
+
+class PsychologyLearningCatalogReceipt(_FrozenDomainModel):
+    """Opaque binding between a custom lesson artifact and its frozen catalog.
+
+    A receipt deliberately carries confirmation and scheduling identifiers only.
+    It never copies proposal topic/outline intent, the catalog path, or a lesson
+    fingerprint into runtime state or an artifact.
+    """
+
+    schema_version: Literal["1"] = PSYCHOLOGY_LEARNING_CATALOG_RECEIPT_SCHEMA_VERSION
+    origin: Literal["user_confirmed"] = "user_confirmed"
+    controlled_template_version: str
+    catalog_digest: str
+    approval_id: str
+    proposal_fingerprint: str
+    publication_plan: PsychologyLearningPublicationPlan
+
+    @field_validator("controlled_template_version")
+    @classmethod
+    def _validate_controlled_template_version(cls, value: str) -> str:
+        return _require_controlled_catalog_template_version(value)
+
+    @field_validator("catalog_digest", "approval_id", "proposal_fingerprint")
+    @classmethod
+    def _validate_opaque_values(cls, value: str, info: Any) -> str:
+        return _require_opaque_reference(value, field_name=info.field_name)
 
 
 class PsychologyLearningCatalogRevisionRecord(_FrozenDomainModel):
@@ -2736,6 +2765,50 @@ def resolve_psychology_learning_selection(
     raise ValueError("unknown psychology learning lesson_id for the selected series")
 
 
+def build_psychology_learning_catalog_receipt(
+    bundle: PsychologyLearningBundle,
+) -> dict[str, Any] | None:
+    """Build the sole custom-catalog receipt allowed outside the resolver.
+
+    Builtin lessons are intentionally receipt-free so their established
+    artifact format remains unchanged.  For confirmed custom catalogs, every
+    field is reconstructed from the resolved immutable catalog rather than
+    accepted from a caller.
+    """
+    catalog = bundle.catalog
+    if catalog is None:
+        return None
+    return PsychologyLearningCatalogReceipt(
+        controlled_template_version=catalog.controlled_template_version,
+        catalog_digest=catalog.catalog_digest,
+        approval_id=catalog.approval.approval_id,
+        proposal_fingerprint=catalog.approval.proposal_fingerprint,
+        publication_plan=catalog.publication_plan,
+    ).model_dump(mode="json")
+
+
+def verify_psychology_learning_catalog_receipt(
+    *,
+    bundle: PsychologyLearningBundle,
+    receipt: Mapping[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Require an exact immutable receipt for custom catalogs and no receipt otherwise."""
+    expected = build_psychology_learning_catalog_receipt(bundle)
+    if expected is None:
+        if receipt is not None:
+            raise ValueError("builtin psychology learning catalog must not carry a receipt")
+        return None
+    if not isinstance(receipt, Mapping):
+        raise ValueError("custom psychology learning catalog requires a receipt")
+    try:
+        normalized = PsychologyLearningCatalogReceipt.model_validate(receipt)
+    except (TypeError, ValidationError) as exc:
+        raise ValueError("custom psychology learning catalog receipt is invalid") from exc
+    if normalized.model_dump(mode="json") != expected:
+        raise ValueError("custom psychology learning catalog receipt does not match")
+    return expected
+
+
 def list_psychology_learning_series(
     *,
     series_id: str,
@@ -2895,6 +2968,11 @@ def contains_psychology_learning_raw_provenance(
     if isinstance(value, Mapping):
         if _path == ():
             _artifact_root = value
+        if strict_artifact_shape and _path == () and _artifact_root is not None:
+            if _artifact_declares_psychology_learning_selection(_artifact_root) and (
+                _verified_psychology_learning_artifact_bundle(_artifact_root) is None
+            ):
+                return True
         if strict_artifact_shape:
             allowed_fields = (
                 _PSYCHOLOGY_LEARNING_ARTIFACT_ROOT_KEYS
@@ -2925,6 +3003,13 @@ def contains_psychology_learning_raw_provenance(
                 try:
                     PsychologyLearningEvidenceManifest.model_validate(nested)
                 except ValidationError:
+                    return True
+                continue
+            if key == "psychology_learning_catalog_receipt":
+                if not _is_valid_psychology_learning_catalog_receipt(
+                    nested,
+                    artifact=_artifact_root,
+                ):
                     return True
                 continue
             if strict_artifact_shape and not _is_valid_psychology_learning_artifact_value(
@@ -3073,13 +3158,8 @@ def _expected_psychology_learning_artifact_scene(
 ) -> str | None:
     if not isinstance(artifact, Mapping):
         return None
-    try:
-        bundle = resolve_psychology_learning_selection(
-            series_id=str(artifact["psychology_learning_series_id"]),
-            lesson_id=str(artifact["psychology_learning_lesson_id"]),
-            curriculum_version=str(artifact["psychology_learning_curriculum_version"]),
-        )
-    except (KeyError, ValueError):
+    bundle = _verified_psychology_learning_artifact_bundle(artifact)
+    if bundle is None:
         return None
     return f"心理学学习专题：{bundle.lesson.series_badge}｜{bundle.lesson.lesson_title}"
 
@@ -3166,14 +3246,19 @@ def _is_valid_psychology_learning_topic_selection_marker(
         "lesson_number",
     }:
         return False
-    try:
-        bundle = resolve_psychology_learning_selection(
-            series_id=str(selection["series_id"]),
-            lesson_id=str(selection["lesson_id"]),
-            curriculum_version=str(selection["curriculum_version"]),
-        )
-    except (KeyError, ValueError):
-        return False
+    if artifact is None:
+        try:
+            bundle = resolve_psychology_learning_selection(
+                series_id=str(selection["series_id"]),
+                lesson_id=str(selection["lesson_id"]),
+                curriculum_version=str(selection["curriculum_version"]),
+            )
+        except (KeyError, ValueError):
+            return False
+    else:
+        bundle = _verified_psychology_learning_artifact_bundle(artifact)
+        if bundle is None:
+            return False
     if selection.get("lesson_number") != bundle.lesson_number:
         return False
     if artifact is None:
@@ -3185,6 +3270,59 @@ def _is_valid_psychology_learning_topic_selection_marker(
         "lesson_number": artifact.get("psychology_learning_lesson_number"),
     }
     return selection == expected
+
+
+def _artifact_declares_psychology_learning_selection(
+    artifact: Mapping[object, object],
+) -> bool:
+    """Return whether an artifact is attempting to claim a learning lesson."""
+    return any(
+        field_name in artifact
+        for field_name in (
+            "psychology_learning_mode",
+            "psychology_learning_series_id",
+            "psychology_learning_curriculum_version",
+            "psychology_learning_lesson_id",
+            "psychology_learning_lesson_number",
+            "psychology_learning_evidence_manifest",
+            "psychology_learning_catalog_receipt",
+            "psychology_learning_gate",
+        )
+    )
+
+
+def _verified_psychology_learning_artifact_bundle(
+    artifact: Mapping[object, object],
+) -> PsychologyLearningBundle | None:
+    """Resolve artifact identity and exact custom receipt without exposing storage."""
+    try:
+        bundle = resolve_psychology_learning_selection(
+            series_id=str(artifact["psychology_learning_series_id"]),
+            lesson_id=str(artifact["psychology_learning_lesson_id"]),
+            curriculum_version=str(artifact["psychology_learning_curriculum_version"]),
+        )
+        raw_receipt = artifact.get("psychology_learning_catalog_receipt")
+        verify_psychology_learning_catalog_receipt(
+            bundle=bundle,
+            receipt=raw_receipt if isinstance(raw_receipt, Mapping) else None,
+        )
+    except (KeyError, ValueError):
+        return None
+    return bundle
+
+
+def _is_valid_psychology_learning_catalog_receipt(
+    value: object,
+    *,
+    artifact: Mapping[object, object] | None,
+) -> bool:
+    if artifact is None or not isinstance(value, Mapping):
+        return False
+    bundle = _verified_psychology_learning_artifact_bundle(artifact)
+    if bundle is None or bundle.catalog is None:
+        return False
+    expected = build_psychology_learning_catalog_receipt(bundle)
+    return expected is not None and dict(value) == expected
 
 
 def _is_safe_local_artifact_path(value: object, *, suffix: str) -> bool:

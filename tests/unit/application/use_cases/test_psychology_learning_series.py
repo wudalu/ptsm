@@ -5,6 +5,7 @@ import json
 import os
 import shutil
 import stat
+import threading
 from pathlib import Path
 
 import pytest
@@ -781,6 +782,62 @@ def test_confirmed_custom_lessons_are_controlled_and_progress_is_a_separate_side
             curriculum_version=catalog.curriculum_version,
             completed_lesson_ids=(first_lesson.lesson_id, first_lesson.lesson_id),
         )
+
+
+def test_mark_production_lesson_completed_is_idempotent_and_concurrency_safe(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "series-store"
+    store = PsychologyLearningSeriesStore(catalog_root=root)
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    store.persist_proposal(proposal)
+    catalog = store.confirm(
+        proposal_id=proposal.proposal_id,
+        proposal_fingerprint=proposal.proposal_fingerprint,
+    )
+    start = threading.Barrier(2)
+    failures: list[BaseException] = []
+
+    def mark(lesson_id: str) -> None:
+        try:
+            start.wait(timeout=5)
+            PsychologyLearningSeriesStore(catalog_root=root).mark_production_lesson_completed(
+                series_id=catalog.series_id,
+                curriculum_version=catalog.curriculum_version,
+                lesson_id=lesson_id,
+            )
+        except BaseException as exc:  # pragma: no cover - asserted below
+            failures.append(exc)
+
+    threads = [
+        threading.Thread(target=mark, args=(lesson.lesson_id,))
+        for lesson in catalog.lessons
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+
+    assert not failures
+    assert all(not thread.is_alive() for thread in threads)
+    progress = store.read_production_progress(
+        series_id=catalog.series_id,
+        curriculum_version=catalog.curriculum_version,
+    )
+    assert progress.completed_lesson_ids == tuple(
+        lesson.lesson_id for lesson in catalog.lessons
+    )
+    assert store.mark_production_lesson_completed(
+        series_id=catalog.series_id,
+        curriculum_version=catalog.curriculum_version,
+        lesson_id=catalog.lessons[1].lesson_id,
+    ) == progress
 
 
 def test_custom_catalog_resolution_fails_closed_until_matching_retry_and_for_tampered_snapshots(

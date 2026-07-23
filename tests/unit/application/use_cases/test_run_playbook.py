@@ -22,6 +22,7 @@ from ptsm.application.use_cases.run_playbook import (
 )
 from ptsm.config.settings import Settings
 from ptsm.domain.psychology_learning import (
+    build_psychology_learning_catalog_receipt,
     render_psychology_learning_draft,
     resolve_psychology_learning_selection,
 )
@@ -3434,7 +3435,7 @@ def test_psychology_learning_preflight_rejects_operator_image_overrides(
     }
 
 
-def test_run_playbook_rejects_default_custom_catalog_pending_runtime_binding(
+def test_run_playbook_accepts_confirmed_custom_catalog_at_preflight(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -3479,28 +3480,391 @@ def test_run_playbook_rejects_default_custom_catalog_pending_runtime_binding(
         playbook_id="modern_psychology_post",
     )
 
-    assert preflight_bundle is None
-    assert failure == {
-        "scene": "心理学学习专题",
-        "platform": "xiaohongshu",
-        "account_id": "acct-psychology-local",
-        "playbook_id": "modern_psychology_post",
-        "status": "psychology_learning_custom_catalog_pending_runtime_binding",
-        "diagnostic": "custom_catalog_requires_runtime_receipt_binding",
-    }
-    assert proposal_goal not in json.dumps(failure, ensure_ascii=False)
+    assert preflight_bundle == bundle
+    assert failure is None
+    assert proposal_goal not in json.dumps(preflight_bundle.model_dump(), ensure_ascii=False)
 
-    class NoRunStart:
-        def start(self, **_: object) -> object:
-            raise AssertionError("RunStore.start must not be called")
+
+def test_run_playbook_completes_a_confirmed_custom_lesson_and_marks_production_progress(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    private_goal = "只在第一次确认前可见的私人目标"
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {
+                "id": "notice",
+                "title": "先识别重复时刻",
+                "goal": private_goal,
+            },
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    store = PsychologyLearningSeriesStore()
+    store.persist_proposal(proposal)
+    catalog = store.confirm(
+        proposal_id=proposal.proposal_id,
+        proposal_fingerprint=proposal.proposal_fingerprint,
+    )
+    bundle = resolve_psychology_learning_selection(
+        series_id=catalog.series_id,
+        lesson_id="notice",
+        curriculum_version=catalog.curriculum_version,
+    )
+    expected_catalog_receipt = build_psychology_learning_catalog_receipt(bundle)
+    assert expected_catalog_receipt is not None
+    final_content = render_psychology_learning_draft(bundle.runtime_contract)
+    artifact_path = tmp_path / "outputs" / "artifacts" / "custom-learning-artifact.json"
+    artifact_path.parent.mkdir(parents=True, exist_ok=True)
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "modern_psychology_post",
+                "final_content": final_content,
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    class ValidCustomLearningWorkflow:
+        def invoke(
+            self,
+            payload: dict[str, object],
+            config: dict[str, object] | None = None,
+        ) -> dict[str, object]:
+            return {
+                "status": "completed",
+                "artifact_path": str(artifact_path),
+                "final_content": final_content,
+                "runtime_skill_contents": [],
+                "activated_skills": [],
+                "activated_skill_details": [],
+                "runtime_skill_details": [],
+            }
+
+    workflow_arguments: dict[str, object] = {}
+
+    def build_workflow(**kwargs: object) -> ValidCustomLearningWorkflow:
+        workflow_arguments.update(kwargs)
+        return ValidCustomLearningWorkflow()
 
     monkeypatch.setattr(
         "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
-        lambda **_: pytest.fail("workflow must not be built"),
+        build_workflow,
     )
-    result = run_playbook(request, run_store=NoRunStart())  # type: ignore[arg-type]
 
-    assert result == failure
+    result = run_playbook(
+        PlaybookRequest(
+            scene="operator supplied scene must not be used",
+            account_id="acct-psychology-local",
+            playbook_id="modern_psychology_post",
+            psychology_content_mode="learning_series",
+            psychology_series_id=bundle.series_id,
+            psychology_lesson_id=bundle.lesson_id,
+            psychology_curriculum_version=catalog.curriculum_version,
+            topic_direction_id=bundle.direction_id,
+        ),
+        publisher=SuccessfulPublisher(),
+        run_store=RunStore(base_dir=tmp_path / "runs"),
+    )
+
+    assert result["status"] == "completed"
+    assert workflow_arguments["psychology_learning_catalog_receipt"] == expected_catalog_receipt
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+    assert artifact["psychology_learning_catalog_receipt"] == expected_catalog_receipt
+    assert store.read_production_progress(
+        series_id=catalog.series_id,
+        curriculum_version=catalog.curriculum_version,
+    ).completed_lesson_ids == (bundle.lesson_id,)
+    serialized = json.dumps(
+        {"artifact": artifact, "response": result, "workflow": workflow_arguments},
+        ensure_ascii=False,
+        default=str,
+    )
+    assert private_goal not in serialized
+    assert proposal.proposal_id not in serialized
+    assert str(store.catalog_root) not in serialized
+
+
+def test_run_playbook_does_not_mark_custom_progress_when_eval_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    store = PsychologyLearningSeriesStore()
+    store.persist_proposal(proposal)
+    catalog = store.confirm(
+        proposal_id=proposal.proposal_id,
+        proposal_fingerprint=proposal.proposal_fingerprint,
+    )
+    bundle = resolve_psychology_learning_selection(
+        series_id=catalog.series_id,
+        lesson_id="notice",
+        curriculum_version=catalog.curriculum_version,
+    )
+    final_content = render_psychology_learning_draft(bundle.runtime_contract)
+    artifact_path = tmp_path / "outputs" / "artifacts" / "custom-learning-eval.json"
+    artifact_path.parent.mkdir(parents=True, exist_ok=True)
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "modern_psychology_post",
+                "final_content": final_content,
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    class ValidCustomLearningWorkflow:
+        def invoke(
+            self,
+            payload: dict[str, object],
+            config: dict[str, object] | None = None,
+        ) -> dict[str, object]:
+            return {
+                "status": "completed",
+                "artifact_path": str(artifact_path),
+                "final_content": final_content,
+                "runtime_skill_contents": [],
+                "activated_skills": [],
+                "activated_skill_details": [],
+                "runtime_skill_details": [],
+            }
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        lambda **_: ValidCustomLearningWorkflow(),
+    )
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook._run_eval_on_artifact",
+        lambda **_: {"status": "failed", "gate": {"required_failed": 1}},
+    )
+
+    result = run_playbook(
+        PlaybookRequest(
+            account_id="acct-psychology-local",
+            playbook_id="modern_psychology_post",
+            psychology_content_mode="learning_series",
+            psychology_series_id=bundle.series_id,
+            psychology_lesson_id=bundle.lesson_id,
+            psychology_curriculum_version=catalog.curriculum_version,
+            topic_direction_id=bundle.direction_id,
+        ),
+        publisher=SuccessfulPublisher(),
+        run_store=RunStore(base_dir=tmp_path / "runs"),
+        eval_enabled=True,
+    )
+
+    assert result["status"] == "psychology_learning_eval_failed"
+    assert result["eval"] == {"status": "failed", "gate": {"required_failed": 1}}
+    assert store.read_production_progress(
+        series_id=catalog.series_id,
+        curriculum_version=catalog.curriculum_version,
+    ).completed_lesson_ids == ()
+
+
+def test_run_playbook_marks_custom_progress_after_a_sanitized_publish_error(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Publishing is not the production-completion authority for a safe lesson."""
+    monkeypatch.chdir(tmp_path)
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    store = PsychologyLearningSeriesStore()
+    store.persist_proposal(proposal)
+    catalog = store.confirm(
+        proposal_id=proposal.proposal_id,
+        proposal_fingerprint=proposal.proposal_fingerprint,
+    )
+    bundle = resolve_psychology_learning_selection(
+        series_id=catalog.series_id,
+        lesson_id="notice",
+        curriculum_version=catalog.curriculum_version,
+    )
+    final_content = render_psychology_learning_draft(bundle.runtime_contract)
+    artifact_path = tmp_path / "outputs" / "artifacts" / "custom-learning-publish.json"
+    artifact_path.parent.mkdir(parents=True, exist_ok=True)
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "modern_psychology_post",
+                "final_content": final_content,
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    class ValidCustomLearningWorkflow:
+        def invoke(
+            self,
+            payload: dict[str, object],
+            config: dict[str, object] | None = None,
+        ) -> dict[str, object]:
+            return {
+                "status": "completed",
+                "artifact_path": str(artifact_path),
+                "final_content": final_content,
+                "runtime_skill_contents": [],
+                "activated_skills": [],
+                "activated_skill_details": [],
+                "runtime_skill_details": [],
+            }
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        lambda **_: ValidCustomLearningWorkflow(),
+    )
+
+    result = run_playbook(
+        PlaybookRequest(
+            account_id="acct-psychology-local",
+            playbook_id="modern_psychology_post",
+            psychology_content_mode="learning_series",
+            psychology_series_id=bundle.series_id,
+            psychology_lesson_id=bundle.lesson_id,
+            psychology_curriculum_version=catalog.curriculum_version,
+            topic_direction_id=bundle.direction_id,
+        ),
+        publisher=FailingPublisher(),
+        run_store=RunStore(base_dir=tmp_path / "runs"),
+    )
+
+    assert result["status"] == "completed"
+    assert result["publish_result"] == {"status": "error"}
+    assert store.read_production_progress(
+        series_id=catalog.series_id,
+        curriculum_version=catalog.curriculum_version,
+    ).completed_lesson_ids == (bundle.lesson_id,)
+    serialized = json.dumps(result, ensure_ascii=False)
+    assert "publisher login required" not in serialized
+
+
+def test_run_playbook_retries_a_custom_progress_mark_after_storage_recovers(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    store = PsychologyLearningSeriesStore()
+    store.persist_proposal(proposal)
+    catalog = store.confirm(
+        proposal_id=proposal.proposal_id,
+        proposal_fingerprint=proposal.proposal_fingerprint,
+    )
+    bundle = resolve_psychology_learning_selection(
+        series_id=catalog.series_id,
+        lesson_id="notice",
+        curriculum_version=catalog.curriculum_version,
+    )
+    final_content = render_psychology_learning_draft(bundle.runtime_contract)
+    artifact_path = tmp_path / "outputs" / "artifacts" / "custom-learning-retry.json"
+    artifact_path.parent.mkdir(parents=True, exist_ok=True)
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "modern_psychology_post",
+                "final_content": final_content,
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    class ValidCustomLearningWorkflow:
+        def invoke(
+            self,
+            payload: dict[str, object],
+            config: dict[str, object] | None = None,
+        ) -> dict[str, object]:
+            return {
+                "status": "completed",
+                "artifact_path": str(artifact_path),
+                "final_content": final_content,
+                "runtime_skill_contents": [],
+                "activated_skills": [],
+                "activated_skill_details": [],
+                "runtime_skill_details": [],
+            }
+
+    original_mark = PsychologyLearningSeriesStore.mark_production_lesson_completed
+    attempts = 0
+
+    def fail_once_then_mark(
+        self: PsychologyLearningSeriesStore,
+        **kwargs: object,
+    ):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise OSError("private progress storage failure")
+        return original_mark(self, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        lambda **_: ValidCustomLearningWorkflow(),
+    )
+    monkeypatch.setattr(
+        PsychologyLearningSeriesStore,
+        "mark_production_lesson_completed",
+        fail_once_then_mark,
+    )
+    request = PlaybookRequest(
+        account_id="acct-psychology-local",
+        playbook_id="modern_psychology_post",
+        psychology_content_mode="learning_series",
+        psychology_series_id=bundle.series_id,
+        psychology_lesson_id=bundle.lesson_id,
+        psychology_curriculum_version=catalog.curriculum_version,
+        topic_direction_id=bundle.direction_id,
+    )
+
+    first = run_playbook(
+        request,
+        publisher=SuccessfulPublisher(),
+        run_store=RunStore(base_dir=tmp_path / "runs-first"),
+    )
+    second = run_playbook(
+        request,
+        publisher=SuccessfulPublisher(),
+        run_store=RunStore(base_dir=tmp_path / "runs-second"),
+    )
+
+    assert first["status"] == "psychology_learning_progress_persist_failed"
+    assert first["psychology_learning_progress"] == {
+        "status": "not_recorded",
+        "reason": "production_progress_persist_failed",
+    }
+    assert "private progress storage failure" not in json.dumps(first, ensure_ascii=False)
+    assert second["status"] == "completed"
+    assert attempts == 2
+    assert store.read_production_progress(
+        series_id=catalog.series_id,
+        curriculum_version=catalog.curriculum_version,
+    ).completed_lesson_ids == (bundle.lesson_id,)
 
 
 def test_run_playbook_binds_psychology_learning_contract_without_free_scene_or_sources(

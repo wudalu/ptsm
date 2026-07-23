@@ -17,6 +17,7 @@ from ptsm.application.use_cases.psychology_learning_series import (
 )
 from ptsm.config.settings import Settings
 from ptsm.domain.psychology_learning import (
+    build_psychology_learning_catalog_receipt,
     list_psychology_learning_series,
     render_psychology_learning_draft,
     resolve_psychology_learning_selection,
@@ -90,7 +91,7 @@ def test_learning_workflow_rejects_a_well_formed_but_tampered_catalog_contract()
         )
 
 
-def test_runtime_contract_rejects_default_custom_catalog_pending_receipt_binding(
+def test_runtime_contract_requires_an_exact_custom_catalog_receipt(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -115,25 +116,123 @@ def test_runtime_contract_rejects_default_custom_catalog_pending_receipt_binding
     )
 
     assert bundle.catalog is not None
+    receipt = build_psychology_learning_catalog_receipt(bundle)
+    assert receipt is not None
     with pytest.raises(
         ValueError,
-        match="custom psychology learning catalog requires runtime receipt binding",
+        match="custom psychology learning catalog requires a receipt",
     ):
         _resolve_verified_psychology_learning_catalog_contract(
             contract=bundle.runtime_contract,
             manifest=bundle.manifest,
         )
+    verified_contract, verified_manifest, verified_receipt = (
+        _resolve_verified_psychology_learning_catalog_contract(
+            contract=bundle.runtime_contract,
+            manifest=bundle.manifest,
+            catalog_receipt=receipt,
+        )
+    )
+    assert verified_contract == bundle.runtime_contract
+    assert verified_manifest == bundle.manifest
+    assert verified_receipt == receipt
+
+    tampered_receipt = deepcopy(receipt)
+    tampered_receipt["catalog_digest"] = "catalog:tampered"
     with pytest.raises(
         ValueError,
-        match="custom psychology learning catalog requires runtime receipt binding",
+        match="custom psychology learning catalog receipt does not match",
     ):
-        build_playbook_workflow(
-            playbook_id="modern_psychology_post",
-            domain="现代心理困境观察",
-            settings=_settings(),
-            psychology_learning_contract=bundle.runtime_contract,
-            psychology_learning_manifest=bundle.manifest,
+        _resolve_verified_psychology_learning_catalog_contract(
+            contract=bundle.runtime_contract,
+            manifest=bundle.manifest,
+            catalog_receipt=tampered_receipt,
         )
+
+
+def test_confirmed_custom_catalog_runtime_keeps_proposal_goal_out_of_state(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Only the exact opaque receipt may cross into a custom lesson runtime."""
+    monkeypatch.chdir(tmp_path)
+    private_goal = "确认前私有目标，不得进入运行时、草稿或制品"
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {
+                "id": "notice",
+                "title": "先识别重复时刻",
+                "goal": private_goal,
+            },
+            {
+                "id": "practice",
+                "title": "练习一个小步骤",
+                "goal": "确认前的第二个私有目标",
+            },
+        ),
+    )
+    store = PsychologyLearningSeriesStore()
+    store.persist_proposal(proposal)
+    catalog = store.confirm(
+        proposal_id=proposal.proposal_id,
+        proposal_fingerprint=proposal.proposal_fingerprint,
+    )
+    bundle = resolve_psychology_learning_selection(
+        series_id=catalog.series_id,
+        lesson_id="notice",
+        curriculum_version=catalog.curriculum_version,
+    )
+    receipt = build_psychology_learning_catalog_receipt(bundle)
+    assert receipt is not None
+
+    checkpointer = InMemorySaver()
+    memory = InMemoryExecutionMemory()
+    drafting_agent = CapturingLearningDraftAgent(
+        render_psychology_learning_draft(bundle.runtime_contract)
+    )
+    workflow = build_playbook_workflow(
+        playbook_id="modern_psychology_post",
+        domain="现代心理困境观察",
+        settings=_settings(),
+        drafting_agent=drafting_agent,  # type: ignore[arg-type]
+        max_attempts=0,
+        memory=memory,
+        artifact_store=FileArtifactStore(base_dir=tmp_path / "artifacts"),
+        checkpointer=checkpointer,
+        psychology_learning_contract=bundle.runtime_contract,
+        psychology_learning_manifest=bundle.manifest,
+        psychology_learning_catalog_receipt=receipt,
+    )
+    config = {"configurable": {"thread_id": "custom-learning-boundary"}}
+    result = workflow.invoke(
+        {
+            "scene": f"operator supplied: {private_goal}",
+            "platform": "xiaohongshu",
+            "account_id": "acct-psychology-local",
+            "topic_selection": {"proposal_goal": private_goal},
+        },
+        config=config,
+    )
+
+    assert result["status"] == "completed"
+    assert len(drafting_agent.calls) == 1
+    runtime_context = "\n".join(
+        drafting_agent.calls[0]["runtime_skill_contents"]  # type: ignore[index]
+    )
+    artifact = json.loads(Path(str(result["artifact_path"])).read_text(encoding="utf-8"))
+    assert artifact["psychology_learning_catalog_receipt"] == receipt
+    snapshots = json.dumps(
+        [snapshot.values for snapshot in workflow.get_state_history(config)],
+        ensure_ascii=False,
+        default=str,
+    )
+    serialized_memory = json.dumps(memory._storage, ensure_ascii=False, default=str)
+    for forbidden in (private_goal, proposal.proposal_id, str(store.catalog_root)):
+        assert forbidden not in runtime_context
+        assert forbidden not in snapshots
+        assert forbidden not in json.dumps(artifact, ensure_ascii=False)
+        assert forbidden not in serialized_memory
 
 
 def test_learning_workflow_isolates_reused_thread_history_from_ordinary_psychology(

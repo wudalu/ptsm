@@ -23,6 +23,9 @@ from ptsm.application.use_cases.guide_post import (
     build_psychology_topic_guidance,
     resolve_psychology_lane,
 )
+from ptsm.application.use_cases.psychology_learning_series import (
+    PsychologyLearningSeriesStore,
+)
 from ptsm.application.use_cases.topic_guidance_packs import TOPIC_GUIDANCE_PACKS
 from ptsm.application.use_cases.xhs_login import (
     DEFAULT_XHS_LOGIN_QRCODE_PATH,
@@ -55,6 +58,7 @@ from ptsm.domain.psychology_learning import (
     PSYCHOLOGY_LEARNING_MODE,
     PsychologyLearningBundle,
     PsychologyLearningEvidenceManifest,
+    build_psychology_learning_catalog_receipt,
     contains_psychology_learning_raw_provenance,
     resolve_psychology_learning_selection,
     validate_psychology_learning_draft_contract,
@@ -555,12 +559,6 @@ def _resolve_psychology_learning_preflight(
             "status": "psychology_learning_invalid",
             "diagnostic": "unknown_or_malformed_catalog_selection",
         }
-    if bundle.catalog is not None:
-        return None, {
-            **response_context,
-            "status": "psychology_learning_custom_catalog_pending_runtime_binding",
-            "diagnostic": "custom_catalog_requires_runtime_receipt_binding",
-        }
     if request.local_image_style or request.publish_image_paths:
         return None, {
             **response_context,
@@ -616,7 +614,7 @@ def _build_psychology_learning_receipt(
         mode="json"
     )
     contract = bundle.runtime_contract
-    return {
+    receipt: dict[str, object] = {
         "psychology_learning_mode": PSYCHOLOGY_LEARNING_MODE,
         "psychology_learning_series_id": bundle.series_id,
         "psychology_learning_curriculum_version": contract["curriculum_version"],
@@ -632,6 +630,10 @@ def _build_psychology_learning_receipt(
             "errors": [],
         },
     }
+    catalog_receipt = build_psychology_learning_catalog_receipt(bundle)
+    if catalog_receipt is not None:
+        receipt["psychology_learning_catalog_receipt"] = catalog_receipt
+    return receipt
 
 
 def _build_psychology_learning_artifact_update(
@@ -930,6 +932,7 @@ def run_playbook(
         }
     ai_tech_evidence_bundle: AiTechEvidenceBundle | None = None
     psychology_learning_bundle: PsychologyLearningBundle | None = None
+    psychology_learning_catalog_receipt: dict[str, Any] | None = None
     if playbook.playbook_id == AI_TECH_PLAYBOOK_ID:
         ai_tech_evidence_bundle, preflight_failure = _resolve_ai_tech_evidence_preflight(
             request=request,
@@ -975,6 +978,9 @@ def run_playbook(
                 "status": "psychology_learning_topic_direction_invalid",
                 "diagnostic": "missing_or_mismatched_catalog_topic_direction",
             }
+        psychology_learning_catalog_receipt = (
+            build_psychology_learning_catalog_receipt(psychology_learning_bundle)
+        )
     effective_scene = request.scene
     if ai_tech_evidence_bundle is not None:
         effective_scene = _build_ai_tech_runtime_scene(ai_tech_evidence_bundle)
@@ -1221,6 +1227,7 @@ def run_playbook(
             if psychology_learning_bundle is not None
             else None
         ),
+        psychology_learning_catalog_receipt=psychology_learning_catalog_receipt,
     )
     effective_thread_id = thread_id or run.run_id
     config = {"configurable": {"thread_id": effective_thread_id}}
@@ -1683,6 +1690,47 @@ def run_playbook(
             artifact_path=result.get("artifact_path"),
         )
 
+    eval_result = None
+    if (
+        eval_enabled
+        and psychology_learning_bundle is not None
+        and psychology_learning_bundle.catalog is not None
+        and result["status"] == "completed"
+    ):
+        eval_result = _run_eval_on_artifact(
+            artifact_path=result.get("artifact_path"),
+            run_id=run.run_id,
+        )
+        if not isinstance(eval_result, Mapping) or eval_result.get("status") != "passed":
+            result["status"] = "psychology_learning_eval_failed"
+            result["psychology_learning_eval_validation"] = {
+                "error": "learning artifact did not pass offline evaluation"
+            }
+
+    if (
+        psychology_learning_bundle is not None
+        and psychology_learning_bundle.catalog is not None
+        and result["status"] == "completed"
+        and result.get("artifact_path")
+    ):
+        try:
+            PsychologyLearningSeriesStore().mark_production_lesson_completed(
+                series_id=psychology_learning_bundle.series_id,
+                curriculum_version=str(
+                    psychology_learning_bundle.runtime_contract["curriculum_version"]
+                ),
+                lesson_id=psychology_learning_bundle.lesson_id,
+            )
+        except (OSError, ValueError):
+            # The content artifact is safe, but reporting it as a completed
+            # production step would make the sequence recommendation lie.  A
+            # retry can re-mark idempotently after storage recovers.
+            result["status"] = "psychology_learning_progress_persist_failed"
+            result["psychology_learning_progress"] = {
+                "status": "not_recorded",
+                "reason": "production_progress_persist_failed",
+            }
+
     learning_publish_receipt = (
         _sanitize_psychology_learning_publish_result(publish_result)
         if psychology_learning_bundle is not None
@@ -1735,8 +1783,11 @@ def run_playbook(
         payload=run_summary_payload,
     )
 
-    eval_result = None
-    if eval_enabled:
+    # Preserve the established post-run evaluation order for ordinary and
+    # builtin flows. A confirmed custom catalog is the exception because its
+    # passed offline receipt evaluation is a prerequisite for updating the
+    # operator-facing publication sequence above.
+    if eval_enabled and eval_result is None:
         eval_result = _run_eval_on_artifact(
             artifact_path=result.get("artifact_path"),
             run_id=run.run_id,
@@ -1898,6 +1949,7 @@ def _build_workflow_for_playbook(
     ai_tech_evidence_manifest: dict[str, Any] | None = None,
     psychology_learning_contract: dict[str, Any] | None = None,
     psychology_learning_manifest: dict[str, Any] | None = None,
+    psychology_learning_catalog_receipt: dict[str, Any] | None = None,
 ):
     skill_context_resolver = _build_runtime_skill_context_resolver(
         settings,
@@ -1921,6 +1973,7 @@ def _build_workflow_for_playbook(
         ai_tech_evidence_manifest=ai_tech_evidence_manifest,
         psychology_learning_contract=psychology_learning_contract,
         psychology_learning_manifest=psychology_learning_manifest,
+        psychology_learning_catalog_receipt=psychology_learning_catalog_receipt,
     )
 
 

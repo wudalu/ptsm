@@ -14,6 +14,7 @@ from ptsm.domain.psychology_learning import (
     contains_psychology_learning_raw_provenance,
     resolve_psychology_learning_selection,
     validate_psychology_learning_draft_contract,
+    verify_psychology_learning_catalog_receipt,
 )
 from ptsm.evaluations.contracts import EvalResult, EvaluatorSpec, EvalTarget
 from ptsm.evaluations.rules import _result  # noqa: F401
@@ -271,6 +272,7 @@ def contract_psychology_learning_receipt(target: EvalTarget) -> EvalResult:
         "psychology_learning_curriculum_version",
         "psychology_learning_lesson_id",
         "psychology_learning_lesson_number",
+        "psychology_learning_catalog_receipt",
         "psychology_learning_evidence_manifest",
         "psychology_learning_gate",
     )
@@ -421,11 +423,20 @@ def _resolve_psychology_learning_receipt_bundle(
             )
         )
         return None
-    if bundle.catalog is not None:
+    try:
+        verify_psychology_learning_catalog_receipt(
+            bundle=bundle,
+            receipt=(
+                ref.get("psychology_learning_catalog_receipt")
+                if isinstance(ref.get("psychology_learning_catalog_receipt"), Mapping)
+                else None
+            ),
+        )
+    except ValueError:
         failures.append(
             _receipt_failure(
-                "psychology_learning_selection",
-                "custom catalog requires runtime receipt binding",
+                "psychology_learning_catalog_receipt",
+                "custom catalog receipt does not match the approved immutable catalog",
             )
         )
         return None

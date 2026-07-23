@@ -4,9 +4,19 @@ import json
 import pytest
 import tempfile
 from pathlib import Path
-from ptsm.application.use_cases.eval_artifact import _gate_counts, run_eval_artifact
+from ptsm.application.use_cases.eval_artifact import (
+    _gate_counts,
+    _is_catalog_managed_psychology_learning,
+    run_eval_artifact,
+)
+from ptsm.application.use_cases.psychology_learning_series import (
+    PsychologyLearningSeriesStore,
+    plan_psychology_learning_series,
+)
 from ptsm.domain.psychology_learning import (
+    build_psychology_learning_catalog_receipt,
     list_psychology_learning_series,
+    psychology_learning_series_catalog_snapshot_path,
     render_psychology_learning_draft,
     resolve_psychology_learning_selection,
 )
@@ -53,13 +63,14 @@ SAMPLE_ARTIFACT = {
 }
 
 
-def _learning_artifact(lesson_id: str) -> dict[str, object]:
-    bundle = resolve_psychology_learning_selection(
-        series_id="after_work_rumination",
-        lesson_id=lesson_id,
-    )
+def _learning_artifact(lesson_id: str = "notice_the_loop", *, bundle=None) -> dict[str, object]:
+    if bundle is None:
+        bundle = resolve_psychology_learning_selection(
+            series_id="after_work_rumination",
+            lesson_id=lesson_id,
+        )
     contract = bundle.runtime_contract
-    return {
+    artifact = {
         "playbook_id": "modern_psychology_post",
         "account": {
             "account_id": "acct-psychology-local",
@@ -99,6 +110,10 @@ def _learning_artifact(lesson_id: str) -> dict[str, object]:
             "errors": [],
         },
     }
+    catalog_receipt = build_psychology_learning_catalog_receipt(bundle)
+    if catalog_receipt is not None:
+        artifact["psychology_learning_catalog_receipt"] = catalog_receipt
+    return artifact
 
 
 class FakeJudgeBackend:
@@ -112,6 +127,100 @@ class FakeJudgeBackend:
 
 
 class TestRunEvalArtifact:
+    def test_catalog_receipt_marker_routes_a_tampered_custom_artifact_to_learning_eval(self):
+        assert _is_catalog_managed_psychology_learning(
+            {
+                "playbook_id": "modern_psychology_post",
+                "psychology_learning_catalog_receipt": {},
+            }
+        )
+
+    def test_confirmed_custom_catalog_artifact_passes_the_same_offline_receipt_eval(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        store = PsychologyLearningSeriesStore()
+        proposal = plan_psychology_learning_series(
+            topic="下班后的脑内回放",
+            outline=(
+                {"id": "notice", "title": "先识别重复时刻"},
+                {"id": "practice", "title": "练习一个小步骤"},
+            ),
+        )
+        store.persist_proposal(proposal)
+        catalog = store.confirm(
+            proposal_id=proposal.proposal_id,
+            proposal_fingerprint=proposal.proposal_fingerprint,
+        )
+        bundle = resolve_psychology_learning_selection(
+            series_id=catalog.series_id,
+            lesson_id="notice",
+            curriculum_version=catalog.curriculum_version,
+        )
+        artifact_path = tmp_path / "custom-learning-artifact.json"
+        artifact_path.write_text(
+            json.dumps(_learning_artifact(bundle=bundle), ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+        result = run_eval_artifact(
+            artifact_path=artifact_path,
+            evals_base_dir=tmp_path / "evals",
+        )
+
+        assert result["status"] == "passed"
+
+    def test_custom_catalog_artifact_fails_closed_when_its_snapshot_is_missing(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        private_goal = "确认前私有目标，不得出现在离线评估结果"
+        store = PsychologyLearningSeriesStore()
+        proposal = plan_psychology_learning_series(
+            topic="下班后的脑内回放",
+            outline=(
+                {
+                    "id": "notice",
+                    "title": "先识别重复时刻",
+                    "goal": private_goal,
+                },
+                {"id": "practice", "title": "练习一个小步骤"},
+            ),
+        )
+        store.persist_proposal(proposal)
+        catalog = store.confirm(
+            proposal_id=proposal.proposal_id,
+            proposal_fingerprint=proposal.proposal_fingerprint,
+        )
+        bundle = resolve_psychology_learning_selection(
+            series_id=catalog.series_id,
+            lesson_id="notice",
+            curriculum_version=catalog.curriculum_version,
+        )
+        artifact_path = tmp_path / "custom-learning-artifact.json"
+        artifact_path.write_text(
+            json.dumps(_learning_artifact(bundle=bundle), ensure_ascii=False),
+            encoding="utf-8",
+        )
+        snapshot_path = psychology_learning_series_catalog_snapshot_path(
+            series_id=catalog.series_id,
+            curriculum_version=catalog.curriculum_version,
+            catalog_root=store.catalog_root,
+        )
+        snapshot_path.unlink()
+
+        result = run_eval_artifact(
+            artifact_path=artifact_path,
+            evals_base_dir=tmp_path / "evals",
+        )
+
+        assert result["status"] == "failed"
+        assert private_goal not in json.dumps(result, ensure_ascii=False)
+
     def test_returns_summary_with_counts(self):
         with tempfile.TemporaryDirectory() as tmp:
             artifact_path = Path(tmp) / "artifact.json"

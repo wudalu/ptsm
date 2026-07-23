@@ -201,6 +201,7 @@ def _is_catalog_managed_psychology_learning(artifact: dict[str, Any]) -> bool:
             "psychology_learning_curriculum_version",
             "psychology_learning_lesson_id",
             "psychology_learning_lesson_number",
+            "psychology_learning_catalog_receipt",
             "psychology_learning_evidence_manifest",
             "psychology_learning_gate",
         )

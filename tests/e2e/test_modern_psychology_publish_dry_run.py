@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import json
 
+from ptsm.application.use_cases.psychology_learning_series import (
+    PsychologyLearningSeriesStore,
+)
 from ptsm.config.settings import get_settings
 from ptsm.domain.psychology_learning import (
     resolve_psychology_learning_selection,
@@ -122,8 +125,163 @@ def test_run_playbook_cli_outputs_psychology_learning_series_lesson(
     assert payload["psychology_learning_lesson_id"] == "notice_the_loop"
     assert payload["psychology_learning_gate"]["status"] == "passed"
     assert payload["psychology_learning_evidence_manifest"] == bundle.manifest
+    assert "psychology_learning_catalog_receipt" not in payload
+    assert not (
+        tmp_path / "outputs" / "artifacts" / "psychology-learning-series" / "progress"
+    ).exists()
     assert "source:" not in json.dumps(content, ensure_ascii=False)
     assert "https://" not in json.dumps(payload, ensure_ascii=False)
+
+    get_settings.cache_clear()
+
+
+def test_custom_psychology_learning_series_cli_plans_guides_runs_and_advances(
+    capsys, monkeypatch, tmp_path
+) -> None:
+    """Exercise the operator flow without allowing an implicit lesson choice."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("DEFAULT_LLM_PROVIDER", "deterministic")
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    get_settings.cache_clear()
+    private_goal = "审核阶段的私人目标，不能进入生成后的帖子"
+    outline_path = tmp_path / "custom-outline.json"
+    outline_path.write_text(
+        json.dumps(
+            [
+                {
+                    "id": "review",
+                    "title": "回顾已有线索",
+                    "goal": "整理一个发现",
+                },
+                {
+                    "id": "notice",
+                    "title": "先识别重复时刻",
+                    "goal": private_goal,
+                },
+                {
+                    "id": "practice",
+                    "title": "练习一个小步骤",
+                    "goal": "今天尝试一次",
+                },
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    assert main(
+        [
+            "plan-psychology-series",
+            "--topic",
+            "下班后的脑内回放",
+            "--curriculum-outline-file",
+            str(outline_path),
+        ]
+    ) == 0
+    proposal = json.loads(capsys.readouterr().out)
+    assert proposal["status"] == "proposal_ready_for_confirmation"
+    assert proposal["runnable"] is False
+
+    assert main(
+        [
+            "confirm-psychology-series",
+            "--proposal-id",
+            proposal["proposal_id"],
+            "--proposal-fingerprint",
+            proposal["proposal_fingerprint"],
+            "--confirm",
+        ]
+    ) == 0
+    confirmed = json.loads(capsys.readouterr().out)
+    series = confirmed["series"]
+    assert confirmed["status"] == "confirmed"
+    assert series["origin"] == "user_confirmed"
+
+    guide_arguments = [
+        "guide-post",
+        "--playbook-id",
+        "modern_psychology_post",
+        "--account-id",
+        "acct-psychology-local",
+        "--psychology-content-mode",
+        "learning_series",
+        "--psychology-series-id",
+        series["series_id"],
+        "--psychology-curriculum-version",
+        series["curriculum_version"],
+        "--non-interactive",
+        "--format",
+        "json",
+    ]
+    assert main(guide_arguments) == 0
+    selection = json.loads(capsys.readouterr().out)
+    assert selection["status"] == "selection_required"
+    recommended_lesson_id = selection["series"]["recommended_next_lesson_id"]
+    assert recommended_lesson_id
+    # The sequence is advisory: an operator may deliberately publish another
+    # approved lesson, and the planner must retain the first recommendation.
+    chosen_lesson_id = next(
+        item["lesson_id"]
+        for item in selection["series"]["publication_plan"]
+        if item["lesson_id"] != recommended_lesson_id
+    )
+    assert selection["series"]["production_progress"]["completed_count"] == 0
+
+    assert main(
+        [
+            *guide_arguments,
+            "--psychology-lesson-id",
+            chosen_lesson_id,
+        ]
+    ) == 0
+    selected_guide = json.loads(capsys.readouterr().out)
+    assert selected_guide["status"] == "completed"
+    assert selected_guide["brief"]["lesson_id"] == chosen_lesson_id
+
+    assert main(
+        [
+            "run-playbook",
+            "--account-id",
+            "acct-psychology-local",
+            "--playbook-id",
+            "modern_psychology_post",
+            "--psychology-content-mode",
+            "learning_series",
+            "--psychology-series-id",
+            series["series_id"],
+            "--psychology-lesson-id",
+            chosen_lesson_id,
+            "--psychology-curriculum-version",
+            series["curriculum_version"],
+            "--topic-direction-id",
+            selected_guide["topic_guidance"]["matched_direction_id"],
+            "--publish-mode",
+            "dry-run",
+            "--thread-id",
+            "thread-custom-psychology-learning-series",
+            "--eval",
+        ]
+    ) == 0
+    post = json.loads(capsys.readouterr().out)
+    serialized_post = json.dumps(post, ensure_ascii=False)
+    assert post["status"] == "completed"
+    assert post["eval"]["status"] == "passed"
+    assert post["psychology_learning_catalog_receipt"]["origin"] == "user_confirmed"
+    assert private_goal not in serialized_post
+    assert proposal["proposal_id"] not in serialized_post
+
+    progress = PsychologyLearningSeriesStore().read_production_progress(
+        series_id=series["series_id"],
+        curriculum_version=series["curriculum_version"],
+    )
+    assert progress.completed_lesson_ids == (chosen_lesson_id,)
+
+    assert main(guide_arguments) == 0
+    advanced_selection = json.loads(capsys.readouterr().out)
+    assert advanced_selection["series"]["production_progress"]["completed_lesson_ids"] == [
+        chosen_lesson_id
+    ]
+    assert advanced_selection["series"]["recommended_next_lesson_id"] == recommended_lesson_id
 
     get_settings.cache_clear()
 

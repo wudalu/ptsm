@@ -8,6 +8,11 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+try:  # ``fcntl`` is the cross-process lock primitive on supported local runtimes.
+    import fcntl
+except ImportError:  # pragma: no cover - fail closed on unsupported platforms.
+    fcntl = None  # type: ignore[assignment]
+
 from ptsm.domain.psychology_learning import (
     PsychologyLearningCatalog,
     PsychologyLearningCatalogRevisionRecord,
@@ -368,6 +373,57 @@ class PsychologyLearningSeriesStore:
         _replace_json(path, progress.model_dump(mode="json"))
         return progress
 
+    def mark_production_lesson_completed(
+        self,
+        *,
+        series_id: str,
+        curriculum_version: str,
+        lesson_id: str,
+    ) -> PsychologyLearningProductionProgress:
+        """Atomically add one completed custom lesson without losing another mark.
+
+        The progress sidecar is replaceable, so a caller must not read its set,
+        union one lesson, and write it back outside a cross-process critical
+        section.  The lock sits beside the sidecar (not in a scanned immutable
+        catalog directory); the existing durable replace protocol remains the
+        only persistence mechanism for the actual progress JSON.
+        """
+        if fcntl is None:
+            raise OSError("psychology learning progress locking is unsupported")
+        catalog = load_confirmed_psychology_learning_catalog(
+            series_id=series_id,
+            curriculum_version=curriculum_version,
+            catalog_root=self.catalog_root,
+        )
+        if lesson_id not in {lesson.lesson_id for lesson in catalog.lessons}:
+            raise ValueError("unknown psychology learning lesson_id for production progress")
+        path = psychology_learning_series_progress_sidecar_path(
+            series_id=catalog.series_id,
+            curriculum_version=catalog.curriculum_version,
+            catalog_root=self.catalog_root,
+        )
+        _ensure_durable_directory(path.parent)
+        lock_path = path.with_name(f"{path.name}.lock")
+        with lock_path.open("a+b") as handle:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            try:
+                current = self.read_production_progress(
+                    series_id=catalog.series_id,
+                    curriculum_version=catalog.curriculum_version,
+                )
+                if lesson_id in current.completed_lesson_ids:
+                    return current
+                return self.write_production_progress(
+                    series_id=catalog.series_id,
+                    curriculum_version=catalog.curriculum_version,
+                    completed_lesson_ids=(
+                        *current.completed_lesson_ids,
+                        lesson_id,
+                    ),
+                )
+            finally:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
 
 def persist_psychology_learning_series_proposal(
     proposal: PsychologyLearningSeriesProposal | dict[str, Any],
@@ -451,8 +507,17 @@ def _ensure_durable_directory(path: Path) -> tuple[Path, ...]:
     try:
         _sync_existing_directory(current)
         for directory in reversed(missing):
-            directory.mkdir()
-            created.append(directory)
+            try:
+                directory.mkdir()
+            except FileExistsError:
+                # Another progress marker can create this parent between the
+                # existence scan above and our mkdir.  Accept only the exact
+                # directory shape, then synchronize the winner's entry before
+                # continuing to its child.
+                if not directory.is_dir():
+                    raise NotADirectoryError(directory)
+            else:
+                created.append(directory)
             _sync_existing_directory(directory)
     except OSError:
         _remove_empty_directories(tuple(created))

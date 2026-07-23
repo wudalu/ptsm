@@ -10,6 +10,7 @@ from ptsm.domain.psychology_learning import (
     contains_psychology_learning_raw_provenance,
     resolve_psychology_learning_selection,
     validate_psychology_learning_draft_contract,
+    verify_psychology_learning_catalog_receipt,
 )
 
 
@@ -39,6 +40,7 @@ _PSYCHOLOGY_LEARNING_RECEIPT_FIELDS = frozenset(
         "psychology_learning_curriculum_version",
         "psychology_learning_lesson_id",
         "psychology_learning_lesson_number",
+        "psychology_learning_catalog_receipt",
         "psychology_learning_evidence_manifest",
         "psychology_learning_gate",
     }
@@ -307,7 +309,16 @@ def _learning_metric_identity(
         )
     except (KeyError, ValueError):
         return None, "invalid psychology learning receipt"
-    if bundle.catalog is not None:
+    try:
+        verify_psychology_learning_catalog_receipt(
+            bundle=bundle,
+            receipt=(
+                payload.get("psychology_learning_catalog_receipt")
+                if isinstance(payload.get("psychology_learning_catalog_receipt"), Mapping)
+                else None
+            ),
+        )
+    except ValueError:
         return None, "invalid psychology learning receipt"
 
     expected_gate = {

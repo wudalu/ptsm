@@ -14,6 +14,7 @@ from ptsm.application.use_cases.xhs_post_metrics import (
     summarize_xhs_post_metrics,
 )
 from ptsm.domain.psychology_learning import (
+    build_psychology_learning_catalog_receipt,
     render_psychology_learning_draft,
     resolve_psychology_learning_selection,
 )
@@ -101,6 +102,9 @@ def _write_learning_artifact(
             "errors": [],
         },
     }
+    catalog_receipt = build_psychology_learning_catalog_receipt(bundle)
+    if catalog_receipt is not None:
+        payload["psychology_learning_catalog_receipt"] = catalog_receipt
     path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
 
 
@@ -253,7 +257,7 @@ def test_record_xhs_post_metrics_rejects_an_unverified_learning_receipt(
     assert not metrics_path.exists()
 
 
-def test_record_xhs_post_metrics_rejects_default_custom_catalog_receipt(
+def test_record_xhs_post_metrics_accepts_confirmed_custom_catalog_receipt(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -292,8 +296,57 @@ def test_record_xhs_post_metrics_rejects_default_custom_catalog_receipt(
         output_path=metrics_path,
     )
 
-    assert result["status"] == "error"
-    assert result["reason"] == "invalid psychology learning receipt"
+    assert result["status"] == "recorded"
+    assert result["record"]["psychology_learning_series_id"] == catalog.series_id
+    assert metrics_path.exists()
+
+
+def test_record_xhs_post_metrics_rejects_a_tampered_custom_catalog_receipt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    private_goal = "确认前私有目标，绝不应进入指标记录"
+    artifact_path = tmp_path / "custom-learning-artifact.json"
+    metrics_path = tmp_path / "metrics.jsonl"
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻", "goal": private_goal},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    store = PsychologyLearningSeriesStore()
+    store.persist_proposal(proposal)
+    catalog = store.confirm(
+        proposal_id=proposal.proposal_id,
+        proposal_fingerprint=proposal.proposal_fingerprint,
+    )
+    bundle = resolve_psychology_learning_selection(
+        series_id=catalog.series_id,
+        lesson_id="notice",
+        curriculum_version=catalog.curriculum_version,
+    )
+    _write_learning_artifact(artifact_path, bundle=bundle)
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+    artifact["psychology_learning_catalog_receipt"]["catalog_digest"] = (
+        "catalog:tampered"
+    )
+    artifact_path.write_text(json.dumps(artifact, ensure_ascii=False), encoding="utf-8")
+
+    result = record_xhs_post_metrics(
+        artifact_path=artifact_path,
+        checkpoint="24h",
+        views=100,
+        likes=10,
+        collects=4,
+        comments=2,
+        shares=1,
+        output_path=metrics_path,
+    )
+
+    assert result == {"status": "error", "reason": "invalid psychology learning receipt"}
+    assert private_goal not in json.dumps(result, ensure_ascii=False)
     assert not metrics_path.exists()
 
 
