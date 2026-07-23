@@ -230,7 +230,7 @@ AI playbook。AI mode 使用 `--fresh-topic-research` 会返回
 ```
 
 ```bash
-# 只生成 proposal/review/publication plan，不会创建 runnable catalog 或 run。
+# 只生成 proposal/review；proposal JSON 是 `series.lessons` 加 top-level `publication_plan`，proposal 不返回 roadmap，也不会创建 runnable catalog 或 run。
 uv run python -m ptsm.bootstrap plan-psychology-series \
   --topic "下班后如何把工作从脑子里放下" \
   --curriculum-outline-file outline.json \
@@ -244,12 +244,12 @@ uv run python -m ptsm.bootstrap confirm-psychology-series \
   --format json
 ```
 
-审核 proposal 的内容、publication order 与 exact `proposal_fingerprint` 后才可确认。确认会创建 immutable
+审核 proposal 的 `series.lessons`、top-level `publication_plan` 与 exact `proposal_fingerprint` 后才可确认。确认会创建 immutable
 `user_confirmed` curriculum version；主题、outline、lesson identity 或顺序有变化时必须重新 plan/confirm，
 没有 `--catalog-root` 或手写 catalog/progress 文件入口。接着先取路线图：
 
 ```bash
-# 不带 lesson：返回 selection_required、roadmap、recommended_next_lesson 与 production progress。
+# 不带 lesson：custom response 返回 selection_required、`series.roadmap`、`series.publication_plan`、`series.recommended_next_lesson` 与 `series.production_progress`。
 uv run python -m ptsm.bootstrap guide-post \
   --playbook-id modern_psychology_post \
   --account-id acct-psychology-local \
@@ -268,9 +268,9 @@ uv run python -m ptsm.bootstrap guide-post \
   --non-interactive --format json
 ```
 
-`recommended_next_lesson` 只是 publication suggestion；不会自动选择、生成或发布。仅把第二次 guide
-返回的 matching `topic_direction_id` 与同一 explicit version 带进 dry-run。custom progress 的
-`kind` 是 `operator_content_production`，仅表示已经安全生成的运营内容，绝不是读者学习进度；安全
+`series.recommended_next_lesson` 只是 publication suggestion；不会自动选择、生成或发布。仅把第二次 guide
+返回的 matching `topic_direction_id` 与同一 explicit version 带进 dry-run。custom
+`series.production_progress` 的 `kind` 是 `operator_content_production`，仅表示已经安全生成的运营内容，绝不是读者学习进度；安全
 completed artifact（含 dry-run，或内容成功但 publish 失败）才会推进，preflight/workflow/eval/final-artifact
 failure 不会推进，也不会自动发布下一课。用 `eval-artifact --artifact <path>` 审计 strict
 `psychology_learning_catalog_receipt`；缺失或被篡改的 catalog/receipt 会安全拒绝。
@@ -292,7 +292,8 @@ uv run python -m ptsm.bootstrap run-playbook \
 
 首期 builtin 目录为 `after_work_rumination`，版本为 `1`。`guide-post` 会返回当前 catalog version，
 而实际 `run-playbook` 必须显式带上这个 version。初次路线图查询会返回 `selection_required`，不会默认
-生成第一课或给出 run command；选中 lesson 后再请求一次 guide。
+生成第一课或给出 run command；选中 lesson 后再请求一次 guide。builtin roadmap 不返回 custom-only
+`series.publication_plan`、`series.recommended_next_lesson` 或 `series.production_progress`。
 
 ```bash
 # 返回 selection_required roadmap 与六个 catalog learning_series_lesson directions，不创建 run

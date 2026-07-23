@@ -101,11 +101,13 @@ closed，返回 `psychology_learning_required`、`psychology_learning_invalid` �
 `psychology_learning_topic_direction_invalid`（其他 playbook 为
 `psychology_learning_playbook_invalid`）。
 
-无 lesson 的 `guide-post` roadmap 会返回 `selection_required`、frozen roadmap、publication plan、
-`recommended_next_lesson` 和 custom-only `operator_content_production` progress；推荐只是发布顺序
-建议，不会自动选择或生成课次，PTSM 也不会默认生成第一课。用户可明确选择非推荐课，但必须在
-再次 `guide-post` 时传回该 custom series 的 explicit frozen curriculum version，随后仅用该响应返回的
-matching direction id dry-run。builtin `after_work_rumination` 的 catalog flow 保持原样。
+无 lesson 的 `guide-post` 对 `user_confirmed` custom catalog 会返回 `selection_required`、frozen
+`series.roadmap`、`series.publication_plan`、`series.recommended_next_lesson` 和
+`series.production_progress`；其 `kind` is `operator_content_production`。推荐只是发布顺序建议，
+不会自动选择或生成课次，PTSM 也不会默认生成第一课。用户可明确选择非推荐课，但必须在再次
+`guide-post` 时传回该 custom series 的 explicit frozen curriculum version，随后仅用该响应返回的 matching
+direction id dry-run。builtin roadmap omits `series.publication_plan`, `series.recommended_next_lesson`, and
+`series.production_progress`；builtin `after_work_rumination` 的 catalog flow 保持原样。
 
 bound workflow 从 catalog 重建 scene 和 allowlisted input，并把 public `thread_id` 映射到
 checkpoint-isolated 的课程私有 thread；planner 只收到课程字段，memory、live skill context 与
@@ -124,7 +126,7 @@ goal、source、URL、作者、local path、自由场景和额外临床主张均
 reader-visible content 或 artifact。
 
 课程目录同时拥有该课的标题、封面钩子和图片计划；`--local-image-style`、手工图片路径都不能
-覆盖它。custom production progress 仅在安全 completed artifact 与严格 receipt 都已写入后记录：
+覆盖它。custom `series.production_progress` 仅在安全 completed artifact 与严格 receipt 都已写入后记录：
 dry-run 和内容成功但 publish 失败可计为 operator 产出，preflight/workflow/eval/final-artifact failure
 则不可计；它不是读者学习进度，也不会触发自动发布。catalog exact gate 是本模式的正文质量真相来源：
 普通自由场景的心理学反思规则或 LLM judge 不会用不相容的开放式条件推翻已通过的课程合同，既有安全

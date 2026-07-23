@@ -32,9 +32,11 @@ uv run python -m ptsm.bootstrap plan-psychology-series \
   --format json
 ```
 
-2. Show the safe returned review, roadmap/publication order, `proposal_id`, and
-exact `proposal_fingerprint`. Do not create a lesson, rewrite order, or invent
-course evidence while the proposal is unconfirmed. Ask for exact confirmation.
+2. Show the safe returned review. The proposal response has `series.lessons`
+plus top-level `publication_plan`, `proposal_id`, and exact
+`proposal_fingerprint`; it does not have a roadmap. Do not create a lesson,
+rewrite order, or invent course evidence while the proposal is unconfirmed. Ask
+for exact confirmation.
 
 ```bash
 uv run python -m ptsm.bootstrap confirm-psychology-series \
@@ -48,11 +50,14 @@ Confirmation creates a `user_confirmed` immutable curriculum version. A changed
 topic, outline, lesson identity, or order requires a new proposal and version;
 do not use catalog-root flags or hand-edit PTSM files.
 
-3. Query the confirmed roadmap without a lesson. Show its returned
-`series.roadmap`, `publication_plan`, `recommended_next_lesson`, and
-`operator_content_production` only. The recommendation is not an auto-selection:
-it is a publication suggestion, PTSM never auto-selects/generates a lesson, and
-the progress is not reader learning progress.
+3. Query the confirmed roadmap without a lesson. For a `user_confirmed` custom
+catalog, surface `series.roadmap`, `series.publication_plan`,
+`series.recommended_next_lesson`, and `series.production_progress`, whose
+`kind` is `operator_content_production`. These extra fields only apply to
+`user_confirmed` custom catalogs; builtin catalog roadmaps omit them. The
+recommendation is not an auto-selection: it is a publication suggestion, PTSM
+never auto-selects/generates a lesson, and the progress is not reader learning
+progress.
 
 ```bash
 uv run python -m ptsm.bootstrap guide-post \

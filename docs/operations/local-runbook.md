@@ -440,7 +440,7 @@ uv run python -m ptsm.bootstrap run-playbook \
 ```
 
 ```bash
-# proposal 仅供审核，绝不直接生成或运行 lesson。
+# proposal 仅供审核，JSON 返回 `series.lessons` plus top-level `publication_plan`，绝不直接生成或运行 lesson。
 uv run python -m ptsm.bootstrap plan-psychology-series \
   --topic "下班后如何把工作从脑子里放下" \
   --curriculum-outline-file outline.json \
@@ -454,15 +454,17 @@ uv run python -m ptsm.bootstrap confirm-psychology-series \
 ```
 
 确认创建 immutable `user_confirmed` revision；变更主题、outline 或顺序时重新 proposal/confirm，不能手写
-catalog 或指定 catalog-root。先不带 lesson 查询 roadmap，读取 `selection_required`、publication plan、
-`recommended_next_lesson` 和 `operator_content_production`。recommendation 是建议，不会自动选课或生成；
-用户明确选择 lesson（也可非推荐）时，第二次 `guide-post` 必须带 returned explicit frozen
-`--psychology-curriculum-version`，只使用该响应返回的 matching direction id 进行 dry-run。progress 不是
-读者学习进度，也不代表自动发布；仅 safe completed artifact/receipt 后才更新。缺失或篡改 catalog/receipt
-会 fail closed，可用 `eval-artifact --artifact <path>` 复核。
+catalog 或指定 catalog-root。proposal JSON 是 `series.lessons` plus top-level `publication_plan`，不是 roadmap。
+先不带 lesson 查询 custom roadmap，读取 `selection_required`、`series.roadmap`、
+`series.publication_plan`、`series.recommended_next_lesson` 和 `series.production_progress`；其 `kind` is `operator_content_production`。recommendation 是建议，不会自动选课或生成。用户明确选择 lesson（也可非推荐）
+时，第二次 `guide-post` 必须带 returned explicit frozen `--psychology-curriculum-version`，只使用该响应返回的
+matching direction id 进行 dry-run。progress 不是读者学习进度，也不代表自动发布；仅 safe completed
+artifact/receipt 后才更新。缺失或篡改 catalog/receipt 会 fail closed，可用 `eval-artifact --artifact <path>`
+复核。builtin roadmap 不含这些 custom `series.publication_plan`、`series.recommended_next_lesson` 或
+`series.production_progress` 字段。
 
 ```bash
-# 先不带 lesson 查询 roadmap、recommended_next_lesson 与 production progress。
+# 先不带 lesson 查询 custom `series.roadmap`、`series.publication_plan`、`series.recommended_next_lesson` 与 `series.production_progress`。
 uv run python -m ptsm.bootstrap guide-post \
   --playbook-id modern_psychology_post \
   --account-id acct-psychology-local \

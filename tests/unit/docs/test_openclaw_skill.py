@@ -70,16 +70,24 @@ def test_openclaw_psychology_skill_documents_two_step_guidance_flow() -> None:
 
 def test_openclaw_psychology_skill_documents_confirmed_custom_learning_series() -> None:
     text = SKILL_PATH.read_text(encoding="utf-8")
+    normalized_text = " ".join(text.split())
 
     assert "plan-psychology-series" in text
     assert "--curriculum-outline-file" in text
     assert "confirm-psychology-series" in text
     assert "--confirm" in text
     assert "user_confirmed" in text
+    assert "proposal response has `series.lessons`" in text
+    assert "`publication_plan`" in text
+    assert "it does not have a roadmap" in normalized_text
+    assert "`series.publication_plan`" in text
+    assert "`series.production_progress`" in text
+    assert "`kind` is `operator_content_production`" in text
+    assert "only apply to `user_confirmed` custom catalogs" in normalized_text
     assert "explicit frozen curriculum version" in text
     assert "recommended_next_lesson" in text
     assert "recommendation is not an auto-selection" in text
     assert "operator_content_production" in text
-    assert "not reader learning progress" in text
+    assert "not reader learning progress" in normalized_text
     assert "after_work_rumination" in text
     assert "不会默认生成第一课" in text

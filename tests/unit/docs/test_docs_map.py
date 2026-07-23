@@ -318,6 +318,43 @@ def test_docs_cover_confirmed_custom_psychology_learning_series_lifecycle() -> N
     assert "learning-series lesson facts" in topic_radar_text
 
 
+def test_custom_learning_series_docs_name_progress_field_and_kind() -> None:
+    required_documents = [
+        "runtime.md",
+        "playbooks.md",
+        "skills.md",
+        "observability.md",
+        "operations.md",
+        "operations/local-runbook.md",
+        "operations/content-experiment-runbook.md",
+        "harness-engineering.md",
+    ]
+
+    for relative_path in required_documents:
+        doc_text = (DOCS_ROOT / relative_path).read_text(encoding="utf-8")
+        assert "production_progress" in doc_text, relative_path
+
+    runtime_text = (DOCS_ROOT / "runtime.md").read_text(encoding="utf-8")
+    local_runbook_text = (DOCS_ROOT / "operations" / "local-runbook.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "`kind` is `operator_content_production`" in runtime_text
+    assert "`kind` is `operator_content_production`" in local_runbook_text
+    assert "builtin roadmap omits `series.publication_plan`" in runtime_text
+    assert "`series.lessons` plus top-level `publication_plan`" in local_runbook_text
+
+    skills_text = (DOCS_ROOT / "skills.md").read_text(encoding="utf-8")
+    assert (
+        "custom guide 明确返回 `selection_required`、`series.roadmap`"
+        in skills_text
+    )
+
+    for relative_path in ("operations.md", "playbooks.md", "skills.md"):
+        doc_text = (DOCS_ROOT / relative_path).read_text(encoding="utf-8")
+        assert "proposal 不返回 roadmap" in doc_text, relative_path
+
+
 def test_local_runbook_shows_both_custom_learning_series_guide_commands() -> None:
     local_runbook_text = (DOCS_ROOT / "operations" / "local-runbook.md").read_text(
         encoding="utf-8"
