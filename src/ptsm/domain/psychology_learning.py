@@ -12,6 +12,7 @@ import hashlib
 import json
 import re
 import unicodedata
+from collections.abc import Sequence
 from typing import Any, Literal, Mapping
 
 from pydantic import (
@@ -28,6 +29,8 @@ PSYCHOLOGY_LEARNING_MODE = "learning_series"
 PSYCHOLOGY_LEARNING_CURRICULUM_VERSION = "1"
 STARTER_SERIES_ID = "after_work_rumination"
 PSYCHOLOGY_LEARNING_PROPOSAL_SCHEMA_VERSION = "1"
+_PROPOSAL_OUTLINE_MIN_LESSON_COUNT = 2
+_PROPOSAL_OUTLINE_MAX_LESSON_COUNT = 6
 
 _IDENTIFIER_PATTERN = re.compile(r"^[a-z][a-z0-9_]{1,79}$")
 _OPAQUE_REFERENCE_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_:-]{0,127}$")
@@ -788,6 +791,7 @@ class PsychologyLearningOutlineItem(_FrozenDomainModel):
     @model_validator(mode="before")
     @classmethod
     def _reject_raw_provenance(cls, value: Any) -> Any:
+        _assert_raw_outline_item_text_bounds(value)
         _assert_no_raw_provenance(value)
         return value
 
@@ -830,6 +834,7 @@ class PsychologyLearningSeriesPlanIntent(_FrozenDomainModel):
     @model_validator(mode="before")
     @classmethod
     def _reject_raw_provenance(cls, value: Any) -> Any:
+        _assert_raw_series_plan_intent_bounds(value)
         _assert_no_raw_provenance(value)
         return value
 
@@ -847,7 +852,11 @@ class PsychologyLearningSeriesPlanIntent(_FrozenDomainModel):
     def _validate_outline(self) -> "PsychologyLearningSeriesPlanIntent":
         if self.outline is None:
             return self
-        if not 2 <= len(self.outline) <= 6:
+        if not (
+            _PROPOSAL_OUTLINE_MIN_LESSON_COUNT
+            <= len(self.outline)
+            <= _PROPOSAL_OUTLINE_MAX_LESSON_COUNT
+        ):
             raise ValueError("outline must contain between 2 and 6 lessons")
         lesson_ids = tuple(_outline_lesson_id(item) for item in self.outline)
         if len(set(lesson_ids)) != len(lesson_ids):
@@ -1190,6 +1199,71 @@ def build_psychology_learning_series_proposal(
         ),
         publication_plan=publication_plan,
     )
+
+
+def _assert_raw_series_plan_intent_bounds(value: Any) -> None:
+    """Reject oversized operator text before trim, provenance checks, or parsing."""
+    if not isinstance(value, Mapping):
+        return
+    _require_raw_proposal_text_bounds(
+        value.get("topic"),
+        field_name="topic",
+        min_length=2,
+        max_length=60,
+    )
+    raw_outline = value.get("outline")
+    if raw_outline is None:
+        return
+    outline = _require_sized_proposal_outline(raw_outline)
+    for item in outline:
+        _assert_raw_outline_item_text_bounds(item)
+
+
+def _assert_raw_outline_item_text_bounds(value: Any) -> None:
+    """Apply raw display bounds to one operator-supplied outline item."""
+    if not isinstance(value, Mapping):
+        return
+    _require_raw_proposal_text_bounds(
+        value.get("title"),
+        field_name="outline title",
+        min_length=2,
+        max_length=60,
+    )
+    _require_raw_proposal_text_bounds(
+        value.get("goal"),
+        field_name="outline goal",
+        min_length=2,
+        max_length=120,
+    )
+
+
+def _require_raw_proposal_text_bounds(
+    value: object,
+    *,
+    field_name: str,
+    min_length: int,
+    max_length: int,
+) -> None:
+    """Limit the original display string before any lossy normalization."""
+    if not isinstance(value, str):
+        return
+    if not min_length <= len(value) <= max_length:
+        raise ValueError(
+            f"{field_name} must contain between {min_length} and {max_length} characters"
+        )
+
+
+def _require_sized_proposal_outline(value: object) -> Sequence[Any]:
+    """Return a bounded outline sequence without consuming arbitrary iterables."""
+    if isinstance(value, (str, bytes, bytearray)) or not isinstance(value, Sequence):
+        raise ValueError("outline must be a sized sequence")
+    if not (
+        _PROPOSAL_OUTLINE_MIN_LESSON_COUNT
+        <= len(value)
+        <= _PROPOSAL_OUTLINE_MAX_LESSON_COUNT
+    ):
+        raise ValueError("outline must contain between 2 and 6 lessons")
+    return value
 
 
 def _require_safe_proposal_text(

@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from ptsm.domain.psychology_learning import (
     PSYCHOLOGY_LEARNING_MODE,
+    PsychologyLearningOutlineItem,
     PsychologyLearningSeriesPlanIntent,
     PsychologyLearningSeriesProposal,
     build_psychology_learning_series_proposal,
@@ -444,6 +445,47 @@ def test_proposal_validation_rejects_direct_source_shapes(topic: str) -> None:
 def test_proposal_validation_limits_original_display_text_length(topic: str) -> None:
     with pytest.raises(ValidationError, match="between 2 and 60 characters"):
         PsychologyLearningSeriesPlanIntent(topic=topic)
+
+
+@pytest.mark.parametrize(
+    "topic",
+    (
+        " " * 1000 + "情绪",
+        "情绪" + " " * 1000,
+        "\u00a0" * 1000 + "情绪",
+    ),
+)
+def test_proposal_validation_rejects_raw_oversized_topic_before_trim(
+    topic: str,
+) -> None:
+    with pytest.raises(ValidationError, match="between 2 and 60 characters"):
+        PsychologyLearningSeriesPlanIntent(topic=topic)
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "max_length"),
+    (
+        ({"title": "标题" + "\u00a0" * 1000}, 60),
+        ({"title": "标题", "goal": "目标" + "\u00a0" * 1000}, 120),
+    ),
+)
+def test_proposal_validation_rejects_raw_oversized_outline_text_before_trim(
+    kwargs: dict[str, str],
+    max_length: int,
+) -> None:
+    with pytest.raises(
+        ValidationError,
+        match=rf"between 2 and {max_length} characters",
+    ):
+        PsychologyLearningOutlineItem(**kwargs)
+
+
+def test_proposal_validation_keeps_reasonable_outer_whitespace_behavior() -> None:
+    intent = PsychologyLearningSeriesPlanIntent(topic="  情绪整理  ")
+    item = PsychologyLearningOutlineItem(title="  先记录感受  ")
+
+    assert intent.topic == "情绪整理"
+    assert item.title == "先记录感受"
 
 
 @pytest.mark.parametrize(

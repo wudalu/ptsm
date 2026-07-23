@@ -24,6 +24,11 @@ def plan_psychology_learning_series(
     proposal, create a curriculum revision, select a lesson, or construct
     reader-visible runtime input.
     """
+    if outline is not None:
+        if not isinstance(outline, Sequence):
+            raise TypeError("outline must be a sized sequence")
+        if not 2 <= len(outline) <= 6:
+            raise ValueError("outline must contain between 2 and 6 lessons")
     return build_psychology_learning_series_proposal(
         PsychologyLearningSeriesPlanIntent(
             topic=topic,
