@@ -7,6 +7,9 @@ from pydantic import ValidationError
 
 from ptsm.domain.psychology_learning import (
     PSYCHOLOGY_LEARNING_MODE,
+    PsychologyLearningSeriesPlanIntent,
+    PsychologyLearningSeriesProposal,
+    build_psychology_learning_series_proposal,
     contains_psychology_learning_raw_provenance,
     list_psychology_learning_series,
     parse_psychology_learning_runtime_contract,
@@ -149,3 +152,106 @@ def test_non_strict_artifact_scan_allows_only_empty_runtime_context_source_paths
         artifact,
         strict_artifact_shape=False,
     )
+
+
+def test_custom_series_proposal_is_safe_and_cannot_become_a_runtime_contract() -> None:
+    intent = PsychologyLearningSeriesPlanIntent(
+        topic="下班后的脑内回放",
+        outline=(
+            {
+                "id": "practice_pause",
+                "title": "练习暂停一下",
+                "goal": "在一个具体时刻写下可完成的下一步。",
+            },
+            {
+                "id": "notice_pattern",
+                "title": "先识别重复模式",
+                "goal": "记录容易发生的具体时刻。",
+            },
+            {
+                "id": "review_progress",
+                "title": "回顾有效的小动作",
+                "goal": "选一个明天继续的动作。",
+            },
+        ),
+    )
+
+    proposal = build_psychology_learning_series_proposal(intent)
+
+    assert proposal.catalog.runnable is False
+    assert not hasattr(proposal.catalog, "runtime_contract")
+    assert [lesson.lesson_id for lesson in proposal.catalog.lessons] == [
+        "practice_pause",
+        "notice_pattern",
+        "review_progress",
+    ]
+    assert [lesson.lesson_number for lesson in proposal.catalog.lessons] == [1, 2, 3]
+    assert [item.lesson_id for item in proposal.publication_plan.items] == [
+        "notice_pattern",
+        "practice_pause",
+        "review_progress",
+    ]
+    assert [item.canonical_lesson_number for item in proposal.publication_plan.items] == [
+        2,
+        1,
+        3,
+    ]
+    serialized = proposal.model_dump(mode="json")
+    assert "source_refs" not in str(serialized)
+    assert "runtime_contract" not in str(serialized)
+    with pytest.raises(ValidationError):
+        parse_psychology_learning_runtime_contract(proposal.catalog.model_dump())
+
+
+def test_custom_series_proposal_rejects_a_tampered_stable_identifier_or_fingerprint() -> None:
+    proposal = build_psychology_learning_series_proposal(
+        PsychologyLearningSeriesPlanIntent(topic="下班后的脑内回放")
+    )
+    tampered = proposal.model_dump(mode="json")
+    tampered["proposal_id"] = "proposal_changed"
+
+    with pytest.raises(ValidationError, match="proposal_id does not match"):
+        PsychologyLearningSeriesProposal.model_validate(tampered)
+
+
+@pytest.mark.parametrize(
+    "topic,outline,error",
+    (
+        ("https://example.com/心理学", None, "source locator or reference"),
+        ("source:operator-note", None, "source locator or reference"),
+        ("doi 10.1000/182 的学习", None, "source locator or reference"),
+        ("参考文献 APA 2024", None, "source locator or reference"),
+        ("抑郁症自测", None, "unsafe clinical or crisis content"),
+        ("自我伤害危机", None, "unsafe clinical or crisis content"),
+        ("自\u200b伤应对", None, "unsafe clinical or crisis content"),
+        ("ＡＤＨＤ日常整理", None, "unsafe clinical or crisis content"),
+        (
+            "情绪整理",
+            (
+                {"title": "先记录", "source\u200b_refs": "hidden-reference"},
+                {"title": "再回顾"},
+            ),
+            "provenance",
+        ),
+        (
+            "情绪整理",
+            (
+                {"id": "same_lesson", "title": "先记录"},
+                {"id": "same_lesson", "title": "再回顾"},
+            ),
+            "lesson ids must be unique",
+        ),
+        (
+            "情绪整理",
+            ({"id": "only_one", "title": "只上一课"},),
+            "between 2 and 6 lessons",
+        ),
+    ),
+)
+def test_custom_series_plan_intent_rejects_unsafe_or_malformed_operator_values(
+    topic: str,
+    outline: tuple[dict[str, str], ...] | None,
+    error: str,
+) -> None:
+    with pytest.raises(ValidationError, match=error):
+        PsychologyLearningSeriesPlanIntent(topic=topic, outline=outline)

@@ -1,14 +1,17 @@
-"""Closed, versioned curriculum contracts for psychology learning series.
+"""Closed runtime curriculum and proposal-only planning contracts.
 
 Unlike time-sensitive AI facts, psychology learning claims must not be supplied
-by an operator for each run.  This module owns the only approved lesson catalog
-and exposes a provenance-free contract for drafting plus an opaque manifest for
-artifact audit.
+by an operator for each run.  The builtin catalog remains the only runnable
+curriculum here.  Custom operator intent can only become a safe, deterministic
+proposal; it has no runtime contract, manifest, persistence, or resolver path.
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
+import unicodedata
 from typing import Any, Literal, Mapping
 
 from pydantic import (
@@ -24,6 +27,7 @@ from pydantic import (
 PSYCHOLOGY_LEARNING_MODE = "learning_series"
 PSYCHOLOGY_LEARNING_CURRICULUM_VERSION = "1"
 STARTER_SERIES_ID = "after_work_rumination"
+PSYCHOLOGY_LEARNING_PROPOSAL_SCHEMA_VERSION = "1"
 
 _IDENTIFIER_PATTERN = re.compile(r"^[a-z][a-z0-9_]{1,79}$")
 _OPAQUE_REFERENCE_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_:-]{0,127}$")
@@ -45,6 +49,69 @@ _UNSAFE_CLAIM_MARKERS = (
     "量表",
     "保证",
 )
+_PROPOSAL_UNSAFE_CLINICAL_MARKERS = (
+    "诊断",
+    "确诊",
+    "抑郁症",
+    "双相",
+    "adhd",
+    "人格障碍",
+    "精神分裂",
+    "治疗",
+    "治好",
+    "治愈",
+    "药物",
+    "用药",
+    "停药",
+    "处方",
+    "自测",
+    "量表",
+    "自杀",
+    "自伤",
+    "轻生",
+    "割腕",
+    "伤害自己",
+    "自我伤害",
+    "危机",
+    "crisis",
+    "self-harm",
+    "suicide",
+    "diagnos",
+    "treat",
+    "medication",
+    "self-test",
+)
+_PROPOSAL_SOURCE_REFERENCE_PATTERN = re.compile(
+    r"(?:source|来源|参考|ref|doi)\s*[:：]"
+    r"|(?:\bdoi\b\s*[:：]?\s*10\.\d{4,9}/\S+)"
+    r"|(?:参考(?:文献|资料))"
+    r"|(?:\bcitation\b|\bbibliograph\w*)",
+    flags=re.IGNORECASE,
+)
+_INSTRUCTIONAL_STAGE_ORDER: tuple[str, ...] = (
+    "notice",
+    "understand",
+    "practice",
+    "apply",
+    "review",
+    "support",
+)
+_INSTRUCTIONAL_STAGE_MARKERS: dict[str, tuple[str, ...]] = {
+    "notice": ("识别", "觉察", "看见", "观察", "notice", "observe"),
+    "understand": ("理解", "区分", "事实", "感受", "understand"),
+    "practice": ("练习", "练一练", "尝试", "practice"),
+    "apply": ("应用", "行动", "下一步", "apply"),
+    "review": ("回顾", "复盘", "总结", "review"),
+    "support": ("支持", "求助", "资源", "support"),
+}
+_INSTRUCTIONAL_STAGE_RATIONALES: dict[str, str] = {
+    "notice": "先从识别一个具体时刻开始，降低进入门槛。",
+    "understand": "在识别之后补充理解，避免把感受直接当结论。",
+    "practice": "再安排一个小练习，方便读者保存后尝试。",
+    "apply": "把前面的理解放回一个可完成的行动场景。",
+    "review": "在有了前面练习后再回顾，便于看见可保留的线索。",
+    "support": "把支持和边界放在后面，避免把系列写成临床判断。",
+}
 _RAW_PROVENANCE_KEYS = {
     "author",
     "authorname",
@@ -534,6 +601,532 @@ class PsychologyLearningBundle(_FrozenDomainModel):
         return tuple(item.roadmap_item for item in self.lessons)
 
 
+class PsychologyLearningOutlineItem(_FrozenDomainModel):
+    """Safe operator intent for one proposed lesson, not lesson content."""
+
+    id: str | None = None
+    title: str
+    goal: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_raw_provenance(cls, value: Any) -> Any:
+        _assert_no_raw_provenance(value)
+        return value
+
+    @field_validator("id")
+    @classmethod
+    def _validate_optional_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return _require_identifier(value, field_name="outline id")
+
+    @field_validator("title")
+    @classmethod
+    def _validate_title(cls, value: str) -> str:
+        return _require_safe_proposal_text(
+            value,
+            field_name="outline title",
+            min_length=2,
+            max_length=60,
+        )
+
+    @field_validator("goal")
+    @classmethod
+    def _validate_optional_goal(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return _require_safe_proposal_text(
+            value,
+            field_name="outline goal",
+            min_length=2,
+            max_length=120,
+        )
+
+
+class PsychologyLearningSeriesPlanIntent(_FrozenDomainModel):
+    """Only the safe operator input accepted by proposal planning."""
+
+    topic: str
+    outline: tuple[PsychologyLearningOutlineItem, ...] | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_raw_provenance(cls, value: Any) -> Any:
+        _assert_no_raw_provenance(value)
+        return value
+
+    @field_validator("topic")
+    @classmethod
+    def _validate_topic(cls, value: str) -> str:
+        return _require_safe_proposal_text(
+            value,
+            field_name="topic",
+            min_length=2,
+            max_length=60,
+        )
+
+    @model_validator(mode="after")
+    def _validate_outline(self) -> "PsychologyLearningSeriesPlanIntent":
+        if self.outline is None:
+            return self
+        if not 2 <= len(self.outline) <= 6:
+            raise ValueError("outline must contain between 2 and 6 lessons")
+        lesson_ids = tuple(_outline_lesson_id(item) for item in self.outline)
+        if len(set(lesson_ids)) != len(lesson_ids):
+            raise ValueError("outline lesson ids must be unique")
+        return self
+
+
+class PsychologyLearningProposedLesson(_FrozenDomainModel):
+    """Canonical identity for a proposed lesson, deliberately not runnable."""
+
+    lesson_id: str
+    lesson_number: int = Field(ge=1, le=6)
+    title: str
+    goal: str | None = None
+    instructional_stage: Literal[
+        "notice", "understand", "practice", "apply", "review", "support"
+    ]
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_raw_provenance(cls, value: Any) -> Any:
+        _assert_no_raw_provenance(value)
+        return value
+
+    @field_validator("lesson_id")
+    @classmethod
+    def _validate_lesson_id(cls, value: str) -> str:
+        return _require_identifier(value, field_name="lesson_id")
+
+    @field_validator("title")
+    @classmethod
+    def _validate_title(cls, value: str) -> str:
+        return _require_safe_proposal_text(
+            value,
+            field_name="proposed lesson title",
+            min_length=2,
+            max_length=60,
+        )
+
+    @field_validator("goal")
+    @classmethod
+    def _validate_optional_goal(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return _require_safe_proposal_text(
+            value,
+            field_name="proposed lesson goal",
+            min_length=2,
+            max_length=120,
+        )
+
+
+class PsychologyLearningProposedCatalog(_FrozenDomainModel):
+    """A reviewable custom catalog candidate with no resolver/runtime path."""
+
+    catalog_kind: Literal["proposal_only"] = "proposal_only"
+    runnable: Literal[False] = False
+    series_id: str
+    series_title: str
+    lessons: tuple[PsychologyLearningProposedLesson, ...] = Field(
+        min_length=2,
+        max_length=6,
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_raw_provenance(cls, value: Any) -> Any:
+        _assert_no_raw_provenance(value)
+        return value
+
+    @field_validator("series_id")
+    @classmethod
+    def _validate_series_id(cls, value: str) -> str:
+        return _require_identifier(value, field_name="series_id")
+
+    @field_validator("series_title")
+    @classmethod
+    def _validate_series_title(cls, value: str) -> str:
+        return _require_safe_proposal_text(
+            value,
+            field_name="series_title",
+            min_length=2,
+            max_length=64,
+        )
+
+    @model_validator(mode="after")
+    def _validate_canonical_identities(self) -> "PsychologyLearningProposedCatalog":
+        lesson_ids = tuple(lesson.lesson_id for lesson in self.lessons)
+        if len(set(lesson_ids)) != len(lesson_ids):
+            raise ValueError("proposed catalog lesson ids must be unique")
+        lesson_numbers = tuple(lesson.lesson_number for lesson in self.lessons)
+        if lesson_numbers != tuple(range(1, len(self.lessons) + 1)):
+            raise ValueError("proposed catalog lesson numbers must be canonical and contiguous")
+        return self
+
+
+class PsychologyLearningPublicationPlanItem(_FrozenDomainModel):
+    """One recommended posting slot; never changes canonical lesson identity."""
+
+    publication_order: int = Field(ge=1, le=6)
+    lesson_id: str
+    canonical_lesson_number: int = Field(ge=1, le=6)
+    instructional_stage: Literal[
+        "notice", "understand", "practice", "apply", "review", "support"
+    ]
+    rationale: str
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_raw_provenance(cls, value: Any) -> Any:
+        _assert_no_raw_provenance(value)
+        return value
+
+    @field_validator("lesson_id")
+    @classmethod
+    def _validate_lesson_id(cls, value: str) -> str:
+        return _require_identifier(value, field_name="publication plan lesson_id")
+
+    @field_validator("rationale")
+    @classmethod
+    def _validate_rationale(cls, value: str) -> str:
+        return _require_safe_proposal_text(
+            value,
+            field_name="publication plan rationale",
+            min_length=2,
+            max_length=120,
+        )
+
+
+class PsychologyLearningPublicationPlan(_FrozenDomainModel):
+    """Deterministic recommendation separate from the catalog lesson order."""
+
+    plan_version: Literal["1"] = "1"
+    items: tuple[PsychologyLearningPublicationPlanItem, ...] = Field(
+        min_length=2,
+        max_length=6,
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_raw_provenance(cls, value: Any) -> Any:
+        _assert_no_raw_provenance(value)
+        return value
+
+    @model_validator(mode="after")
+    def _validate_plan_shape(self) -> "PsychologyLearningPublicationPlan":
+        if len({item.lesson_id for item in self.items}) != len(self.items):
+            raise ValueError("publication plan lesson ids must be unique")
+        if len({item.canonical_lesson_number for item in self.items}) != len(self.items):
+            raise ValueError("publication plan canonical lesson numbers must be unique")
+        orders = tuple(item.publication_order for item in self.items)
+        if orders != tuple(range(1, len(self.items) + 1)):
+            raise ValueError("publication plan orders must be contiguous")
+        return self
+
+
+class PsychologyLearningProposalReview(_FrozenDomainModel):
+    """Fixed review receipt for a safe proposal awaiting explicit confirmation."""
+
+    status: Literal["safe_for_confirmation_review"] = "safe_for_confirmation_review"
+    structural_checks: tuple[str, ...] = Field(min_length=3, max_length=3)
+    safety_checks: tuple[str, ...] = Field(min_length=3, max_length=3)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_raw_provenance(cls, value: Any) -> Any:
+        _assert_no_raw_provenance(value)
+        return value
+
+    @model_validator(mode="after")
+    def _validate_fixed_checks(self) -> "PsychologyLearningProposalReview":
+        expected_structural = (
+            "lesson-count-within-bounds",
+            "lesson-ids-unique",
+            "canonical-identity-separate-from-publication-order",
+        )
+        expected_safety = (
+            "no-raw-provenance",
+            "no-clinical-or-crisis-content",
+            "proposal-only",
+        )
+        if self.structural_checks != expected_structural:
+            raise ValueError("proposal structural checks must use the safe fixed receipt")
+        if self.safety_checks != expected_safety:
+            raise ValueError("proposal safety checks must use the safe fixed receipt")
+        return self
+
+
+class PsychologyLearningSeriesProposal(_FrozenDomainModel):
+    """Immutable, deterministic proposal that cannot be selected for a run."""
+
+    proposal_schema_version: Literal["1"] = PSYCHOLOGY_LEARNING_PROPOSAL_SCHEMA_VERSION
+    proposal_id: str
+    proposal_fingerprint: str
+    topic: str
+    catalog: PsychologyLearningProposedCatalog
+    review: PsychologyLearningProposalReview
+    publication_plan: PsychologyLearningPublicationPlan
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_raw_provenance(cls, value: Any) -> Any:
+        _assert_no_raw_provenance(value)
+        return value
+
+    @field_validator("proposal_id")
+    @classmethod
+    def _validate_proposal_id(cls, value: str) -> str:
+        return _require_identifier(value, field_name="proposal_id")
+
+    @field_validator("proposal_fingerprint")
+    @classmethod
+    def _validate_proposal_fingerprint(cls, value: str) -> str:
+        return _require_opaque_reference(value, field_name="proposal_fingerprint")
+
+    @field_validator("topic")
+    @classmethod
+    def _validate_topic(cls, value: str) -> str:
+        return _require_safe_proposal_text(
+            value,
+            field_name="proposal topic",
+            min_length=2,
+            max_length=60,
+        )
+
+    @model_validator(mode="after")
+    def _validate_catalog_and_plan(self) -> "PsychologyLearningSeriesProposal":
+        catalog_lessons = {lesson.lesson_id: lesson for lesson in self.catalog.lessons}
+        if set(catalog_lessons) != {
+            item.lesson_id for item in self.publication_plan.items
+        }:
+            raise ValueError("publication plan must cover every proposed lesson exactly once")
+        for item in self.publication_plan.items:
+            lesson = catalog_lessons[item.lesson_id]
+            if item.canonical_lesson_number != lesson.lesson_number:
+                raise ValueError("publication plan must preserve canonical lesson numbers")
+            if item.instructional_stage != lesson.instructional_stage:
+                raise ValueError("publication plan stage must match the proposed lesson")
+        if self.catalog.series_id != _series_id_candidate(self.topic):
+            raise ValueError("proposal series_id candidate does not match the topic")
+        if self.catalog.series_title != f"{self.topic}学习系列":
+            raise ValueError("proposal series_title candidate does not match the topic")
+        digest = _stable_proposal_digest(
+            _proposal_material(
+                topic=self.topic,
+                catalog=self.catalog,
+                publication_plan=self.publication_plan,
+            )
+        )
+        if self.proposal_id != f"proposal_{digest[:24]}":
+            raise ValueError("proposal_id does not match the proposal payload")
+        if self.proposal_fingerprint != f"proposal:{digest}":
+            raise ValueError("proposal_fingerprint does not match the proposal payload")
+        return self
+
+    @property
+    def series_id_candidate(self) -> str:
+        """Return the candidate identifier without exposing a runnable resolver."""
+        return self.catalog.series_id
+
+    @property
+    def series_title_candidate(self) -> str:
+        return self.catalog.series_title
+
+    @property
+    def lesson_proposals(self) -> tuple[PsychologyLearningProposedLesson, ...]:
+        return self.catalog.lessons
+
+
+def build_psychology_learning_series_proposal(
+    intent: PsychologyLearningSeriesPlanIntent | Mapping[str, Any],
+) -> PsychologyLearningSeriesProposal:
+    """Build a pure, deterministic proposal from sanitized operator intent.
+
+    The return value intentionally has no conversion to ``PsychologyLearningLesson``
+    and no reader-visible runtime contract.  Later confirmation can choose how to
+    create an immutable catalog revision; this function only offers a reviewable
+    plan.
+    """
+    normalized_intent = PsychologyLearningSeriesPlanIntent.model_validate(intent)
+    outline = normalized_intent.outline or _synthesized_outline(normalized_intent.topic)
+    proposed_lessons = tuple(
+        PsychologyLearningProposedLesson(
+            lesson_id=_outline_lesson_id(item),
+            lesson_number=index,
+            title=item.title,
+            goal=item.goal,
+            instructional_stage=_infer_instructional_stage(item),
+        )
+        for index, item in enumerate(outline, start=1)
+    )
+    catalog = PsychologyLearningProposedCatalog(
+        series_id=_series_id_candidate(normalized_intent.topic),
+        series_title=f"{normalized_intent.topic}学习系列",
+        lessons=proposed_lessons,
+    )
+    ordered_lessons = tuple(
+        sorted(
+            catalog.lessons,
+            key=lambda lesson: (
+                _INSTRUCTIONAL_STAGE_ORDER.index(lesson.instructional_stage),
+                lesson.lesson_number,
+            ),
+        )
+    )
+    publication_plan = PsychologyLearningPublicationPlan(
+        items=tuple(
+            PsychologyLearningPublicationPlanItem(
+                publication_order=index,
+                lesson_id=lesson.lesson_id,
+                canonical_lesson_number=lesson.lesson_number,
+                instructional_stage=lesson.instructional_stage,
+                rationale=_INSTRUCTIONAL_STAGE_RATIONALES[lesson.instructional_stage],
+            )
+            for index, lesson in enumerate(ordered_lessons, start=1)
+        )
+    )
+    material = _proposal_material(
+        topic=normalized_intent.topic,
+        catalog=catalog,
+        publication_plan=publication_plan,
+    )
+    digest = _stable_proposal_digest(material)
+    return PsychologyLearningSeriesProposal(
+        proposal_id=f"proposal_{digest[:24]}",
+        proposal_fingerprint=f"proposal:{digest}",
+        topic=normalized_intent.topic,
+        catalog=catalog,
+        review=PsychologyLearningProposalReview(
+            structural_checks=(
+                "lesson-count-within-bounds",
+                "lesson-ids-unique",
+                "canonical-identity-separate-from-publication-order",
+            ),
+            safety_checks=(
+                "no-raw-provenance",
+                "no-clinical-or-crisis-content",
+                "proposal-only",
+            ),
+        ),
+        publication_plan=publication_plan,
+    )
+
+
+def _require_safe_proposal_text(
+    value: str,
+    *,
+    field_name: str,
+    min_length: int,
+    max_length: int,
+) -> str:
+    text = _normalize_proposal_safety_text(value)
+    if not min_length <= len(text) <= max_length:
+        raise ValueError(
+            f"{field_name} must contain between {min_length} and {max_length} characters"
+        )
+    if _contains_source_reference(text) or _PROPOSAL_SOURCE_REFERENCE_PATTERN.search(text):
+        raise ValueError(f"{field_name} must not contain a source locator or reference")
+    normalized = text.casefold()
+    if any(marker in normalized for marker in _PROPOSAL_UNSAFE_CLINICAL_MARKERS):
+        raise ValueError(f"{field_name} must not contain unsafe clinical or crisis content")
+    return text
+
+
+def _normalize_proposal_safety_text(value: str) -> str:
+    """Canonicalize text before applying proposal-only safety checks.
+
+    NFKC closes common full-width homoglyph bypasses, while removing Unicode
+    control and format characters closes invisible separator bypasses such as
+    ``自\\u200b伤``.  The normalized value is also what becomes proposal data, so a
+    later fingerprint cannot distinguish display-only invisible variants.
+    """
+    normalized = unicodedata.normalize("NFKC", value)
+    return "".join(
+        character
+        for character in normalized
+        if not unicodedata.category(character).startswith("C")
+    ).strip()
+
+
+def _normalized_security_key(value: object) -> str:
+    normalized = _normalize_proposal_safety_text(str(value)).casefold()
+    return re.sub(r"[^a-z0-9]", "", normalized)
+
+
+def _outline_lesson_id(item: PsychologyLearningOutlineItem) -> str:
+    if item.id is not None:
+        return item.id
+    digest = hashlib.sha256(item.title.casefold().encode("utf-8")).hexdigest()[:16]
+    return f"lesson_{digest}"
+
+
+def _series_id_candidate(topic: str) -> str:
+    digest = hashlib.sha256(topic.casefold().encode("utf-8")).hexdigest()[:16]
+    return f"custom_psychology_{digest}"
+
+
+def _infer_instructional_stage(item: PsychologyLearningOutlineItem) -> Literal[
+    "notice", "understand", "practice", "apply", "review", "support"
+]:
+    text = " ".join(part for part in (item.title, item.goal) if part).casefold()
+    for stage in _INSTRUCTIONAL_STAGE_ORDER:
+        if any(marker in text for marker in _INSTRUCTIONAL_STAGE_MARKERS[stage]):
+            return stage  # type: ignore[return-value]
+    return "apply"
+
+
+def _synthesized_outline(topic: str) -> tuple[PsychologyLearningOutlineItem, ...]:
+    return (
+        PsychologyLearningOutlineItem(
+            id="notice_pattern",
+            title="先识别出现的时刻",
+            goal=f"记录{topic}最容易出现的一个具体时刻。",
+        ),
+        PsychologyLearningOutlineItem(
+            id="understand_context",
+            title="理解感受和事实",
+            goal="把可确认的信息和自己的感受分开写下来。",
+        ),
+        PsychologyLearningOutlineItem(
+            id="practice_next_step",
+            title="练习一个小步骤",
+            goal="选一个十分钟内可以完成的小动作。",
+        ),
+        PsychologyLearningOutlineItem(
+            id="review_support",
+            title="回顾并安排支持",
+            goal="回顾有效的小动作，并为需要支持的时刻留出选择。",
+        ),
+    )
+
+
+def _stable_proposal_digest(value: Mapping[str, Any]) -> str:
+    encoded = json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _proposal_material(
+    *,
+    topic: str,
+    catalog: PsychologyLearningProposedCatalog,
+    publication_plan: PsychologyLearningPublicationPlan,
+) -> dict[str, Any]:
+    return {
+        "proposal_schema_version": PSYCHOLOGY_LEARNING_PROPOSAL_SCHEMA_VERSION,
+        "topic": topic,
+        "catalog": catalog.model_dump(mode="json"),
+        "publication_plan": publication_plan.model_dump(mode="json"),
+    }
+
+
 def _lesson(
     *,
     lesson_id: str,
@@ -865,7 +1458,7 @@ def contains_psychology_learning_raw_provenance(
                 artifact=_artifact_root,
             ):
                 return True
-            normalized_key = re.sub(r"[^a-z0-9]", "", str(key).lower())
+            normalized_key = _normalized_security_key(key)
             if normalized_key in _ARTIFACT_RAW_PROVENANCE_KEYS:
                 # Before the application replaces a standard workflow artifact
                 # with the closed learning envelope, runtime-context details
@@ -1146,7 +1739,7 @@ def _contains_source_reference(value: str) -> bool:
 def _assert_no_raw_provenance(value: Any) -> None:
     if isinstance(value, Mapping):
         for raw_key, nested in value.items():
-            normalized_key = re.sub(r"[^a-z0-9]", "", str(raw_key).lower())
+            normalized_key = _normalized_security_key(raw_key)
             if normalized_key in _RAW_PROVENANCE_KEYS:
                 raise ValueError("runtime psychology learning contract cannot contain provenance")
             _assert_no_raw_provenance(nested)
