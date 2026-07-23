@@ -1087,7 +1087,8 @@ def _require_safe_proposal_text(
         or _PROPOSAL_RAW_DOMAIN_PATTERN.search(security_text)
     ):
         raise ValueError(f"{field_name} must not contain a source locator or reference")
-    if any(marker in security_text for marker in _PROPOSAL_UNSAFE_CLINICAL_MARKERS):
+    marker_text = _proposal_marker_text(security_text)
+    if any(marker in marker_text for marker in _PROPOSAL_UNSAFE_CLINICAL_MARKERS):
         raise ValueError(f"{field_name} must not contain unsafe clinical or crisis content")
     return text
 
@@ -1109,6 +1110,15 @@ def _proposal_security_text(value: str) -> str:
         for character in normalized
         if not unicodedata.category(character).startswith(("C", "Z"))
     ).casefold()
+
+
+def _proposal_marker_text(security_text: str) -> str:
+    """Remove punctuation only for contiguous clinical/crisis marker checks."""
+    return "".join(
+        character
+        for character in security_text
+        if not unicodedata.category(character).startswith("P")
+    )
 
 
 def _normalized_security_key(value: object) -> str:

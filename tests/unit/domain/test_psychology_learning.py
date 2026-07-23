@@ -227,8 +227,11 @@ def test_custom_series_proposal_rejects_a_tampered_stable_identifier_or_fingerpr
         ("自我伤害危机", None, "unsafe clinical or crisis content"),
         ("自\u200b伤应对", None, "unsafe clinical or crisis content"),
         ("自\u3000伤 journal", None, "unsafe clinical or crisis content"),
+        ("自\uff0d伤 journal", None, "unsafe clinical or crisis content"),
         ("诊\u00a0断 入门", None, "unsafe clinical or crisis content"),
+        ("诊\u00b7断 入门", None, "unsafe clinical or crisis content"),
         ("self\u00a0harm journal", None, "unsafe clinical or crisis content"),
+        ("self\uff3fharm journal", None, "unsafe clinical or crisis content"),
         ("ＡＤＨＤ日常整理", None, "unsafe clinical or crisis content"),
         (
             "情绪整理",
@@ -262,8 +265,17 @@ def test_custom_series_plan_intent_rejects_unsafe_or_malformed_operator_values(
         PsychologyLearningSeriesPlanIntent(topic=topic, outline=outline)
 
 
-def test_proposal_validation_keeps_safe_reader_visible_unicode_text_unchanged() -> None:
-    topic = "我的\u3000下班整理"
+@pytest.mark.parametrize(
+    "topic",
+    (
+        "我的\u3000下班整理",
+        "我的·下班整理",
+        "我的－下班整理",
+    ),
+)
+def test_proposal_validation_keeps_safe_reader_visible_unicode_text_unchanged(
+    topic: str,
+) -> None:
 
     intent = PsychologyLearningSeriesPlanIntent(topic=topic)
 
