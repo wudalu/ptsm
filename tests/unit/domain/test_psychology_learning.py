@@ -219,8 +219,16 @@ def test_custom_series_proposal_rejects_a_tampered_stable_identifier_or_fingerpr
     (
         ("https://example.com/心理学", None, "source locator or reference"),
         ("example.xyz", None, "source locator or reference"),
+        ("example\ufe0f.xyz", None, "source locator or reference"),
+        ("example·xyz", None, "source locator or reference"),
         ("source:operator-note", None, "source locator or reference"),
+        ("source\ufe0f:operator-note", None, "source locator or reference"),
+        ("source·:operator-note", None, "source locator or reference"),
+        ("source\u2044:operator-note", None, "source locator or reference"),
+        ("source\uff0d:operator-note", None, "source locator or reference"),
+        ("source\uff0f:operator-note", None, "source locator or reference"),
         ("s\u043eurce:operator-note", None, "source locator or reference"),
+        ("ref\u034f:operator-note", None, "source locator or reference"),
         ("doi 10.1000/182 的学习", None, "source locator or reference"),
         ("参考文献 APA 2024", None, "source locator or reference"),
         ("抑郁症自测", None, "unsafe clinical or crisis content"),
@@ -280,6 +288,7 @@ def test_custom_series_plan_intent_rejects_unsafe_or_malformed_operator_values(
         "我的－下班整理",
         "我的\u2044下班整理",
         "我的\ufe0f下班整理",
+        "下班后的整理",
     ),
 )
 def test_proposal_validation_keeps_safe_reader_visible_unicode_text_unchanged(
