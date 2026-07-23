@@ -11,6 +11,7 @@ related_paths:
   - src/ptsm/application/services/side_effect_ledger.py
   - src/ptsm/application/use_cases/harness_evals.py
   - src/ptsm/application/use_cases/guide_post.py
+  - src/ptsm/application/use_cases/psychology_learning_series.py
   - src/ptsm/application/use_cases/topic_guidance_packs.py
   - src/ptsm/application/use_cases/collect_xhs_patterns.py
   - src/ptsm/application/use_cases/analyze_xhs_patterns.py
@@ -49,14 +50,16 @@ playbook、skill 与 eval contract，但每次生成必须先选择一种证据�
 第四种模式。
 
 `modern_psychology_post` 的 `learning_series` 是同一心理学 playbook 的受控子模式，
-不是第十个领域或新的账号。它从 `src/ptsm/domain/psychology_learning.py` 的封闭、版本化
-课程目录选择系列和课次；运行时会从该身份重新构建并逐字段比对课程合同和 manifest，
-而不是信任 API caller 传入的看似合法 payload。读者可见文案由同一目录的受控模板渲染，
-artifact 只保留 opaque audit manifest。系列 checkpoint 使用课程派生的私有 thread lane，
+不是第十个领域或新的账号。它同时保留 builtin `after_work_rumination`，并支持经
+`plan-psychology-series` → review → exact `confirm-psychology-series --confirm` 创建的
+immutable `user_confirmed` curriculum revision。`psychology_learning_series.py` 只持久化安全化的
+proposal 和确认后的快照；proposal 本身绝不可运行。运行时从 frozen series / version / lesson
+identity 重新构建并逐字段比对课程合同，而不是信任 caller payload。读者可见文案由受控模板
+渲染，artifact 只保留 opaque audit receipt。系列 checkpoint 使用课程派生的私有 thread lane，
 不会复用普通心理学帖的 scene/history。普通心理学场景帖仍沿用既有 lane/guide flow，不能被
-自动编号或转化为课程。路线图查询明确停在 `selection_required`，用户选课后才会取得该课的
-catalog-owned title、cover hook、image plan 和可运行方向；这些课程字段不能被自由 scene 或图片
-override 替换。
+自动编号或转化为课程。路线图查询明确停在 `selection_required`；推荐顺序只是建议，用户明确
+选择一课后才会取得该课的 catalog-owned title、cover hook、image plan 和可运行方向。任何 topic、
+outline 或热点都不能直接进入 lesson run。
 
 ## Package Boundaries
 
@@ -111,6 +114,7 @@ override 替换。
 - playbook contract evaluator 现在支持 `title_must_include_any`、`title_must_not_include_any`、可选领域 title constraints、body length band、`body_must_include_scene_signal` / `body_scene_signal_any` / `body_human_anchor_any` 和 `combined_must_not_include_any`，用于让标题保留具体物件/场景钩子、限制在短标题上限内、拦截泛标题，让正文保留现场锚点和真人视角，并跨标题、封面文案和正文拦截 `首先`、`其次`、`综上`、`作为AI` 这类模板化或元叙事语言。
 - `modern_psychology_post` 的浏览/点赞优化仍放在既有心理学资产层：睡眠恢复、轻养生、办公室恢复被建模为现代心理学子线实验，由 `guide-post`、`psychology_style`、playbook prompt 和 deterministic dry-run helper 承接，不新增 domain/playbook/runtime 分支。2026-06-02 的 XHS domain opportunity live scan 因本地 MCP 缺少 `search_feeds` 没有采到样本，所以这条子线只按弱证据推进为本地可验证实验，不声称已完成趋势排名。
 - AI 科技证据边界属于领域与应用层，不是泛用 runtime 分支：`ptsm.domain.ai_tech_content` 严格解析 operator 提供的证据文件，分别产出无 provenance 的 drafting contract 与只含 opaque ID 的 manifest。`run_playbook()` 在创建 run、workflow、artifact、图片或 publisher 前 fail closed；runtime 只绑定该 safe contract，并在 LangGraph checkpoint 前重建 allowlisted input。来源 URL、作者、feed ID、原始标题及整份 evidence bundle 不进入 prompt、state、checkpoint、读者可见内容或 artifact。`finalize` 仅写 `ai_tech_content_mode`、`ai_tech_evidence_manifest` 与通过的 `ai_tech_evidence_gate` receipt；离线 evaluator 再审计该 receipt。Topic Radar 保持独立 discovery surface：它可以贡献 opaque `trend_support`，但不提供可发布事实或实测记录。
+- 心理学学习系列同样有两段边界：operator 可先提议 2–6 个安全 lesson outline，并在 review publication plan 与 exact proposal fingerprint 后确认 immutable `user_confirmed` revision；随后 runtime 只接受显式 frozen version、lesson 与 matching direction。确认后 revision 不能就地重排或改课，变更必须走新 proposal/version。Topic Radar 仍是 discovery-only，不能把热点标题、evidence 或路由结果变成课程事实、outline 或 lesson input。
 
 ## Current Design Pressure
 

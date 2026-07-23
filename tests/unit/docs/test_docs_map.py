@@ -282,6 +282,42 @@ def test_learning_series_docs_cover_selection_image_and_metrics_integrity() -> N
     assert "entire artifact" in observability_text
 
 
+def test_docs_cover_confirmed_custom_psychology_learning_series_lifecycle() -> None:
+    architecture_text = (DOCS_ROOT / "architecture.md").read_text(encoding="utf-8")
+    runtime_text = (DOCS_ROOT / "runtime.md").read_text(encoding="utf-8")
+    playbooks_text = (DOCS_ROOT / "playbooks.md").read_text(encoding="utf-8")
+    skills_text = (DOCS_ROOT / "skills.md").read_text(encoding="utf-8")
+    harness_text = (DOCS_ROOT / "harness-engineering.md").read_text(encoding="utf-8")
+    observability_text = (DOCS_ROOT / "observability.md").read_text(
+        encoding="utf-8"
+    )
+    operations_text = (DOCS_ROOT / "operations.md").read_text(encoding="utf-8")
+    local_runbook_text = (DOCS_ROOT / "operations" / "local-runbook.md").read_text(
+        encoding="utf-8"
+    )
+    experiment_text = (
+        DOCS_ROOT / "operations" / "content-experiment-runbook.md"
+    ).read_text(encoding="utf-8")
+    topic_radar_text = (
+        DOCS_ROOT / "operations" / "topic-radar-runbook.md"
+    ).read_text(encoding="utf-8")
+
+    assert "user_confirmed" in architecture_text
+    assert "psychology_learning_catalog_receipt" in runtime_text
+    assert "immutable" in playbooks_text
+    assert "plan-psychology-series" in skills_text
+    assert "psychology_learning_catalog_receipt" in harness_text
+    assert "operator_content_production" in observability_text
+    assert "plan-psychology-series" in operations_text
+    assert "confirm-psychology-series" in operations_text
+    assert "proposal_fingerprint" in operations_text
+    assert "recommended_next_lesson" in operations_text
+    assert "--curriculum-outline-file" in local_runbook_text
+    assert "operator_content_production" in experiment_text
+    assert "Topic Radar" in topic_radar_text
+    assert "learning-series lesson facts" in topic_radar_text
+
+
 def test_skills_doc_links_xhs_topic_index() -> None:
     skills_text = (DOCS_ROOT / "skills.md").read_text(encoding="utf-8")
 

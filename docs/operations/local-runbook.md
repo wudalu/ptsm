@@ -423,12 +423,60 @@ uv run python -m ptsm.bootstrap run-playbook \
 
 ### Psychology Learning Series
 
-心理学学习系列不使用自由 `--scene`。先读取封闭 catalog 的路线图，只展示返回的
-`learning_series_lesson`，由用户精确确认课次；不要把热点、operator 写的概念、URL 或研究
-笔记传入课程 run。`guide-post` 返回的 curriculum version 必须原样带入 `run-playbook`；不要
-手改受控系列的标题、正文、封面或图片计划。普通心理学场景帖仍走上面的通用 psychology guide
-flow。未选 lesson 的查询会返回 `selection_required`，不会默认第一课；课程目录拥有该课的
-catalog-owned image plan，不能在 run 上追加 `--local-image-style` 或 `--publish-image-path`。
+心理学学习系列不使用自由 `--scene`。builtin `after_work_rumination` 保持现有 catalog flow；用户
+自定义专题则必须先经过 PTSM plan → review → exact confirmation，不能把热点、operator idea、URL 或
+研究笔记直接传入课程 run。普通心理学场景帖仍走上面的通用 psychology guide flow。受控系列的标题、
+正文、封面和图片计划都不能手改或加 `--local-image-style` / `--publish-image-path`。
+
+#### Custom topic / outline
+
+可选 outline 文件是 2–6 项 JSON list，每项只允许安全的 `id`、`title` 和可选 `goal`。例如：
+
+```json
+[
+  {"id": "notice_patterns", "title": "先看见下班后的脑内续播"},
+  {"id": "practice_pause", "title": "给下班后的自己一个停顿", "goal": "练习一个短暂停顿动作"}
+]
+```
+
+```bash
+# proposal 仅供审核，绝不直接生成或运行 lesson。
+uv run python -m ptsm.bootstrap plan-psychology-series \
+  --topic "下班后如何把工作从脑子里放下" \
+  --curriculum-outline-file outline.json \
+  --format json
+
+# 审核 returned publication plan 和 exact proposal_fingerprint 后才确认。
+uv run python -m ptsm.bootstrap confirm-psychology-series \
+  --proposal-id "<returned proposal_id>" \
+  --proposal-fingerprint "<returned proposal_fingerprint>" \
+  --confirm --format json
+```
+
+确认创建 immutable `user_confirmed` revision；变更主题、outline 或顺序时重新 proposal/confirm，不能手写
+catalog 或指定 catalog-root。先不带 lesson 查询 roadmap，读取 `selection_required`、publication plan、
+`recommended_next_lesson` 和 `operator_content_production`。recommendation 是建议，不会自动选课或生成；
+用户明确选择 lesson（也可非推荐）时，第二次 `guide-post` 必须带 returned explicit frozen
+`--psychology-curriculum-version`，只使用该响应返回的 matching direction id 进行 dry-run。progress 不是
+读者学习进度，也不代表自动发布；仅 safe completed artifact/receipt 后才更新。缺失或篡改 catalog/receipt
+会 fail closed，可用 `eval-artifact --artifact <path>` 复核。
+
+```bash
+uv run python -m ptsm.bootstrap run-playbook \
+  --account-id acct-psychology-local \
+  --playbook-id modern_psychology_post \
+  --psychology-content-mode learning_series \
+  --psychology-series-id "<returned series_id>" \
+  --psychology-lesson-id "<chosen lesson_id>" \
+  --psychology-curriculum-version "<returned curriculum_version>" \
+  --topic-direction-id "<matching returned direction id>" \
+  --publish-mode dry-run --eval
+```
+
+#### Builtin catalog
+
+未选 lesson 的查询会返回 `selection_required`，不会默认第一课；课程目录拥有该课的
+catalog-owned image plan。
 
 ```bash
 # 目录查询不会创建 run，也不会读取 live topic research；会返回 selection_required。

@@ -13,57 +13,80 @@ For non-psychology XHS playbooks, use `ptsm-xhs-topic-guide`; this file remains 
 ## Psychology Learning Series
 
 When the user explicitly asks for a psychology learning series, a study topic,
-or a specific lesson, use the closed `learning_series` path instead of the
-generic scene flow. The first catalog is `after_work_rumination`; PTSM owns its
-lesson concepts, explanations, micro-exercises, boundaries, and opaque audit
-references.
+or a specific lesson, use the `learning_series` path instead of the generic
+scene flow. There are two valid catalog sources: builtin
+`after_work_rumination`, and an immutable `user_confirmed` curriculum that PTSM
+created after proposal review. Never turn a scene, hotspot, or operator idea
+directly into a runnable lesson.
 
-1. Ask PTSM for the catalog roadmap. Do not turn the user's scene, a hotspot,
-or an operator-written concept into a lesson.
+### Custom topic and outline
+
+1. Let the user provide a safe topic and, if useful, a 2–6 item JSON outline.
+Each item may have `id`, `title`, and optional `goal`. Use PTSM to create a
+proposal; it is review material, not a runnable catalog.
+
+```bash
+uv run python -m ptsm.bootstrap plan-psychology-series \
+  --topic "下班后如何把工作从脑子里放下" \
+  --curriculum-outline-file outline.json \
+  --format json
+```
+
+2. Show the safe returned review, roadmap/publication order, `proposal_id`, and
+exact `proposal_fingerprint`. Do not create a lesson, rewrite order, or invent
+course evidence while the proposal is unconfirmed. Ask for exact confirmation.
+
+```bash
+uv run python -m ptsm.bootstrap confirm-psychology-series \
+  --proposal-id "<returned proposal_id>" \
+  --proposal-fingerprint "<returned proposal_fingerprint>" \
+  --confirm \
+  --format json
+```
+
+Confirmation creates a `user_confirmed` immutable curriculum version. A changed
+topic, outline, lesson identity, or order requires a new proposal and version;
+do not use catalog-root flags or hand-edit PTSM files.
+
+3. Query the confirmed roadmap without a lesson. Show its returned
+`series.roadmap`, `publication_plan`, `recommended_next_lesson`, and
+`operator_content_production` only. The recommendation is not an auto-selection:
+it is a publication suggestion, PTSM never auto-selects/generates a lesson, and
+the progress is not reader learning progress.
 
 ```bash
 uv run python -m ptsm.bootstrap guide-post \
   --playbook-id modern_psychology_post \
   --account-id acct-psychology-local \
   --psychology-content-mode learning_series \
-  --psychology-series-id after_work_rumination \
+  --psychology-series-id "<returned series_id>" \
   --non-interactive \
   --format json
 ```
 
-2. Show only the returned `series.roadmap` and
-`topic_guidance.directions`. Label each returned direction as
-`learning_series_lesson` and the selection policy as
-`catalog_learning_series`. Ask the user to choose one returned lesson; do not
-invent a seventh lesson or substitute a free scene.
-
-The roadmap response is intentionally `selection_required`: it has no
-`run-playbook` command，PTSM 不会默认生成第一课。
-
-3. If the user chooses a different lesson, call `guide-post` again with its
-returned `lesson_id`, then show the selected lesson's returned direction and
-image recommendation. Do not expose `source_refs`, raw research, URLs, or
-course-contract JSON.
+4. Ask the user to choose one returned lesson. A non-recommended lesson is
+allowed, but a custom selection must send the returned explicit frozen curriculum version
+back to `guide-post`; do not silently pick the recommended lesson.
 
 ```bash
 uv run python -m ptsm.bootstrap guide-post \
   --playbook-id modern_psychology_post \
   --account-id acct-psychology-local \
   --psychology-content-mode learning_series \
-  --psychology-series-id after_work_rumination \
-  --psychology-lesson-id "<returned lesson id>" \
-  --psychology-curriculum-version "<returned curriculum version>" \
+  --psychology-series-id "<returned series_id>" \
+  --psychology-lesson-id "<chosen lesson_id>" \
+  --psychology-curriculum-version "<returned curriculum_version>" \
   --non-interactive \
   --format json
 ```
 
-The selected response owns a catalog-owned image plan and that lesson's
-approved title/cover hook. Do not append `--local-image-style` or
-`--publish-image-path`; the learning preflight rejects manual image overrides.
-
-4. Generate only after exact lesson confirmation. Pass the catalog IDs and the
-matching returned direction id; omit `--scene` and never add
-`--fresh-topic-research` to this command.
+5. Generate only after exact lesson confirmation. Pass the catalog IDs and the
+matching returned direction id; omit `--scene`, never add
+`--fresh-topic-research`, and do not append `--local-image-style` or
+`--publish-image-path`. A safe completed artifact with strict receipt may update
+operator content-production progress (dry-run or content success followed by
+publish failure can count); preflight/workflow/eval/final-artifact failure cannot.
+PTSM never auto-publishes.
 
 ```bash
 uv run python -m ptsm.bootstrap run-playbook \
@@ -72,12 +95,42 @@ uv run python -m ptsm.bootstrap run-playbook \
   --account-id acct-psychology-local \
   --playbook-id modern_psychology_post \
   --psychology-content-mode learning_series \
-  --psychology-series-id after_work_rumination \
-  --psychology-lesson-id "<returned lesson id>" \
-  --psychology-curriculum-version 1 \
+  --psychology-series-id "<returned series_id>" \
+  --psychology-lesson-id "<chosen lesson_id>" \
+  --psychology-curriculum-version "<returned curriculum_version>" \
   --topic-direction-id "<matching returned direction id>" \
   --publish-mode dry-run
 ```
+
+Use `eval-artifact --artifact <path>` to audit the completed artifact. A missing
+or tampered custom catalog/receipt must fail closed; do not expose proposal topic,
+outline goal, source, URL, or local path.
+
+### Builtin catalog
+
+For `after_work_rumination`, ask PTSM for the catalog roadmap:
+
+```bash
+uv run python -m ptsm.bootstrap guide-post \
+  --playbook-id modern_psychology_post \
+  --account-id acct-psychology-local \
+  --psychology-content-mode learning_series \
+  --psychology-series-id after_work_rumination \
+  --non-interactive \
+  --format json
+```
+
+Show only the returned `series.roadmap` and `topic_guidance.directions`. Label
+each returned direction as `learning_series_lesson` and the selection policy as
+`catalog_learning_series`. Ask the user to choose one returned lesson; do not
+invent a seventh lesson or substitute a free scene. The roadmap is intentionally
+`selection_required`: it has no `run-playbook` command，PTSM 不会默认生成第一课。
+
+If the user chooses a lesson, call `guide-post` again with its returned
+`lesson_id` and returned curriculum version, then show the selected direction and
+image recommendation. Do not expose `source_refs`, raw research, URLs, or
+course-contract JSON. The selected response owns the catalog-owned image plan
+and approved title/cover hook.
 
 If PTSM returns `topic_guidance_required`, display the returned catalog lesson
 directions and wait for the user's exact lesson confirmation before retrying
@@ -175,9 +228,9 @@ recommendation; do not claim a direction is proven until real metrics support it
 - 不要展示原始研究笔记。
 - Do not mention hidden research documents, file paths, raw source URLs, or provenance to the user.
 - Do not copy topic logic into this skill; PTSM owns the guidance payload.
-- Do not invent lessons, concepts, exercises, source references, or learning outcomes; only use the returned `learning_series_lesson` catalog direction.
+- Do not run a lesson outside the PTSM plan → review → exact confirmation boundary. For builtin catalogs, use only the returned `learning_series_lesson`; for custom catalogs, the user may define topic/outline only through `plan-psychology-series`, then review and exact `--confirm`. Never invent a lesson, concept, exercise, source reference, or learning outcome in a run.
 - Do not add `--local-image-style` or `--publish-image-path` to a learning-series run; its catalog-owned image plan is part of the approved lesson contract.
-- Do not use `fresh-topic-research` as a way to write psychology lesson facts. Hotspot discovery is a separate decision step, not lesson evidence.
+- Do not use `fresh-topic-research` as a way to write psychology lesson facts. Topic Radar/hotspot discovery is a separate discovery decision step, not custom lesson evidence, outline, or run input.
 - Do not invent, expand, or replace PTSM-returned open_scene direction(s); only display them when they are present in `topic_guidance.directions`.
 - Do not invent, expand, or replace PTSM-returned psychology sublane direction(s), including 睡眠恢复、轻养生 or 办公室恢复; only display them when PTSM returns them.
 - Do not invent, expand, or replace PTSM-returned growth-oriented psychology direction(s), including `relationship_mixed_signal_camp_vote`, `social_battery_cancel_plan_boundary`, or `after_hours_message_body_alarm`; only display them when PTSM returns them.

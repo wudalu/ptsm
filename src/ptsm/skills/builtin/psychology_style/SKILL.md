@@ -37,4 +37,4 @@ assets_present: false
 13. 正文目标 200-380 字；少写解释，多写一个真实瞬间。
 14. 小红书图文呈现要“平实贴图 + 少量文字”：优先把可保存工具做成 `iphone_notes` 低密度截图；单句重构可用 `note_card`；只有正文真的围绕消息对话、群聊或可复制回复时才用 `wechat_chat`。
 15. 图片上最多放 1-3 个短文字单元，不放心理机制长解释、专业边界、话题标签或正文段落。
-16. 如果 runtime context 出现 `# Psychology Learning Series Contract`，这是受控学习专题：只写其中的系列标记、概念、学习目标、批准解释、适用场景、微练习、范围边界、专业帮助边界和评论提示；不能自行增加课次、概念、练习、来源、疗效结论或额外心理学断言。标题、封面、正文、标签和图片计划都必须使用课程目录的受控模板；学习帖仍要像生活化小红书短帖，不写成讲义。
+16. 如果 runtime context 出现 `# Psychology Learning Series Contract`，这是受控学习专题：只写其中的系列标记、概念、学习目标、批准解释、适用场景、微练习、范围边界、专业帮助边界和评论提示。builtin lesson 保持 catalog 合同；custom lesson 只能来自已由 PTSM 完成 plan → review → exact confirmation 的 `user_confirmed` curriculum，不能把 operator 的原始主题、outline、热点或临时想法直接补进正在运行的课。不要自行增加课次、概念、练习、来源、疗效结论或额外心理学断言。标题、封面、正文、标签和图片计划都必须使用课程目录的受控模板；学习帖仍要像生活化小红书短帖，不写成讲义。

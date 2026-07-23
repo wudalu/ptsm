@@ -10,6 +10,7 @@ related_paths:
   - src/ptsm/agent_runtime/nodes
   - src/ptsm/agent_runtime/nodes/planner.py
   - src/ptsm/application/use_cases/run_playbook.py
+  - src/ptsm/application/use_cases/psychology_learning_series.py
   - src/ptsm/application/use_cases/hotspot_discovery.py
   - src/ptsm/skills/runtime_context.py
   - src/ptsm/application/use_cases/guide_post.py
@@ -84,34 +85,50 @@ cluster 或热度当成事实/测试证据。
 
 ## Psychology Learning Series Boundary
 
-`modern_psychology_post` 的 `learning_series` 是一条 opt-in 的封闭课程路径。有效请求必须
-同时给出 `--psychology-content-mode learning_series`、`--psychology-series-id`、
-`--psychology-lesson-id`、`--psychology-curriculum-version`，以及与 catalog lesson 完全匹配的
-`--topic-direction-id`。这些 flags 只允许 `modern_psychology_post`；缺失、伪造、跨课次或
-传给其他 playbook 的值会在 `RunStore.start`、workflow、图片和 publisher 之前返回
-`psychology_learning_required`、`psychology_learning_invalid` 或
+`modern_psychology_post` 的 `learning_series` 有两种受控 catalog origin：builtin
+`after_work_rumination`，以及经 `plan-psychology-series` proposal review 后用 exact
+`proposal_fingerprint` 和 `confirm-psychology-series --confirm` 创建的 immutable
+`user_confirmed` revision。proposal 只用于审核，绝不是 runnable catalog；topic、2–6 项 outline、
+热点或自由 scene 都不能绕过确认边界直接变成 lesson run。更改课次、标题、目标或 publication
+order 必须产生新 proposal/version，既有 version 保持可审计。
+
+有效 lesson run 必须同时给出 `--psychology-content-mode learning_series`、
+`--psychology-series-id`、`--psychology-lesson-id`、显式
+`--psychology-curriculum-version`，以及与 frozen catalog lesson 完全匹配的
+`--topic-direction-id`。这些 flags 只允许 `modern_psychology_post`；缺失、伪造、跨课次、
+缺失/tampered catalog 或 receipt 会在 `RunStore.start`、workflow、图片和 publisher 之前 fail
+closed，返回 `psychology_learning_required`、`psychology_learning_invalid` 或
 `psychology_learning_topic_direction_invalid`（其他 playbook 为
 `psychology_learning_playbook_invalid`）。
 
-首期 `after_work_rumination` 目录有六课。`guide-post` 只暴露该目录的 roadmap 和
-`learning_series_lesson` directions，绝不以 operator scene、热点或自由概念补出第七课。
-未带 lesson 的 roadmap 查询会明确返回 `selection_required`，不附带 run command，也不会默认生成第一课；
-只有用户选中返回的 lesson 后才会返回该课的 direction、标题/封面钩子和图片建议。
-bound workflow 用 catalog 重建 scene 和 allowlisted input，并把 public `thread_id` 映射到
-checkpoint-isolated 的课程私有 thread；planner 只收到课程字段，memory、live skill context
-与 fresh scan 都不参与该课。`--fresh-topic-research` 返回
-`psychology_learning_fresh_research_separate`，因为热点只能帮助运营者做系列选择，不能成为
-心理教育事实。
+无 lesson 的 `guide-post` roadmap 会返回 `selection_required`、frozen roadmap、publication plan、
+`recommended_next_lesson` 和 custom-only `operator_content_production` progress；推荐只是发布顺序
+建议，不会自动选择或生成课次，PTSM 也不会默认生成第一课。用户可明确选择非推荐课，但必须在
+再次 `guide-post` 时传回该 custom series 的 explicit frozen curriculum version，随后仅用该响应返回的
+matching direction id dry-run。builtin `after_work_rumination` 的 catalog flow 保持原样。
+
+bound workflow 从 catalog 重建 scene 和 allowlisted input，并把 public `thread_id` 映射到
+checkpoint-isolated 的课程私有 thread；planner 只收到课程字段，memory、live skill context 与
+fresh scan 都不参与该课。`--fresh-topic-research` 返回
+`psychology_learning_fresh_research_separate`：Topic Radar 只能协助发现/决定是否规划系列，不能提供
+learning-series lesson facts、证据、outline 或 run input。
 
 executor、reflector、finalize 和应用层都调用同一个
-`psychology_learning_draft_contract`：成稿必须逐字段等于 catalog-derived 的 `controlled lesson template`（四个紧凑短拍），不只是“包含”概念、解释、微练习、适用/范围说明和专业帮助边界。
-原始来源、URL、作者、自由场景和额外临床主张不能进入 checkpoint、prompt、reader-visible
-content 或 artifact。完成 artifact 只写系列/课次 identity、opaque manifest 和通过的 gate；
-如果 custom workflow 写入的受控目录 artifact 含 raw provenance，应用层会删除该 owned artifact
-并阻断图片和发布。离线 evaluator 再从目录重建并审计整个 artifact。
+`psychology_learning_draft_contract`：成稿必须逐字段等于 catalog-derived 的 `controlled lesson template`
+（四个紧凑短拍），不只是“包含”概念、解释、微练习、适用/范围说明和专业帮助边界。custom artifact
+另外必须有 trusted `psychology_learning_catalog_receipt`，其中只含 `schema_version`、
+`origin=user_confirmed`、`controlled_template_version`、`catalog_digest`、`approval_id`、
+`proposal_fingerprint` 与 `publication_plan`；builtin artifact 不写该字段。runtime、offline eval 与
+metrics 都从 frozen catalog 重建并验证此 receipt，缺失或被篡改时 fail closed。原始 topic、outline
+goal、source、URL、作者、local path、自由场景和额外临床主张均不能进入 prompt、checkpoint、
+reader-visible content 或 artifact。
+
 课程目录同时拥有该课的标题、封面钩子和图片计划；`--local-image-style`、手工图片路径都不能
-覆盖它。catalog exact gate 是本模式的正文质量真相来源：普通自由场景的心理学反思规则或 LLM
-judge 不会用不相容的开放式条件推翻已通过的课程合同，既有安全边界仍然保留。
+覆盖它。custom production progress 仅在安全 completed artifact 与严格 receipt 都已写入后记录：
+dry-run 和内容成功但 publish 失败可计为 operator 产出，preflight/workflow/eval/final-artifact failure
+则不可计；它不是读者学习进度，也不会触发自动发布。catalog exact gate 是本模式的正文质量真相来源：
+普通自由场景的心理学反思规则或 LLM judge 不会用不相容的开放式条件推翻已通过的课程合同，既有安全
+边界仍然保留。
 
 ## Current Runtime Facts
 

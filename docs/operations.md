@@ -21,6 +21,7 @@ related_paths:
   - src/ptsm/interfaces/cli/main.py
   - src/ptsm/application/use_cases/run_playbook.py
   - src/ptsm/application/use_cases/guide_post.py
+  - src/ptsm/application/use_cases/psychology_learning_series.py
   - src/ptsm/application/use_cases/topic_guidance_packs.py
   - src/ptsm/domain/topic_guidance.py
   - src/ptsm/domain/ai_tech_content.py
@@ -210,14 +211,88 @@ AI playbook。AI mode 使用 `--fresh-topic-research` 会返回
 
 ## Psychology Learning Series Runs
 
-`learning_series` 是 `modern_psychology_post` 的封闭课程子模式。不要传 `--scene`、自由
-心理学概念、原始研究链接或 `--fresh-topic-research`；先读取 PTSM 返回的路线图，再让用户
-从其中确认一课。首期目录为 `after_work_rumination`，版本为 `1`。`guide-post` 会返回当前
-catalog version，而实际 `run-playbook` 必须显式带上这个 version；不要手改返回的标题、正文、
-封面或图片计划，系列成稿由课程目录受控渲染。初次路线图查询会返回 `selection_required`，不会
-默认生成第一课或给出 run command；选中 lesson 后再请求一次 guide。课程目录的
-catalog-owned image plan 也是批准合同的一部分，不能追加 `--local-image-style` 或
-`--publish-image-path` 覆盖。
+`learning_series` 是 `modern_psychology_post` 的受控课程子模式，有 builtin
+`after_work_rumination` 和 custom `user_confirmed` 两条路径。不要直接把 `--scene`、自由心理学
+概念、热点、原始研究链接或 `--fresh-topic-research` 塞进课程 run。custom 主题必须先提案、审核、
+精确确认；确认后只从 frozen catalog 选课。目录的标题、正文、封面和 catalog-owned image plan 受控
+渲染，不能手改或用 `--local-image-style` / `--publish-image-path` 覆盖。
+
+### Custom user-confirmed curriculum
+
+先把主题和可选 2–6 项 outline 交给 PTSM。outline 是 JSON list，每项只含安全的 `id`、`title` 与可选
+`goal`；下面是两个条目的安全示例，保存为 `outline.json`：
+
+```json
+[
+  {"id": "notice_patterns", "title": "先看见下班后的脑内续播", "goal": "识别一个反复出现的工作念头"},
+  {"id": "practice_pause", "title": "给下班后的自己一个停顿", "goal": "练习一个短暂停顿动作"}
+]
+```
+
+```bash
+# 只生成 proposal/review/publication plan，不会创建 runnable catalog 或 run。
+uv run python -m ptsm.bootstrap plan-psychology-series \
+  --topic "下班后如何把工作从脑子里放下" \
+  --curriculum-outline-file outline.json \
+  --format json
+
+# 从上一步 JSON 原样复制 proposal_id 与 proposal_fingerprint，再明确确认。
+uv run python -m ptsm.bootstrap confirm-psychology-series \
+  --proposal-id "<returned proposal_id>" \
+  --proposal-fingerprint "<returned proposal_fingerprint>" \
+  --confirm \
+  --format json
+```
+
+审核 proposal 的内容、publication order 与 exact `proposal_fingerprint` 后才可确认。确认会创建 immutable
+`user_confirmed` curriculum version；主题、outline、lesson identity 或顺序有变化时必须重新 plan/confirm，
+没有 `--catalog-root` 或手写 catalog/progress 文件入口。接着先取路线图：
+
+```bash
+# 不带 lesson：返回 selection_required、roadmap、recommended_next_lesson 与 production progress。
+uv run python -m ptsm.bootstrap guide-post \
+  --playbook-id modern_psychology_post \
+  --account-id acct-psychology-local \
+  --psychology-content-mode learning_series \
+  --psychology-series-id "<returned series_id>" \
+  --non-interactive --format json
+
+# 用户明确选定一课（可不是推荐课）后，必须 pin 返回的 frozen version。
+uv run python -m ptsm.bootstrap guide-post \
+  --playbook-id modern_psychology_post \
+  --account-id acct-psychology-local \
+  --psychology-content-mode learning_series \
+  --psychology-series-id "<returned series_id>" \
+  --psychology-lesson-id "<chosen lesson_id>" \
+  --psychology-curriculum-version "<returned curriculum_version>" \
+  --non-interactive --format json
+```
+
+`recommended_next_lesson` 只是 publication suggestion；不会自动选择、生成或发布。仅把第二次 guide
+返回的 matching `topic_direction_id` 与同一 explicit version 带进 dry-run。custom progress 的
+`kind` 是 `operator_content_production`，仅表示已经安全生成的运营内容，绝不是读者学习进度；安全
+completed artifact（含 dry-run，或内容成功但 publish 失败）才会推进，preflight/workflow/eval/final-artifact
+failure 不会推进，也不会自动发布下一课。用 `eval-artifact --artifact <path>` 审计 strict
+`psychology_learning_catalog_receipt`；缺失或被篡改的 catalog/receipt 会安全拒绝。
+
+```bash
+# 只用第二次 guide 返回的 exact version、lesson 和 matching direction；先 dry-run + eval。
+uv run python -m ptsm.bootstrap run-playbook \
+  --account-id acct-psychology-local \
+  --playbook-id modern_psychology_post \
+  --psychology-content-mode learning_series \
+  --psychology-series-id "<returned series_id>" \
+  --psychology-lesson-id "<chosen lesson_id>" \
+  --psychology-curriculum-version "<returned curriculum_version>" \
+  --topic-direction-id "<matching returned direction id>" \
+  --publish-mode dry-run --eval
+```
+
+### Builtin catalog
+
+首期 builtin 目录为 `after_work_rumination`，版本为 `1`。`guide-post` 会返回当前 catalog version，
+而实际 `run-playbook` 必须显式带上这个 version。初次路线图查询会返回 `selection_required`，不会默认
+生成第一课或给出 run command；选中 lesson 后再请求一次 guide。
 
 ```bash
 # 返回 selection_required roadmap 与六个 catalog learning_series_lesson directions，不创建 run
@@ -293,7 +368,7 @@ learning artifact 才能写入课程指标；同一 artifact + checkpoint 会更
 - `eval-artifact` 可对已有 artifact 独立跑 eval，不依赖运行时。
 - `diagnose-publish` 是对单次发布问题的只读诊断入口，适合排查 “为什么没法自动确认已发布” 或 “为什么发布后状态不明确”。
 - `xhs-record-metrics` / `xhs-metrics-report` 是内容实验的本地指标回收入口。前者把已发布帖子的 `2h`、`24h` 或 `72h` 浏览、点赞、收藏、评论、分享写入 `outputs/artifacts/xhs-post-metrics/metrics.jsonl`；后者按方向、封面样式、checkpoint、账号、playbook，或学习系列的 series / curriculum version / lesson 聚合。课程指标只接受 receipt-verified artifact；同一 artifact + checkpoint 是更新而非重复追加。心理学增长实验优先用 `--playbook-id modern_psychology_post --checkpoint 24h --group-by topic_direction_id` 比较 `sleep_recovery_shutdown_card`、`relationship_mixed_signal_camp_vote`、`social_battery_cancel_plan_boundary`、`after_hours_message_body_alarm` 等方向；课程比较则使用 `psychology_learning_series_id`、`psychology_learning_curriculum_version` 或 `psychology_learning_lesson_id`，并自动排除普通场景帖。少于 3 条记录的 group 只作为早期信号，不应直接改 prompt。
-- 除 AI evidence mode 外，`--fresh-topic-research` 是已选 playbook 的实时 Topic Radar 发帖路径，且此时 `--scene` 可选；泛热点应先用 `hotspot-discovery`。fresh 路径使用 public `topic_radar.cli.run_scan()` 的八平台默认集合，交互式只展示 evidence-backed 选题；`insufficient_evidence` 会在 workflow 前返回 diagnostic artifact、report path 和 platform errors，`partial` 会保留这些诊断并由 operator 决定是否继续。选择后正文只收到选定角度、讨论诱因和构造场景；raw title、作者、URL、feed id、token 与终端 `scan_summary` 都留在 Topic Radar surface。普通路径不回读旧 artifact；fresh builder 仅接受本次 receipt 明示且可读的 artifact，workflow 不会再发起第二次 live scan。`ai_tech_daily_post` 则返回 `ai_tech_fresh_research_separate`，必须先发现、再在 evidence 文件中独立记录事实或测试。
+- 除 AI evidence mode 和 `modern_psychology_post --psychology-content-mode learning_series` 外，`--fresh-topic-research` 是已选 playbook 的实时 Topic Radar 发帖路径，且此时 `--scene` 可选；泛热点应先用 `hotspot-discovery`。learning series 的 Topic Radar 结果只能用于发现是否值得规划专题，不能成为 lesson facts、evidence、outline 或 run input。fresh 路径使用 public `topic_radar.cli.run_scan()` 的八平台默认集合，交互式只展示 evidence-backed 选题；`insufficient_evidence` 会在 workflow 前返回 diagnostic artifact、report path 和 platform errors，`partial` 会保留这些诊断并由 operator 决定是否继续。选择后正文只收到选定角度、讨论诱因和构造场景；raw title、作者、URL、feed id、token 与终端 `scan_summary` 都留在 Topic Radar surface。普通路径不回读旧 artifact；fresh builder 仅接受本次 receipt 明示且可读的 artifact，workflow 不会再发起第二次 live scan。`ai_tech_daily_post` 则返回 `ai_tech_fresh_research_separate`，必须先发现、再在 evidence 文件中独立记录事实或测试。
 - `collect-xhs-patterns` / `analyze-xhs-patterns` 是周期采集和格式沉淀入口。普通 `run-playbook` 默认只读取本地 pattern snapshot，不会每次发帖都检索实时高互动帖子；需要实验特定 snapshot 时，用 `--format-pattern-path` 覆盖。
 - 2026-06-04 的正文人味优化尝试用 `collect-xhs-patterns --lane body_human_voice --keywords "活人感,小红书文案,发疯文学,情绪管理,人类丰容"` 做 bounded live XHS 抓取，但当前 MCP `search_feeds` 对 `活人感` / `小红书文案` 返回 HTTP 500，落盘 artifact `outputs/artifacts/xhs-body-human-voice/samples-2026-06-04.json` 的 `sample_count` 为 0。因此这次策略只把 2026-05-15 / 2026-05-17 本地真实样本和公开趋势摘要作为依据，不声称拿到了 2026-06-04 热门帖样本。后续要刷新热门帖，先恢复 MCP 登录/健康，再重跑 bounded `collect-xhs-patterns`。
 - `reddit_curation_daily_post` 会在 `reddit_discussion_scan` skill 激活时尝试读取 Reddit 英文讨论作为内部素材。按 Reddit Responsible Builder Policy，读取 Reddit API 前需要为该用途取得 explicit approval，并保持透明、限量、只读、不规避限制、不做 Reddit 数据商业化或 AI 训练。配置已获批 app 的 `REDDIT_CLIENT_ID`、`REDDIT_CLIENT_SECRET` 和 `REDDIT_USER_AGENT` 后会用 OAuth 形成真实最新 Reddit runtime context；如果 app 创建受验证码阻塞，可先设置 `REDDIT_PUBLIC_JSON_FALLBACK=true` 和非占位 `REDDIT_USER_AGENT`，用 Reddit public `.json` 页面低频只读扫描。未配置时 dry-run 会完成但上下文标记为 `missing_credentials`。读者可见成稿只呈现中文热点帖，不暴露 Reddit、subreddit、英文讨论、翻译过程或来源 URL。

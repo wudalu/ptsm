@@ -21,6 +21,7 @@ related_paths:
   - src/ptsm/application/use_cases/xhs_domain_opportunity.py
   - src/ptsm/application/use_cases/hotspot_discovery.py
   - src/ptsm/application/use_cases/run_playbook.py
+  - src/ptsm/application/use_cases/psychology_learning_series.py
   - src/ptsm/domain/ai_tech_content.py
   - src/ptsm/domain/psychology_learning.py
   - src/ptsm/domain/hotspot_routing.py
@@ -55,6 +56,7 @@ PTSM 当前的观测性核心是本地文件系统里的 run store 和 artifacts
 - `outputs/artifacts/xhs-pattern-library/patterns-*.json`
 - `outputs/artifacts/xhs-pattern-library/current.json`
 - `outputs/artifacts/xhs-post-metrics/metrics.jsonl`
+- `outputs/artifacts/psychology-learning-series/`（受控 proposal、confirmed catalog 和 version-bound production progress；不是手工编辑接口）
 - `outputs/generated_images/*`
 - `.ptsm/evals/<eval_run_id>/summary.json`
 - `.ptsm/evals/<eval_run_id>/results.jsonl`
@@ -67,7 +69,8 @@ PTSM 当前的观测性核心是本地文件系统里的 run store 和 artifacts
 - workflow artifact 现在会持久化 `activated_skill_details` 和 `runtime_skill_details`，与已有的 `runtime_skill_contents` 一起回答本次运行读了哪些静态 skills 和哪些动态上下文资源。
 - workflow artifact 现在还会持久化 `step_outputs`，把 planner、executor、reflector 的关键产物保存成 bounded evidence，供 rule/contract/LLM evaluator 对 step outcome 做评价。
 - completed `ai_tech_daily_post` artifact 额外保留一个最小 evidence receipt：`ai_tech_content_mode`、`ai_tech_evidence_manifest` 与 `ai_tech_evidence_gate`。manifest 只含 opaque `source_refs` / `test_evidence_refs` / event fingerprints / 可选 trend IDs，gate 固定记录 draft contract 已通过；它不保存 operator evidence 文件、原始标题、source URL、author、feed ID 或完整 Topic Radar scan。若 custom workflow 的 artifact 不在受控 artifact root、final content 不一致，或含 provenance 字段，应用层会在图片/发布前标为 AI artifact invalid，而不是 merge receipt。
-- completed `modern_psychology_post` learning-series artifact 额外保留 `psychology_learning_mode`、`psychology_learning_series_id`、`psychology_learning_curriculum_version`、`psychology_learning_lesson_id`、`psychology_learning_lesson_number`、opaque `psychology_learning_evidence_manifest` 和通过的 `psychology_learning_gate`。它不保留自由 scene、原始研究链接、作者或课程外心理学主张；`psychology.learning_receipt` 可离线重建 catalog 并审计 the entire artifact，而不只检查 receipt。受控 artifact root 内若被 custom workflow 写入 raw provenance，应用层会先删除它，再返回 invalid 状态，避免留下可被后续流程误用的文件。
+- completed `modern_psychology_post` learning-series artifact 额外保留 `psychology_learning_mode`、`psychology_learning_series_id`、`psychology_learning_curriculum_version`、`psychology_learning_lesson_id`、`psychology_learning_lesson_number`、opaque `psychology_learning_evidence_manifest` 和通过的 `psychology_learning_gate`。custom `user_confirmed` artifact 还必须有 `psychology_learning_catalog_receipt`：只含 `schema_version`、origin、controlled template version、catalog digest、approval id、proposal fingerprint 与 publication plan；builtin artifact 不写该 receipt。它不保留自由 scene、raw proposal topic/outline goal、原始研究链接、作者、source、URL 或 local path；`psychology.learning_receipt` 可离线重建 catalog 并审计 the entire artifact，而不只检查 receipt。受控 artifact root 内若被 custom workflow 写入 raw provenance，应用层会先删除它，再返回 invalid 状态，避免留下可被后续流程误用的文件。
+- custom confirmed catalog 的 roadmap sidecar 记录 `operator_content_production`：completed lesson IDs、总数和推荐所需的 publication order。它只表示安全 artifact 已产出的运营内容，不是读者学习进度，也不表示已发布；completed dry-run 或内容成功后的 publish failure 可以更新它，preflight/workflow/eval/final-artifact failure 不可以。sidecar 以 series/version 绑定，write path 保证并发 idempotent update 不丢课次。
 - artifact 写入会保留同一个 `run_key` 下的多次 dry-run；当目标文件已存在时追加数字后缀，避免内容实验批量生成时覆盖前一个候选。
 - Topic Radar scan artifact 现在是 schema v2：`scan_quality` 明确记录 `completed` / `partial` / `insufficient_evidence`，`platform_errors` 记录安全化 collector/LLM diagnostics（包括 isolated server 的工具发现 timeout），`evidence` 记录 canonical source rows 和平台内归一化热度，`topic_clusters` 记录保守 event clusters。LLM prompt 在 48 条 evidence / 24 个 cluster 上限内 round-robin 覆盖平台，且 cluster 只引用 prompt 内可见的 evidence。`recommended_angles` 带 `cluster_id`、`event_fingerprint`、`evidence_ids`、`angle_signature`、`novelty_state` 和 `ranking_score`，因此推荐、跨平台信号和 scan-quality 都可从同一 artifact 回溯。跨平台信号只记录真实平台共现；没有时序观测时 `velocity` 为 `unknown`，不得由单次热度快照推断加速。
 - Topic Radar 同日重跑会为 JSON/Markdown 使用成对 suffix，避免覆盖旧 artifact；`outputs/artifacts/topic-radar-history.jsonl` append-only 记录已选 event+angle 的近期 cooldown。它是推荐去重依据，不是长期热度 dashboard。

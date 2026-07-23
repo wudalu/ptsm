@@ -59,10 +59,27 @@ def test_openclaw_psychology_skill_documents_two_step_guidance_flow() -> None:
     assert "--group-by psychology_learning_series_id" in text
     assert "--group-by psychology_learning_curriculum_version" in text
     assert "--group-by psychology_learning_lesson_id" in text
-    assert "Do not invent lessons, concepts, exercises, source references" in text
+    assert "Do not run a lesson outside the PTSM plan" in text
     assert "fresh-topic-research" in text
     assert "Do not invent views, likes, saves, comments, shares" in text
     assert "不要展示内部研究路径" in text
     assert "不要展示原始研究笔记" in text
     assert "ptsm-xhs-topic-guide" in text
     assert "psychology-specific wrapper" in text
+
+
+def test_openclaw_psychology_skill_documents_confirmed_custom_learning_series() -> None:
+    text = SKILL_PATH.read_text(encoding="utf-8")
+
+    assert "plan-psychology-series" in text
+    assert "--curriculum-outline-file" in text
+    assert "confirm-psychology-series" in text
+    assert "--confirm" in text
+    assert "user_confirmed" in text
+    assert "explicit frozen curriculum version" in text
+    assert "recommended_next_lesson" in text
+    assert "recommendation is not an auto-selection" in text
+    assert "operator_content_production" in text
+    assert "not reader learning progress" in text
+    assert "after_work_rumination" in text
+    assert "不会默认生成第一课" in text

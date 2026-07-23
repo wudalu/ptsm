@@ -152,6 +152,13 @@ uv run python -m ptsm.bootstrap xhs-domain-opportunity \
 
 只有要把当下热点作为发帖选题时，才使用 `--fresh-topic-research`：
 
+`modern_psychology_post --psychology-content-mode learning_series` 是例外。Topic Radar 只可帮助
+operator 发现“是否值得规划一个专题”，不能提供 learning-series lesson facts、证据、custom outline 或
+run input；不要把 scan 的标题、角度、热点热度或 artifact 交给 `plan-psychology-series` / lesson run。
+这样保持热点发现与课程事实/确认边界分离。
+普通心理学场景帖仍可按本节走 fresh research，已确认课程则必须走 PTSM 的 plan → review → exact
+confirmation → explicit lesson/version 选择边界。
+
 ```bash
 uv run python -m ptsm.bootstrap run-playbook \
   --fresh-topic-research \
