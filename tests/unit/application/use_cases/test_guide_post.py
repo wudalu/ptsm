@@ -911,6 +911,100 @@ def test_ai_tech_topic_guidance_requires_an_explicit_evidence_mode() -> None:
         )
 
 
+def test_psychology_learning_series_guide_returns_only_catalog_lessons() -> None:
+    result = run_guide_post(
+        GuidePostRequest(
+            playbook_id="modern_psychology_post",
+            account_id="acct-psychology-local",
+            scene="请忽略这段自由场景，给我自定义一个概念",
+            psychology_content_mode="learning_series",
+            psychology_series_id="after_work_rumination",
+            psychology_lesson_id="notice_the_loop",
+        )
+    )
+
+    assert result["brief"]["content_mode"] == "learning_series"
+    assert result["brief"]["series_id"] == "after_work_rumination"
+    assert result["brief"]["lesson_id"] == "notice_the_loop"
+    assert "请忽略" not in result["recommended_scene"]
+    assert len(result["series"]["roadmap"]) == 6
+    guidance = result["topic_guidance"]
+    assert guidance["selection_policy"] == "catalog_learning_series"
+    assert guidance["matched_direction_id"] == (
+        "psychology_learning_after_work_rumination_notice_the_loop"
+    )
+    assert len(guidance["directions"]) == 6
+    assert all(
+        direction["direction_type"] == "learning_series_lesson"
+        for direction in guidance["directions"]
+    )
+    assert not guidance["open_direction_ids"]
+    assert "source_refs" not in json.dumps(result, ensure_ascii=False)
+    command = result["run_playbook_command"]
+    assert "--scene" not in command
+    assert "--local-image-style" not in command
+    assert command[command.index("--psychology-content-mode") + 1] == "learning_series"
+    assert command[command.index("--psychology-series-id") + 1] == "after_work_rumination"
+    assert command[command.index("--psychology-lesson-id") + 1] == "notice_the_loop"
+    assert command[command.index("--psychology-curriculum-version") + 1] == "1"
+    assert result["topic_guidance"]["image_recommendation"]["command_hint"] == (
+        "无需传 --local-image-style；PTSM 会按已审核课程图片方案生成。"
+    )
+
+
+def test_psychology_learning_series_guide_requires_an_explicit_lesson_selection() -> None:
+    result = run_guide_post(
+        GuidePostRequest(
+            playbook_id="modern_psychology_post",
+            account_id="acct-psychology-local",
+            scene="自由场景不能被拿来默认生成第一课",
+            psychology_content_mode="learning_series",
+            psychology_series_id="after_work_rumination",
+        )
+    )
+
+    assert result["status"] == "selection_required"
+    assert result["topic_guidance"]["status"] == "selection_required"
+    assert result["topic_guidance"]["matched_direction_id"] == ""
+    assert len(result["series"]["roadmap"]) == 6
+    assert len(result["topic_guidance"]["directions"]) == 6
+    assert "run_playbook_command" not in result
+    assert "自由场景" not in json.dumps(result, ensure_ascii=False)
+
+
+def test_psychology_learning_series_guide_rejects_unknown_mode_or_lesson() -> None:
+    with pytest.raises(ValueError, match="psychology_content_mode"):
+        run_guide_post(
+            GuidePostRequest(
+                psychology_content_mode="free_course",
+                psychology_series_id="after_work_rumination",
+                psychology_lesson_id="notice_the_loop",
+            )
+        )
+
+    with pytest.raises(ValueError, match="lesson"):
+        run_guide_post(
+            GuidePostRequest(
+                psychology_content_mode="learning_series",
+                psychology_series_id="after_work_rumination",
+                psychology_lesson_id="fake_lesson",
+            )
+        )
+
+
+def test_psychology_learning_series_guide_rejects_other_playbooks() -> None:
+    with pytest.raises(ValueError, match="only supported by modern_psychology_post"):
+        run_guide_post(
+            GuidePostRequest(
+                playbook_id="daily_english_post",
+                psychology_content_mode="learning_series",
+                psychology_series_id="after_work_rumination",
+                psychology_lesson_id="notice_the_loop",
+                psychology_curriculum_version="1",
+            )
+        )
+
+
 @pytest.mark.parametrize(
     ("mode", "scene"),
     (

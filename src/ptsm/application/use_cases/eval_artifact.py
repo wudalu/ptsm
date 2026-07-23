@@ -18,6 +18,7 @@ from ptsm.evaluations.contracts_eval import (
     contract_ai_tech_evidence_receipt,
     contract_artifact_root_fields,
     contract_playbook_node_contract,
+    contract_psychology_learning_receipt,
     contract_skill_details_match,
 )
 from ptsm.evaluations.playbook_contracts import load_playbook_eval_contract
@@ -26,6 +27,7 @@ from ptsm.infrastructure.evaluations.eval_store import EvalStore
 
 from ptsm.evaluations.rules import ALL_RULE_EVALUATORS
 from ptsm.evaluations.contracts_eval import ALL_CONTRACT_EVALUATORS
+from ptsm.domain.psychology_learning import PSYCHOLOGY_LEARNING_MODE
 
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[2]
@@ -44,6 +46,7 @@ CONTRACT_EVALUATOR_FNS = {
     "artifact.root_fields": contract_artifact_root_fields,
     "skill_activation.details_match": contract_skill_details_match,
     "ai_tech.evidence_receipt": contract_ai_tech_evidence_receipt,
+    "psychology.learning_receipt": contract_psychology_learning_receipt,
 }
 
 
@@ -100,6 +103,9 @@ def run_eval_artifact(
         Path(playbook_definitions_root),
         source_metadata["playbook_id"],
     )
+    catalog_managed_psychology_learning = _is_catalog_managed_psychology_learning(
+        artifact
+    )
 
     suite_id = f"{artifact.get('playbook_id', 'unknown')}.default"
     handle = store.start(
@@ -131,7 +137,7 @@ def run_eval_artifact(
             all_results.append(result)
             store.append_result(handle.eval_run_id, result)
 
-        if playbook_contract is not None:
+        if playbook_contract is not None and not catalog_managed_psychology_learning:
             result = contract_playbook_node_contract(target, playbook_contract)
             result.eval_run_id = handle.eval_run_id
             all_results.append(result)
@@ -142,6 +148,7 @@ def run_eval_artifact(
             and llm_judge_backend is not None
             and target.phase == "executor"
             and _content_quality_judge_enabled(playbook_contract)
+            and not catalog_managed_psychology_learning
         ):
             result = run_content_quality_judge(
                 target,
@@ -173,6 +180,38 @@ def run_eval_artifact(
         "gate": gate,
         "source": {"kind": "artifact", "path": str(artifact_path), **source_metadata},
     }
+
+
+def _is_catalog_managed_psychology_learning(artifact: dict[str, Any]) -> bool:
+    """Identify a lesson even when its receipt has been tampered with.
+
+    The normal modern-psychology node contract evaluates open-ended posts.  A
+    catalog lesson has a stronger, exact visible-copy and receipt evaluator,
+    and a malformed catalog marker must still go through that evaluator rather
+    than being retried against incompatible generic wording requirements.
+    """
+    if artifact.get("playbook_id") != "modern_psychology_post":
+        return False
+    if "psychology_learning_mode" in artifact:
+        return True
+    if any(
+        field_name in artifact
+        for field_name in (
+            "psychology_learning_series_id",
+            "psychology_learning_curriculum_version",
+            "psychology_learning_lesson_id",
+            "psychology_learning_lesson_number",
+            "psychology_learning_evidence_manifest",
+            "psychology_learning_gate",
+        )
+    ):
+        return True
+    topic_selection = artifact.get("topic_selection")
+    return bool(
+        isinstance(topic_selection, dict)
+        and topic_selection.get("source") == "psychology-learning-series"
+        and isinstance(topic_selection.get("psychology_learning"), dict)
+    )
 
 
 def _aggregate_counts(results: list[EvalResult], num_targets: int) -> dict[str, int]:

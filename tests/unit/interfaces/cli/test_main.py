@@ -912,6 +912,98 @@ def test_guide_post_cli_outputs_non_interactive_psychology_brief(
     assert "run-playbook --scene" in payload["run_playbook_command_text"]
 
 
+def test_guide_post_cli_outputs_catalog_psychology_learning_series(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    exit_code = main(
+        [
+            "guide-post",
+            "--playbook-id",
+            "modern_psychology_post",
+            "--account-id",
+            "acct-psychology-local",
+            "--psychology-content-mode",
+            "learning_series",
+            "--psychology-series-id",
+            "after_work_rumination",
+            "--psychology-lesson-id",
+            "notice_the_loop",
+            "--non-interactive",
+            "--format",
+            "json",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload["brief"]["content_mode"] == "learning_series"
+    assert payload["series"]["series_id"] == "after_work_rumination"
+    assert len(payload["series"]["roadmap"]) == 6
+    assert payload["topic_guidance"]["selection_policy"] == "catalog_learning_series"
+    assert all(
+        direction["direction_type"] == "learning_series_lesson"
+        for direction in payload["topic_guidance"]["directions"]
+    )
+    assert "source_refs" not in json.dumps(payload, ensure_ascii=False)
+
+
+def test_guide_post_cli_lists_learning_lessons_before_one_is_selected(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    exit_code = main(
+        [
+            "guide-post",
+            "--playbook-id",
+            "modern_psychology_post",
+            "--account-id",
+            "acct-psychology-local",
+            "--psychology-content-mode",
+            "learning_series",
+            "--psychology-series-id",
+            "after_work_rumination",
+            "--non-interactive",
+            "--format",
+            "json",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload["status"] == "selection_required"
+    assert len(payload["series"]["roadmap"]) == 6
+    assert "run_playbook_command" not in payload
+
+
+@pytest.mark.parametrize("command", ("run-playbook", "guide-post"))
+def test_cli_rejects_psychology_learning_flags_for_other_playbooks(
+    command: str,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    arguments = [
+        command,
+        "--playbook-id",
+        "daily_english_post",
+        "--account-id",
+        "acct-daily-english-local",
+        "--psychology-content-mode",
+        "learning_series",
+        "--psychology-series-id",
+        "after_work_rumination",
+        "--psychology-lesson-id",
+        "notice_the_loop",
+    ]
+    if command == "guide-post":
+        arguments.append("--non-interactive")
+
+    with pytest.raises(SystemExit) as exc_info:
+        main(arguments)
+
+    assert exc_info.value.code == 2
+    assert "only support modern_psychology_post" in capsys.readouterr().err
+
+
 def test_guide_post_cli_outputs_non_interactive_human_enrichment_brief(
     capsys: pytest.CaptureFixture[str],
 ) -> None:

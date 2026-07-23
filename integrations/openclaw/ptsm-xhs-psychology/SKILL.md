@@ -10,6 +10,79 @@ Use this skill when the user asks OpenClaw to create, prepare, draft, save, publ
 
 For non-psychology XHS playbooks, use `ptsm-xhs-topic-guide`; this file remains the psychology-specific wrapper.
 
+## Psychology Learning Series
+
+When the user explicitly asks for a psychology learning series, a study topic,
+or a specific lesson, use the closed `learning_series` path instead of the
+generic scene flow. The first catalog is `after_work_rumination`; PTSM owns its
+lesson concepts, explanations, micro-exercises, boundaries, and opaque audit
+references.
+
+1. Ask PTSM for the catalog roadmap. Do not turn the user's scene, a hotspot,
+or an operator-written concept into a lesson.
+
+```bash
+uv run python -m ptsm.bootstrap guide-post \
+  --playbook-id modern_psychology_post \
+  --account-id acct-psychology-local \
+  --psychology-content-mode learning_series \
+  --psychology-series-id after_work_rumination \
+  --non-interactive \
+  --format json
+```
+
+2. Show only the returned `series.roadmap` and
+`topic_guidance.directions`. Label each returned direction as
+`learning_series_lesson` and the selection policy as
+`catalog_learning_series`. Ask the user to choose one returned lesson; do not
+invent a seventh lesson or substitute a free scene.
+
+The roadmap response is intentionally `selection_required`: it has no
+`run-playbook` command，PTSM 不会默认生成第一课。
+
+3. If the user chooses a different lesson, call `guide-post` again with its
+returned `lesson_id`, then show the selected lesson's returned direction and
+image recommendation. Do not expose `source_refs`, raw research, URLs, or
+course-contract JSON.
+
+```bash
+uv run python -m ptsm.bootstrap guide-post \
+  --playbook-id modern_psychology_post \
+  --account-id acct-psychology-local \
+  --psychology-content-mode learning_series \
+  --psychology-series-id after_work_rumination \
+  --psychology-lesson-id "<returned lesson id>" \
+  --psychology-curriculum-version "<returned curriculum version>" \
+  --non-interactive \
+  --format json
+```
+
+The selected response owns a catalog-owned image plan and that lesson's
+approved title/cover hook. Do not append `--local-image-style` or
+`--publish-image-path`; the learning preflight rejects manual image overrides.
+
+4. Generate only after exact lesson confirmation. Pass the catalog IDs and the
+matching returned direction id; omit `--scene` and never add
+`--fresh-topic-research` to this command.
+
+```bash
+uv run python -m ptsm.bootstrap run-playbook \
+  --caller openclaw \
+  --guidance-ack \
+  --account-id acct-psychology-local \
+  --playbook-id modern_psychology_post \
+  --psychology-content-mode learning_series \
+  --psychology-series-id after_work_rumination \
+  --psychology-lesson-id "<returned lesson id>" \
+  --psychology-curriculum-version 1 \
+  --topic-direction-id "<matching returned direction id>" \
+  --publish-mode dry-run
+```
+
+If PTSM returns `topic_guidance_required`, display the returned catalog lesson
+directions and wait for the user's exact lesson confirmation before retrying
+with `--guidance-ack`.
+
 ## Required Flow
 
 1. Call PTSM guidance first. Do not write or publish the post before this step.
@@ -73,9 +146,28 @@ uv run python -m ptsm.bootstrap xhs-metrics-report \
   --playbook-id modern_psychology_post \
   --checkpoint 24h \
   --group-by image_style
+
+uv run python -m ptsm.bootstrap xhs-metrics-report \
+  --playbook-id modern_psychology_post \
+  --checkpoint 24h \
+  --group-by psychology_learning_series_id
+
+uv run python -m ptsm.bootstrap xhs-metrics-report \
+  --playbook-id modern_psychology_post \
+  --checkpoint 24h \
+  --group-by psychology_learning_curriculum_version
+
+uv run python -m ptsm.bootstrap xhs-metrics-report \
+  --playbook-id modern_psychology_post \
+  --checkpoint 24h \
+  --group-by psychology_learning_lesson_id
 ```
 
-Treat groups with fewer than 3 posts as early signals. Use the report to choose the next PTSM-returned psychology direction or image recommendation; do not claim a direction is proven until real metrics support it.
+Treat groups with fewer than 3 posts as early signals. A learning row is accepted
+only from a receipt-verified catalog artifact; recording the same artifact and
+checkpoint updates that measurement rather than creating a second observation.
+Use the report to choose the next PTSM-returned psychology direction or image
+recommendation; do not claim a direction is proven until real metrics support it.
 
 ## Guardrails
 
@@ -83,6 +175,9 @@ Treat groups with fewer than 3 posts as early signals. Use the report to choose 
 - 不要展示原始研究笔记。
 - Do not mention hidden research documents, file paths, raw source URLs, or provenance to the user.
 - Do not copy topic logic into this skill; PTSM owns the guidance payload.
+- Do not invent lessons, concepts, exercises, source references, or learning outcomes; only use the returned `learning_series_lesson` catalog direction.
+- Do not add `--local-image-style` or `--publish-image-path` to a learning-series run; its catalog-owned image plan is part of the approved lesson contract.
+- Do not use `fresh-topic-research` as a way to write psychology lesson facts. Hotspot discovery is a separate decision step, not lesson evidence.
 - Do not invent, expand, or replace PTSM-returned open_scene direction(s); only display them when they are present in `topic_guidance.directions`.
 - Do not invent, expand, or replace PTSM-returned psychology sublane direction(s), including 睡眠恢复、轻养生 or 办公室恢复; only display them when PTSM returns them.
 - Do not invent, expand, or replace PTSM-returned growth-oriented psychology direction(s), including `relationship_mixed_signal_camp_vote`, `social_battery_cancel_plan_boundary`, or `after_hours_message_body_alarm`; only display them when PTSM returns them.

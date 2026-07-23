@@ -46,6 +46,21 @@ def test_openclaw_psychology_skill_documents_two_step_guidance_flow() -> None:
     assert "xhs-metrics-report" in text
     assert "--group-by topic_direction_id" in text
     assert "--group-by image_style" in text
+    assert "--psychology-content-mode learning_series" in text
+    assert "--psychology-series-id" in text
+    assert "--psychology-lesson-id" in text
+    assert "--psychology-curriculum-version" in text
+    assert "catalog_learning_series" in text
+    assert "learning_series_lesson" in text
+    assert "selection_required" in text
+    assert "不会默认生成第一课" in text
+    assert "catalog-owned image plan" in text
+    assert "--local-image-style" in text
+    assert "--group-by psychology_learning_series_id" in text
+    assert "--group-by psychology_learning_curriculum_version" in text
+    assert "--group-by psychology_learning_lesson_id" in text
+    assert "Do not invent lessons, concepts, exercises, source references" in text
+    assert "fresh-topic-research" in text
     assert "Do not invent views, likes, saves, comments, shares" in text
     assert "不要展示内部研究路径" in text
     assert "不要展示原始研究笔记" in text

@@ -101,6 +101,38 @@ def test_check_xhs_publish_status_requests_manual_check_without_identifiers(
     assert "artifact" in result["reason"]
 
 
+def test_check_xhs_publish_status_uses_ephemeral_context_for_sanitized_artifact(
+    tmp_path: Path,
+) -> None:
+    artifact_path = tmp_path / "artifact.json"
+    artifact_path.write_text(
+        json.dumps(
+            {"publish_result": {"status": "published"}},
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    result = check_xhs_publish_status(
+        artifact_path=artifact_path,
+        publisher=FakeFallbackPublisher(
+            fallback_result={
+                "post_id": "note-123",
+                "post_url": "https://www.xiaohongshu.com/explore/note-123",
+                "source": "mcp_search",
+            }
+        ),
+        publish_result={"status": "published"},
+        fallback_title="下班后又在重播那句话",
+        fallback_body="今晚试试把原话和脑补分开写。",
+        fallback_visibility="公开可见",
+    )
+
+    assert result["status"] == "published_search_verified"
+    assert result["post_id"] == "note-123"
+    assert result["source"] == "mcp_search"
+
+
 def test_check_xhs_publish_status_uses_search_fallback_for_public_posts(
     tmp_path: Path,
 ) -> None:

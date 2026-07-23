@@ -3,6 +3,10 @@ from __future__ import annotations
 import json
 
 from ptsm.config.settings import get_settings
+from ptsm.domain.psychology_learning import (
+    resolve_psychology_learning_selection,
+    validate_psychology_learning_draft_contract,
+)
 from ptsm.interfaces.cli.main import main
 
 
@@ -58,11 +62,66 @@ def test_run_playbook_cli_outputs_modern_psychology_publish_receipt(
     assert payload["status"] == "completed"
     assert payload["playbook_id"] == "modern_psychology_post"
     content = payload["final_content"]
-    assert 350 <= len(content["body"]) <= 580
+    assert 200 <= len(content["body"]) <= 380
     assert not any(term in content["title"] for term in PSYCHOLOGY_TITLE_FORBIDDEN)
     assert "专业帮助" in content["body"]
     assert "#心理学" in payload["final_content"]["hashtags"]
     assert "治好焦虑" not in payload["final_content"]["body"]
+
+    get_settings.cache_clear()
+
+
+def test_run_playbook_cli_outputs_psychology_learning_series_lesson(
+    capsys, monkeypatch
+) -> None:
+    monkeypatch.setenv("DEFAULT_LLM_PROVIDER", "deterministic")
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    get_settings.cache_clear()
+
+    exit_code = main(
+        [
+            "run-playbook",
+            "--account-id",
+            "acct-psychology-local",
+            "--playbook-id",
+            "modern_psychology_post",
+            "--psychology-content-mode",
+            "learning_series",
+            "--psychology-series-id",
+            "after_work_rumination",
+            "--psychology-lesson-id",
+            "notice_the_loop",
+            "--psychology-curriculum-version",
+            "1",
+            "--topic-direction-id",
+            "psychology_learning_after_work_rumination_notice_the_loop",
+            "--publish-mode",
+            "dry-run",
+            "--thread-id",
+            "thread-modern-psychology-learning-series",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    content = payload["final_content"]
+    bundle = resolve_psychology_learning_selection(
+        series_id="after_work_rumination",
+        lesson_id="notice_the_loop",
+        curriculum_version="1",
+    )
+
+    assert exit_code == 0
+    assert payload["status"] == "completed"
+    assert validate_psychology_learning_draft_contract(
+        bundle.runtime_contract, content
+    ) == []
+    assert 200 <= len(content["body"]) <= 380
+    assert payload["psychology_learning_series_id"] == "after_work_rumination"
+    assert payload["psychology_learning_lesson_id"] == "notice_the_loop"
+    assert payload["psychology_learning_gate"]["status"] == "passed"
+    assert payload["psychology_learning_evidence_manifest"] == bundle.manifest
+    assert "source:" not in json.dumps(content, ensure_ascii=False)
+    assert "https://" not in json.dumps(payload, ensure_ascii=False)
 
     get_settings.cache_clear()
 
@@ -95,7 +154,7 @@ def test_run_playbook_cli_outputs_modern_psychology_mechanics(
     assert exit_code == 0
     assert content["title"] != "下班后还在复盘那句话"
     assert content["image_text"] != "脑子还没下班"
-    assert 350 <= len(content["body"]) <= 580
+    assert 200 <= len(content["body"]) <= 380
     assert not any(term in content["title"] for term in PSYCHOLOGY_TITLE_FORBIDDEN)
     assert "下班路上还在反复复盘会议里一句话" in content["body"]
     assert content["body"].index("下班路上还在反复复盘会议里一句话") < content[
@@ -180,7 +239,7 @@ def test_run_playbook_cli_outputs_sleep_recovery_growth_sublane(
     assert exit_code == 0
     assert len(content["title"]) <= 22
     assert any(cue in content["title"] for cue in DRAMATIC_TITLE_CUES)
-    assert 350 <= len(content["body"]) <= 580
+    assert 200 <= len(content["body"]) <= 380
     assert any(signal in content["body"] for signal in ("睡眠恢复", "轻养生", "下班信号"))
     assert any(tool in content["body"] for tool in ("5分钟", "5 分钟", "下班信号"))
     assert any(prompt in content["body"] for prompt in ("哪派", "A.", "B.", "____"))

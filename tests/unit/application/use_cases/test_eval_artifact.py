@@ -5,6 +5,11 @@ import pytest
 import tempfile
 from pathlib import Path
 from ptsm.application.use_cases.eval_artifact import _gate_counts, run_eval_artifact
+from ptsm.domain.psychology_learning import (
+    list_psychology_learning_series,
+    render_psychology_learning_draft,
+    resolve_psychology_learning_selection,
+)
 from ptsm.evaluations.contracts import EvalResult
 
 
@@ -46,6 +51,54 @@ SAMPLE_ARTIFACT = {
     },
     "publish_result": {"status": "dry_run"},
 }
+
+
+def _learning_artifact(lesson_id: str) -> dict[str, object]:
+    bundle = resolve_psychology_learning_selection(
+        series_id="after_work_rumination",
+        lesson_id=lesson_id,
+    )
+    contract = bundle.runtime_contract
+    return {
+        "playbook_id": "modern_psychology_post",
+        "account": {
+            "account_id": "acct-psychology-local",
+            "platform": "xiaohongshu",
+        },
+        "platform": "xiaohongshu",
+        "scene": (
+            f"心理学学习专题：{contract['series_badge']}｜{contract['lesson_title']}"
+        ),
+        "publish_mode": "dry-run",
+        "activated_skills": [],
+        "activated_skill_details": [],
+        "final_content": render_psychology_learning_draft(contract),
+        "format_patterns_used": {"status": "not_used"},
+        "publish_result": {"status": "dry_run"},
+        "topic_selection": {
+            "source": "psychology-learning-series",
+            "psychology_learning": {
+                "series_id": bundle.series_id,
+                "curriculum_version": contract["curriculum_version"],
+                "lesson_id": bundle.lesson_id,
+                "lesson_number": bundle.lesson_number,
+            },
+        },
+        "psychology_learning_mode": "learning_series",
+        "psychology_learning_series_id": bundle.series_id,
+        "psychology_learning_curriculum_version": contract["curriculum_version"],
+        "psychology_learning_lesson_id": bundle.lesson_id,
+        "psychology_learning_lesson_number": bundle.lesson_number,
+        "psychology_learning_evidence_manifest": bundle.manifest,
+        "psychology_learning_gate": {
+            "status": "passed",
+            "series_id": bundle.series_id,
+            "lesson_id": bundle.lesson_id,
+            "validator": "psychology_learning_draft_contract",
+            "validator_version": "1",
+            "errors": [],
+        },
+    }
 
 
 class FakeJudgeBackend:
@@ -218,6 +271,50 @@ class TestRunEvalArtifact:
                 row["evaluator_id"] == "playbook.node_contract"
                 and "title_max_chars" in row["reason"]
                 for row in result_rows
+            )
+
+    @pytest.mark.parametrize(
+        "lesson_id",
+        [
+            lesson.lesson_id
+            for lesson in list_psychology_learning_series(
+                series_id="after_work_rumination"
+            )
+        ],
+    )
+    def test_catalog_learning_lessons_use_their_exact_receipt_contract(
+        self,
+        lesson_id: str,
+    ) -> None:
+        """Each closed lesson is evaluated by its catalog contract, not open-post copy rules."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            artifact_path = root / f"{lesson_id}.json"
+            artifact_path.write_text(
+                json.dumps(_learning_artifact(lesson_id), ensure_ascii=False),
+                encoding="utf-8",
+            )
+
+            result = run_eval_artifact(
+                artifact_path=artifact_path,
+                evals_base_dir=root / "evals",
+            )
+
+            assert result["status"] == "passed"
+            results_path = root / "evals" / result["eval_run_id"] / "results.jsonl"
+            rows = [
+                json.loads(line)
+                for line in results_path.read_text(encoding="utf-8").splitlines()
+            ]
+            assert any(
+                row["evaluator_id"] == "psychology.learning_receipt"
+                and row["status"] == "passed"
+                for row in rows
+            )
+            assert not any(
+                row["evaluator_id"] == "playbook.node_contract"
+                and row["status"] == "failed"
+                for row in rows
             )
 
     def test_eval_artifact_fails_deliberately_weak_content_quality_fixture(self):

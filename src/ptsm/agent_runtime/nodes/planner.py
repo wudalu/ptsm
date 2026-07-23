@@ -10,6 +10,9 @@ from ptsm.domain.ai_tech_content import (
     is_ai_tech_drafting_safe_text,
     parse_ai_tech_runtime_contract,
 )
+from ptsm.domain.psychology_learning import (
+    parse_psychology_learning_runtime_contract,
+)
 from ptsm.playbooks.loader import PlaybookLoader
 from ptsm.playbooks.registry import PlaybookRegistry
 from ptsm.skills.loader import SkillLoader
@@ -28,6 +31,7 @@ def build_planner_node(
     skill_loader: SkillLoader,
     skill_context_resolver: SkillContextResolver | None = None,
     ai_tech_evidence: Mapping[str, Any] | None = None,
+    psychology_learning_contract: Mapping[str, Any] | None = None,
 ):
     def planner(state: ExecutionState) -> ExecutionState:
         if playbook_id is not None:
@@ -57,7 +61,13 @@ def build_planner_node(
             for skill in loaded_skills
         ]
         has_ai_tech_evidence = ai_tech_evidence is not None
+        has_psychology_learning_contract = psychology_learning_contract is not None
         ai_tech_evidence_context = _build_ai_tech_evidence_runtime_context(ai_tech_evidence)
+        psychology_learning_context = _build_psychology_learning_runtime_context(
+            psychology_learning_contract
+        )
+        if has_ai_tech_evidence and has_psychology_learning_contract:
+            raise ValueError("planner cannot combine AI evidence and psychology learning contracts")
         if has_ai_tech_evidence:
             # Evidence-gated AI posts must not call live context builders: their
             # raw trend headlines and source metadata are selection signals, not
@@ -66,6 +76,16 @@ def build_planner_node(
                 "ai_tech_evidence_contract": (
                     ai_tech_evidence_context
                     or _raise_invalid_ai_tech_evidence_contract()
+                ),
+            }
+        elif has_psychology_learning_contract:
+            # Catalog learning lessons are already reviewed and selected before
+            # graph creation. Do not let live scene research or topic guidance
+            # introduce a new claim, exercise, or lesson direction.
+            runtime_skill_contexts = {
+                "psychology_learning_contract": (
+                    psychology_learning_context
+                    or _raise_invalid_psychology_learning_contract()
                 ),
             }
         else:
@@ -212,6 +232,31 @@ def _build_ai_tech_evidence_runtime_context(
 
 def _raise_invalid_ai_tech_evidence_contract() -> str:
     raise ValueError("invalid AI tech evidence contract reached planner")
+
+
+def _build_psychology_learning_runtime_context(
+    contract: Mapping[str, Any] | None,
+) -> str:
+    """Render the approved, source-free lesson fields for the drafting prompt."""
+    if not isinstance(contract, Mapping):
+        return ""
+    try:
+        normalized = parse_psychology_learning_runtime_contract(contract)
+    except ValidationError:
+        return ""
+    rendered = json.dumps(normalized, ensure_ascii=False, indent=2)
+    return (
+        "# Psychology Learning Series Contract\n"
+        "Teach only this approved lesson. Preserve its concept, explanation, "
+        "applicability, micro-exercise, scope limit, professional boundary, and "
+        "comment prompt. Do not add diagnoses, treatment promises, medication "
+        "advice, self-tests, source labels, or URLs.\n"
+        f"{rendered}"
+    )
+
+
+def _raise_invalid_psychology_learning_contract() -> str:
+    raise ValueError("invalid psychology learning contract reached planner")
 
 
 def _safe_ai_tech_drafting_payload(

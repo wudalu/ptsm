@@ -6,6 +6,7 @@ from ptsm.agent_runtime.state import ExecutionState
 
 ContentQualityJudge = Callable[[ExecutionState, dict[str, object]], dict[str, object]]
 AiTechDraftGate = Callable[[ExecutionState, dict[str, object]], list[str]]
+PsychologyLearningDraftGate = Callable[[ExecutionState, dict[str, object]], list[str]]
 
 
 def build_reflector_node(
@@ -13,21 +14,46 @@ def build_reflector_node(
     max_attempts: int,
     content_quality_judge: ContentQualityJudge | None = None,
     ai_tech_draft_gate: AiTechDraftGate | None = None,
+    psychology_learning_draft_gate: PsychologyLearningDraftGate | None = None,
 ):
     def reflector(state: ExecutionState) -> ExecutionState:
         rules = state["reflection_rules"]
         draft = state["draft_content"]
         body = str(draft["body"])
-        missing = _missing_requirements(rules=rules, draft=draft, body=body)
+        catalog_managed_psychology_lesson = psychology_learning_draft_gate is not None
+        # A learning-series lesson is an exact, reviewed catalog deliverable.
+        # The ordinary psychology reflection contract describes open-ended
+        # psychology posts, so applying it here can demand a different concept,
+        # save trigger, or comment handoff than the selected lesson.  The bound
+        # catalog gate is stricter for this mode and owns the entire visible
+        # draft instead.
+        missing = (
+            []
+            if catalog_managed_psychology_lesson
+            else _missing_requirements(rules=rules, draft=draft, body=body)
+        )
         executor_errors = state.get("ai_tech_executor_errors")
         if isinstance(executor_errors, list):
             missing.extend(
                 str(error).strip() for error in executor_errors if str(error).strip()
             )
+        psychology_executor_errors = state.get("psychology_learning_executor_errors")
+        if isinstance(psychology_executor_errors, list):
+            missing.extend(
+                str(error).strip()
+                for error in psychology_executor_errors
+                if str(error).strip()
+            )
         quality_eval: dict[str, object] | None = None
         if not missing and ai_tech_draft_gate is not None:
             missing.extend(ai_tech_draft_gate(state, draft))
-        if not missing and content_quality_judge is not None:
+        if not missing and psychology_learning_draft_gate is not None:
+            missing.extend(psychology_learning_draft_gate(state, draft))
+        if (
+            not missing
+            and content_quality_judge is not None
+            and not catalog_managed_psychology_lesson
+        ):
             quality_eval = content_quality_judge(state, draft)
             if quality_eval.get("status") != "passed":
                 missing.append(_quality_feedback(quality_eval))

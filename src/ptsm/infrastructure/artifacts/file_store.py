@@ -32,6 +32,15 @@ class FileArtifactStore:
         )
         return artifact_path
 
+    def replace(self, path: Path | str, payload: dict[str, object]) -> Path:
+        """Replace an owned artifact with a new, fully controlled envelope."""
+        artifact_path = Path(path)
+        artifact_path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        return artifact_path
+
     def _available_path(self, slug: str) -> Path:
         path = self.base_dir / f"{slug}.json"
         if not path.exists():

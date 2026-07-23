@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 from ptsm.config.settings import Settings, get_settings
 from ptsm.infrastructure.publishers.xiaohongshu_mcp_publisher import XiaohongshuMcpPublisher
@@ -17,25 +17,45 @@ def check_xhs_publish_status(
     search_retry_attempts: int = 1,
     search_retry_interval_seconds: float = 0.0,
     sleep: Callable[[float], None] = time.sleep,
+    publish_result: Mapping[str, object] | None = None,
+    fallback_title: str | None = None,
+    fallback_body: str | None = None,
+    fallback_visibility: str | None = None,
 ) -> dict[str, object]:
-    """Resolve publish status from artifact metadata and MCP publisher capabilities."""
-    payload = json.loads(artifact_path.read_text(encoding="utf-8"))
-    publish_result = payload.get("publish_result")
-    if not isinstance(publish_result, dict):
+    """Resolve status from an artifact or an ephemeral publish context.
+
+    Learning-series artifacts intentionally discard provider payloads after the
+    publish call.  The optional context keeps a same-run status lookup useful
+    without reintroducing those raw values into the artifact.
+    """
+    if publish_result is None:
+        payload = json.loads(artifact_path.read_text(encoding="utf-8"))
+        publish_receipt = payload.get("publish_result")
+    else:
+        publish_receipt = publish_result
+    if not isinstance(publish_receipt, Mapping):
         return {
             "status": "manual_check_required",
             "reason": "artifact does not contain publish_result metadata",
             "artifact_path": str(artifact_path),
         }
 
-    post_id = _first_string(publish_result, "post_id", "note_id", "id")
-    post_url = _first_string(publish_result, "post_url", "url")
-    platform_payload = publish_result.get("platform_payload")
-    title = _first_string(platform_payload, "title") if isinstance(platform_payload, dict) else None
-    body = _first_string(platform_payload, "content", "body") if isinstance(platform_payload, dict) else None
+    post_id = _first_string(publish_receipt, "post_id", "note_id", "id")
+    post_url = _first_string(publish_receipt, "post_url", "url")
+    platform_payload = publish_receipt.get("platform_payload")
+    title = (
+        _first_string(platform_payload, "title")
+        if isinstance(platform_payload, Mapping)
+        else None
+    ) or _safe_context_text(fallback_title)
+    body = (
+        _first_string(platform_payload, "content", "body")
+        if isinstance(platform_payload, Mapping)
+        else None
+    ) or _safe_context_text(fallback_body)
     visibility = (
         _first_string(platform_payload, "visibility") if isinstance(platform_payload, dict) else None
-    )
+    ) or _safe_context_text(fallback_visibility)
 
     if post_id or post_url:
         publisher = publisher or _build_publisher(settings)
@@ -104,6 +124,12 @@ def _first_string(payload: dict[str, Any], *keys: str) -> str | None:
         value = payload.get(key)
         if isinstance(value, str) and value.strip():
             return value
+    return None
+
+
+def _safe_context_text(value: object) -> str | None:
+    if isinstance(value, str) and value.strip():
+        return value.strip()
     return None
 
 

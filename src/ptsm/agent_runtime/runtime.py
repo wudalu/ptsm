@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 import re
 from typing import Any, Mapping
@@ -20,6 +21,13 @@ from ptsm.domain.ai_tech_content import (
     AiTechEvidenceManifest,
     parse_ai_tech_runtime_contract,
     validate_ai_tech_draft_contract,
+)
+from ptsm.domain.psychology_learning import (
+    PSYCHOLOGY_LEARNING_MODE,
+    PsychologyLearningEvidenceManifest,
+    parse_psychology_learning_runtime_contract,
+    resolve_psychology_learning_selection,
+    validate_psychology_learning_draft_contract,
 )
 from ptsm.infrastructure.artifacts.file_store import FileArtifactStore
 from ptsm.infrastructure.evaluations.content_quality_gate import (
@@ -44,6 +52,7 @@ PLAYBOOK_ROOT = PACKAGE_ROOT / "playbooks" / "definitions"
 SKILL_ROOT = PACKAGE_ROOT / "skills" / "builtin"
 DOMAIN_FENGKUANG = "发疯文学"
 AI_TECH_PLAYBOOK_ID = "ai_tech_daily_post"
+MODERN_PSYCHOLOGY_PLAYBOOK_ID = "modern_psychology_post"
 DEFAULT_RUNTIME_STATE_DIR = Path(".ptsm") / "agent_runtime"
 _SAFE_AI_RUNTIME_IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
 
@@ -90,6 +99,48 @@ class _BoundAiTechWorkflow:
         )
 
 
+class _BoundPsychologyLearningWorkflow:
+    """Keep one catalog lesson outside every graph input and checkpoint."""
+
+    def __init__(self, *, workflow: Any, contract: Mapping[str, Any]) -> None:
+        self._workflow = workflow
+        self._contract = contract
+        self._checkpoint_namespace = _psychology_learning_checkpoint_namespace(contract)
+
+    def invoke(
+        self,
+        input: Mapping[str, Any] | None,
+        config: Mapping[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        safe_input = _build_psychology_learning_workflow_input(
+            contract=self._contract,
+            supplied=input or {},
+        )
+        result = self._workflow.invoke(
+            safe_input,
+            config=_sanitize_psychology_learning_workflow_config(
+                config,
+                checkpoint_namespace=self._checkpoint_namespace,
+            ),
+            **kwargs,
+        )
+        return dict(result)
+
+    def get_state_history(
+        self,
+        config: Mapping[str, Any] | None,
+        **kwargs: Any,
+    ) -> Any:
+        return self._workflow.get_state_history(
+            _sanitize_psychology_learning_workflow_config(
+                config,
+                checkpoint_namespace=self._checkpoint_namespace,
+            ),
+            **kwargs,
+        )
+
+
 def build_playbook_workflow(
     *,
     playbook_id: str,
@@ -104,6 +155,8 @@ def build_playbook_workflow(
     content_quality_judge_backend: object | None = None,
     ai_tech_evidence: Mapping[str, Any] | None = None,
     ai_tech_evidence_manifest: Mapping[str, Any] | None = None,
+    psychology_learning_contract: Mapping[str, Any] | None = None,
+    psychology_learning_manifest: Mapping[str, Any] | None = None,
 ):
     """Build a workflow for a specific playbook/domain pair."""
     execution_memory = memory or InMemoryExecutionMemory()
@@ -115,6 +168,8 @@ def build_playbook_workflow(
     playbook_def = playbooks.get(playbook_id)
     normalized_ai_tech_evidence: dict[str, Any] | None = None
     normalized_ai_tech_evidence_manifest: dict[str, Any] | None = None
+    normalized_psychology_learning_contract: dict[str, Any] | None = None
+    normalized_psychology_learning_manifest: dict[str, Any] | None = None
     if playbook_id == AI_TECH_PLAYBOOK_ID:
         if ai_tech_evidence is None:
             raise ValueError("ai_tech_daily_post requires a normalized AI evidence contract")
@@ -129,6 +184,46 @@ def build_playbook_workflow(
             raise ValueError("invalid normalized AI evidence contract or manifest") from exc
     elif ai_tech_evidence is not None or ai_tech_evidence_manifest is not None:
         raise ValueError("AI evidence contracts are only valid for ai_tech_daily_post")
+    if playbook_id == MODERN_PSYCHOLOGY_PLAYBOOK_ID:
+        if (
+            psychology_learning_contract is None
+            and psychology_learning_manifest is not None
+        ) or (
+            psychology_learning_contract is not None
+            and psychology_learning_manifest is None
+        ):
+            raise ValueError(
+                "psychology learning requires both a normalized catalog contract and opaque manifest"
+            )
+        if psychology_learning_contract is not None:
+            try:
+                normalized_psychology_learning_contract = (
+                    parse_psychology_learning_runtime_contract(
+                        psychology_learning_contract
+                    )
+                )
+                normalized_psychology_learning_manifest = (
+                    PsychologyLearningEvidenceManifest.model_validate(
+                        psychology_learning_manifest
+                    ).model_dump(mode="json")
+                )
+            except ValidationError as exc:
+                raise ValueError(
+                    "invalid normalized psychology learning contract or manifest"
+                ) from exc
+            (
+                normalized_psychology_learning_contract,
+                normalized_psychology_learning_manifest,
+            ) = _resolve_verified_psychology_learning_catalog_contract(
+                contract=normalized_psychology_learning_contract,
+                manifest=normalized_psychology_learning_manifest,
+            )
+    elif psychology_learning_contract is not None or psychology_learning_manifest is not None:
+        raise ValueError(
+            "psychology learning contracts are only valid for modern_psychology_post"
+        )
+    if normalized_ai_tech_evidence is not None and normalized_psychology_learning_contract is not None:
+        raise ValueError("a workflow cannot combine AI evidence and psychology learning contracts")
     max_attempts = max_attempts if max_attempts != 2 else playbook_def.max_attempts
     drafting_model = playbook_def.drafting_model or None
     skill_context_resolver = skill_context_resolver or build_skill_context_resolver(
@@ -153,6 +248,11 @@ def build_playbook_workflow(
         if normalized_ai_tech_evidence is not None
         else None
     )
+    psychology_learning_draft_gate = (
+        _build_psychology_learning_draft_gate(normalized_psychology_learning_contract)
+        if normalized_psychology_learning_contract is not None
+        else None
+    )
     workflow = build_execution_graph(
         ingest=build_ingest_node(drafting_provider=drafting_provider),
         planner=build_planner_node(
@@ -164,10 +264,14 @@ def build_playbook_workflow(
             skill_loader=skill_loader,
             skill_context_resolver=skill_context_resolver,
             ai_tech_evidence=normalized_ai_tech_evidence,
+            psychology_learning_contract=normalized_psychology_learning_contract,
         ),
         memory=build_memory_node(
             execution_memory=execution_memory,
-            evidence_gated=normalized_ai_tech_evidence is not None,
+            evidence_gated=(
+                normalized_ai_tech_evidence is not None
+                or normalized_psychology_learning_contract is not None
+            ),
         ),
         executor=build_executor_node(
             drafting_agent=drafting_agent,
@@ -176,17 +280,25 @@ def build_playbook_workflow(
                 if ai_tech_draft_gate is not None
                 else None
             ),
+            psychology_learning_draft_gate=(
+                (lambda draft: psychology_learning_draft_gate({}, draft))
+                if psychology_learning_draft_gate is not None
+                else None
+            ),
         ),
         reflector=build_reflector_node(
             max_attempts=max_attempts,
             content_quality_judge=content_quality_judge,
             ai_tech_draft_gate=ai_tech_draft_gate,
+            psychology_learning_draft_gate=psychology_learning_draft_gate,
         ),
         finalize=build_finalize_node(
             execution_memory=execution_memory,
             artifact_store=artifact_store,
             ai_tech_evidence=normalized_ai_tech_evidence,
             ai_tech_evidence_manifest=normalized_ai_tech_evidence_manifest,
+            psychology_learning_contract=normalized_psychology_learning_contract,
+            psychology_learning_manifest=normalized_psychology_learning_manifest,
         ),
         checkpointer=checkpointer or InMemorySaver(),
     )
@@ -194,6 +306,11 @@ def build_playbook_workflow(
         return _BoundAiTechWorkflow(
             workflow=workflow,
             contract=normalized_ai_tech_evidence,
+        )
+    if normalized_psychology_learning_contract is not None:
+        return _BoundPsychologyLearningWorkflow(
+            workflow=workflow,
+            contract=normalized_psychology_learning_contract,
         )
     return workflow
 
@@ -242,6 +359,47 @@ def _build_ai_tech_draft_gate(
     return gate
 
 
+def _build_psychology_learning_draft_gate(
+    contract: Mapping[str, Any],
+):
+    """Bind one approved lesson contract outside graph state and inputs."""
+
+    def gate(_: ExecutionState, draft: dict[str, object]) -> list[str]:
+        return validate_psychology_learning_draft_contract(contract, draft)
+
+    return gate
+
+
+def _resolve_verified_psychology_learning_catalog_contract(
+    *,
+    contract: Mapping[str, Any],
+    manifest: Mapping[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Rebuild the selected lesson so public runtime calls cannot forge it."""
+    if any(
+        contract.get(field_name) != manifest.get(field_name)
+        for field_name in ("series_id", "curriculum_version", "lesson_id", "lesson_number")
+    ):
+        raise ValueError(
+            "psychology learning manifest does not match the selected catalog lesson"
+        )
+    try:
+        bundle = resolve_psychology_learning_selection(
+            series_id=str(contract["series_id"]),
+            lesson_id=str(contract["lesson_id"]),
+            curriculum_version=str(contract["curriculum_version"]),
+        )
+    except (KeyError, ValueError) as exc:
+        raise ValueError("psychology learning catalog selection is invalid") from exc
+    expected_contract = bundle.runtime_contract
+    expected_manifest = bundle.manifest
+    if dict(contract) != expected_contract or dict(manifest) != expected_manifest:
+        raise ValueError(
+            "psychology learning contract or manifest does not exactly match the approved catalog"
+        )
+    return expected_contract, expected_manifest
+
+
 def _build_ai_tech_workflow_input(
     *,
     contract: Mapping[str, Any],
@@ -263,6 +421,37 @@ def _build_ai_tech_workflow_input(
         "platform": "xiaohongshu",
         "account_id": account_id,
     }
+
+
+def _build_psychology_learning_workflow_input(
+    *,
+    contract: Mapping[str, Any],
+    supplied: Mapping[str, Any],
+) -> dict[str, str]:
+    """Build a graph input from safe identifiers plus the bound catalog lesson."""
+    account_id = supplied.get("account_id")
+    if not isinstance(account_id, str) or not _SAFE_AI_RUNTIME_IDENTIFIER.fullmatch(
+        account_id
+    ):
+        raise ValueError("psychology learning workflow requires a safe account_id")
+
+    platform = supplied.get("platform")
+    if platform != "xiaohongshu":
+        raise ValueError("psychology learning workflow only supports platform xiaohongshu")
+
+    normalized = parse_psychology_learning_runtime_contract(contract)
+    return {
+        "scene": _build_psychology_learning_runtime_scene_from_contract(normalized),
+        "platform": "xiaohongshu",
+        "account_id": account_id,
+    }
+
+
+def _build_psychology_learning_runtime_scene_from_contract(
+    contract: Mapping[str, Any],
+) -> str:
+    normalized = parse_psychology_learning_runtime_contract(contract)
+    return f"心理学学习专题：{normalized['series_badge']}｜{normalized['lesson_title']}"
 
 
 def _build_ai_tech_runtime_scene_from_contract(contract: Mapping[str, Any]) -> str:
@@ -317,6 +506,43 @@ def _sanitize_ai_tech_workflow_config(
     return {"configurable": {"thread_id": thread_id}}
 
 
+def _psychology_learning_checkpoint_namespace(contract: Mapping[str, Any]) -> str:
+    """Return a stable private checkpoint namespace for one catalog lesson."""
+    normalized = parse_psychology_learning_runtime_contract(contract)
+    identity = ":".join(
+        (
+            normalized["series_id"],
+            normalized["curriculum_version"],
+            normalized["lesson_id"],
+        )
+    )
+    digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:24]
+    return f"ptsm-psychology-learning-{digest}"
+
+
+def _sanitize_psychology_learning_workflow_config(
+    config: Mapping[str, Any] | None,
+    *,
+    checkpoint_namespace: str,
+) -> dict[str, dict[str, str]] | None:
+    """Map public thread IDs into a catalog-private LangGraph checkpoint lane."""
+    sanitized = _sanitize_ai_tech_workflow_config(config)
+    if sanitized is None:
+        return None
+    configurable = sanitized.get("configurable", {})
+    thread_id = configurable.get("thread_id")
+    if not isinstance(thread_id, str):
+        return sanitized
+    digest = hashlib.sha256(
+        f"{checkpoint_namespace}:{thread_id}".encode("utf-8")
+    ).hexdigest()[:32]
+    return {
+        "configurable": {
+            "thread_id": f"psychology-learning-{digest}",
+        }
+    }
+
+
 def build_file_backed_runtime_state(
     base_dir: Path | str = DEFAULT_RUNTIME_STATE_DIR,
 ) -> tuple[FileExecutionMemory, FileCheckpointSaver]:
@@ -333,10 +559,19 @@ def build_finalize_node(
     artifact_store: FileArtifactStore,
     ai_tech_evidence: Mapping[str, Any] | None = None,
     ai_tech_evidence_manifest: Mapping[str, Any] | None = None,
+    psychology_learning_contract: Mapping[str, Any] | None = None,
+    psychology_learning_manifest: Mapping[str, Any] | None = None,
 ):
     normalized_ai_tech_manifest = (
         AiTechEvidenceManifest.model_validate(ai_tech_evidence_manifest).model_dump(mode="json")
         if ai_tech_evidence_manifest is not None
+        else None
+    )
+    normalized_psychology_learning_manifest = (
+        PsychologyLearningEvidenceManifest.model_validate(
+            psychology_learning_manifest
+        ).model_dump(mode="json")
+        if psychology_learning_manifest is not None
         else None
     )
 
@@ -368,6 +603,28 @@ def build_finalize_node(
                     "reflection_feedback": "opaque AI evidence manifest is required",
                 }
 
+        if psychology_learning_contract is not None:
+            validation_errors = validate_psychology_learning_draft_contract(
+                psychology_learning_contract,
+                final_content,
+            )
+            if validation_errors:
+                return {
+                    "status": "psychology_learning_draft_invalid",
+                    "reflection_decision": "fail",
+                    "reflection_feedback": "; ".join(validation_errors),
+                }
+            if normalized_psychology_learning_manifest is None:
+                return {
+                    "status": "psychology_learning_receipt_required",
+                    "reflection_decision": "fail",
+                    "reflection_feedback": "opaque psychology learning manifest is required",
+                }
+            _resolve_verified_psychology_learning_catalog_contract(
+                contract=psychology_learning_contract,
+                manifest=normalized_psychology_learning_manifest,
+            )
+
         content_review = _build_content_review(state)
         activated_skills = list(state.get("activated_skills", []))
         activated_skill_details = list(state.get("activated_skill_details", []))
@@ -382,7 +639,7 @@ def build_finalize_node(
             # finalizer writes only the opaque evidence manifest below.
             "runtime_skill_contents": (
                 []
-                if ai_tech_evidence is not None
+                if ai_tech_evidence is not None or psychology_learning_contract is not None
                 else list(state.get("runtime_skill_contents", []))
             ),
             "runtime_skill_details": runtime_skill_details,
@@ -398,23 +655,32 @@ def build_finalize_node(
                     manifest=normalized_ai_tech_manifest,
                 )
             )
+        if psychology_learning_contract is not None:
+            assert normalized_psychology_learning_manifest is not None
+            artifact_payload.update(
+                _build_psychology_learning_receipt(
+                    contract=psychology_learning_contract,
+                    manifest=normalized_psychology_learning_manifest,
+                )
+            )
         artifact_path = artifact_store.write(
             artifact_payload,
             run_key=f"{state['account_id']}-{state['playbook_id']}-{state['attempt_count']}",
         )
 
-        execution_memory.record(
-            namespace=("accounts", state["account_id"], "lessons"),
-            item={
-                "playbook_id": state["playbook_id"],
-                "scene": state["scene"],
-                "attempt_count": state["attempt_count"],
-                "title": final_content.get("title", ""),
-                "image_text": final_content.get("image_text", ""),
-                "hashtags": list(final_content.get("hashtags", [])),
-                "final_body": final_content.get("body", ""),
-            },
-        )
+        if psychology_learning_contract is None:
+            execution_memory.record(
+                namespace=("accounts", state["account_id"], "lessons"),
+                item={
+                    "playbook_id": state["playbook_id"],
+                    "scene": state["scene"],
+                    "attempt_count": state["attempt_count"],
+                    "title": final_content.get("title", ""),
+                    "image_text": final_content.get("image_text", ""),
+                    "hashtags": list(final_content.get("hashtags", [])),
+                    "final_body": final_content.get("body", ""),
+                },
+            )
         return {
             "status": "completed",
             "artifact_path": str(artifact_path),
@@ -440,6 +706,40 @@ def _build_ai_tech_evidence_receipt(
             "status": "passed",
             "mode": mode,
             "validator": "ai_tech_draft_contract",
+            "validator_version": "1",
+            "errors": [],
+        },
+    }
+
+
+def _build_psychology_learning_receipt(
+    *,
+    contract: Mapping[str, Any],
+    manifest: Mapping[str, Any],
+) -> dict[str, object]:
+    """Build the only catalog-audit data permitted in a lesson artifact."""
+    normalized_contract = parse_psychology_learning_runtime_contract(contract)
+    normalized_manifest = PsychologyLearningEvidenceManifest.model_validate(
+        manifest
+    ).model_dump(mode="json")
+    normalized_contract, normalized_manifest = _resolve_verified_psychology_learning_catalog_contract(
+        contract=normalized_contract,
+        manifest=normalized_manifest,
+    )
+    return {
+        "psychology_learning_mode": PSYCHOLOGY_LEARNING_MODE,
+        "psychology_learning_series_id": normalized_contract["series_id"],
+        "psychology_learning_curriculum_version": normalized_contract[
+            "curriculum_version"
+        ],
+        "psychology_learning_lesson_id": normalized_contract["lesson_id"],
+        "psychology_learning_lesson_number": normalized_contract["lesson_number"],
+        "psychology_learning_evidence_manifest": normalized_manifest,
+        "psychology_learning_gate": {
+            "status": "passed",
+            "series_id": normalized_contract["series_id"],
+            "lesson_id": normalized_contract["lesson_id"],
+            "validator": "psychology_learning_draft_contract",
             "validator_version": "1",
             "errors": [],
         },

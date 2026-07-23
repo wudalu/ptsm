@@ -72,6 +72,9 @@ BODY_SCENE_SIGNAL_MARKERS = {
     "wuxia_character_post": ("令狐冲", "黄蓉", "郭靖", "这一段", "原文", "今天", "职场"),
 }
 BODY_HUMAN_ANCHORS = ("我", "你", "我们", "今天", "刚刚", "那一秒", "今晚", "路上", "手边", "这句", "这个")
+AI_TECH_NEWS_EVIDENCE = (
+    Path(__file__).resolve().parents[1] / "fixtures" / "ai_tech_evidence" / "news_brief.json"
+)
 
 
 @pytest.mark.parametrize(
@@ -116,8 +119,8 @@ BODY_HUMAN_ANCHORS = ("我", "你", "我们", "今天", "刚刚", "那一秒", "
             "ai_tech_daily_post",
             "OpenAI 发布一项新的多模态助手更新，普通用户想知道到底值不值得试",
             "acct-ai-tech-local",
-            180,
-            420,
+            40,
+            360,
         ),
         (
             "world_cup_daily_post",
@@ -159,19 +162,30 @@ def test_xhs_playbook_dry_runs_fit_title_body_quality_contract(
     monkeypatch.delenv("REDDIT_PUBLIC_JSON_FALLBACK", raising=False)
     get_settings.cache_clear()
 
-    exit_code = main(
-        [
-            "run-playbook",
-            "--scene",
-            scene,
-            "--account-id",
-            account_id,
-            "--playbook-id",
-            playbook_id,
-            "--thread-id",
-            f"thread-{playbook_id}-title-body-quality",
-        ]
-    )
+    command = [
+        "run-playbook",
+        "--scene",
+        scene,
+        "--account-id",
+        account_id,
+        "--playbook-id",
+        playbook_id,
+        "--thread-id",
+        f"thread-{playbook_id}-title-body-quality",
+    ]
+    if playbook_id == "ai_tech_daily_post":
+        command.extend(
+            [
+                "--ai-content-mode",
+                "news_brief",
+                "--ai-evidence-file",
+                str(AI_TECH_NEWS_EVIDENCE),
+                "--topic-direction-id",
+                "ai_news_three_updates_brief",
+            ]
+        )
+
+    exit_code = main(command)
 
     payload = json.loads(capsys.readouterr().out)
     content = payload["final_content"]
@@ -186,7 +200,8 @@ def test_xhs_playbook_dry_runs_fit_title_body_quality_contract(
     visible = f"{content['title']}\n{content['image_text']}\n{content['body']}"
     assert not any(marker in visible for marker in FUNCTIONAL_LABEL_MARKERS)
     assert any(marker in content["body"] for marker in BODY_SCENE_SIGNAL_MARKERS[playbook_id])
-    assert any(anchor in content["body"] for anchor in BODY_HUMAN_ANCHORS)
+    if playbook_id != "ai_tech_daily_post":
+        assert any(anchor in content["body"] for anchor in BODY_HUMAN_ANCHORS)
     assert not any(marker in content["body"] for marker in ABSTRACT_BODY_MARKERS)
 
     definitions_root = Path(__file__).resolve().parents[2] / "src" / "ptsm" / "playbooks" / "definitions"

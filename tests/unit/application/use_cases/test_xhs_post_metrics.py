@@ -9,6 +9,10 @@ from ptsm.application.use_cases.xhs_post_metrics import (
     record_xhs_post_metrics,
     summarize_xhs_post_metrics,
 )
+from ptsm.domain.psychology_learning import (
+    render_psychology_learning_draft,
+    resolve_psychology_learning_selection,
+)
 
 
 def _write_psychology_artifact(path: Path) -> None:
@@ -41,6 +45,53 @@ def _read_jsonl(path: Path) -> list[dict[str, object]]:
         for line in path.read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
+
+
+def _write_learning_artifact(path: Path, *, lesson_id: str = "notice_the_loop") -> None:
+    bundle = resolve_psychology_learning_selection(
+        series_id="after_work_rumination",
+        lesson_id=lesson_id,
+    )
+    contract = bundle.runtime_contract
+    payload = {
+        "playbook_id": "modern_psychology_post",
+        "account": {
+            "account_id": "acct-psychology-local",
+            "platform": "xiaohongshu",
+        },
+        "platform": "xiaohongshu",
+        "scene": f"心理学学习专题：{contract['series_badge']}｜{contract['lesson_title']}",
+        "publish_mode": "dry-run",
+        "activated_skills": [],
+        "activated_skill_details": [],
+        "final_content": render_psychology_learning_draft(contract),
+        "format_patterns_used": {"status": "not_used"},
+        "publish_result": {"status": "dry_run"},
+        "topic_selection": {
+            "source": "psychology-learning-series",
+            "psychology_learning": {
+                "series_id": bundle.series_id,
+                "curriculum_version": contract["curriculum_version"],
+                "lesson_id": bundle.lesson_id,
+                "lesson_number": bundle.lesson_number,
+            },
+        },
+        "psychology_learning_mode": "learning_series",
+        "psychology_learning_series_id": bundle.series_id,
+        "psychology_learning_curriculum_version": contract["curriculum_version"],
+        "psychology_learning_lesson_id": bundle.lesson_id,
+        "psychology_learning_lesson_number": bundle.lesson_number,
+        "psychology_learning_evidence_manifest": bundle.manifest,
+        "psychology_learning_gate": {
+            "status": "passed",
+            "series_id": bundle.series_id,
+            "lesson_id": bundle.lesson_id,
+            "validator": "psychology_learning_draft_contract",
+            "validator_version": "1",
+            "errors": [],
+        },
+    }
+    path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
 
 
 def test_record_xhs_post_metrics_writes_artifact_linked_score_row(
@@ -122,6 +173,195 @@ def test_record_xhs_post_metrics_reads_local_style_image_plan(
     assert result["status"] == "recorded"
     [record] = _read_jsonl(metrics_path)
     assert record["image_style"] == "iphone_notes"
+
+
+def test_record_xhs_post_metrics_captures_and_groups_learning_series_fields(
+    tmp_path: Path,
+) -> None:
+    artifact_path = tmp_path / "learning-artifact.json"
+    metrics_path = tmp_path / "metrics.jsonl"
+    _write_learning_artifact(artifact_path)
+
+    result = record_xhs_post_metrics(
+        artifact_path=artifact_path,
+        checkpoint="24h",
+        views=100,
+        likes=10,
+        collects=4,
+        comments=2,
+        shares=1,
+        output_path=metrics_path,
+    )
+
+    record = result["record"]
+    assert record["psychology_learning_series_id"] == "after_work_rumination"
+    assert record["psychology_learning_curriculum_version"] == "1"
+    assert record["psychology_learning_lesson_id"] == "notice_the_loop"
+    assert record["psychology_learning_lesson_number"] == 1
+    assert record["psychology_learning_mode"] == "learning_series"
+    assert record["topic_direction_id"] == (
+        "psychology_learning_after_work_rumination_notice_the_loop"
+    )
+    summary = summarize_xhs_post_metrics(
+        input_path=metrics_path,
+        group_by="psychology_learning_series_id",
+    )
+    assert summary["groups"][0]["group"] == "after_work_rumination"
+
+
+def test_record_xhs_post_metrics_rejects_an_unverified_learning_receipt(
+    tmp_path: Path,
+) -> None:
+    artifact_path = tmp_path / "unverified-learning-artifact.json"
+    metrics_path = tmp_path / "metrics.jsonl"
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "modern_psychology_post",
+                "psychology_learning_mode": "learning_series",
+                "psychology_learning_series_id": "after_work_rumination",
+                "psychology_learning_lesson_id": "notice_the_loop",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    result = record_xhs_post_metrics(
+        artifact_path=artifact_path,
+        checkpoint="24h",
+        views=100,
+        likes=10,
+        collects=4,
+        comments=2,
+        shares=1,
+        output_path=metrics_path,
+    )
+
+    assert result["status"] == "error"
+    assert "learning receipt" in result["reason"]
+    assert not metrics_path.exists()
+
+
+def test_learning_metric_groups_exclude_ordinary_psychology_rows(
+    tmp_path: Path,
+) -> None:
+    metrics_path = tmp_path / "metrics.jsonl"
+    records = [
+        {
+            "artifact_path": "ordinary.json",
+            "playbook_id": "modern_psychology_post",
+            "checkpoint": "24h",
+            "psychology_learning_mode": "",
+            "psychology_learning_series_id": "",
+            "interaction_score": 12,
+            "interaction_rate": 0.12,
+            "like_rate": 0.1,
+            "views": 100,
+        },
+        {
+            "artifact_path": "lesson.json",
+            "playbook_id": "modern_psychology_post",
+            "checkpoint": "24h",
+            "psychology_learning_mode": "learning_series",
+            "psychology_learning_series_id": "after_work_rumination",
+            "psychology_learning_curriculum_version": "1",
+            "psychology_learning_lesson_id": "notice_the_loop",
+            "interaction_score": 24,
+            "interaction_rate": 0.24,
+            "like_rate": 0.2,
+            "views": 100,
+        },
+    ]
+    metrics_path.write_text(
+        "\n".join(json.dumps(record, ensure_ascii=False) for record in records) + "\n",
+        encoding="utf-8",
+    )
+
+    result = summarize_xhs_post_metrics(
+        input_path=metrics_path,
+        playbook_id="modern_psychology_post",
+        checkpoint="24h",
+        group_by="psychology_learning_series_id",
+    )
+
+    assert result["records_count"] == 1
+    assert [group["group"] for group in result["groups"]] == [
+        "after_work_rumination"
+    ]
+
+
+def test_record_xhs_post_metrics_upserts_a_checkpoint_for_the_same_artifact(
+    tmp_path: Path,
+) -> None:
+    artifact_path = tmp_path / "learning-artifact.json"
+    metrics_path = tmp_path / "metrics.jsonl"
+    _write_learning_artifact(artifact_path)
+
+    first = record_xhs_post_metrics(
+        artifact_path=artifact_path,
+        checkpoint="24h",
+        views=100,
+        likes=10,
+        collects=4,
+        comments=2,
+        shares=1,
+        output_path=metrics_path,
+    )
+    second = record_xhs_post_metrics(
+        artifact_path=artifact_path,
+        checkpoint="24h",
+        views=200,
+        likes=20,
+        collects=8,
+        comments=4,
+        shares=2,
+        output_path=metrics_path,
+    )
+
+    assert first["status"] == "recorded"
+    assert second["status"] == "recorded"
+    [record] = _read_jsonl(metrics_path)
+    assert record["views"] == 200
+    summary = summarize_xhs_post_metrics(
+        input_path=metrics_path,
+        group_by="psychology_learning_lesson_id",
+    )
+    assert summary["records_count"] == 1
+    assert summary["groups"][0]["posts"] == 1
+
+
+def test_summarize_xhs_post_metrics_can_group_learning_rows_by_curriculum_version(
+    tmp_path: Path,
+) -> None:
+    metrics_path = tmp_path / "metrics.jsonl"
+    metrics_path.write_text(
+        json.dumps(
+            {
+                "artifact_path": "lesson.json",
+                "playbook_id": "modern_psychology_post",
+                "checkpoint": "24h",
+                "psychology_learning_mode": "learning_series",
+                "psychology_learning_series_id": "after_work_rumination",
+                "psychology_learning_curriculum_version": "1",
+                "psychology_learning_lesson_id": "notice_the_loop",
+                "views": 100,
+                "interaction_score": 24,
+                "interaction_rate": 0.24,
+                "like_rate": 0.2,
+            },
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = summarize_xhs_post_metrics(
+        input_path=metrics_path,
+        group_by="psychology_learning_curriculum_version",
+    )
+
+    assert result["groups"][0]["group"] == "1"
 
 
 def test_record_xhs_post_metrics_rejects_missing_artifact(tmp_path: Path) -> None:

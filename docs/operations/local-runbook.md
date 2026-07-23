@@ -421,6 +421,52 @@ uv run python -m ptsm.bootstrap run-playbook \
 `--fresh-topic-research`：它会返回 `ai_tech_fresh_research_separate`，提醒你把 discovery
 与 evidence collection 分开。
 
+### Psychology Learning Series
+
+心理学学习系列不使用自由 `--scene`。先读取封闭 catalog 的路线图，只展示返回的
+`learning_series_lesson`，由用户精确确认课次；不要把热点、operator 写的概念、URL 或研究
+笔记传入课程 run。`guide-post` 返回的 curriculum version 必须原样带入 `run-playbook`；不要
+手改受控系列的标题、正文、封面或图片计划。普通心理学场景帖仍走上面的通用 psychology guide
+flow。未选 lesson 的查询会返回 `selection_required`，不会默认第一课；课程目录拥有该课的
+catalog-owned image plan，不能在 run 上追加 `--local-image-style` 或 `--publish-image-path`。
+
+```bash
+# 目录查询不会创建 run，也不会读取 live topic research；会返回 selection_required。
+uv run python -m ptsm.bootstrap guide-post \
+  --playbook-id modern_psychology_post \
+  --account-id acct-psychology-local \
+  --psychology-content-mode learning_series \
+  --psychology-series-id after_work_rumination \
+  --non-interactive --format json
+
+# 用户确认后再次取回该课的精确 direction、标题/封面钩子和图片计划。
+uv run python -m ptsm.bootstrap guide-post \
+  --playbook-id modern_psychology_post \
+  --account-id acct-psychology-local \
+  --psychology-content-mode learning_series \
+  --psychology-series-id after_work_rumination \
+  --psychology-lesson-id notice_the_loop \
+  --psychology-curriculum-version 1 \
+  --non-interactive --format json
+
+# 仅将上一步返回的 lesson id 与 matching direction id 带回；先 dry-run。
+uv run python -m ptsm.bootstrap run-playbook \
+  --account-id acct-psychology-local \
+  --playbook-id modern_psychology_post \
+  --psychology-content-mode learning_series \
+  --psychology-series-id after_work_rumination \
+  --psychology-lesson-id notice_the_loop \
+  --psychology-curriculum-version 1 \
+  --topic-direction-id psychology_learning_after_work_rumination_notice_the_loop \
+  --publish-mode dry-run --eval
+```
+
+`psychology_learning_required`、`psychology_learning_invalid`、
+`psychology_learning_topic_direction_invalid`、`psychology_learning_draft_invalid` 或
+`psychology_learning_artifact_invalid` 都是安全停点；修正 catalog selection 后重新开始，
+不要在同一请求中加自由场景绕过它。成功 artifact 只含 series/lesson receipt 和 opaque
+references，可用 `eval-artifact` 复核。
+
 ### Reddit Discussion Scan
 
 Reddit英文讨论转译使用 Reddit app-only OAuth 做只读扫描，不需要 Reddit 用户名或密码。按 Reddit Responsible Builder Policy，读取 Reddit API 前需要为该用途取得 explicit approval；app 描述要透明说明只读取公开 hot/top 英文讨论用于人工编辑参考，不做自动回帖、投票、私信、商业化 Reddit 数据或 AI 训练。读者可见成稿只呈现中文热点帖，不暴露 Reddit、subreddit、英文讨论、翻译过程或来源 URL。创建并获批 Reddit app 后配置：

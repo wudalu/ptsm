@@ -4,10 +4,15 @@ import pytest
 from ptsm.evaluations.contracts import EvalTarget
 from ptsm.evaluations.contracts_eval import (
     contract_ai_tech_evidence_receipt,
+    contract_psychology_learning_receipt,
     contract_artifact_root_fields,
     contract_playbook_node_contract,
     contract_skill_details_match,
     ALL_CONTRACT_EVALUATORS,
+)
+from ptsm.domain.psychology_learning import (
+    render_psychology_learning_draft,
+    resolve_psychology_learning_selection,
 )
 from ptsm.evaluations.playbook_contracts import PlaybookEvalContract
 
@@ -277,6 +282,369 @@ class TestAiTechEvidenceReceipt:
         assert result.status == "failed"
         assert "gate mode does not match receipt mode" in result.reason
         assert "https://private.example.com" not in str(result.to_dict())
+
+
+def _psychology_learning_receipt() -> dict:
+    bundle = resolve_psychology_learning_selection(
+        series_id="after_work_rumination",
+        lesson_id="notice_the_loop",
+    )
+    contract = bundle.runtime_contract
+    return {
+        "psychology_learning_mode": "learning_series",
+        "psychology_learning_series_id": bundle.series_id,
+        "psychology_learning_curriculum_version": contract["curriculum_version"],
+        "psychology_learning_lesson_id": bundle.lesson_id,
+        "psychology_learning_lesson_number": bundle.lesson_number,
+        "psychology_learning_evidence_manifest": bundle.manifest,
+        "psychology_learning_gate": {
+            "status": "passed",
+            "series_id": bundle.series_id,
+            "lesson_id": bundle.lesson_id,
+            "validator": "psychology_learning_draft_contract",
+            "validator_version": "1",
+            "errors": [],
+        },
+        "final_content": render_psychology_learning_draft(contract),
+    }
+
+
+class TestPsychologyLearningReceipt:
+    def test_accepts_complete_catalog_receipt(self):
+        target = _target(
+            playbook_id="modern_psychology_post",
+            output_ref=_psychology_learning_receipt(),
+        )
+
+        result = contract_psychology_learning_receipt(target)
+
+        assert result.status == "passed"
+        assert result.evaluator_id == "psychology.learning_receipt"
+
+    def test_accepts_the_framework_owned_catalog_topic_selection_marker(self):
+        receipt = _psychology_learning_receipt()
+        receipt["topic_selection"] = {
+            "source": "psychology-learning-series",
+            "psychology_learning": {
+                "series_id": "after_work_rumination",
+                "curriculum_version": "1",
+                "lesson_id": "notice_the_loop",
+                "lesson_number": 1,
+            },
+        }
+        receipt["image_generation"] = {
+            "status": "generated",
+            "renderer": "ptsm_local_renderer",
+        }
+
+        result = contract_psychology_learning_receipt(
+            _target(
+                playbook_id="modern_psychology_post",
+                output_ref=receipt,
+            )
+        )
+
+        assert result.status == "passed"
+
+    def test_skips_ordinary_psychology_artifacts_without_learning_receipt(self):
+        result = contract_psychology_learning_receipt(
+            _target(
+                playbook_id="modern_psychology_post",
+                output_ref={"final_content": {"body": "普通心理学帖"}},
+            )
+        )
+
+        assert result.status == "skipped"
+
+    def test_rejects_tampered_lesson_or_visible_source_without_echoing_it(self):
+        raw_url = "https://private.example.com/psychology-source"
+        receipt = _psychology_learning_receipt()
+        receipt["psychology_learning_lesson_id"] = "close_the_replay"
+        receipt["final_content"] = {
+            **receipt["final_content"],
+            "body": str(receipt["final_content"]["body"]) + raw_url,
+        }
+        target = _target(
+            playbook_id="modern_psychology_post",
+            output_ref=receipt,
+        )
+
+        result = contract_psychology_learning_receipt(target)
+
+        assert result.status == "failed"
+        assert "lesson" in result.reason
+        assert raw_url not in str(result.to_dict())
+
+    def test_rejects_raw_provenance_outside_the_opaque_manifest(self):
+        raw_url = "https://private.example.com/psychology-source"
+        receipt = _psychology_learning_receipt()
+        receipt["source_url"] = raw_url
+
+        result = contract_psychology_learning_receipt(
+            _target(
+                playbook_id="modern_psychology_post",
+                output_ref=receipt,
+            )
+        )
+
+        assert result.status == "failed"
+        assert "provenance" in result.reason
+        assert raw_url not in str(result.to_dict())
+
+    def test_rejects_generic_source_and_headline_fields_outside_the_manifest(self):
+        raw_source_title = "APA rumination study title and author"
+        raw_headline = "原始研究标题"
+        receipt = _psychology_learning_receipt()
+        receipt["source"] = raw_source_title
+        receipt["headline"] = raw_headline
+
+        result = contract_psychology_learning_receipt(
+            _target(
+                playbook_id="modern_psychology_post",
+                output_ref=receipt,
+            )
+        )
+
+        assert result.status == "failed"
+        assert "provenance" in result.reason
+        assert raw_source_title not in str(result.to_dict())
+        assert raw_headline not in str(result.to_dict())
+
+    def test_rejects_plain_source_ref_outside_the_opaque_manifest(self):
+        raw_source_ref = "APA Rumination Study by Author"
+        receipt = _psychology_learning_receipt()
+        receipt["source_ref"] = raw_source_ref
+
+        result = contract_psychology_learning_receipt(
+            _target(
+                playbook_id="modern_psychology_post",
+                output_ref=receipt,
+            )
+        )
+
+        assert result.status == "failed"
+        assert "provenance" in result.reason
+        assert raw_source_ref not in str(result.to_dict())
+
+    def test_rejects_untrusted_raw_publisher_response(self):
+        raw_response = "APA Rumination Study by Author"
+        receipt = _psychology_learning_receipt()
+        receipt["publish_result"] = {
+            "status": "published",
+            "raw_response": raw_response,
+        }
+
+        result = contract_psychology_learning_receipt(
+            _target(
+                playbook_id="modern_psychology_post",
+                output_ref=receipt,
+            )
+        )
+
+        assert result.status == "failed"
+        assert "provenance" in result.reason
+        assert raw_response not in str(result.to_dict())
+
+    def test_rejects_unknown_root_field_that_contains_raw_provenance(self):
+        raw_value = "APA Rumination Study by Author"
+        receipt = _psychology_learning_receipt()
+        receipt["provider_message"] = raw_value
+
+        result = contract_psychology_learning_receipt(
+            _target(
+                playbook_id="modern_psychology_post",
+                output_ref=receipt,
+            )
+        )
+
+        assert result.status == "failed"
+        assert "provenance" in result.reason
+        assert raw_value not in str(result.to_dict())
+
+    def test_rejects_unknown_nested_publish_metadata(self):
+        raw_value = "APA Rumination Study by Author"
+        receipt = _psychology_learning_receipt()
+        receipt["publish_result"] = {
+            "status": "published",
+            "provider_message": raw_value,
+        }
+
+        result = contract_psychology_learning_receipt(
+            _target(
+                playbook_id="modern_psychology_post",
+                output_ref=receipt,
+            )
+        )
+
+        assert result.status == "failed"
+        assert "provenance" in result.reason
+        assert raw_value not in str(result.to_dict())
+
+    def test_rejects_external_post_identifiers_even_when_the_url_looks_canonical(self):
+        receipt = _psychology_learning_receipt()
+        canonical_post_url = "https://www.xiaohongshu.com/explore/note-123"
+        receipt["publish_result"] = {
+            "status": "published",
+        }
+        receipt["post_publish_checks"] = {
+            "requested": True,
+            "browser_opened": False,
+            "publish_status": "published_visible",
+            "status_result": {
+                "status": "published_visible",
+                "source": "mcp_search",
+            }
+        }
+
+        result = contract_psychology_learning_receipt(
+            _target(
+                playbook_id="modern_psychology_post",
+                output_ref=receipt,
+            )
+        )
+
+        assert result.status == "passed"
+
+        receipt["publish_result"].update(
+            {
+                "post_id": "note-123",
+                "post_url": canonical_post_url,
+            }
+        )
+        rejected = contract_psychology_learning_receipt(
+            _target(
+                playbook_id="modern_psychology_post",
+                output_ref=receipt,
+            )
+        )
+
+        assert rejected.status == "failed"
+        assert "provenance" in rejected.reason
+
+    @pytest.mark.parametrize(
+        "operational_metadata",
+        (
+            {"publish_result": {"status": "Smith_2024_Rumination_MetaAnalysis"}},
+            {
+                "post_publish_checks": {
+                    "requested": True,
+                    "browser_opened": False,
+                    "publish_status": "Smith_2024_Rumination_MetaAnalysis",
+                    "status_result": {
+                        "status": "Smith_2024_Rumination_MetaAnalysis",
+                        "source": "mcp",
+                    },
+                }
+            },
+            {
+                "account": {
+                    "account_id": "Smith_2024_Rumination_MetaAnalysis",
+                    "platform": "xiaohongshu",
+                }
+            },
+            {"run": {"run_id": "Smith_2024_Rumination_MetaAnalysis"}},
+            {
+                "image_generation": {
+                    "provider": "Smith_2024_Rumination_MetaAnalysis",
+                }
+            },
+            {
+                "image_generation": {
+                    "generated_image_paths": [
+                        "outputs/generated_images/Smith_2024_Rumination_MetaAnalysis.png"
+                    ]
+                }
+            },
+            {
+                "image_generation": {
+                    "asset_ledger": {
+                        "status": "recorded",
+                        "entry_count": "Smith_2024_Rumination_MetaAnalysis",
+                    }
+                }
+            },
+            {
+                "watermark_removal": {
+                    "status": "skipped",
+                    "result_count": "Smith_2024_Rumination_MetaAnalysis",
+                }
+            },
+        ),
+        ids=(
+            "publish_status",
+            "post_publish_status",
+            "account_id",
+            "run_id",
+            "image_provider",
+            "image_path",
+            "asset_ledger_count",
+            "watermark_result_count",
+        ),
+    )
+    def test_rejects_free_form_values_in_closed_operational_metadata(
+        self,
+        operational_metadata: dict,
+    ):
+        receipt = _psychology_learning_receipt()
+        receipt.update(operational_metadata)
+
+        result = contract_psychology_learning_receipt(
+            _target(
+                playbook_id="modern_psychology_post",
+                output_ref=receipt,
+            )
+        )
+
+        assert result.status == "failed"
+        assert "provenance" in result.reason
+
+    def test_rejects_catalog_marker_that_does_not_match_the_receipt_lesson(self):
+        receipt = _psychology_learning_receipt()
+        receipt["topic_selection"] = {
+            "source": "psychology-learning-series",
+            "psychology_learning": {
+                "series_id": "after_work_rumination",
+                "curriculum_version": "1",
+                "lesson_id": "close_the_replay",
+                "lesson_number": 5,
+            },
+        }
+
+        result = contract_psychology_learning_receipt(
+            _target(
+                playbook_id="modern_psychology_post",
+                output_ref=receipt,
+            )
+        )
+
+        assert result.status == "failed"
+        assert "provenance" in result.reason
+
+    def test_rejects_catalog_marked_artifact_when_its_learning_receipt_is_missing(self):
+        receipt = _psychology_learning_receipt()
+        incomplete_artifact = {
+            key: value
+            for key, value in receipt.items()
+            if not key.startswith("psychology_learning_")
+        }
+        incomplete_artifact["topic_selection"] = {
+            "source": "psychology-learning-series",
+            "psychology_learning": {
+                "series_id": "after_work_rumination",
+                "lesson_id": "notice_the_loop",
+                "curriculum_version": "1",
+            },
+        }
+
+        result = contract_psychology_learning_receipt(
+            _target(
+                playbook_id="modern_psychology_post",
+                output_ref=incomplete_artifact,
+            )
+        )
+
+        assert result.status == "failed"
+        assert "receipt" in result.reason
 
 
 class TestPlaybookNodeContract:

@@ -13,6 +13,12 @@ from ptsm.domain.topic_guidance import (
     resolve_topic_lane,
     select_topic_directions,
 )
+from ptsm.domain.psychology_learning import (
+    PSYCHOLOGY_LEARNING_MODE,
+    list_psychology_learning_series,
+    render_psychology_learning_draft,
+    resolve_psychology_learning_selection,
+)
 
 
 SUPPORTED_PLAYBOOK_ID = "modern_psychology_post"
@@ -23,6 +29,7 @@ TOPIC_GUIDANCE_SELECTION_POLICY = "dynamic_scene_diversity_rerank"
 IMAGE_RECOMMENDATION_DECISION_STAGE = "after_topic_direction_confirmation"
 AI_TECH_PLAYBOOK_ID = "ai_tech_daily_post"
 AI_TECH_CONTENT_MODES = ("news_brief", "hands_on", "fact_translation")
+PSYCHOLOGY_LEARNING_CONTENT_MODE = PSYCHOLOGY_LEARNING_MODE
 PROVIDER_IMAGE_PROVIDER = "bailian"
 PROVIDER_IMAGE_MODEL = "qwen-image-2.0-pro"
 CHAT_IMAGE_KEYWORDS = (
@@ -135,6 +142,10 @@ class GuidePostRequest:
     comment_prompt: str | None = None
     ai_content_mode: str | None = None
     ai_evidence_file_path: str | None = None
+    psychology_content_mode: str | None = None
+    psychology_series_id: str | None = None
+    psychology_lesson_id: str | None = None
+    psychology_curriculum_version: str | None = None
 
 
 @dataclass(frozen=True)
@@ -739,7 +750,17 @@ def resolve_psychology_lane(
 
 
 def run_guide_post(request: GuidePostRequest) -> dict[str, Any]:
+    psychology_learning_requested = _is_psychology_learning_request(request)
+    if (
+        psychology_learning_requested
+        and request.playbook_id != SUPPORTED_PLAYBOOK_ID
+    ):
+        raise ValueError(
+            "psychology learning guidance is only supported by modern_psychology_post"
+        )
     if request.playbook_id == SUPPORTED_PLAYBOOK_ID:
+        if psychology_learning_requested:
+            return _run_psychology_learning_series_guide_post(request)
         return _run_psychology_guide_post(request)
 
     pack = TOPIC_GUIDANCE_PACKS.get(request.playbook_id)
@@ -751,6 +772,158 @@ def run_guide_post(request: GuidePostRequest) -> dict[str, Any]:
     if pack.playbook_id == AI_TECH_PLAYBOOK_ID:
         return _run_ai_tech_guide_post(request=request, pack=pack)
     return _run_generic_guide_post(request=request, pack=pack)
+
+
+def _is_psychology_learning_request(request: GuidePostRequest) -> bool:
+    mode = (request.psychology_content_mode or "").strip()
+    has_selection = any(
+        value is not None
+        for value in (
+            request.psychology_series_id,
+            request.psychology_lesson_id,
+            request.psychology_curriculum_version,
+        )
+    )
+    if not mode and has_selection:
+        raise ValueError(
+            "psychology_content_mode=learning_series is required when selecting a psychology learning series"
+        )
+    if not mode:
+        return False
+    if mode != PSYCHOLOGY_LEARNING_CONTENT_MODE:
+        raise ValueError(
+            "psychology_content_mode must be learning_series for modern psychology learning guidance"
+        )
+    return True
+
+
+def _run_psychology_learning_series_guide_post(
+    request: GuidePostRequest,
+) -> dict[str, Any]:
+    series_id = (request.psychology_series_id or "").strip()
+    if not series_id:
+        raise ValueError("psychology_series_id is required for learning_series guidance")
+    lessons = list_psychology_learning_series(series_id=series_id)
+    curriculum_version = lessons[0].curriculum_version
+    requested_curriculum_version = (
+        (request.psychology_curriculum_version or "").strip()
+    )
+    if (
+        requested_curriculum_version
+        and requested_curriculum_version != curriculum_version
+    ):
+        raise ValueError("unknown curriculum_version for the selected learning series")
+    account_id = _resolve_account_id(
+        request_account_id=request.account_id,
+        playbook_id=SUPPORTED_PLAYBOOK_ID,
+        default_account_id=DEFAULT_ACCOUNT_ID,
+    )
+    lesson_id = (request.psychology_lesson_id or "").strip()
+    directions = [lesson.public_direction for lesson in lessons]
+    if not lesson_id:
+        return {
+            "status": "selection_required",
+            "playbook_id": SUPPORTED_PLAYBOOK_ID,
+            "account_id": account_id,
+            "series": {
+                "series_id": series_id,
+                "series_title": lessons[0].series_title,
+                "curriculum_version": curriculum_version,
+                "roadmap": [lesson.roadmap_item for lesson in lessons],
+            },
+            "topic_guidance": {
+                "status": "selection_required",
+                "message": "请先从已审核路线中明确选择一课；未选择时不会默认生成第一课。",
+                "selection_policy": "catalog_learning_series",
+                "matched_direction_id": "",
+                "open_direction_id": "",
+                "open_direction_ids": [],
+                "direction_type_counts": {"learning_series_lesson": len(lessons)},
+                "directions": directions,
+            },
+            "next_step": (
+                "Choose one returned learning_series_lesson lesson_id, then request "
+                "guidance again before generating the post."
+            ),
+            "quality_checklist": _build_psychology_learning_quality_checklist(),
+            "safety_notes": _psychology_learning_safety_notes(),
+        }
+    bundle = resolve_psychology_learning_selection(
+        series_id=series_id,
+        lesson_id=lesson_id,
+        curriculum_version=curriculum_version,
+    )
+    contract = bundle.runtime_contract
+    image_plan = render_psychology_learning_draft(contract)["image_plan"]
+    image_style = str(image_plan["style"])
+    image_recommendation = _build_psychology_learning_image_recommendation(
+        image_plan=image_plan
+    )
+    brief = {
+        "content_mode": PSYCHOLOGY_LEARNING_CONTENT_MODE,
+        "series_id": bundle.series_id,
+        "series_title": contract["series_title"],
+        "curriculum_version": contract["curriculum_version"],
+        "lesson_id": bundle.lesson_id,
+        "lesson_number": bundle.lesson_number,
+        "lesson_title": contract["lesson_title"],
+        "concept_label": contract["concept_label"],
+        "learning_goal": contract["learning_goal"],
+        "micro_exercise": contract["micro_exercise"],
+        "image_style": image_style,
+        "image_form": {
+            "backend": image_plan["backend"],
+            "style": image_style,
+            "role": image_plan["role"],
+            "text_density": image_plan["text_density"],
+            "max_text_units": int(image_plan["max_text_units"]),
+        },
+    }
+    topic_guidance = {
+        "status": "available",
+        "message": "这是已审核的学习专题课次；确认一课后再生成，不用自由场景改写概念。",
+        "selection_policy": "catalog_learning_series",
+        "matched_direction_id": bundle.direction_id,
+        "open_direction_id": "",
+        "open_direction_ids": [],
+        "direction_type_counts": {"learning_series_lesson": len(lessons)},
+        "directions": directions,
+        "image_recommendation": image_recommendation,
+    }
+    command = _build_run_playbook_command(
+        account_id=account_id,
+        playbook_id=SUPPORTED_PLAYBOOK_ID,
+        scene=None,
+        # The catalog renderer owns this image plan. Passing a local style
+        # would make a succeeding guide command fail the learning preflight.
+        image_style=None,
+        topic_direction_id=bundle.direction_id,
+        psychology_content_mode=PSYCHOLOGY_LEARNING_CONTENT_MODE,
+        psychology_series_id=bundle.series_id,
+        psychology_lesson_id=bundle.lesson_id,
+        psychology_curriculum_version=contract["curriculum_version"],
+    )
+    return {
+        "status": "completed",
+        "playbook_id": SUPPORTED_PLAYBOOK_ID,
+        "account_id": account_id,
+        "brief": brief,
+        "series": {
+            "series_id": bundle.series_id,
+            "series_title": contract["series_title"],
+            "curriculum_version": contract["curriculum_version"],
+            "roadmap": list(bundle.roadmap),
+        },
+        "topic_guidance": topic_guidance,
+        "recommended_scene": _build_psychology_learning_recommended_scene(
+            contract=contract,
+            image_recommendation=image_recommendation,
+        ),
+        "run_playbook_command": command,
+        "run_playbook_command_text": shlex.join(command),
+        "quality_checklist": _build_psychology_learning_quality_checklist(),
+        "safety_notes": _psychology_learning_safety_notes(),
+    }
 
 
 def _run_ai_tech_guide_post(
@@ -992,6 +1165,8 @@ def _run_generic_guide_post(
 
 
 def format_guide_post_markdown(result: dict[str, Any]) -> str:
+    if result.get("status") == "selection_required":
+        return _format_psychology_learning_selection_markdown(result)
     brief = result["brief"]
     directions = "\n".join(
         _format_topic_direction_markdown(direction)
@@ -1004,6 +1179,53 @@ def format_guide_post_markdown(result: dict[str, Any]) -> str:
     image_recommendation = _format_image_recommendation(
         result.get("topic_guidance", {}).get("image_recommendation")
     )
+    if brief.get("content_mode") == PSYCHOLOGY_LEARNING_CONTENT_MODE:
+        roadmap = result.get("series", {}).get("roadmap", [])
+        roadmap_lines = "\n".join(
+            f"- 第{item['lesson_number']}课：{item['lesson_title']}（{item['learning_goal']}）"
+            for item in roadmap
+            if isinstance(item, dict)
+        )
+        return "\n".join(
+            [
+                "# Psychology Learning Series Brief",
+                "",
+                f"- playbook_id: {result['playbook_id']}",
+                f"- account_id: {result['account_id']}",
+                f"- series: {brief['series_title']} ({brief['series_id']})",
+                f"- curriculum_version: {brief['curriculum_version']}",
+                f"- selected_lesson: 第{brief['lesson_number']}课 {brief['lesson_title']}",
+                f"- concept: {brief['concept_label']}",
+                "",
+                "## Series Roadmap",
+                "",
+                roadmap_lines,
+                "",
+                "## Topic Directions",
+                "",
+                directions,
+                "",
+                "## Image Recommendation",
+                "",
+                image_recommendation,
+                "",
+                "## Selected Lesson Contract",
+                "",
+                result["recommended_scene"],
+                "",
+                "## Quality Checklist",
+                "",
+                checklist,
+                "",
+                "## Safety Notes",
+                "",
+                safety_notes,
+                "",
+                "## Dry-run Command",
+                "",
+                f"`{result['run_playbook_command_text']}`",
+            ]
+        )
     if "content_mode" in brief:
         return "\n".join(
             [
@@ -1515,6 +1737,92 @@ def _build_ai_tech_recommended_scene(
     )
 
 
+def _build_psychology_learning_recommended_scene(
+    *,
+    contract: dict[str, Any],
+    image_recommendation: dict[str, Any],
+) -> str:
+    return "\n".join(
+        [
+            f"学习专题：{contract['series_title']}（课程版本 {contract['curriculum_version']}）",
+            f"本课：{contract['series_badge']}｜{contract['lesson_title']}",
+            f"场景：{contract['scene_anchor']}",
+            f"概念：{contract['concept_label']}",
+            f"学习目标：{contract['learning_goal']}",
+            f"可保存练习：{contract['micro_exercise']}",
+            f"封面形式：{_image_recommendation_scene_summary(image_recommendation, {'image_style': 'iphone_notes'})}",
+            "运行时只使用这个已审核课次的合同，不读取自由场景、来源或热点标题。",
+        ]
+    )
+
+
+def _build_psychology_learning_image_recommendation(
+    *,
+    image_plan: dict[str, Any],
+) -> dict[str, Any]:
+    """Expose the approved image plan without offering an override flag."""
+    return {
+        "status": "available",
+        "decision_stage": IMAGE_RECOMMENDATION_DECISION_STAGE,
+        "recommended_backend": image_plan["backend"],
+        "local_style": image_plan["style"],
+        "provider": "",
+        "model": "",
+        "role": image_plan["role"],
+        "text_density": image_plan["text_density"],
+        "max_text_units": int(image_plan["max_text_units"]),
+        "reason": image_plan["reason"],
+        "command_hint": "无需传 --local-image-style；PTSM 会按已审核课程图片方案生成。",
+        "fallback": "学习系列不接受手工图片样式或图片文件覆盖。",
+    }
+
+
+def _psychology_learning_safety_notes() -> list[str]:
+    return [
+        "课程概念、解释、微练习和边界只能来自 PTSM 已审核课程目录。",
+        "不要把普通情绪写成诊断、治疗、药物建议或自测结论。",
+        "如果这种状态持续影响生活或出现危机风险，优先寻求当地专业支持。",
+    ]
+
+
+def _format_psychology_learning_selection_markdown(result: dict[str, Any]) -> str:
+    series = result.get("series", {})
+    roadmap = series.get("roadmap", []) if isinstance(series, dict) else []
+    roadmap_lines = "\n".join(
+        (
+            f"- 第{item.get('lesson_number')}课：{item.get('lesson_title')} "
+            f"(`{item.get('lesson_id')}`)"
+        )
+        for item in roadmap
+        if isinstance(item, dict)
+    )
+    directions = "\n".join(
+        _format_topic_direction_markdown(direction)
+        for direction in result.get("topic_guidance", {}).get("directions", [])
+    )
+    return "\n".join(
+        [
+            "# Psychology Learning Series",
+            "",
+            "## Choose a Lesson",
+            "",
+            str(result.get("topic_guidance", {}).get("message", "")),
+            "",
+            "## Roadmap",
+            "",
+            roadmap_lines,
+            "",
+            "## Available Lesson Directions",
+            "",
+            directions,
+            "",
+            "## Next Step",
+            "",
+            str(result.get("next_step", "")),
+        ]
+    )
+
+
 def _image_recommendation_scene_summary(
     recommendation: dict[str, Any] | None,
     brief: dict[str, Any],
@@ -1554,6 +1862,10 @@ def _build_run_playbook_command(
     topic_direction_id: str | None = None,
     ai_content_mode: str | None = None,
     ai_evidence_file_path: str | None = None,
+    psychology_content_mode: str | None = None,
+    psychology_series_id: str | None = None,
+    psychology_lesson_id: str | None = None,
+    psychology_curriculum_version: str | None = None,
 ) -> list[str]:
     command = [
         "uv",
@@ -1585,6 +1897,16 @@ def _build_run_playbook_command(
             "--ai-evidence-file",
             ai_evidence_file_path or "<operator-ai-evidence.json>",
         ])
+    if psychology_content_mode:
+        command.extend(["--psychology-content-mode", psychology_content_mode])
+    if psychology_series_id:
+        command.extend(["--psychology-series-id", psychology_series_id])
+    if psychology_lesson_id:
+        command.extend(["--psychology-lesson-id", psychology_lesson_id])
+    if psychology_curriculum_version:
+        command.extend(
+            ["--psychology-curriculum-version", psychology_curriculum_version]
+        )
     return command
 
 
@@ -1620,6 +1942,27 @@ def _build_ai_tech_quality_checklist(content_mode: str) -> list[dict[str, str]]:
         ],
     }
     return [*by_mode[content_mode], *shared]
+
+
+def _build_psychology_learning_quality_checklist() -> list[dict[str, str]]:
+    return [
+        {
+            "item": "固定课次",
+            "done_when": "正文保留系列课次、概念和学习目标，不把普通心理学帖伪装成课程。",
+        },
+        {
+            "item": "一个可保存练习",
+            "done_when": "只交付本课已审核的微练习，不追加自测、万能话术或治疗承诺。",
+        },
+        {
+            "item": "适用边界",
+            "done_when": "写清这张卡适合什么日常时刻，以及何时应转向专业帮助。",
+        },
+        {
+            "item": "短帖人味",
+            "done_when": "用一个下班后的真实瞬间开场，正文保持短、可扫读、可接话。",
+        },
+    ]
 
 
 def _build_generic_quality_checklist() -> list[dict[str, str]]:

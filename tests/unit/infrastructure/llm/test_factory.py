@@ -8,6 +8,11 @@ import pytest
 
 from ptsm.config.settings import Settings
 from ptsm.domain.ai_tech_content import parse_ai_tech_evidence_bundle, validate_ai_tech_draft
+from ptsm.domain.psychology_learning import (
+    list_psychology_learning_series,
+    resolve_psychology_learning_selection,
+    validate_psychology_learning_draft_contract,
+)
 from ptsm.evaluations.contracts import EvalTarget
 from ptsm.evaluations.contracts_eval import contract_playbook_node_contract
 from ptsm.evaluations.playbook_contracts import load_playbook_eval_contract
@@ -1530,6 +1535,86 @@ def test_parse_json_payload_normalizes_string_hashtags() -> None:
 def _ai_tech_runtime_context(evidence: dict[str, object]) -> str:
     contract = parse_ai_tech_evidence_bundle(evidence).runtime_contract
     return "# AI Tech Evidence Contract\n" + json.dumps(contract, ensure_ascii=False)
+
+
+def _psychology_learning_runtime_context() -> str:
+    bundle = resolve_psychology_learning_selection(
+        series_id="after_work_rumination",
+        lesson_id="notice_the_loop",
+    )
+    return "# Psychology Learning Series Contract\n" + json.dumps(
+        bundle.runtime_contract,
+        ensure_ascii=False,
+    )
+
+
+@pytest.mark.parametrize(
+    "lesson_id",
+    [
+        lesson.lesson_id
+        for lesson in list_psychology_learning_series(
+            series_id="after_work_rumination"
+        )
+    ],
+)
+def test_deterministic_backend_builds_every_bound_psychology_learning_lesson(
+    lesson_id: str,
+) -> None:
+    bundle = resolve_psychology_learning_selection(
+        series_id="after_work_rumination",
+        lesson_id=lesson_id,
+    )
+    runtime_context = "# Psychology Learning Series Contract\n" + json.dumps(
+        bundle.runtime_contract,
+        ensure_ascii=False,
+    )
+
+    draft = DeterministicDraftBackend().generate(
+        scene="心理学学习专题",
+        planner_prompt="# Modern Psychology Planner\n目标：写一条生活化心理学学习帖。",
+        skill_contents=["# Psychology Style\n短、生活化、非诊断化。"],
+        runtime_skill_contents=[runtime_context],
+    )
+
+    assert validate_psychology_learning_draft_contract(
+        bundle.runtime_contract,
+        draft,
+    ) == []
+
+
+def test_deterministic_backend_builds_the_exact_bound_psychology_learning_lesson() -> None:
+    bundle = resolve_psychology_learning_selection(
+        series_id="after_work_rumination",
+        lesson_id="notice_the_loop",
+    )
+    draft = DeterministicDraftBackend().generate(
+        scene="心理学学习专题：第1课",
+        planner_prompt="# Modern Psychology Planner\n目标：写一条生活化心理学学习帖。",
+        skill_contents=["# Psychology Style\n短、生活化、非诊断化。"],
+        runtime_skill_contents=[_psychology_learning_runtime_context()],
+    )
+
+    assert validate_psychology_learning_draft_contract(
+        bundle.runtime_contract,
+        draft,
+    ) == []
+    assert bundle.runtime_contract["concept_label"] not in draft["title"]
+    assert bundle.runtime_contract["approved_explanation"] in draft["body"]
+    assert bundle.runtime_contract["micro_exercise"] in draft["body"]
+    assert "source:" not in json.dumps(draft, ensure_ascii=False)
+
+
+def test_deepseek_learning_requirements_preserve_only_bound_lesson_fields() -> None:
+    requirements = _build_deepseek_hard_requirements(
+        scene="心理学学习专题：第1课",
+        extra_context="# Psychology Style\n# Psychology Safety",
+        runtime_context=_psychology_learning_runtime_context(),
+    )
+
+    assert "Psychology Learning Series Contract" in requirements
+    assert "课程合同" in requirements
+    assert "#心理学学习" in requirements
+    assert "source:" not in requirements
 
 
 def test_deterministic_backend_builds_short_evidence_backed_news_brief() -> None:

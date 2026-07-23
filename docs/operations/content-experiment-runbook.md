@@ -2,12 +2,13 @@
 title: XHS Content Experiment Runbook
 status: active
 owner: ptsm
-last_verified: 2026-07-22
+last_verified: 2026-07-23
 source_of_truth: true
 related_paths:
   - docs/research/2026-05-15-xhs-content-experiment-log.md
   - docs/plans/2026-05-15-xhs-content-quality-improvement.md
   - src/ptsm/application/use_cases/xhs_post_metrics.py
+  - src/ptsm/domain/psychology_learning.py
   - src/ptsm/playbooks/definitions
   - src/ptsm/skills/builtin
   - outputs/artifacts
@@ -41,6 +42,8 @@ When generating several variants for the same account and playbook, keep each re
 For XHS copy experiments, reject variants whose title is only a category label such as `日常`, `实录`, or `干货分享`; use the playbook’s concrete-entry rule rather than inserting a universal tension keyword. The final正文 follows `xhs_compact_native_v1`: 2–4 short beats with a scene/human anchor, one usable domain detail, and a natural save or reply opening. Save and comment intent may share one sentence; do not turn them into four labelled moves. Keep candidates inside their compact playbook body band before considering publish.
 
 For `modern_psychology_post`, do not reuse six near-identical "反复复盘一句话" scenes. The deterministic fallback now separates meeting replay, boundary pressure, Sunday work-message anxiety, after-work message pullback, brain-in-review-meeting, and ordinary-reply replay. A calibration batch should keep those scene mechanics distinct before publishing.
+
+For `modern_psychology_post --psychology-content-mode learning_series`, this rule is stricter: a variant is one confirmed catalog lesson, not a rewritten free scene or a made-up next lesson. The controlled renderer gives each selected lesson its own catalog-approved title and cover hook, then fixes its body, tags, and catalog-owned image plan; do not hand-edit them or add `--local-image-style` as an experiment. Compare lessons only after a reviewed catalog/version change, and keep the returned series/lesson identity fixed. Do not infer a reader's course progress from previous artifacts, and do not use hotspot text as lesson evidence.
 
 Example:
 
@@ -99,9 +102,24 @@ uv run python -m ptsm.bootstrap xhs-metrics-report \
   --playbook-id modern_psychology_post \
   --checkpoint 24h \
   --group-by image_style
+
+uv run python -m ptsm.bootstrap xhs-metrics-report \
+  --playbook-id modern_psychology_post \
+  --checkpoint 24h \
+  --group-by psychology_learning_series_id
+
+uv run python -m ptsm.bootstrap xhs-metrics-report \
+  --playbook-id modern_psychology_post \
+  --checkpoint 24h \
+  --group-by psychology_learning_curriculum_version
+
+uv run python -m ptsm.bootstrap xhs-metrics-report \
+  --playbook-id modern_psychology_post \
+  --checkpoint 24h \
+  --group-by psychology_learning_lesson_id
 ```
 
-The metrics store is `outputs/artifacts/xhs-post-metrics/metrics.jsonl`. Reports mark any group with fewer than 3 posts as `needs_more_data`; treat those as early signals, not proof that a topic direction or cover style wins.
+The metrics store is `outputs/artifacts/xhs-post-metrics/metrics.jsonl`. Learning rows carry `psychology_learning_series_id`, `psychology_learning_curriculum_version`, and `psychology_learning_lesson_id` only after the closed receipt is revalidated. Re-recording the same artifact/checkpoint replaces the old measurement, so a correction cannot inflate the cohort. Learning reports exclude ordinary psychology rows and mark any group with fewer than 3 posts as `needs_more_data`. Treat these as early signals, not proof that a direction, lesson or cover style wins.
 
 ## Readout Rules
 

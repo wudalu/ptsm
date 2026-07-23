@@ -121,6 +121,39 @@ def _request_resolves_to_ai_tech_playbook(args: argparse.Namespace) -> bool:
     return playbook.playbook_id == AI_TECH_PLAYBOOK_ID
 
 
+def _request_resolves_to_modern_psychology_playbook(args: argparse.Namespace) -> bool:
+    """Keep learning-series CLI validation aligned with runtime selection."""
+    if args.playbook_id == "modern_psychology_post":
+        return True
+    if args.playbook_id is not None:
+        return False
+    try:
+        account = AccountRegistry().get(args.account_id)
+        platform = getattr(args, "platform", None) or account.platform
+        if platform != account.platform:
+            return False
+        playbook = PlaybookRegistry(playbook_root=PLAYBOOK_ROOT).select_for_account(
+            account=account,
+            platform=platform,
+            playbook_id=None,
+        )
+    except (LookupError, ValueError):
+        return False
+    return playbook.playbook_id == "modern_psychology_post"
+
+
+def _has_psychology_learning_arguments(args: argparse.Namespace) -> bool:
+    return any(
+        getattr(args, field, None) is not None
+        for field in (
+            "psychology_content_mode",
+            "psychology_series_id",
+            "psychology_lesson_id",
+            "psychology_curriculum_version",
+        )
+    )
+
+
 def _explicit_keywords(value: str) -> str:
     if not any(part.strip() for part in re.split(r"[,，]", value)):
         raise argparse.ArgumentTypeError("requires at least one explicit keyword")
@@ -199,6 +232,13 @@ def build_parser() -> argparse.ArgumentParser:
     run_playbook_cli.add_argument("--fresh-topic-research", action="store_true")
     run_playbook_cli.add_argument("--ai-content-mode")
     run_playbook_cli.add_argument("--ai-evidence-file", type=Path)
+    run_playbook_cli.add_argument(
+        "--psychology-content-mode",
+        choices=("learning_series",),
+    )
+    run_playbook_cli.add_argument("--psychology-series-id")
+    run_playbook_cli.add_argument("--psychology-lesson-id")
+    run_playbook_cli.add_argument("--psychology-curriculum-version")
     run_playbook_cli.add_argument("--format-pattern-path", type=Path)
     run_playbook_cli.add_argument("--eval", action="store_true")
     run_playbook_cli.add_argument(
@@ -221,6 +261,13 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("news_brief", "hands_on", "fact_translation"),
     )
     guide_post.add_argument("--ai-evidence-file", type=Path)
+    guide_post.add_argument(
+        "--psychology-content-mode",
+        choices=("learning_series",),
+    )
+    guide_post.add_argument("--psychology-series-id")
+    guide_post.add_argument("--psychology-lesson-id")
+    guide_post.add_argument("--psychology-curriculum-version")
     guide_post.add_argument("--non-interactive", action="store_true")
     guide_post.add_argument("--format", choices=("json", "markdown"))
 
@@ -520,6 +567,16 @@ def _collect_guide_post_request(args: argparse.Namespace) -> GuidePostRequest:
     if args.playbook_id != SUPPORTED_PLAYBOOK_ID:
         return _collect_generic_guide_post_request(args)
 
+    if args.psychology_content_mode == "learning_series":
+        return GuidePostRequest(
+            playbook_id=args.playbook_id,
+            account_id=args.account_id,
+            psychology_content_mode=args.psychology_content_mode,
+            psychology_series_id=args.psychology_series_id,
+            psychology_lesson_id=args.psychology_lesson_id,
+            psychology_curriculum_version=args.psychology_curriculum_version,
+        )
+
     print("我们先把这条现代心理学帖子聊成一个可执行 brief。", file=sys.stderr)
     scene = args.scene
     if scene:
@@ -683,10 +740,24 @@ def main(argv: Sequence[str] | None = None) -> int:
             if args.ai_evidence_file is not None
             else None
         )
+        psychology_learning_playbook = _request_resolves_to_modern_psychology_playbook(
+            args
+        )
+        if (
+            _has_psychology_learning_arguments(args)
+            and not psychology_learning_playbook
+        ):
+            parser.error(
+                "psychology learning flags only support modern_psychology_post"
+            )
         if (
             not args.scene
             and not args.fresh_topic_research
             and not _request_resolves_to_ai_tech_playbook(args)
+            and not (
+                psychology_learning_playbook
+                and args.psychology_content_mode == "learning_series"
+            )
         ):
             parser.error("run-playbook requires --scene or --fresh-topic-research")
         result = run_playbook(
@@ -712,6 +783,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 ai_evidence_file_path=(
                     str(args.ai_evidence_file) if args.ai_evidence_file is not None else None
                 ),
+                psychology_content_mode=args.psychology_content_mode,
+                psychology_series_id=args.psychology_series_id,
+                psychology_lesson_id=args.psychology_lesson_id,
+                psychology_curriculum_version=args.psychology_curriculum_version,
                 format_pattern_path=(
                     str(args.format_pattern_path) if args.format_pattern_path else None
                 ),
@@ -724,11 +799,27 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.command == "guide-post":
         if (
+            _has_psychology_learning_arguments(args)
+            and not _request_resolves_to_modern_psychology_playbook(args)
+        ):
+            parser.error(
+                "psychology learning flags only support modern_psychology_post"
+            )
+        if (
             args.playbook_id == "ai_tech_daily_post"
             and args.non_interactive
             and args.ai_content_mode is None
         ):
             parser.error("guide-post for ai_tech_daily_post requires --ai-content-mode")
+        if (
+            args.playbook_id == "modern_psychology_post"
+            and args.non_interactive
+            and args.psychology_content_mode == "learning_series"
+            and args.psychology_series_id is None
+        ):
+            parser.error(
+                "guide-post for a psychology learning series requires --psychology-series-id"
+            )
         request = (
             GuidePostRequest(
                 playbook_id=args.playbook_id,
@@ -745,6 +836,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                     if args.ai_evidence_file is not None
                     else None
                 ),
+                psychology_content_mode=args.psychology_content_mode,
+                psychology_series_id=args.psychology_series_id,
+                psychology_lesson_id=args.psychology_lesson_id,
+                psychology_curriculum_version=args.psychology_curriculum_version,
             )
             if args.non_interactive
             else _collect_guide_post_request(args)

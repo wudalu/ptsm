@@ -7,6 +7,10 @@ from typing import Any, Mapping
 from pydantic import ValidationError
 
 from ptsm.domain.ai_tech_content import parse_ai_tech_runtime_contract
+from ptsm.domain.psychology_learning import (
+    parse_psychology_learning_runtime_contract,
+    render_psychology_learning_draft,
+)
 
 
 def build_contextual_deterministic_draft(
@@ -37,6 +41,8 @@ def build_contextual_deterministic_draft(
         )
     if _is_ai_tech_context(scene=scene, extra_context=extra_context):
         return _build_ai_tech_draft(runtime_context=runtime_context)
+    if _is_psychology_learning_context(runtime_context=runtime_context):
+        return _build_psychology_learning_draft(runtime_context=runtime_context)
     if _is_daily_english_context(scene=scene, extra_context=extra_context):
         return _build_daily_english_draft(scene=scene, feedback=feedback)
     if _is_modern_psychology_context(scene=scene, extra_context=extra_context):
@@ -202,6 +208,10 @@ def _is_modern_psychology_context(*, scene: str, extra_context: str) -> bool:
             "专业帮助",
         )
     )
+
+
+def _is_psychology_learning_context(*, runtime_context: str) -> bool:
+    return "# Psychology Learning Series Contract" in runtime_context
 
 
 def _is_reddit_curation_context(*, scene: str, extra_context: str) -> bool:
@@ -637,6 +647,27 @@ def _extract_ai_tech_runtime_contract(runtime_context: str) -> dict[str, Any]:
         return parse_ai_tech_runtime_contract(payload)
     except (TypeError, ValueError, ValidationError, json.JSONDecodeError) as exc:
         raise ValueError("AI tech evidence contract is invalid") from exc
+
+
+def _build_psychology_learning_draft(*, runtime_context: str) -> dict[str, Any]:
+    """Render the closed catalog template for a psychology learning lesson."""
+    contract = _extract_psychology_learning_runtime_contract(runtime_context)
+    return render_psychology_learning_draft(contract)
+
+
+def _extract_psychology_learning_runtime_contract(runtime_context: str) -> dict[str, Any]:
+    marker = "# Psychology Learning Series Contract"
+    marker_index = runtime_context.find(marker)
+    if marker_index < 0:
+        raise ValueError("psychology learning drafts require a bound catalog contract")
+    json_start = runtime_context.find("{", marker_index + len(marker))
+    if json_start < 0:
+        raise ValueError("psychology learning contract is missing JSON")
+    try:
+        payload, _ = json.JSONDecoder().raw_decode(runtime_context[json_start:])
+        return parse_psychology_learning_runtime_contract(payload)
+    except (TypeError, ValueError, ValidationError, json.JSONDecodeError) as exc:
+        raise ValueError("psychology learning contract is invalid") from exc
 
 
 def _required_ai_tech_text(value: object, *, field: str) -> str:

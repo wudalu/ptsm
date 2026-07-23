@@ -6,16 +6,21 @@ from types import SimpleNamespace
 
 import pytest
 
-from ptsm.accounts.registry import AccountRegistry
+from ptsm.accounts.registry import AccountProfile, AccountRegistry
 from ptsm.application.models import FengkuangRequest, PlaybookRequest
 from ptsm.application.use_cases.run_playbook import (
     _build_image_generation_prompt,
     _build_note_card_image_payload,
     _build_runtime_skill_context_resolver,
+    _resolve_psychology_learning_preflight,
     run_playbook,
     run_fengkuang_playbook,
 )
 from ptsm.config.settings import Settings
+from ptsm.domain.psychology_learning import (
+    render_psychology_learning_draft,
+    resolve_psychology_learning_selection,
+)
 from ptsm.infrastructure.memory.checkpoint import FileCheckpointSaver
 from ptsm.infrastructure.memory.store import FileExecutionMemory
 from ptsm.infrastructure.observability.run_store import RunStore
@@ -3101,6 +3106,48 @@ def test_ai_login_rerun_preserves_evidence_file_arguments(
     assert "https://example.com/release" not in result["scene"]
 
 
+def test_psychology_learning_login_rerun_preserves_catalog_selection(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    publisher = LoginRequiredPreflightPublisher()
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.xhs_login.fetch_xhs_login_qrcode_via_api",
+        lambda server_url: {"timeout": "4m0s", "is_logged_in": False},
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = run_playbook(
+        PlaybookRequest(
+            scene="operator-only scene https://example.com/should-not-leak",
+            account_id="acct-psychology-local",
+            playbook_id="modern_psychology_post",
+            publish_mode="mcp-real",
+            psychology_content_mode="learning_series",
+            psychology_series_id="after_work_rumination",
+            psychology_lesson_id="notice_the_loop",
+            psychology_curriculum_version="1",
+            topic_direction_id="psychology_learning_after_work_rumination_notice_the_loop",
+        ),
+        publisher=publisher,
+        run_store=RunStore(base_dir=tmp_path / "runs"),
+    )
+
+    rerun_instruction = result["publish_result"]["login_instructions"][-1]
+
+    assert result["status"] == "login_required"
+    assert "--psychology-content-mode learning_series" in rerun_instruction
+    assert "--psychology-series-id after_work_rumination" in rerun_instruction
+    assert "--psychology-lesson-id notice_the_loop" in rerun_instruction
+    assert "--psychology-curriculum-version 1" in rerun_instruction
+    assert (
+        "--topic-direction-id psychology_learning_after_work_rumination_notice_the_loop"
+        in rerun_instruction
+    )
+    assert "--scene" not in rerun_instruction
+    assert "https://example.com/should-not-leak" not in rerun_instruction
+
+
 def test_ai_login_without_evidence_file_uses_api_recovery_instruction(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -3214,6 +3261,483 @@ def _valid_ai_news_brief_bundle() -> dict[str, object]:
             },
         ],
     }
+
+
+def _psychology_learning_bundle():
+    return resolve_psychology_learning_selection(
+        series_id="after_work_rumination",
+        lesson_id="notice_the_loop",
+    )
+
+
+def _valid_psychology_learning_draft() -> dict[str, object]:
+    return render_psychology_learning_draft(_psychology_learning_bundle().runtime_contract)
+
+
+def test_run_playbook_requires_complete_psychology_learning_selection_before_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class NoRunStart:
+        def start(self, **_: object) -> object:
+            raise AssertionError("RunStore.start must not be called")
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        lambda **_: pytest.fail("workflow must not be built"),
+    )
+
+    result = run_playbook(
+        PlaybookRequest(
+            scene="operator supplied https://example.com/raw-scene",
+            account_id="acct-psychology-local",
+            playbook_id="modern_psychology_post",
+            psychology_content_mode="learning_series",
+            psychology_series_id="after_work_rumination",
+        ),
+        run_store=NoRunStart(),  # type: ignore[arg-type]
+    )
+
+    serialized = json.dumps(result, ensure_ascii=False)
+    assert result["status"] == "psychology_learning_required"
+    assert "https://example.com/raw-scene" not in serialized
+
+
+def test_run_playbook_requires_an_explicit_psychology_learning_curriculum_version(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class NoRunStart:
+        def start(self, **_: object) -> object:
+            raise AssertionError("RunStore.start must not be called")
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        lambda **_: pytest.fail("workflow must not be built"),
+    )
+
+    result = run_playbook(
+        PlaybookRequest(
+            account_id="acct-psychology-local",
+            playbook_id="modern_psychology_post",
+            psychology_content_mode="learning_series",
+            psychology_series_id="after_work_rumination",
+            psychology_lesson_id="notice_the_loop",
+            topic_direction_id="psychology_learning_after_work_rumination_notice_the_loop",
+        ),
+        run_store=NoRunStart(),  # type: ignore[arg-type]
+    )
+
+    assert result["status"] == "psychology_learning_required"
+
+
+def test_run_playbook_rejects_psychology_learning_flags_for_other_playbooks_before_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class NoRunStart:
+        def start(self, **_: object) -> object:
+            raise AssertionError("RunStore.start must not be called")
+
+    raw_scene = "operator supplied https://example.com/free-claim"
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        lambda **_: pytest.fail("workflow must not be built"),
+    )
+
+    result = run_playbook(
+        PlaybookRequest(
+            scene=raw_scene,
+            account_id="acct-daily-english-local",
+            playbook_id="daily_english_post",
+            psychology_content_mode="learning_series",
+            psychology_series_id="after_work_rumination",
+            psychology_lesson_id="notice_the_loop",
+            psychology_curriculum_version="1",
+        ),
+        run_store=NoRunStart(),  # type: ignore[arg-type]
+    )
+
+    assert result["status"] == "psychology_learning_playbook_invalid"
+    assert raw_scene not in json.dumps(result, ensure_ascii=False)
+
+
+def test_run_playbook_rejects_mismatched_psychology_learning_direction_before_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class NoRunStart:
+        def start(self, **_: object) -> object:
+            raise AssertionError("RunStore.start must not be called")
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        lambda **_: pytest.fail("workflow must not be built"),
+    )
+
+    result = run_playbook(
+        PlaybookRequest(
+            account_id="acct-psychology-local",
+            playbook_id="modern_psychology_post",
+                psychology_content_mode="learning_series",
+                psychology_series_id="after_work_rumination",
+                psychology_lesson_id="notice_the_loop",
+                psychology_curriculum_version="1",
+                topic_direction_id="psychology_learning_after_work_rumination_close_the_replay",
+        ),
+        run_store=NoRunStart(),  # type: ignore[arg-type]
+    )
+
+    assert result["status"] == "psychology_learning_topic_direction_invalid"
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    (
+        {"local_image_style": "Smith_2024_Rumination_MetaAnalysis"},
+        {
+            "publish_image_paths": [
+                "outputs/generated_images/Smith_2024_Rumination_MetaAnalysis.png"
+            ]
+        },
+    ),
+    ids=("local_style", "manual_image"),
+)
+def test_psychology_learning_preflight_rejects_operator_image_overrides(
+    overrides: dict[str, object],
+) -> None:
+    request = PlaybookRequest(
+        account_id="acct-psychology-local",
+        playbook_id="modern_psychology_post",
+        psychology_content_mode="learning_series",
+        psychology_series_id="after_work_rumination",
+        psychology_lesson_id="notice_the_loop",
+        psychology_curriculum_version="1",
+        topic_direction_id="psychology_learning_after_work_rumination_notice_the_loop",
+        **overrides,
+    )
+
+    bundle, failure = _resolve_psychology_learning_preflight(
+        request=request,
+        platform="xiaohongshu",
+        playbook_id="modern_psychology_post",
+    )
+
+    assert bundle is None
+    assert failure == {
+        "scene": "心理学学习专题",
+        "platform": "xiaohongshu",
+        "account_id": "acct-psychology-local",
+        "playbook_id": "modern_psychology_post",
+        "status": "psychology_learning_image_override_invalid",
+        "diagnostic": "learning_series_uses_the_catalog_image_plan_only",
+    }
+
+
+def test_run_playbook_binds_psychology_learning_contract_without_free_scene_or_sources(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    final_content = _valid_psychology_learning_draft()
+    artifact_path = tmp_path / "outputs" / "artifacts" / "learning-artifact.json"
+    artifact_path.parent.mkdir(parents=True)
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "modern_psychology_post",
+                "final_content": final_content,
+                "activated_skill_details": [],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    class ValidLearningWorkflow:
+        def __init__(self) -> None:
+            self.payload: dict[str, object] | None = None
+
+        def invoke(
+            self,
+            payload: dict[str, object],
+            config: dict[str, object] | None = None,
+        ) -> dict[str, object]:
+            self.payload = payload
+            return {
+                "status": "completed",
+                "artifact_path": str(artifact_path),
+                "final_content": final_content,
+                "runtime_skill_contents": [],
+                "activated_skills": [],
+                "activated_skill_details": [],
+                "runtime_skill_details": [],
+            }
+
+    workflow = ValidLearningWorkflow()
+    workflow_build_arguments: dict[str, object] = {}
+
+    def build_workflow(**kwargs: object) -> ValidLearningWorkflow:
+        workflow_build_arguments.update(kwargs)
+        return workflow
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        build_workflow,
+    )
+    monkeypatch.chdir(tmp_path)
+    raw_scene = "operator supplied https://example.com/raw-scene by Example Author"
+
+    result = run_playbook(
+        PlaybookRequest(
+            scene=raw_scene,
+            account_id="acct-psychology-local",
+            playbook_id="modern_psychology_post",
+                psychology_content_mode="learning_series",
+                psychology_series_id="after_work_rumination",
+                psychology_lesson_id="notice_the_loop",
+                psychology_curriculum_version="1",
+                topic_direction_id="psychology_learning_after_work_rumination_notice_the_loop",
+        ),
+        publisher=SuccessfulPublisher(),
+        run_store=RunStore(base_dir=tmp_path / "runs"),
+    )
+
+    bundle = _psychology_learning_bundle()
+    assert result["status"] == "completed"
+    assert workflow.payload is not None
+    assert raw_scene not in json.dumps(workflow.payload, ensure_ascii=False)
+    assert "psychology_content_mode" not in workflow.payload
+    assert "psychology_series_id" not in workflow.payload
+    assert "psychology_lesson_id" not in workflow.payload
+    assert workflow_build_arguments["psychology_learning_contract"] == bundle.runtime_contract
+    assert workflow_build_arguments["psychology_learning_manifest"] == bundle.manifest
+    assert "source_refs" not in json.dumps(
+        workflow_build_arguments["psychology_learning_contract"], ensure_ascii=False
+    )
+
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+    assert artifact["psychology_learning_series_id"] == "after_work_rumination"
+    assert artifact["psychology_learning_lesson_id"] == "notice_the_loop"
+    assert artifact["psychology_learning_evidence_manifest"] == bundle.manifest
+    assert raw_scene not in json.dumps(artifact, ensure_ascii=False)
+
+
+def test_run_playbook_removes_owned_unsafe_psychology_learning_artifact(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    artifact_path = tmp_path / "outputs" / "artifacts" / "unsafe-learning-artifact.json"
+    artifact_path.parent.mkdir(parents=True)
+    raw_url = "https://private.example.com/psychology-source"
+    final_content = _valid_psychology_learning_draft()
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "modern_psychology_post",
+                "final_content": final_content,
+                "source_url": raw_url,
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    class UnsafeLearningWorkflow:
+        def invoke(
+            self,
+            payload: dict[str, object],
+            config: dict[str, object] | None = None,
+        ) -> dict[str, object]:
+            return {
+                "status": "completed",
+                "artifact_path": str(artifact_path),
+                "final_content": final_content,
+                "runtime_skill_contents": [],
+                "activated_skills": [],
+                "activated_skill_details": [],
+                "runtime_skill_details": [],
+            }
+
+    publisher = CountingPublisher()
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        lambda **_: UnsafeLearningWorkflow(),
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = run_playbook(
+        PlaybookRequest(
+            account_id="acct-psychology-local",
+            playbook_id="modern_psychology_post",
+            psychology_content_mode="learning_series",
+            psychology_series_id="after_work_rumination",
+            psychology_lesson_id="notice_the_loop",
+            psychology_curriculum_version="1",
+            topic_direction_id="psychology_learning_after_work_rumination_notice_the_loop",
+        ),
+        publisher=publisher,
+        run_store=RunStore(base_dir=tmp_path / "runs"),
+    )
+
+    assert result["status"] == "psychology_learning_artifact_invalid"
+    assert publisher.calls == 0
+    assert not artifact_path.exists()
+
+
+def test_run_playbook_persists_only_sanitized_learning_publish_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    artifact_path = tmp_path / "outputs" / "artifacts" / "learning-artifact.json"
+    artifact_path.parent.mkdir(parents=True)
+    final_content = _valid_psychology_learning_draft()
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "modern_psychology_post",
+                "final_content": final_content,
+                "activated_skill_details": [],
+                "provider_message": "Untrusted custom workflow message",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    class ValidLearningWorkflow:
+        def invoke(
+            self,
+            payload: dict[str, object],
+            config: dict[str, object] | None = None,
+        ) -> dict[str, object]:
+            return {
+                "status": "completed",
+                "artifact_path": str(artifact_path),
+                "final_content": final_content,
+                "runtime_skill_contents": [],
+                "activated_skills": [],
+                "activated_skill_details": [],
+                "runtime_skill_details": [],
+            }
+
+    class RawMetadataPublisher:
+        def publish(self, **_: object) -> dict[str, object]:
+            return {
+                "status": "Smith_2024_Rumination_MetaAnalysis",
+                "platform": "xiaohongshu",
+                "provider": "xiaohongshu_mcp",
+                "post_id": "note-123",
+                "post_url": "https://www.xiaohongshu.com/explore/note-123",
+                "server_url": "http://127.0.0.1:18060/mcp",
+                "raw_response": "APA Rumination Study by Author",
+                "preflight": {"tools": ["publish_content"], "login_status": "ready"},
+                "platform_payload": {"title": "untrusted provider payload"},
+            }
+
+    class AccountWithPublisherEndpoint:
+        def get(self, account_id: str) -> AccountProfile:
+            assert account_id == "acct-psychology-learning"
+            return AccountProfile(
+                account_id=account_id,
+                nickname="心理学习实验号",
+                platform="xiaohongshu",
+                domain="现代心理困境观察",
+                publish_mode="mcp-real",
+                publisher_server_url="http://127.0.0.1:18060/mcp",
+            )
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        lambda **_: ValidLearningWorkflow(),
+    )
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.check_xhs_publish_status",
+        lambda **_: {
+            "status": "Smith_2024_Rumination_MetaAnalysis",
+            "source": "mcp_search",
+            "post_id": "note-123",
+            "post_url": "https://www.xiaohongshu.com/explore/note-123",
+            "xsec_token": "private-status-token",
+        },
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = run_playbook(
+        PlaybookRequest(
+            account_id="acct-psychology-learning",
+            playbook_id="modern_psychology_post",
+            publish_mode="mcp-real",
+            auto_generate_images=False,
+            wait_for_publish_status=True,
+            psychology_content_mode="learning_series",
+            psychology_series_id="after_work_rumination",
+            psychology_lesson_id="notice_the_loop",
+            psychology_curriculum_version="1",
+            topic_direction_id="psychology_learning_after_work_rumination_notice_the_loop",
+        ),
+        accounts=AccountWithPublisherEndpoint(),  # type: ignore[arg-type]
+        publisher=RawMetadataPublisher(),
+        run_store=RunStore(base_dir=tmp_path / "runs"),
+        eval_enabled=True,
+    )
+
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+    serialized_artifact = json.dumps(artifact, ensure_ascii=False)
+    serialized_response = json.dumps(result, ensure_ascii=False)
+    serialized_run_summary = json.dumps(result["run"], ensure_ascii=False)
+    serialized_run_events = (Path(result["run"]["events_path"])).read_text(
+        encoding="utf-8"
+    )
+    serialized_side_effect_ledger = (
+        tmp_path / ".ptsm" / "agent_runtime" / "side-effects.json"
+    ).read_text(encoding="utf-8")
+
+    assert result["status"] == "completed"
+    assert result["publish_result"] == {"status": "unknown"}
+    assert result["post_publish_checks"] == {
+        "requested": True,
+        "browser_opened": False,
+        "publish_status": "unknown",
+        "status_result": {
+            "status": "unknown",
+            "source": "mcp_search",
+        },
+    }
+    assert result["eval"]["status"] == "passed"
+    assert artifact["account"] == {
+        "account_id": "acct-psychology-learning",
+        "platform": "xiaohongshu",
+    }
+    assert artifact["topic_selection"] == {
+        "source": "psychology-learning-series",
+        "psychology_learning": {
+            "series_id": "after_work_rumination",
+            "curriculum_version": "1",
+            "lesson_id": "notice_the_loop",
+            "lesson_number": 1,
+        },
+    }
+    assert artifact["publish_result"] == {
+        "status": "unknown",
+    }
+    assert artifact["post_publish_checks"] == {
+        "requested": True,
+        "browser_opened": False,
+        "publish_status": "unknown",
+        "status_result": {
+            "status": "unknown",
+            "source": "mcp_search",
+        },
+    }
+    for raw_value in (
+        "127.0.0.1:18060",
+        "APA Rumination Study by Author",
+        "Smith_2024_Rumination_MetaAnalysis",
+        "private-status-token",
+        "untrusted provider payload",
+        "Untrusted custom workflow message",
+    ):
+        assert raw_value not in serialized_artifact
+        assert raw_value not in serialized_response
+        assert raw_value not in serialized_run_summary
+        assert raw_value not in serialized_run_events
+        assert raw_value not in serialized_side_effect_ledger
 
 
 @pytest.mark.parametrize(

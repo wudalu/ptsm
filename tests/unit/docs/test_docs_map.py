@@ -242,6 +242,46 @@ def test_playbooks_doc_mentions_persona_assets() -> None:
     assert "runtime_skill_contents" in skills_text
 
 
+def test_docs_cover_psychology_learning_series_contract() -> None:
+    required_markers = {
+        "architecture.md": "psychology_learning.py",
+        "runtime.md": "psychology_learning_draft_contract",
+        "playbooks.md": "learning_series",
+        "skills.md": "catalog_learning_series",
+        "harness-engineering.md": "psychology.learning_receipt",
+        "observability.md": "psychology_learning_series_id",
+        "operations.md": "--psychology-content-mode learning_series",
+        "operations/local-runbook.md": "--psychology-content-mode learning_series",
+        "operations/content-experiment-runbook.md": "psychology_learning_lesson_id",
+    }
+
+    for relative_path, marker in required_markers.items():
+        doc_text = (DOCS_ROOT / relative_path).read_text(encoding="utf-8")
+        assert marker in doc_text, f"{relative_path} must document {marker}"
+
+
+def test_learning_series_docs_cover_selection_image_and_metrics_integrity() -> None:
+    runtime_text = (DOCS_ROOT / "runtime.md").read_text(encoding="utf-8")
+    operations_text = (DOCS_ROOT / "operations.md").read_text(encoding="utf-8")
+    observability_text = (DOCS_ROOT / "observability.md").read_text(encoding="utf-8")
+    experiment_text = (
+        DOCS_ROOT / "operations" / "content-experiment-runbook.md"
+    ).read_text(encoding="utf-8")
+
+    assert "selection_required" in runtime_text
+    assert "不会默认生成第一课" in runtime_text
+    assert "catalog-owned image plan" in operations_text
+    assert "--local-image-style" in operations_text
+    assert "同一 artifact + checkpoint" in observability_text
+    assert "psychology_learning_curriculum_version" in experiment_text
+
+    runtime_text = (DOCS_ROOT / "runtime.md").read_text(encoding="utf-8")
+    observability_text = (DOCS_ROOT / "observability.md").read_text(encoding="utf-8")
+    assert "controlled lesson template" in runtime_text
+    assert "checkpoint-isolated" in runtime_text
+    assert "entire artifact" in observability_text
+
+
 def test_skills_doc_links_xhs_topic_index() -> None:
     skills_text = (DOCS_ROOT / "skills.md").read_text(encoding="utf-8")
 

@@ -5,7 +5,7 @@ from pathlib import Path
 import re
 import shlex
 import sys
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 from pydantic import ValidationError
 
@@ -51,6 +51,14 @@ from ptsm.domain.ai_tech_content import (
     parse_ai_tech_evidence_bundle,
     validate_ai_tech_draft,
 )
+from ptsm.domain.psychology_learning import (
+    PSYCHOLOGY_LEARNING_MODE,
+    PsychologyLearningBundle,
+    PsychologyLearningEvidenceManifest,
+    contains_psychology_learning_raw_provenance,
+    resolve_psychology_learning_selection,
+    validate_psychology_learning_draft_contract,
+)
 from ptsm.skills.runtime_context import (
     PatternAwareTopicResearchContextBuilder,
     RedditDiscussionContextBuilder,
@@ -68,6 +76,30 @@ DEFAULT_GENERATED_IMAGES_DIR = Path("outputs") / "generated_images"
 WAIT_FOR_PUBLISH_STATUS_SEARCH_RETRY_ATTEMPTS = 4
 WAIT_FOR_PUBLISH_STATUS_SEARCH_RETRY_INTERVAL_SECONDS = 2.0
 AI_TECH_PLAYBOOK_ID = "ai_tech_daily_post"
+MODERN_PSYCHOLOGY_PLAYBOOK_ID = "modern_psychology_post"
+_PSYCHOLOGY_LEARNING_ACCOUNT_ID_PATTERN = re.compile(
+    r"^acct-[a-z0-9]+(?:-[a-z0-9]+)*$"
+)
+_PSYCHOLOGY_LEARNING_RUN_ID_PATTERN = re.compile(
+    r"^\d{8}T\d{6}Z-[0-9a-f]{8}$"
+)
+_PSYCHOLOGY_LEARNING_PUBLISH_STATUSES = frozenset(
+    {"dry_run", "published", "login_required", "error", "unknown"}
+)
+_PSYCHOLOGY_LEARNING_POST_PUBLISH_STATUSES = frozenset(
+    {
+        "skipped",
+        "unknown",
+        "published",
+        "published_visible",
+        "published_search_verified",
+        "manual_check_required",
+        "login_required",
+        "unsupported",
+        "error",
+        "failed",
+    }
+)
 
 
 def _run_topic_radar_scan(*, output_dir: str) -> dict[str, Any]:
@@ -466,6 +498,378 @@ def _is_raw_ai_tech_provenance_key(key: str) -> bool:
     }
 
 
+def _is_psychology_learning_request(request: PlaybookRequest) -> bool:
+    """Return whether the caller is opting into the closed learning submode."""
+    return bool(
+        (request.psychology_content_mode or "").strip()
+        or request.psychology_series_id is not None
+        or request.psychology_lesson_id is not None
+        or request.psychology_curriculum_version is not None
+    )
+
+
+def _resolve_psychology_learning_preflight(
+    *,
+    request: PlaybookRequest,
+    platform: str,
+    playbook_id: str,
+) -> tuple[PsychologyLearningBundle | None, dict[str, Any] | None]:
+    """Resolve only an explicit catalog selection before side effects exist."""
+    response_context = {
+        # Never echo a free scene on this path. It may include an operator's
+        # unreviewed psychological claim, source URL, or personal detail.
+        "scene": "心理学学习专题",
+        "platform": platform,
+        "account_id": request.account_id,
+        "playbook_id": playbook_id,
+    }
+    mode = (request.psychology_content_mode or "").strip()
+    series_id = (request.psychology_series_id or "").strip()
+    lesson_id = (request.psychology_lesson_id or "").strip()
+    curriculum_version = (request.psychology_curriculum_version or "").strip()
+    if (
+        mode != PSYCHOLOGY_LEARNING_MODE
+        or not series_id
+        or not lesson_id
+        or not curriculum_version
+    ):
+        return None, {
+            **response_context,
+            "status": "psychology_learning_required",
+            "next_step": (
+                "Choose --psychology-content-mode learning_series and provide "
+                "an approved --psychology-series-id and --psychology-lesson-id "
+                "and --psychology-curriculum-version "
+                "before drafting psychology learning content."
+            ),
+        }
+    try:
+        bundle = resolve_psychology_learning_selection(
+            series_id=series_id,
+            lesson_id=lesson_id,
+            curriculum_version=curriculum_version,
+        )
+    except ValueError:
+        return None, {
+            **response_context,
+            "status": "psychology_learning_invalid",
+            "diagnostic": "unknown_or_malformed_catalog_selection",
+        }
+    if request.local_image_style or request.publish_image_paths:
+        return None, {
+            **response_context,
+            "status": "psychology_learning_image_override_invalid",
+            "diagnostic": "learning_series_uses_the_catalog_image_plan_only",
+        }
+    return bundle, None
+
+
+def _build_psychology_learning_runtime_scene(bundle: PsychologyLearningBundle) -> str:
+    contract = bundle.runtime_contract
+    return (
+        f"心理学学习专题：{contract['series_badge']}｜{contract['lesson_title']}"
+    )
+
+
+def _build_psychology_learning_topic_selection(
+    bundle: PsychologyLearningBundle,
+) -> dict[str, Any]:
+    """Build safe topic metadata from the catalog, never the operator scene."""
+    return {
+        "source": "psychology-learning-series",
+        "topic_direction_id": bundle.direction_id,
+        "direction": bundle.public_direction,
+        "psychology_learning": {
+            "series_id": bundle.series_id,
+            "curriculum_version": bundle.runtime_contract["curriculum_version"],
+            "lesson_id": bundle.lesson_id,
+            "lesson_number": bundle.lesson_number,
+        },
+    }
+
+
+def _build_psychology_learning_topic_guidance(
+    bundle: PsychologyLearningBundle,
+) -> dict[str, Any]:
+    return {
+        "status": "available",
+        "message": "请确认已审核专题中的具体课次；自由场景不能替换课程概念或练习。",
+        "selection_policy": "catalog_learning_series",
+        "matched_direction_id": bundle.direction_id,
+        "open_direction_id": "",
+        "open_direction_ids": [],
+        "direction_type_counts": {"learning_series_lesson": len(bundle.roadmap)},
+        "directions": [lesson.public_direction for lesson in bundle.lessons],
+    }
+
+
+def _build_psychology_learning_receipt(
+    bundle: PsychologyLearningBundle,
+) -> dict[str, object]:
+    manifest = PsychologyLearningEvidenceManifest.model_validate(bundle.manifest).model_dump(
+        mode="json"
+    )
+    contract = bundle.runtime_contract
+    return {
+        "psychology_learning_mode": PSYCHOLOGY_LEARNING_MODE,
+        "psychology_learning_series_id": bundle.series_id,
+        "psychology_learning_curriculum_version": contract["curriculum_version"],
+        "psychology_learning_lesson_id": bundle.lesson_id,
+        "psychology_learning_lesson_number": bundle.lesson_number,
+        "psychology_learning_evidence_manifest": manifest,
+        "psychology_learning_gate": {
+            "status": "passed",
+            "series_id": bundle.series_id,
+            "lesson_id": bundle.lesson_id,
+            "validator": "psychology_learning_draft_contract",
+            "validator_version": "1",
+            "errors": [],
+        },
+    }
+
+
+def _build_psychology_learning_artifact_update(
+    *,
+    account: object,
+    effective_scene: str,
+    platform: str,
+    publish_mode: str,
+    publish_result: object,
+    image_generation: object,
+    watermark_removal: object,
+    run_id: str,
+) -> dict[str, object]:
+    """Persist a closed operational receipt for a catalog lesson artifact."""
+    artifact_update: dict[str, object] = {
+        "scene": effective_scene,
+        "platform": "xiaohongshu",
+        "publish_mode": _normalize_psychology_learning_publish_mode(publish_mode),
+        # Learning rendering does not consume format-library prose; retaining
+        # a path to the library would create an unnecessary provenance surface.
+        "format_patterns_used": {"status": "not_used"},
+    }
+    account_receipt = _sanitize_psychology_learning_account(account)
+    if account_receipt is not None:
+        artifact_update["account"] = account_receipt
+    publish_receipt = _sanitize_psychology_learning_publish_result(publish_result)
+    if publish_receipt is not None:
+        artifact_update["publish_result"] = publish_receipt
+    image_receipt = _sanitize_psychology_learning_image_generation(image_generation)
+    if image_receipt is not None:
+        artifact_update["image_generation"] = image_receipt
+    watermark_receipt = _sanitize_psychology_learning_watermark_removal(
+        watermark_removal
+    )
+    if watermark_receipt is not None:
+        artifact_update["watermark_removal"] = watermark_receipt
+    if _PSYCHOLOGY_LEARNING_RUN_ID_PATTERN.fullmatch(run_id):
+        artifact_update["run"] = {"run_id": run_id}
+    return artifact_update
+
+
+def _build_psychology_learning_artifact_envelope(
+    *,
+    final_content: dict[str, Any],
+    learning_receipt: dict[str, object],
+) -> dict[str, object]:
+    """Drop workflow-internal fields before a closed lesson reaches publishing.
+
+    The generic runtime may carry prompts, tool metadata, and arbitrary custom
+    workflow fields.  Learning artifacts deliberately retain only the exact
+    approved draft, opaque receipt, and empty skill lists required by the
+    shared artifact contract.  Publish metadata is added later through the
+    dedicated sanitizers above.
+    """
+    return {
+        "playbook_id": MODERN_PSYCHOLOGY_PLAYBOOK_ID,
+        "activated_skills": [],
+        "activated_skill_details": [],
+        "final_content": final_content,
+        "topic_selection": _build_psychology_learning_artifact_topic_marker(
+            learning_receipt
+        ),
+        **learning_receipt,
+    }
+
+
+def _build_psychology_learning_artifact_topic_marker(
+    learning_receipt: Mapping[str, object],
+) -> dict[str, object]:
+    """Keep a minimal catalog marker if a receipt is later tampered away."""
+    return {
+        "source": "psychology-learning-series",
+        "psychology_learning": {
+            "series_id": learning_receipt["psychology_learning_series_id"],
+            "curriculum_version": learning_receipt[
+                "psychology_learning_curriculum_version"
+            ],
+            "lesson_id": learning_receipt["psychology_learning_lesson_id"],
+            "lesson_number": learning_receipt["psychology_learning_lesson_number"],
+        },
+    }
+
+
+def _sanitize_psychology_learning_account(account: object) -> dict[str, str] | None:
+    account_id = getattr(account, "account_id", None)
+    if not isinstance(account_id, str) or not _PSYCHOLOGY_LEARNING_ACCOUNT_ID_PATTERN.fullmatch(
+        account_id
+    ):
+        return None
+    if getattr(account, "platform", None) != "xiaohongshu":
+        return None
+    return {"account_id": account_id, "platform": "xiaohongshu"}
+
+
+def _sanitize_psychology_learning_publish_result(value: object) -> dict[str, str] | None:
+    if not isinstance(value, Mapping):
+        return None
+    return {"status": _normalize_psychology_learning_publish_status(value.get("status"))}
+
+
+def _sanitize_psychology_learning_post_publish_checks(
+    value: Mapping[str, Any],
+) -> dict[str, object]:
+    receipt: dict[str, object] = {
+        "requested": bool(value.get("requested")),
+        "browser_opened": bool(value.get("browser_opened")),
+        "publish_status": _normalize_psychology_learning_post_publish_status(
+            value.get("publish_status")
+        ),
+    }
+    status_result = _sanitize_psychology_learning_status_result(value.get("status_result"))
+    if status_result is not None:
+        receipt["status_result"] = status_result
+    return receipt
+
+
+def _sanitize_psychology_learning_status_result(
+    value: object,
+) -> dict[str, str] | None:
+    if not isinstance(value, Mapping):
+        return None
+    receipt: dict[str, str] = {
+        "status": _normalize_psychology_learning_post_publish_status(
+            value.get("status")
+        )
+    }
+    source = value.get("source")
+    if source in {"mcp", "mcp_search"}:
+        receipt["source"] = str(source)
+    return receipt
+
+
+def _sanitize_psychology_learning_image_generation(
+    value: object,
+) -> dict[str, object] | None:
+    if not isinstance(value, Mapping):
+        return None
+    provenance = value.get("provenance")
+    if (
+        value.get("status") != "generated"
+        or value.get("provider") != "local_note_card"
+        or not isinstance(provenance, Mapping)
+        or provenance.get("source") != "ptsm_local_renderer"
+    ):
+        return None
+    return {"status": "generated", "renderer": "ptsm_local_renderer"}
+
+
+def _sanitize_psychology_learning_watermark_removal(
+    value: object,
+) -> dict[str, object] | None:
+    if not isinstance(value, Mapping):
+        return None
+    if value.get("status") != "skipped":
+        return None
+    return {"status": "skipped"}
+
+
+def _normalize_psychology_learning_publish_mode(value: object) -> str:
+    return value if value in {"dry-run", "mcp-real"} else "dry-run"
+
+
+def _normalize_psychology_learning_publish_status(value: object) -> str:
+    return (
+        value
+        if value in _PSYCHOLOGY_LEARNING_PUBLISH_STATUSES
+        else "unknown"
+    )
+
+
+def _normalize_psychology_learning_post_publish_status(value: object) -> str:
+    return (
+        value
+        if value in _PSYCHOLOGY_LEARNING_POST_PUBLISH_STATUSES
+        else "unknown"
+    )
+
+
+def _is_safe_psychology_learning_artifact(
+    *,
+    artifact_store: FileArtifactStore,
+    artifact_path: str,
+    expected_final_content: dict[str, Any],
+    strict_artifact_shape: bool = False,
+) -> bool:
+    """Require an owned, provenance-safe artifact before a lesson can publish."""
+    path = _owned_psychology_learning_artifact_path(
+        artifact_store=artifact_store,
+        artifact_path=artifact_path,
+    )
+    if path is None:
+        return False
+    try:
+        artifact = artifact_store.read(path)
+    except (OSError, json.JSONDecodeError):
+        return False
+    if artifact.get("playbook_id") != MODERN_PSYCHOLOGY_PLAYBOOK_ID:
+        return False
+    if artifact.get("final_content") != expected_final_content:
+        return False
+    return not contains_psychology_learning_raw_provenance(
+        artifact,
+        strict_artifact_shape=strict_artifact_shape,
+    )
+
+
+def _owned_psychology_learning_artifact_path(
+    *,
+    artifact_store: FileArtifactStore,
+    artifact_path: str,
+) -> Path | None:
+    """Resolve an artifact only when it is inside the configured artifact root."""
+    try:
+        owned_root = artifact_store.base_dir.resolve()
+        path = Path(artifact_path).resolve()
+        path.relative_to(owned_root)
+    except (OSError, ValueError):
+        return None
+    return path
+
+
+def _remove_owned_unsafe_psychology_learning_artifact(
+    *,
+    artifact_store: FileArtifactStore,
+    artifact_path: object,
+) -> None:
+    """Remove a rejected owned artifact so raw provenance is not retained."""
+    if not isinstance(artifact_path, str):
+        return
+    path = _owned_psychology_learning_artifact_path(
+        artifact_store=artifact_store,
+        artifact_path=artifact_path,
+    )
+    if path is None:
+        return
+    try:
+        if path.is_file():
+            path.unlink()
+    except OSError:
+        # The caller returns a safe error status even if an external process
+        # races this cleanup; it never reuses or publishes the artifact.
+        return
+
+
 def run_playbook(
     request: PlaybookRequest,
     *,
@@ -506,7 +910,20 @@ def run_playbook(
         platform=resolved_platform,
         playbook_id=request.playbook_id,
     )
+    if (
+        _is_psychology_learning_request(request)
+        and playbook.playbook_id != MODERN_PSYCHOLOGY_PLAYBOOK_ID
+    ):
+        return {
+            "scene": "心理学学习专题",
+            "platform": resolved_platform,
+            "account_id": request.account_id,
+            "playbook_id": playbook.playbook_id,
+            "status": "psychology_learning_playbook_invalid",
+            "diagnostic": "learning_series_is_only_supported_by_modern_psychology_post",
+        }
     ai_tech_evidence_bundle: AiTechEvidenceBundle | None = None
+    psychology_learning_bundle: PsychologyLearningBundle | None = None
     if playbook.playbook_id == AI_TECH_PLAYBOOK_ID:
         ai_tech_evidence_bundle, preflight_failure = _resolve_ai_tech_evidence_preflight(
             request=request,
@@ -530,11 +947,33 @@ def run_playbook(
                 "status": "ai_tech_topic_direction_invalid",
                 "diagnostic": "unknown_or_mode_mismatched_topic_direction",
             }
-    effective_scene = (
-        _build_ai_tech_runtime_scene(ai_tech_evidence_bundle)
-        if ai_tech_evidence_bundle is not None
-        else request.scene
-    )
+    elif playbook.playbook_id == MODERN_PSYCHOLOGY_PLAYBOOK_ID and _is_psychology_learning_request(
+        request
+    ):
+        psychology_learning_bundle, preflight_failure = _resolve_psychology_learning_preflight(
+            request=request,
+            platform=resolved_platform,
+            playbook_id=playbook.playbook_id,
+        )
+        if preflight_failure is not None:
+            return preflight_failure
+        assert psychology_learning_bundle is not None
+        if request.topic_direction_id != psychology_learning_bundle.direction_id:
+            return {
+                "scene": _build_psychology_learning_runtime_scene(
+                    psychology_learning_bundle
+                ),
+                "platform": resolved_platform,
+                "account_id": request.account_id,
+                "playbook_id": playbook.playbook_id,
+                "status": "psychology_learning_topic_direction_invalid",
+                "diagnostic": "missing_or_mismatched_catalog_topic_direction",
+            }
+    effective_scene = request.scene
+    if ai_tech_evidence_bundle is not None:
+        effective_scene = _build_ai_tech_runtime_scene(ai_tech_evidence_bundle)
+    elif psychology_learning_bundle is not None:
+        effective_scene = _build_psychology_learning_runtime_scene(psychology_learning_bundle)
     if ai_tech_evidence_bundle is not None and request.fresh_topic_research:
         # Topic Radar is intentionally a separate discovery operation for AI
         # evidence modes.  Its public output can assist an operator in
@@ -553,11 +992,43 @@ def run_playbook(
                 "trend support, then provide a complete --ai-evidence-file before drafting."
             ),
         }
+    if psychology_learning_bundle is not None and request.fresh_topic_research:
+        # A hotspot scan can help an operator decide whether to run discovery,
+        # but its public text cannot become a course claim or lesson content.
+        return {
+            "scene": effective_scene,
+            "platform": resolved_platform,
+            "account_id": request.account_id,
+            "playbook_id": playbook.playbook_id,
+            "status": "psychology_learning_fresh_research_separate",
+            "next_step": (
+                "Run hotspot discovery separately, then select an approved "
+                "psychology learning lesson without passing hotspot text into this run."
+            ),
+        }
     if _requires_openclaw_psychology_guidance(
         caller=request.caller,
         guidance_ack=request.guidance_ack,
         playbook_id=playbook.playbook_id,
     ):
+        if psychology_learning_bundle is not None:
+            return {
+                "scene": effective_scene,
+                "platform": resolved_platform,
+                "account_id": request.account_id,
+                "playbook_id": playbook.playbook_id,
+                "status": "topic_guidance_required",
+                "caller": request.caller,
+                "guidance_ack": False,
+                "topic_guidance": _build_psychology_learning_topic_guidance(
+                    psychology_learning_bundle
+                ),
+                "next_step": (
+                    "Show the catalog lesson directions to the user, ask them to "
+                    "confirm this exact lesson, then call run-playbook again with "
+                    "--guidance-ack."
+                ),
+            }
         lane = resolve_psychology_lane(scene=request.scene)
         return {
             "scene": request.scene,
@@ -612,14 +1083,14 @@ def run_playbook(
                 ),
             }
         enriched_scene = _build_enriched_scene(topic_selection)
-        if ai_tech_evidence_bundle is None:
+        if ai_tech_evidence_bundle is None and psychology_learning_bundle is None:
             request.scene = enriched_scene
             effective_scene = enriched_scene
         print(f"\n{'='*60}")
         print(f"Scene built from topic selection:")
         print(
             effective_scene
-            if ai_tech_evidence_bundle is not None
+            if ai_tech_evidence_bundle is not None or psychology_learning_bundle is not None
             else enriched_scene
         )
         print(f"{'='*60}\n")
@@ -631,11 +1102,15 @@ def run_playbook(
     topic_selection_metadata = (
         None
         if ai_tech_evidence_bundle is not None
-        else _topic_selection_metadata(
-            topic_selection,
-            request.topic_direction_id,
-            playbook_id=playbook.playbook_id,
-            scene=effective_scene,
+        else (
+            _build_psychology_learning_topic_selection(psychology_learning_bundle)
+            if psychology_learning_bundle is not None
+            else _topic_selection_metadata(
+                topic_selection,
+                request.topic_direction_id,
+                playbook_id=playbook.playbook_id,
+                scene=effective_scene,
+            )
         )
     )
 
@@ -669,10 +1144,11 @@ def run_playbook(
                 output_path=qrcode_output_path,
             )
             if preflight.get("status") != "ready":
-                login_request = (
-                    request.model_copy(update={"scene": effective_scene})
-                    if ai_tech_evidence_bundle is not None
-                    else request
+                login_request = _build_safe_login_rerun_request(
+                    request=request,
+                    effective_scene=effective_scene,
+                    ai_tech_evidence_bundle=ai_tech_evidence_bundle,
+                    psychology_learning_bundle=psychology_learning_bundle,
                 )
                 publish_result = _build_login_required_result(
                     account_id=account.account_id,
@@ -729,6 +1205,16 @@ def run_playbook(
             if ai_tech_evidence_bundle is not None
             else None
         ),
+        psychology_learning_contract=(
+            psychology_learning_bundle.runtime_contract
+            if psychology_learning_bundle is not None
+            else None
+        ),
+        psychology_learning_manifest=(
+            psychology_learning_bundle.manifest
+            if psychology_learning_bundle is not None
+            else None
+        ),
     )
     effective_thread_id = thread_id or run.run_id
     config = {"configurable": {"thread_id": effective_thread_id}}
@@ -739,6 +1225,10 @@ def run_playbook(
                 "ai_content_mode",
                 "ai_evidence_bundle",
                 "ai_evidence_file_path",
+                "psychology_content_mode",
+                "psychology_series_id",
+                "psychology_lesson_id",
+                "psychology_curriculum_version",
             },
         ),
         "platform": resolved_platform,
@@ -793,9 +1283,72 @@ def run_playbook(
                     }
                 else:
                     result.update(evidence_receipt)
-    format_patterns_used = _extract_format_patterns_used(
-        result,
-        pattern_path=request.format_pattern_path or settings.xhs_pattern_library_path,
+    if psychology_learning_bundle is not None and result.get("status") == "completed":
+        draft = result.get("final_content")
+        draft_mapping = draft if isinstance(draft, dict) else {}
+        validation_errors = validate_psychology_learning_draft_contract(
+            psychology_learning_bundle.runtime_contract,
+            draft_mapping,
+        )
+        if validation_errors:
+            result["status"] = "psychology_learning_draft_invalid"
+            result["psychology_learning_draft_validation"] = {
+                "errors": validation_errors
+            }
+            _remove_owned_unsafe_psychology_learning_artifact(
+                artifact_store=artifact_store,
+                artifact_path=result.get("artifact_path"),
+            )
+        else:
+            artifact_path = result.get("artifact_path")
+            if not isinstance(artifact_path, str) or not Path(artifact_path).is_file():
+                result["status"] = "psychology_learning_artifact_required"
+                result["psychology_learning_artifact_validation"] = {
+                    "error": "completed learning workflow must write an artifact before publish"
+                }
+            elif not _is_safe_psychology_learning_artifact(
+                artifact_store=artifact_store,
+                artifact_path=artifact_path,
+                expected_final_content=draft_mapping,
+            ):
+                result["status"] = "psychology_learning_artifact_invalid"
+                result["psychology_learning_artifact_validation"] = {
+                    "error": "learning artifact failed ownership or provenance validation"
+                }
+                _remove_owned_unsafe_psychology_learning_artifact(
+                    artifact_store=artifact_store,
+                    artifact_path=artifact_path,
+                )
+            else:
+                learning_receipt = _build_psychology_learning_receipt(
+                    psychology_learning_bundle
+                )
+                try:
+                    artifact_store.replace(
+                        artifact_path,
+                        _build_psychology_learning_artifact_envelope(
+                            final_content=draft_mapping,
+                            learning_receipt=learning_receipt,
+                        ),
+                    )
+                except (OSError, json.JSONDecodeError):
+                    result["status"] = "psychology_learning_artifact_invalid"
+                    result["psychology_learning_artifact_validation"] = {
+                        "error": "could not persist learning receipt before publish"
+                    }
+                    _remove_owned_unsafe_psychology_learning_artifact(
+                        artifact_store=artifact_store,
+                        artifact_path=artifact_path,
+                    )
+                else:
+                    result.update(learning_receipt)
+    format_patterns_used = (
+        {"status": "not_used"}
+        if psychology_learning_bundle is not None
+        else _extract_format_patterns_used(
+            result,
+            pattern_path=request.format_pattern_path or settings.xhs_pattern_library_path,
+        )
     )
     result["format_patterns_used"] = format_patterns_used
     if topic_selection_metadata is not None:
@@ -821,7 +1374,7 @@ def run_playbook(
             image_backend = build_image_backend(settings)
             runtime_skill_contents = (
                 []
-                if ai_tech_evidence_bundle is not None
+                if ai_tech_evidence_bundle is not None or psychology_learning_bundle is not None
                 else list(result.get("runtime_skill_contents") or [])
             )
             runtime_context_summary = _summarize_runtime_skill_contents(
@@ -886,15 +1439,16 @@ def run_playbook(
 
         if image_generation is not None:
             _ensure_generated_image_watermark_policy(image_generation)
-            asset_ledger = append_generated_image_assets(
-                base_dir=Path.cwd(),
-                artifact_path=str(result["artifact_path"]),
-                playbook_id=playbook.playbook_id,
-                account_id=account.account_id,
-                image_generation=image_generation,
-            )
-            if asset_ledger is not None:
-                image_generation["asset_ledger"] = asset_ledger
+            if psychology_learning_bundle is None:
+                asset_ledger = append_generated_image_assets(
+                    base_dir=Path.cwd(),
+                    artifact_path=str(result["artifact_path"]),
+                    playbook_id=playbook.playbook_id,
+                    account_id=account.account_id,
+                    image_generation=image_generation,
+                )
+                if asset_ledger is not None:
+                    image_generation["asset_ledger"] = asset_ledger
 
         watermark_removal = None
         if _should_skip_watermark_removal_for_local_renderer(
@@ -964,6 +1518,12 @@ def run_playbook(
                     exc.preflight,
                     output_path=qrcode_output_path,
                 )
+                login_request = _build_safe_login_rerun_request(
+                    request=request,
+                    effective_scene=effective_scene,
+                    ai_tech_evidence_bundle=ai_tech_evidence_bundle,
+                    psychology_learning_bundle=psychology_learning_bundle,
+                )
                 publish_result = {
                     **_build_login_required_result(
                         account_id=account.account_id,
@@ -971,7 +1531,7 @@ def run_playbook(
                         platform=account.platform,
                         provider=getattr(publisher, "provider_name", publisher.__class__.__name__),
                         preflight=preflight,
-                        request=request,
+                        request=login_request,
                         command_name=command_name,
                         resolved_platform=resolved_platform,
                         playbook_id=playbook.playbook_id,
@@ -989,26 +1549,43 @@ def run_playbook(
                     "artifact_path": result["artifact_path"],
                     "error": str(exc),
                 }
-            if _should_record_publish_result(publish_result):
+            ledger_publish_result = (
+                _sanitize_psychology_learning_publish_result(publish_result)
+                if psychology_learning_bundle is not None
+                else publish_result
+            )
+            if _should_record_publish_result(ledger_publish_result):
                 side_effect_ledger.record(
                     thread_id=effective_thread_id,
                     step="publish",
                     idempotency_key=publish_idempotency_key,
-                    result=publish_result,
+                    result=ledger_publish_result,
                 )
-        artifact_update = {
-            "scene": effective_scene,
-            "platform": request.platform,
-            "account": account.to_dict(),
-            "publish_mode": publish_mode,
-            "publish_result": publish_result,
-            "image_generation": image_generation,
-            "watermark_removal": watermark_removal,
-            "format_patterns_used": format_patterns_used,
-            "run": run.to_dict(),
-        }
-        if topic_selection_metadata is not None:
-            artifact_update["topic_selection"] = topic_selection_metadata
+        if psychology_learning_bundle is not None:
+            artifact_update = _build_psychology_learning_artifact_update(
+                account=account,
+                effective_scene=effective_scene,
+                platform=resolved_platform,
+                publish_mode=publish_mode,
+                publish_result=publish_result,
+                image_generation=image_generation,
+                watermark_removal=watermark_removal,
+                run_id=run.run_id,
+            )
+        else:
+            artifact_update = {
+                "scene": effective_scene,
+                "platform": request.platform,
+                "account": account.to_dict(),
+                "publish_mode": publish_mode,
+                "publish_result": publish_result,
+                "image_generation": image_generation,
+                "watermark_removal": watermark_removal,
+                "format_patterns_used": format_patterns_used,
+                "run": run.to_dict(),
+            }
+            if topic_selection_metadata is not None:
+                artifact_update["topic_selection"] = topic_selection_metadata
         artifact_store.merge(result["artifact_path"], artifact_update)
 
     if result["status"] == "completed" and result.get("artifact_path"):
@@ -1020,6 +1597,29 @@ def run_playbook(
                 publisher=None,
                 search_retry_attempts=WAIT_FOR_PUBLISH_STATUS_SEARCH_RETRY_ATTEMPTS,
                 search_retry_interval_seconds=WAIT_FOR_PUBLISH_STATUS_SEARCH_RETRY_INTERVAL_SECONDS,
+                publish_result=(
+                    publish_result
+                    if psychology_learning_bundle is not None
+                    and isinstance(publish_result, Mapping)
+                    else None
+                ),
+                fallback_title=(
+                    str(result["final_content"].get("title") or "")
+                    if psychology_learning_bundle is not None
+                    and isinstance(result.get("final_content"), Mapping)
+                    else None
+                ),
+                fallback_body=(
+                    str(result["final_content"].get("body") or "")
+                    if psychology_learning_bundle is not None
+                    and isinstance(result.get("final_content"), Mapping)
+                    else None
+                ),
+                fallback_visibility=(
+                    request.publish_visibility or settings.xhs_default_visibility
+                    if psychology_learning_bundle is not None
+                    else None
+                ),
             )
             post_publish_checks["status_result"] = status_result
             post_publish_checks["publish_status"] = str(
@@ -1047,23 +1647,86 @@ def run_playbook(
         artifact_store.merge(
             artifact_path,
             {
-                "post_publish_checks": post_publish_checks,
+                "post_publish_checks": (
+                    _sanitize_psychology_learning_post_publish_checks(
+                        post_publish_checks
+                    )
+                    if psychology_learning_bundle is not None
+                    else post_publish_checks
+                ),
             },
         )
 
+    if (
+        psychology_learning_bundle is not None
+        and result["status"] == "completed"
+        and result.get("artifact_path")
+        and not _is_safe_psychology_learning_artifact(
+            artifact_store=artifact_store,
+            artifact_path=str(result["artifact_path"]),
+            expected_final_content=result["final_content"],
+            strict_artifact_shape=True,
+        )
+    ):
+        result["status"] = "psychology_learning_artifact_invalid"
+        result["psychology_learning_artifact_validation"] = {
+            "error": "learning artifact failed final provenance validation"
+        }
+        _remove_owned_unsafe_psychology_learning_artifact(
+            artifact_store=artifact_store,
+            artifact_path=result.get("artifact_path"),
+        )
+
+    learning_publish_receipt = (
+        _sanitize_psychology_learning_publish_result(publish_result)
+        if psychology_learning_bundle is not None
+        else None
+    )
+    learning_image_receipt = (
+        _sanitize_psychology_learning_image_generation(image_generation)
+        if psychology_learning_bundle is not None
+        else None
+    )
+    learning_watermark_receipt = (
+        _sanitize_psychology_learning_watermark_removal(watermark_removal)
+        if psychology_learning_bundle is not None
+        else None
+    )
+    learning_post_publish_receipt = (
+        _sanitize_psychology_learning_post_publish_checks(post_publish_checks)
+        if psychology_learning_bundle is not None
+        else None
+    )
+    run_summary_payload: dict[str, object] = {
+        "artifact_path": result.get("artifact_path"),
+        "publish_mode": publish_mode,
+        "publish_status": (
+            learning_publish_receipt.get("status")
+            if learning_publish_receipt is not None
+            else None if publish_result is None else publish_result.get("status")
+        ),
+        "activated_skills": (
+            []
+            if psychology_learning_bundle is not None
+            else list(result.get("activated_skills") or [])
+        ),
+        "activated_skill_details": (
+            []
+            if psychology_learning_bundle is not None
+            else list(result.get("activated_skill_details") or [])
+        ),
+        "runtime_skill_details": (
+            []
+            if psychology_learning_bundle is not None
+            else list(result.get("runtime_skill_details") or [])
+        ),
+        "format_patterns_used": format_patterns_used,
+        "topic_selection": topic_selection_metadata,
+    }
     run_summary = run_store.finish(
         run.run_id,
         status=str(result["status"]),
-        payload={
-            "artifact_path": result.get("artifact_path"),
-            "publish_mode": publish_mode,
-            "publish_status": None if publish_result is None else publish_result.get("status"),
-            "activated_skills": list(result.get("activated_skills") or []),
-            "activated_skill_details": list(result.get("activated_skill_details") or []),
-            "runtime_skill_details": list(result.get("runtime_skill_details") or []),
-            "format_patterns_used": format_patterns_used,
-            "topic_selection": topic_selection_metadata,
-        },
+        payload=run_summary_payload,
     )
 
     eval_result = None
@@ -1075,12 +1738,32 @@ def run_playbook(
 
     response: dict[str, Any] = {
         **result,
-        "account": account.to_dict(),
+        "account": (
+            _sanitize_psychology_learning_account(account)
+            if psychology_learning_bundle is not None
+            else account.to_dict()
+        ),
         "publish_mode": publish_mode,
-        "publish_result": publish_result,
-        "image_generation": image_generation,
-        "watermark_removal": watermark_removal,
-        "post_publish_checks": post_publish_checks,
+        "publish_result": (
+            learning_publish_receipt
+            if psychology_learning_bundle is not None
+            else publish_result
+        ),
+        "image_generation": (
+            learning_image_receipt
+            if psychology_learning_bundle is not None
+            else image_generation
+        ),
+        "watermark_removal": (
+            learning_watermark_receipt
+            if psychology_learning_bundle is not None
+            else watermark_removal
+        ),
+        "post_publish_checks": (
+            learning_post_publish_receipt
+            if psychology_learning_bundle is not None
+            else post_publish_checks
+        ),
         "run": run_summary,
         "eval": eval_result,
     }
@@ -1130,6 +1813,24 @@ def _requires_openclaw_psychology_guidance(
     )
 
 
+def _build_safe_login_rerun_request(
+    *,
+    request: PlaybookRequest,
+    effective_scene: str,
+    ai_tech_evidence_bundle: AiTechEvidenceBundle | None,
+    psychology_learning_bundle: PsychologyLearningBundle | None,
+) -> PlaybookRequest:
+    """Keep a catalog/evidence run's recovery command free of operator input."""
+    if ai_tech_evidence_bundle is None and psychology_learning_bundle is None:
+        return request
+    updates: dict[str, Any] = {"scene": effective_scene}
+    if psychology_learning_bundle is not None:
+        updates["psychology_curriculum_version"] = (
+            psychology_learning_bundle.runtime_contract["curriculum_version"]
+        )
+    return request.model_copy(update=updates)
+
+
 def _build_login_required_result(
     *,
     account_id: str,
@@ -1152,6 +1853,10 @@ def _build_login_required_result(
         resolved_platform=resolved_platform,
         resolved_playbook_id=playbook_id,
         requires_ai_evidence=playbook_id == AI_TECH_PLAYBOOK_ID,
+        requires_psychology_learning=(
+            playbook_id == MODERN_PSYCHOLOGY_PLAYBOOK_ID
+            and _is_psychology_learning_request(request)
+        ),
     )
     recovery_instruction = None
     if rerun_command is None:
@@ -1185,6 +1890,8 @@ def _build_workflow_for_playbook(
     format_pattern_path: str | None = None,
     ai_tech_evidence: dict[str, Any] | None = None,
     ai_tech_evidence_manifest: dict[str, Any] | None = None,
+    psychology_learning_contract: dict[str, Any] | None = None,
+    psychology_learning_manifest: dict[str, Any] | None = None,
 ):
     skill_context_resolver = _build_runtime_skill_context_resolver(
         settings,
@@ -1206,6 +1913,8 @@ def _build_workflow_for_playbook(
         skill_context_resolver=skill_context_resolver,
         ai_tech_evidence=ai_tech_evidence,
         ai_tech_evidence_manifest=ai_tech_evidence_manifest,
+        psychology_learning_contract=psychology_learning_contract,
+        psychology_learning_manifest=psychology_learning_manifest,
     )
 
 
@@ -1264,10 +1973,12 @@ def _build_rerun_command(
     resolved_platform: str,
     resolved_playbook_id: str,
     requires_ai_evidence: bool,
+    requires_psychology_learning: bool,
 ) -> str | None:
     if requires_ai_evidence and not request.ai_evidence_file_path:
         return None
-    if not requires_ai_evidence and (
+    requires_catalog_bound_scene = requires_ai_evidence or requires_psychology_learning
+    if not requires_catalog_bound_scene and (
         command_name == "run-fengkuang" or request.playbook_id in {None, "fengkuang_daily_post"}
     ):
         return (
@@ -1279,9 +1990,9 @@ def _build_rerun_command(
         f"--account-id {request.account_id}",
         f"--publish-mode mcp-real",
     ]
-    if not requires_ai_evidence:
+    if not requires_catalog_bound_scene:
         parts.append(f"--scene '{request.scene}'")
-    if request.playbook_id or requires_ai_evidence:
+    if request.playbook_id or requires_catalog_bound_scene:
         parts.append(f"--playbook-id {request.playbook_id or resolved_playbook_id}")
     if request.platform:
         parts.append(f"--platform {resolved_platform}")
@@ -1291,6 +2002,32 @@ def _build_rerun_command(
         parts.append(
             f"--ai-evidence-file={shlex.quote(request.ai_evidence_file_path)}"
         )
+    if requires_psychology_learning:
+        if request.psychology_content_mode:
+            parts.append(
+                "--psychology-content-mode "
+                f"{shlex.quote(request.psychology_content_mode)}"
+            )
+        if request.psychology_series_id:
+            parts.append(
+                "--psychology-series-id "
+                f"{shlex.quote(request.psychology_series_id)}"
+            )
+        if request.psychology_lesson_id:
+            parts.append(
+                "--psychology-lesson-id "
+                f"{shlex.quote(request.psychology_lesson_id)}"
+            )
+        if request.psychology_curriculum_version:
+            parts.append(
+                "--psychology-curriculum-version "
+                f"{shlex.quote(request.psychology_curriculum_version)}"
+            )
+        if request.topic_direction_id:
+            parts.append(
+                "--topic-direction-id "
+                f"{shlex.quote(request.topic_direction_id)}"
+            )
     return " ".join(parts)
 
 

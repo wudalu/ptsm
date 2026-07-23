@@ -38,3 +38,4 @@ class ExecutionState(TypedDict, total=False):
     content_quality_eval: dict[str, Any]
     content_review: dict[str, Any]
     ai_tech_executor_errors: list[str]
+    psychology_learning_executor_errors: list[str]

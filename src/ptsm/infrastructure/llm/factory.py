@@ -14,6 +14,10 @@ from langchain_core.utils.json import parse_and_check_json_markdown, parse_json_
 
 from ptsm.config.settings import Settings
 from ptsm.domain.ai_tech_content import parse_ai_tech_runtime_contract
+from ptsm.domain.psychology_learning import (
+    parse_psychology_learning_runtime_contract,
+    render_psychology_learning_draft,
+)
 from ptsm.infrastructure.llm.contextual_drafts import build_contextual_deterministic_draft
 
 XHS_DRAFT_SYSTEM_PROMPT = (
@@ -192,6 +196,14 @@ class DeepSeekDraftBackend:
             skill_contents=skill_contents,
         )
         runtime_context = "\n\n".join(chunk for chunk in (runtime_skill_contents or []) if chunk)
+        psychology_learning_contract = _extract_psychology_learning_runtime_contract(
+            runtime_context
+        )
+        if psychology_learning_contract is not None:
+            # Psychology learning copy is a reviewed catalog deliverable, not
+            # an open-ended model completion.  The runtime gate enforces this
+            # same output for custom backends.
+            return render_psychology_learning_draft(psychology_learning_contract)
         hard_requirements = _build_deepseek_hard_requirements(
             extra_context=extra_context,
             runtime_context=runtime_context,
@@ -592,6 +604,13 @@ def _build_deepseek_hard_requirements(
     ai_tech_contract = _extract_ai_tech_runtime_contract(runtime_context)
     if ai_tech_contract is not None:
         return _build_ai_tech_evidence_hard_requirements(ai_tech_contract)
+    psychology_learning_contract = _extract_psychology_learning_runtime_contract(
+        runtime_context
+    )
+    if psychology_learning_contract is not None:
+        return _build_psychology_learning_hard_requirements(
+            psychology_learning_contract
+        )
 
     requirements = [
         "只输出 JSON 对象，不要 Markdown 代码块，不要额外解释。",
@@ -651,6 +670,24 @@ def _extract_ai_tech_runtime_contract(runtime_context: str) -> dict[str, Any] | 
         return None
 
 
+def _extract_psychology_learning_runtime_contract(
+    runtime_context: str,
+) -> dict[str, Any] | None:
+    """Read the source-free lesson contract rendered by the planner, if any."""
+    marker = "# Psychology Learning Series Contract"
+    marker_index = runtime_context.find(marker)
+    if marker_index < 0:
+        return None
+    json_start = runtime_context.find("{", marker_index + len(marker))
+    if json_start < 0:
+        return None
+    try:
+        value, _ = json.JSONDecoder().raw_decode(runtime_context[json_start:])
+        return parse_psychology_learning_runtime_contract(value)
+    except (TypeError, ValueError, ValidationError, json.JSONDecodeError):
+        return None
+
+
 def _build_ai_tech_evidence_hard_requirements(contract: Mapping[str, Any]) -> str:
     """Return the mode-specific model instruction for evidence-gated AI posts."""
     mode = str(contract.get("mode") or "")
@@ -677,6 +714,23 @@ def _build_ai_tech_evidence_hard_requirements(contract: Mapping[str, Any]) -> st
         # fail-closed instruction if a future caller changes that boundary.
         shared.append("未知证据模式：不要生成正文。")
     return " ".join(shared)
+
+
+def _build_psychology_learning_hard_requirements(
+    contract: Mapping[str, Any],
+) -> str:
+    """Give hosted drafting the same closed-course constraints as the runtime."""
+    return " ".join(
+        [
+            "只输出 JSON 对象，不要 Markdown 代码块，不要额外解释。",
+            "这是受控心理学学习专题：只能使用 Psychology Learning Series Contract 中的课程合同字段，不能补充诊断、治疗承诺、药物建议、自测、来源、作者、URL 或新的心理学结论。",
+            "正文必须逐字保留课程合同里的系列标记、概念名、学习目标、批准解释、适用场景、微练习、适用边界、专业帮助边界和评论提示；它们可以自然串成 2-4 个短拍，但不能删改或换成泛泛感受。",
+            "标题最多 22 个字符，且不能出现课程概念名；正文严格 200-380 字，以具体生活瞬间开场，像小红书学习卡而不是讲义。",
+            "hashtags 数组必须包含 '#心理学' 和 '#心理学学习'；不要输出来源标记、链接、域名或内部合同字段名。",
+            "课程合同（仅供逐项执行，不要在输出中复述为 JSON）："
+            + json.dumps(dict(contract), ensure_ascii=False),
+        ]
+    )
 
 
 def _infer_xhs_body_length_range(extra_context: str) -> str | None:

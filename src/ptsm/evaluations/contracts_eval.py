@@ -8,6 +8,13 @@ from ptsm.domain.ai_tech_content import (
     AiTechEvidenceManifest,
     is_ai_tech_drafting_safe_text,
 )
+from ptsm.domain.psychology_learning import (
+    PSYCHOLOGY_LEARNING_MODE,
+    PsychologyLearningEvidenceManifest,
+    contains_psychology_learning_raw_provenance,
+    resolve_psychology_learning_selection,
+    validate_psychology_learning_draft_contract,
+)
 from ptsm.evaluations.contracts import EvalResult, EvaluatorSpec, EvalTarget
 from ptsm.evaluations.rules import _result  # noqa: F401
 from ptsm.evaluations.playbook_contracts import PlaybookEvalContract
@@ -19,6 +26,10 @@ _AI_TECH_CONTENT_MODES = frozenset(
 )
 _AI_TECH_GATE_FIELDS = frozenset(
     ("status", "mode", "validator", "validator_version", "errors")
+)
+_PSYCHOLOGY_LEARNING_PLAYBOOK_ID = "modern_psychology_post"
+_PSYCHOLOGY_LEARNING_GATE_FIELDS = frozenset(
+    ("status", "series_id", "lesson_id", "validator", "validator_version", "errors")
 )
 _AI_TECH_NON_HANDS_ON_EXPERIENCE_MARKERS = (
     "我",
@@ -227,6 +238,307 @@ def contract_ai_tech_evidence_receipt(target: EvalTarget) -> EvalResult:
         reason="AI tech evidence receipt is complete and provenance-safe",
         score=1.0,
     )
+
+
+def contract_psychology_learning_receipt(target: EvalTarget) -> EvalResult:
+    """Rebuild and audit a closed psychology-learning catalog receipt offline."""
+    evaluator_id = "psychology.learning_receipt"
+    if target.playbook_id != _PSYCHOLOGY_LEARNING_PLAYBOOK_ID:
+        return EvalResult(
+            eval_result_id=f"{target.target_id}:{evaluator_id}",
+            eval_run_id="",
+            target_id=target.target_id,
+            evaluator_id=evaluator_id,
+            evaluator_version="1",
+            status="skipped",
+            reason="not a modern psychology artifact",
+        )
+    ref = target.output_ref
+    if not isinstance(ref, dict):
+        return EvalResult(
+            eval_result_id=f"{target.target_id}:{evaluator_id}",
+            eval_run_id="",
+            target_id=target.target_id,
+            evaluator_id=evaluator_id,
+            evaluator_version="1",
+            status="skipped",
+            reason="no output ref",
+        )
+
+    receipt_keys = (
+        "psychology_learning_mode",
+        "psychology_learning_series_id",
+        "psychology_learning_curriculum_version",
+        "psychology_learning_lesson_id",
+        "psychology_learning_lesson_number",
+        "psychology_learning_evidence_manifest",
+        "psychology_learning_gate",
+    )
+    has_receipt = any(key in ref for key in receipt_keys)
+    catalog_marked = _is_catalog_marked_psychology_learning_artifact(ref)
+    if not has_receipt and not catalog_marked:
+        # Ordinary modern psychology posts remain valid and intentionally do
+        # not acquire a learning-series audit contract retroactively.
+        return EvalResult(
+            eval_result_id=f"{target.target_id}:{evaluator_id}",
+            eval_run_id="",
+            target_id=target.target_id,
+            evaluator_id=evaluator_id,
+            evaluator_version="1",
+            status="skipped",
+            reason="not a psychology learning artifact",
+        )
+    if not has_receipt:
+        return EvalResult(
+            eval_result_id=f"{target.target_id}:{evaluator_id}",
+            eval_run_id="",
+            target_id=target.target_id,
+            evaluator_id=evaluator_id,
+            evaluator_version="1",
+            status="failed",
+            reason="catalog-marked psychology learning artifact is missing its required receipt",
+            score=0.0,
+            evidence=[
+                _receipt_failure(
+                    "psychology_learning_receipt",
+                    "catalog-marked learning artifact is missing its required receipt",
+                )
+            ],
+        )
+
+    failures: list[dict[str, str]] = []
+    if contains_psychology_learning_raw_provenance(ref):
+        failures.append(
+            _receipt_failure(
+                "artifact_provenance",
+                "raw provenance exists outside the opaque learning manifest",
+            )
+        )
+    if ref.get("psychology_learning_mode") != PSYCHOLOGY_LEARNING_MODE:
+        failures.append(
+            _receipt_failure(
+                "psychology_learning_mode",
+                "unsupported learning mode",
+            )
+        )
+
+    bundle = _resolve_psychology_learning_receipt_bundle(ref, failures)
+    manifest = _parse_psychology_learning_manifest(ref, failures)
+    if bundle is not None:
+        _validate_psychology_learning_receipt_identity(
+            ref=ref,
+            bundle=bundle,
+            manifest=manifest,
+            failures=failures,
+        )
+        _validate_psychology_learning_gate(
+            gate=ref.get("psychology_learning_gate"),
+            bundle=bundle,
+            failures=failures,
+        )
+        final_content = ref.get("final_content")
+        if not isinstance(final_content, Mapping):
+            failures.append(
+                _receipt_failure("final_content", "learning artifact is missing final content")
+            )
+        else:
+            validation_errors = validate_psychology_learning_draft_contract(
+                bundle.runtime_contract,
+                final_content,
+            )
+            if validation_errors:
+                failures.append(
+                    _receipt_failure(
+                        "final_content",
+                        "visible content does not match the approved lesson contract",
+                    )
+                )
+
+    if failures:
+        return EvalResult(
+            eval_result_id=f"{target.target_id}:{evaluator_id}",
+            eval_run_id="",
+            target_id=target.target_id,
+            evaluator_id=evaluator_id,
+            evaluator_version="1",
+            status="failed",
+            reason="; ".join(
+                f"{item['path']}: {item['observation']}" for item in failures
+            ),
+            score=0.0,
+            evidence=failures,
+        )
+    return EvalResult(
+        eval_result_id=f"{target.target_id}:{evaluator_id}",
+        eval_run_id="",
+        target_id=target.target_id,
+        evaluator_id=evaluator_id,
+        evaluator_version="1",
+        status="passed",
+        reason="psychology learning receipt matches the approved catalog lesson",
+        score=1.0,
+    )
+
+
+def _is_catalog_marked_psychology_learning_artifact(ref: Mapping[str, Any]) -> bool:
+    topic_selection = ref.get("topic_selection")
+    if not isinstance(topic_selection, Mapping):
+        return False
+    if topic_selection.get("source") != "psychology-learning-series":
+        return False
+    selection = topic_selection.get("psychology_learning")
+    return isinstance(selection, Mapping)
+
+
+def _resolve_psychology_learning_receipt_bundle(
+    ref: Mapping[str, Any],
+    failures: list[dict[str, str]],
+):
+    series_id = ref.get("psychology_learning_series_id")
+    lesson_id = ref.get("psychology_learning_lesson_id")
+    curriculum_version = ref.get("psychology_learning_curriculum_version")
+    if not all(isinstance(value, str) and value.strip() for value in (series_id, lesson_id)):
+        failures.append(
+            _receipt_failure(
+                "psychology_learning_selection",
+                "learning receipt is missing a catalog series or lesson identifier",
+            )
+        )
+        return None
+    try:
+        return resolve_psychology_learning_selection(
+            series_id=series_id,
+            lesson_id=lesson_id,
+            curriculum_version=(
+                curriculum_version if isinstance(curriculum_version, str) else None
+            ),
+        )
+    except ValueError:
+        failures.append(
+            _receipt_failure(
+                "psychology_learning_selection",
+                "learning receipt does not resolve to an approved catalog lesson",
+            )
+        )
+        return None
+
+
+def _parse_psychology_learning_manifest(
+    ref: Mapping[str, Any],
+    failures: list[dict[str, str]],
+) -> PsychologyLearningEvidenceManifest | None:
+    raw_manifest = ref.get("psychology_learning_evidence_manifest")
+    if not isinstance(raw_manifest, Mapping):
+        failures.append(
+            _receipt_failure(
+                "psychology_learning_evidence_manifest",
+                "learning receipt manifest is missing or invalid",
+            )
+        )
+        return None
+    try:
+        return PsychologyLearningEvidenceManifest.model_validate(raw_manifest)
+    except (TypeError, ValidationError):
+        failures.append(
+            _receipt_failure(
+                "psychology_learning_evidence_manifest",
+                "learning receipt manifest is missing or invalid",
+            )
+        )
+        return None
+
+
+def _validate_psychology_learning_receipt_identity(
+    *,
+    ref: Mapping[str, Any],
+    bundle: Any,
+    manifest: PsychologyLearningEvidenceManifest | None,
+    failures: list[dict[str, str]],
+) -> None:
+    contract = bundle.runtime_contract
+    expected_fields = {
+        "psychology_learning_series_id": bundle.series_id,
+        "psychology_learning_curriculum_version": contract["curriculum_version"],
+        "psychology_learning_lesson_id": bundle.lesson_id,
+        "psychology_learning_lesson_number": bundle.lesson_number,
+    }
+    for field_name, expected in expected_fields.items():
+        if ref.get(field_name) != expected:
+            failures.append(
+                _receipt_failure(
+                    field_name,
+                    "learning receipt identity does not match the approved catalog lesson",
+                )
+            )
+    if manifest is None:
+        return
+    expected_manifest = bundle.manifest
+    if manifest.model_dump(mode="json") != expected_manifest:
+        failures.append(
+            _receipt_failure(
+                "psychology_learning_evidence_manifest",
+                "learning manifest does not match the approved catalog lesson",
+            )
+        )
+
+
+def _validate_psychology_learning_gate(
+    *,
+    gate: object,
+    bundle: Any,
+    failures: list[dict[str, str]],
+) -> None:
+    if not isinstance(gate, Mapping):
+        failures.append(
+            _receipt_failure(
+                "psychology_learning_gate",
+                "learning receipt gate is missing or invalid",
+            )
+        )
+        return
+    if {str(key) for key in gate} != _PSYCHOLOGY_LEARNING_GATE_FIELDS:
+        failures.append(
+            _receipt_failure(
+                "psychology_learning_gate",
+                "learning receipt gate has an invalid receipt shape",
+            )
+        )
+    if gate.get("status") != "passed":
+        failures.append(
+            _receipt_failure(
+                "psychology_learning_gate.status",
+                "learning receipt gate did not pass",
+            )
+        )
+    if gate.get("series_id") != bundle.series_id or gate.get("lesson_id") != bundle.lesson_id:
+        failures.append(
+            _receipt_failure(
+                "psychology_learning_gate",
+                "learning receipt gate does not match the approved lesson",
+            )
+        )
+    if gate.get("validator") != "psychology_learning_draft_contract":
+        failures.append(
+            _receipt_failure(
+                "psychology_learning_gate.validator",
+                "learning receipt gate did not use the required validator",
+            )
+        )
+    if gate.get("validator_version") != "1":
+        failures.append(
+            _receipt_failure(
+                "psychology_learning_gate.validator_version",
+                "learning receipt gate did not use the required validator version",
+            )
+        )
+    errors = gate.get("errors")
+    if not isinstance(errors, list) or errors:
+        failures.append(
+            _receipt_failure(
+                "psychology_learning_gate.errors",
+                "learning receipt gate must record an empty error list",
+            )
+        )
 
 
 def _parse_ai_tech_manifest(
@@ -848,6 +1160,15 @@ ALL_CONTRACT_EVALUATORS: list[EvaluatorSpec] = [
         {
             "phases": ["final"],
             "playbook_ids": [_AI_TECH_PLAYBOOK_ID],
+            "platforms": [],
+        },
+        1.0, "required",
+    ),
+    EvaluatorSpec(
+        "psychology.learning_receipt", "1", "contract", "psychology learning catalog boundary",
+        {
+            "phases": ["final"],
+            "playbook_ids": [_PSYCHOLOGY_LEARNING_PLAYBOOK_ID],
             "platforms": [],
         },
         1.0, "required",

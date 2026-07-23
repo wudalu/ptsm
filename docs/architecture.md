@@ -22,6 +22,7 @@ related_paths:
   - src/ptsm/agent_runtime/state.py
   - src/ptsm/domain
   - src/ptsm/domain/ai_tech_content.py
+  - src/ptsm/domain/psychology_learning.py
   - src/ptsm/domain/topic_guidance.py
   - src/ptsm/domain/hotspot_routing.py
   - src/ptsm/playbooks/registry.py
@@ -46,6 +47,16 @@ playbook、skill 与 eval contract，但每次生成必须先选择一种证据�
 快讯的 `news_brief`、单一且可复现的 `hands_on` 测试记录，或带人群决策的
 `fact_translation`。提示词相关内容只可作为已记录测试的 `hands_on` 方向，不构成
 第四种模式。
+
+`modern_psychology_post` 的 `learning_series` 是同一心理学 playbook 的受控子模式，
+不是第十个领域或新的账号。它从 `src/ptsm/domain/psychology_learning.py` 的封闭、版本化
+课程目录选择系列和课次；运行时会从该身份重新构建并逐字段比对课程合同和 manifest，
+而不是信任 API caller 传入的看似合法 payload。读者可见文案由同一目录的受控模板渲染，
+artifact 只保留 opaque audit manifest。系列 checkpoint 使用课程派生的私有 thread lane，
+不会复用普通心理学帖的 scene/history。普通心理学场景帖仍沿用既有 lane/guide flow，不能被
+自动编号或转化为课程。路线图查询明确停在 `selection_required`，用户选课后才会取得该课的
+catalog-owned title、cover hook、image plan 和可运行方向；这些课程字段不能被自由 scene 或图片
+override 替换。
 
 ## Package Boundaries
 

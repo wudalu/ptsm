@@ -17,6 +17,7 @@ related_paths:
   - src/ptsm/application/models.py
   - src/ptsm/domain/topic_guidance.py
   - src/ptsm/domain/ai_tech_content.py
+  - src/ptsm/domain/psychology_learning.py
   - src/ptsm/domain/hotspot_routing.py
   - src/ptsm/application/use_cases/runs.py
   - src/ptsm/evaluations/contracts_eval.py
@@ -80,6 +81,37 @@ reader-visible content 或 artifact。
 `ai_tech_fresh_research_separate`。先用 `hotspot-discovery` 找全平台热点；只有 operator
 自行整理出的 opaque `trend_support` 可放进 evidence manifest，不能把 Topic Radar headline、
 cluster 或热度当成事实/测试证据。
+
+## Psychology Learning Series Boundary
+
+`modern_psychology_post` 的 `learning_series` 是一条 opt-in 的封闭课程路径。有效请求必须
+同时给出 `--psychology-content-mode learning_series`、`--psychology-series-id`、
+`--psychology-lesson-id`、`--psychology-curriculum-version`，以及与 catalog lesson 完全匹配的
+`--topic-direction-id`。这些 flags 只允许 `modern_psychology_post`；缺失、伪造、跨课次或
+传给其他 playbook 的值会在 `RunStore.start`、workflow、图片和 publisher 之前返回
+`psychology_learning_required`、`psychology_learning_invalid` 或
+`psychology_learning_topic_direction_invalid`（其他 playbook 为
+`psychology_learning_playbook_invalid`）。
+
+首期 `after_work_rumination` 目录有六课。`guide-post` 只暴露该目录的 roadmap 和
+`learning_series_lesson` directions，绝不以 operator scene、热点或自由概念补出第七课。
+未带 lesson 的 roadmap 查询会明确返回 `selection_required`，不附带 run command，也不会默认生成第一课；
+只有用户选中返回的 lesson 后才会返回该课的 direction、标题/封面钩子和图片建议。
+bound workflow 用 catalog 重建 scene 和 allowlisted input，并把 public `thread_id` 映射到
+checkpoint-isolated 的课程私有 thread；planner 只收到课程字段，memory、live skill context
+与 fresh scan 都不参与该课。`--fresh-topic-research` 返回
+`psychology_learning_fresh_research_separate`，因为热点只能帮助运营者做系列选择，不能成为
+心理教育事实。
+
+executor、reflector、finalize 和应用层都调用同一个
+`psychology_learning_draft_contract`：成稿必须逐字段等于 catalog-derived 的 `controlled lesson template`（四个紧凑短拍），不只是“包含”概念、解释、微练习、适用/范围说明和专业帮助边界。
+原始来源、URL、作者、自由场景和额外临床主张不能进入 checkpoint、prompt、reader-visible
+content 或 artifact。完成 artifact 只写系列/课次 identity、opaque manifest 和通过的 gate；
+如果 custom workflow 写入的受控目录 artifact 含 raw provenance，应用层会删除该 owned artifact
+并阻断图片和发布。离线 evaluator 再从目录重建并审计整个 artifact。
+课程目录同时拥有该课的标题、封面钩子和图片计划；`--local-image-style`、手工图片路径都不能
+覆盖它。catalog exact gate 是本模式的正文质量真相来源：普通自由场景的心理学反思规则或 LLM
+judge 不会用不相容的开放式条件推翻已通过的课程合同，既有安全边界仍然保留。
 
 ## Current Runtime Facts
 

@@ -7,6 +7,11 @@ from ptsm.domain.ai_tech_content import (
     parse_ai_tech_evidence_bundle,
     validate_ai_tech_draft_contract,
 )
+from ptsm.domain.psychology_learning import (
+    render_psychology_learning_draft,
+    resolve_psychology_learning_selection,
+    validate_psychology_learning_draft_contract,
+)
 from ptsm.infrastructure.evaluations.content_quality_gate import (
     build_content_quality_judge_gate,
 )
@@ -94,6 +99,19 @@ def _fact_translation_contract() -> dict[str, object]:
 
 def _bound_ai_gate(contract: dict[str, object]):
     return lambda _state, draft: validate_ai_tech_draft_contract(contract, draft)
+
+
+def _psychology_learning_contract(*, lesson_id: str) -> dict[str, object]:
+    return resolve_psychology_learning_selection(
+        series_id="after_work_rumination",
+        lesson_id=lesson_id,
+    ).runtime_contract
+
+
+def _bound_psychology_learning_gate(contract: dict[str, object]):
+    return lambda _state, draft: validate_psychology_learning_draft_contract(
+        contract, draft
+    )
 
 
 def test_reflector_accepts_required_hashtag_without_optional_phrase() -> None:
@@ -358,3 +376,57 @@ def test_reflector_finalizes_hands_on_draft_with_recorded_test_evidence() -> Non
 
     assert result["reflection_decision"] == "finalize"
     assert result["required_revision"] is False
+
+
+def test_reflector_uses_the_catalog_gate_instead_of_ordinary_psychology_rules() -> None:
+    contract = _psychology_learning_contract(lesson_id="control_and_next_step")
+    node = build_reflector_node(
+        max_attempts=2,
+        psychology_learning_draft_gate=_bound_psychology_learning_gate(contract),
+    )
+
+    result = node(
+        {
+            "attempt_count": 0,
+            "reflection_rules": {
+                # These are the ordinary psychology-post requirements.  This
+                # catalog lesson intentionally uses its own approved exercise
+                # and comment handoff instead.
+                "body_must_include_any": ["反刍思维", "低控制感", "边界"],
+                "body_must_include_save_trigger_any": ["三栏", "边界句"],
+            },
+            "draft_content": render_psychology_learning_draft(contract),
+        }
+    )
+
+    assert result["reflection_decision"] == "finalize"
+    assert result["required_revision"] is False
+
+
+def test_reflector_does_not_retry_a_catalog_lesson_on_open_post_judge_feedback() -> None:
+    contract = _psychology_learning_contract(lesson_id="facts_and_stories")
+    judge_calls: list[dict[str, object]] = []
+
+    def ordinary_post_judge(
+        state: object,
+        draft: dict[str, object],
+    ) -> dict[str, object]:
+        judge_calls.append({"state": state, "draft": draft})
+        return {"status": "failed", "reason": "open-post preference"}
+
+    node = build_reflector_node(
+        max_attempts=2,
+        content_quality_judge=ordinary_post_judge,
+        psychology_learning_draft_gate=_bound_psychology_learning_gate(contract),
+    )
+
+    result = node(
+        {
+            "attempt_count": 0,
+            "reflection_rules": {},
+            "draft_content": render_psychology_learning_draft(contract),
+        }
+    )
+
+    assert result["reflection_decision"] == "finalize"
+    assert not judge_calls

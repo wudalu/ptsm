@@ -28,6 +28,10 @@ class PlaybookRequest(BaseModel):
     ai_content_mode: str | None = None
     ai_evidence_bundle: dict[str, Any] | None = None
     ai_evidence_file_path: str | None = None
+    psychology_content_mode: str | None = None
+    psychology_series_id: str | None = None
+    psychology_lesson_id: str | None = None
+    psychology_curriculum_version: str | None = None
 
 
 class FengkuangRequest(PlaybookRequest):
