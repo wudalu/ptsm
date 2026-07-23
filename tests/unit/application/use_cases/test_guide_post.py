@@ -1332,7 +1332,7 @@ def test_custom_learning_series_markdown_keeps_operator_line_breaks_inline(
     markdown = format_guide_post_markdown(result)
 
     assert "\n## 伪标题" not in markdown
-    assert "下班后 ## 伪标题" in markdown
+    assert r"下班后 \#\# 伪标题" in markdown
 
     selected = run_guide_post(
         GuidePostRequest(
@@ -1343,3 +1343,73 @@ def test_custom_learning_series_markdown_keeps_operator_line_breaks_inline(
         )
     )
     assert "\n## 伪标题" not in format_guide_post_markdown(selected)
+
+
+def test_custom_learning_series_markdown_escapes_operator_html_and_link_syntax(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    store_root = tmp_path / "series-store"
+    monkeypatch.setattr(
+        psychology_learning_domain,
+        "DEFAULT_PSYCHOLOGY_LEARNING_SERIES_CATALOG_ROOT",
+        store_root,
+    )
+    store = PsychologyLearningSeriesStore()
+    injected_catalog = _confirm_custom_psychology_series(
+        store=store,
+        topic="专题</li><h1>",
+        outline=(
+            {
+                "id": "notice",
+                "title": "先识别 [标签](url)\\<b>",
+                "goal": "看见一个瞬间",
+            },
+            {"id": "practice", "title": "练习一个小动作", "goal": "今天尝试一次"},
+        ),
+    )
+
+    injected_markdown = format_guide_post_markdown(
+        run_guide_post(
+            GuidePostRequest(
+                psychology_content_mode="learning_series",
+                psychology_series_id=injected_catalog.series_id,
+            )
+        )
+    )
+
+    assert "</li>" not in injected_markdown
+    assert "<h1>" not in injected_markdown
+    assert "<b>" not in injected_markdown
+    assert "[标签](url)" not in injected_markdown
+    assert "&lt;/li&gt;&lt;h1&gt;" in injected_markdown
+    assert r"\[标签\]\(url\)" in injected_markdown
+    assert r"\\&lt;b&gt;" in injected_markdown
+
+    builtin_markdown = format_guide_post_markdown(
+        run_guide_post(
+            GuidePostRequest(
+                psychology_content_mode="learning_series",
+                psychology_series_id="after_work_rumination",
+            )
+        )
+    )
+    normal_catalog = _confirm_custom_psychology_series(
+        store=store,
+        topic="正常专题",
+        outline=(
+            {"id": "notice", "title": "先识别触发时刻", "goal": "看见一个瞬间"},
+            {"id": "practice", "title": "练习一个小动作", "goal": "今天尝试一次"},
+        ),
+    )
+    normal_markdown = format_guide_post_markdown(
+        run_guide_post(
+            GuidePostRequest(
+                psychology_content_mode="learning_series",
+                psychology_series_id=normal_catalog.series_id,
+            )
+        )
+    )
+
+    assert "第1课" in builtin_markdown
+    assert "先识别触发时刻" in normal_markdown

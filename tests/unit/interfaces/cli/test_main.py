@@ -1371,6 +1371,34 @@ def test_plan_psychology_series_cli_rejects_deeply_nested_json_before_persisting
     assert not (store.catalog_root / "proposals").exists()
 
 
+def test_plan_psychology_series_cli_rejects_oversized_json_integer_before_persisting(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    store = _patch_cli_psychology_series_store(monkeypatch, tmp_path / "series-store")
+    outline_path = tmp_path / "outline.json"
+    outline_path.write_bytes(b"[" + b"9" * 5_000 + b"]")
+
+    with pytest.raises(SystemExit) as exc_info:
+        main(
+            [
+                "plan-psychology-series",
+                "--topic",
+                "下班后的脑内回放",
+                "--curriculum-outline-file",
+                str(outline_path),
+                "--format",
+                "json",
+            ]
+        )
+
+    assert exc_info.value.code == 2
+    assert "could not parse psychology series outline file" in capsys.readouterr().err
+    assert not (store.catalog_root / "proposals").exists()
+    assert not (store.catalog_root / "catalogs").exists()
+
+
 def test_confirm_psychology_series_cli_requires_exact_receipt_and_confirmation_flag(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

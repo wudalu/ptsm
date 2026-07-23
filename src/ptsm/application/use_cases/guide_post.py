@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
+from html import escape as html_escape
 import shlex
 from typing import Any
 
@@ -1446,23 +1447,45 @@ def _format_topic_direction_markdown(direction: dict[str, Any]) -> str:
     format_recommendation = direction.get("format_recommendation")
     if not isinstance(format_recommendation, dict):
         format_recommendation = {}
+    render_value = (
+        _markdown_inline
+        if _is_custom_psychology_learning_direction(direction)
+        else str
+    )
     return (
-        f"- {_markdown_inline(direction['name'])}（trend: "
-        f"{_markdown_inline(direction['trend_signal'])} / "
-        f"type: {_markdown_inline(direction.get('direction_type', 'curated'))} / "
-        f"mode: {_markdown_inline(direction.get('content_mode', ''))} / "
-        f"hook: {_markdown_inline(direction['viral_hook'])} / "
-        f"format: {_markdown_inline(format_recommendation.get('format_archetype', ''))} / "
-        f"cover: {_markdown_inline(format_recommendation.get('cover_role', ''))} / "
-        f"visual: {_markdown_inline(format_recommendation.get('visual_evidence_need', ''))} / "
-        f"fit: {_markdown_inline(direction.get('scene_fit', ''))}）"
-        f"：{_markdown_inline(direction['content_angle'])}"
+        f"- {render_value(direction['name'])}（trend: "
+        f"{render_value(direction['trend_signal'])} / "
+        f"type: {render_value(direction.get('direction_type', 'curated'))} / "
+        f"mode: {render_value(direction.get('content_mode', ''))} / "
+        f"hook: {render_value(direction['viral_hook'])} / "
+        f"format: {render_value(format_recommendation.get('format_archetype', ''))} / "
+        f"cover: {render_value(format_recommendation.get('cover_role', ''))} / "
+        f"visual: {render_value(format_recommendation.get('visual_evidence_need', ''))} / "
+        f"fit: {render_value(direction.get('scene_fit', ''))}）"
+        f"：{render_value(direction['content_angle'])}"
+    )
+
+
+def _is_custom_psychology_learning_direction(direction: dict[str, Any]) -> bool:
+    """Identify topic directions whose prose comes from operator input."""
+    return (
+        direction.get("direction_type") == "learning_series_lesson"
+        and direction.get("series_id") != STARTER_SERIES_ID
     )
 
 
 def _markdown_inline(value: object) -> str:
-    """Keep untrusted operator text on its surrounding Markdown line."""
-    return " ".join(str(value).split())
+    """Render untrusted text as one literal Markdown line.
+
+    HTML escaping happens before Markdown escaping so an entity-looking input
+    cannot be decoded back into a tag by a downstream Markdown renderer.
+    """
+    text = html_escape(" ".join(str(value).split()), quote=False)
+    markdown_control_characters = frozenset("\\`*_{}[]()#+-.!|~")
+    return "".join(
+        f"\\{character}" if character in markdown_control_characters else character
+        for character in text
+    )
 
 
 def _format_image_recommendation(recommendation: Any) -> str:

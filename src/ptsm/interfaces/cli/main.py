@@ -120,7 +120,7 @@ def _load_psychology_series_outline(
         parser.error("psychology series outline file is too large")
     try:
         payload = json.loads(raw)
-    except (RecursionError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+    except (RecursionError, ValueError) as exc:
         parser.error(f"could not parse psychology series outline file {path}: {exc}")
     if type(payload) is not list:
         parser.error("psychology series outline file must contain a JSON list")
