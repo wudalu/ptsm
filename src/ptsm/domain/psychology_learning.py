@@ -51,28 +51,46 @@ _UNSAFE_CLAIM_MARKERS = (
 )
 _PROPOSAL_UNSAFE_CLINICAL_MARKERS = (
     "诊断",
+    "診斷",
     "确诊",
+    "確診",
     "抑郁症",
+    "憂鬱症",
     "双相",
+    "雙相",
     "adhd",
     "人格障碍",
+    "人格障礙",
     "精神分裂",
     "治疗",
+    "治療",
     "治好",
     "治愈",
+    "治癒",
     "药物",
+    "藥物",
     "用药",
+    "用藥",
     "停药",
+    "停藥",
     "处方",
+    "處方",
     "自测",
+    "自測",
     "量表",
     "自杀",
+    "自殺",
     "自伤",
+    "自傷",
     "轻生",
+    "輕生",
     "割腕",
     "伤害自己",
+    "傷害自己",
     "自我伤害",
+    "自我傷害",
     "危机",
+    "危機",
     "crisis",
     "self-harm",
     "selfharm",
@@ -83,9 +101,9 @@ _PROPOSAL_UNSAFE_CLINICAL_MARKERS = (
     "self-test",
 )
 _PROPOSAL_SOURCE_REFERENCE_PATTERN = re.compile(
-    r"(?:source|来源|参考|ref|doi)\s*[:：]"
+    r"(?:source|来源|來源|参考|參考|ref|doi)\s*[:：]"
     r"|(?<![a-z])doi[:：]?10\.\d{4,9}/\S+"
-    r"|(?:参考(?:文献|资料))"
+    r"|(?:(?:参考|參考)(?:文献|文獻|资料|資料))"
     r"|(?:\bcitation\b|\bbibliograph\w*)",
     flags=re.IGNORECASE,
 )
