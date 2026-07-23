@@ -56,8 +56,15 @@ _PROPOSAL_UNSAFE_CLINICAL_MARKERS = (
     "確診",
     "抑郁症",
     "憂鬱症",
+    "焦虑症",
+    "焦慮症",
+    "强迫症",
+    "強迫症",
     "双相",
     "雙相",
+    "创伤后应激障碍",
+    "創傷後應激障礙",
+    "創傷後壓力障礙",
     "adhd",
     "人格障碍",
     "人格障礙",
@@ -136,23 +143,62 @@ _PROPOSAL_UNSAFE_CLINICAL_MARKERS = (
     "危机",
     "危機",
     "crisis",
-    "self-harm",
-    "selfharm",
     "suicide",
+    "ptsd",
+    "ocd",
+    "anxiety disorder",
+    "bipolar disorder",
+    "schizophrenia",
     "diagnos",
     "treat",
+    "therapy",
+    "therapist",
+    "psychotherapy",
+    "counseling",
+    "counselling",
     "medication",
     "self-test",
 )
+_PROPOSAL_HAN_UNSAFE_CLINICAL_MARKERS = tuple(
+    marker
+    for marker in _PROPOSAL_UNSAFE_CLINICAL_MARKERS
+    if not marker.isascii()
+)
+_PROPOSAL_ASCII_UNSAFE_CLINICAL_MARKERS = tuple(
+    re.sub(r"[^a-z0-9]", "", marker)
+    for marker in _PROPOSAL_UNSAFE_CLINICAL_MARKERS
+    if marker.isascii()
+)
+_PROPOSAL_ENGLISH_SELF_HARM_PATTERN = re.compile(
+    r"(?<![a-z0-9])self(?s:.{0,4})harm(?![a-z0-9])",
+    flags=re.IGNORECASE,
+)
 _PROPOSAL_SOURCE_REFERENCE_PATTERN = re.compile(
-    r"(?:source|来源|來源|参考|參考|ref|doi)\s*[:：]"
+    r"(?:source|来源|來源|参考|參考|ref(?:erence)?|author|link|doi)\s*[:：]"
     r"|(?<![a-z])doi[:：]?10\.\d{4,9}/\S+"
     r"|(?:(?:参考|參考)(?:文献|文獻|资料|資料))"
     r"|(?:\bcitation\b|\bbibliograph\w*)",
     flags=re.IGNORECASE,
 )
+_PROPOSAL_DOMAIN_LABEL_PATTERN = (
+    r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?|[\u3400-\u9fff]{1,63})"
+)
+_PROPOSAL_DOMAIN_TLD_PATTERN = (
+    r"(?:[a-z]{2,63}|xn--[a-z0-9](?:[a-z0-9-]{0,57}[a-z0-9])?|[\u3400-\u9fff]{2,63})"
+)
 _PROPOSAL_RAW_DOMAIN_PATTERN = re.compile(
-    r"(?<![a-z0-9_-])(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}(?![a-z0-9_-])",
+    rf"(?<![a-z0-9_\-\u3400-\u9fff])"
+    rf"(?:{_PROPOSAL_DOMAIN_LABEL_PATTERN}\.)+"
+    rf"{_PROPOSAL_DOMAIN_TLD_PATTERN}"
+    rf"(?![a-z0-9_\-\u3400-\u9fff])",
+    flags=re.IGNORECASE,
+)
+_PROPOSAL_OBFUSCATED_DOT_DOMAIN_PATTERN = re.compile(
+    rf"(?<![a-z0-9_\-\u3400-\u9fff])"
+    rf"{_PROPOSAL_DOMAIN_LABEL_PATTERN}\s*"
+    rf"(?:\[\s*dot\s*\]|\bdot\b)\s*"
+    rf"{_PROPOSAL_DOMAIN_TLD_PATTERN}"
+    rf"(?![a-z0-9_\-\u3400-\u9fff])",
     flags=re.IGNORECASE,
 )
 _PROPOSAL_SOURCE_STRUCTURAL_ASCII = frozenset(":/?&=#._-@%")
@@ -1143,27 +1189,21 @@ def _require_safe_proposal_text(
     max_length: int,
 ) -> str:
     text = value.strip()
-    security_text = _proposal_security_text(text)
-    if not min_length <= len(security_text) <= max_length:
+    if not min_length <= len(text) <= max_length:
         raise ValueError(
             f"{field_name} must contain between {min_length} and {max_length} characters"
         )
-    source_security_text = _proposal_source_security_text(text)
-    source_label_text = _proposal_source_label_text(text)
-    if (
-        _contains_source_reference(source_security_text)
-        or _PROPOSAL_SOURCE_REFERENCE_PATTERN.search(source_security_text)
-        or _PROPOSAL_SOURCE_REFERENCE_PATTERN.search(source_label_text)
-        or _PROPOSAL_RAW_DOMAIN_PATTERN.search(source_security_text)
-    ):
+    security_text = _proposal_security_text(text)
+    if not security_text:
+        raise ValueError(
+            f"{field_name} must contain between {min_length} and {max_length} characters"
+        )
+    if _contains_unsafe_proposal_clinical_marker(text, security_text):
+        raise ValueError(f"{field_name} must not contain unsafe clinical or crisis content")
+    if _contains_proposal_source_shape(text):
         raise ValueError(f"{field_name} must not contain a source locator or reference")
     if _contains_unexpected_proposal_alphabetic_script(text):
         raise ValueError(f"{field_name} must not contain unsupported alphabetic script")
-    marker_text = _proposal_marker_text(security_text)
-    if any(marker in marker_text for marker in _PROPOSAL_UNSAFE_CLINICAL_MARKERS):
-        raise ValueError(f"{field_name} must not contain unsafe clinical or crisis content")
-    if _contains_split_source_domain_shape(text):
-        raise ValueError(f"{field_name} must not contain a source locator or reference")
     return text
 
 
@@ -1210,6 +1250,16 @@ def _proposal_source_label_text(value: str) -> str:
     )
 
 
+def _proposal_source_shape_text(value: str) -> str:
+    """Keep visible source-shape separators while removing invisible controls."""
+    normalized = _proposal_security_unicode_text(value)
+    return "".join(
+        character
+        for character in normalized
+        if not unicodedata.category(character).startswith("C")
+    )
+
+
 def _proposal_security_unicode_text(value: str) -> str:
     return unicodedata.normalize("NFKC", value).translate(
         _PROPOSAL_SECURITY_CONFUSABLE_TRANSLATION
@@ -1251,6 +1301,26 @@ def _contains_split_source_domain_shape(value: str) -> bool:
     return False
 
 
+def _contains_proposal_source_shape(value: str) -> bool:
+    """Detect direct and obfuscated source shapes in proposal-only text.
+
+    This detector intentionally treats bare Unicode/IDNA domains and explicit
+    ``dot``/``[dot]`` spellings as provenance.  Proposal display text remains
+    unchanged; the normalized values below are used only for the safety gate.
+    """
+    source_security_text = _proposal_source_security_text(value)
+    source_label_text = _proposal_source_label_text(value)
+    source_shape_text = _proposal_source_shape_text(value)
+    return bool(
+        _contains_source_reference(source_security_text)
+        or _PROPOSAL_SOURCE_REFERENCE_PATTERN.search(source_security_text)
+        or _PROPOSAL_SOURCE_REFERENCE_PATTERN.search(source_label_text)
+        or _PROPOSAL_RAW_DOMAIN_PATTERN.search(source_security_text)
+        or _PROPOSAL_OBFUSCATED_DOT_DOMAIN_PATTERN.search(source_shape_text)
+        or _contains_split_source_domain_shape(value)
+    )
+
+
 def _is_split_source_domain_separator(value: str) -> bool:
     non_whitespace_characters = tuple(
         character for character in value if not character.isspace()
@@ -1275,12 +1345,48 @@ def _is_source_domain_label(value: str) -> bool:
     )
 
 
-def _proposal_marker_text(security_text: str) -> str:
-    """Keep only ASCII alphanumerics and CJK Han for danger-marker checks."""
+def _contains_unsafe_proposal_clinical_marker(
+    text: str,
+    security_text: str,
+) -> bool:
+    """Check proposal-only clinical and crisis markers without rewriting text.
+
+    Han markers use a separate Han-only skeleton, so punctuation, ASCII, and
+    format characters cannot split a Chinese danger marker.  English
+    ``self...harm`` is kept as a bounded, ordered pattern instead of a broad
+    substring rule.
+    """
+    han_marker_text = _proposal_han_marker_skeleton(text)
+    ascii_marker_text = _proposal_ascii_marker_skeleton(security_text)
+    english_marker_text = _proposal_security_unicode_text(text)
+    return (
+        any(
+            marker in han_marker_text
+            for marker in _PROPOSAL_HAN_UNSAFE_CLINICAL_MARKERS
+        )
+        or any(
+            marker in ascii_marker_text
+            for marker in _PROPOSAL_ASCII_UNSAFE_CLINICAL_MARKERS
+        )
+        or bool(_PROPOSAL_ENGLISH_SELF_HARM_PATTERN.search(english_marker_text))
+    )
+
+
+def _proposal_han_marker_skeleton(value: str) -> str:
+    """Return only Han characters for Chinese danger-marker detection."""
+    return "".join(
+        character
+        for character in _proposal_security_unicode_text(value)
+        if _is_cjk_han(character)
+    )
+
+
+def _proposal_ascii_marker_skeleton(security_text: str) -> str:
+    """Return ASCII alphanumerics for non-Han marker checks."""
     return "".join(
         character
         for character in security_text
-        if (character.isascii() and character.isalnum()) or _is_cjk_han(character)
+        if character.isascii() and character.isalnum()
     )
 
 

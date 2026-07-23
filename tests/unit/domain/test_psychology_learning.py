@@ -364,6 +364,73 @@ def test_custom_series_plan_intent_rejects_unsafe_or_malformed_operator_values(
 @pytest.mark.parametrize(
     "topic",
     (
+        "自x杀",
+        "自1杀",
+        "诊x断",
+        "治x疗",
+        "selfxharm",
+    ),
+)
+def test_proposal_validation_rejects_marker_bypasses_with_inserted_text(
+    topic: str,
+) -> None:
+    with pytest.raises(ValidationError, match="unsafe clinical or crisis content"):
+        PsychologyLearningSeriesPlanIntent(topic=topic)
+
+
+@pytest.mark.parametrize(
+    "topic",
+    (
+        "焦虑症",
+        "焦慮症",
+        "强迫症",
+        "強迫症",
+        "PTSD",
+        "创伤后应激障碍",
+        "創傷後應激障礙",
+        "therapy",
+        "焦\u00b7虑症",
+    ),
+)
+def test_proposal_validation_rejects_direct_clinical_category_markers(
+    topic: str,
+) -> None:
+    with pytest.raises(ValidationError, match="unsafe clinical or crisis content"):
+        PsychologyLearningSeriesPlanIntent(topic=topic)
+
+
+@pytest.mark.parametrize(
+    "topic",
+    (
+        "例子.中国",
+        "xn--fsqu00a.xn--fiqs8s",
+        "example dot com",
+        "example[dot]com",
+        "reference: paper",
+        "author: somebody",
+        "link: somebody",
+    ),
+)
+def test_proposal_validation_rejects_direct_source_shapes(topic: str) -> None:
+    with pytest.raises(ValidationError, match="source locator or reference"):
+        PsychologyLearningSeriesPlanIntent(topic=topic)
+
+
+@pytest.mark.parametrize(
+    "topic",
+    (
+        "情" + " " * 1000 + "绪",
+        "情" + "\u200b" * 1000 + "绪",
+    ),
+)
+def test_proposal_validation_limits_original_display_text_length(topic: str) -> None:
+    with pytest.raises(ValidationError, match="between 2 and 60 characters"):
+        PsychologyLearningSeriesPlanIntent(topic=topic)
+
+
+@pytest.mark.parametrize(
+    "topic",
+    (
         "我的\u3000下班整理",
         "我的·下班整理",
         "我的－下班整理",
@@ -373,6 +440,7 @@ def test_custom_series_plan_intent_rejects_unsafe_or_malformed_operator_values(
         "下班後的學習整理",
         "自我照顧練習",
         "note card",
+        "reference notes",
         "下班后的note card整理",
     ),
 )
