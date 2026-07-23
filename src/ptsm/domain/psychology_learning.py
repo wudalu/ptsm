@@ -12,7 +12,6 @@ import hashlib
 import json
 import re
 import unicodedata
-from collections.abc import Sequence
 from typing import Any, Literal, Mapping
 
 from pydantic import (
@@ -1214,7 +1213,7 @@ def _assert_raw_series_plan_intent_bounds(value: Any) -> None:
     raw_outline = value.get("outline")
     if raw_outline is None:
         return
-    outline = _require_sized_proposal_outline(raw_outline)
+    outline = _require_concrete_proposal_outline(raw_outline)
     for item in outline:
         _assert_raw_outline_item_text_bounds(item)
 
@@ -1253,10 +1252,10 @@ def _require_raw_proposal_text_bounds(
         )
 
 
-def _require_sized_proposal_outline(value: object) -> Sequence[Any]:
-    """Return a bounded outline sequence without consuming arbitrary iterables."""
-    if isinstance(value, (str, bytes, bytearray)) or not isinstance(value, Sequence):
-        raise ValueError("outline must be a sized sequence")
+def _require_concrete_proposal_outline(value: object) -> list[Any] | tuple[Any, ...]:
+    """Return a bounded concrete outline without consuming custom iterables."""
+    if type(value) not in (list, tuple):
+        raise ValueError("outline must be a concrete list or tuple")
     if not (
         _PROPOSAL_OUTLINE_MIN_LESSON_COUNT
         <= len(value)

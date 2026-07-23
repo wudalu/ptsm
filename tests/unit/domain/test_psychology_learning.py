@@ -488,6 +488,21 @@ def test_proposal_validation_keeps_reasonable_outer_whitespace_behavior() -> Non
     assert item.title == "先记录感受"
 
 
+def test_proposal_validation_rejects_deceptive_outline_sequence_before_iteration() -> None:
+    class DeceptiveOutline(list[dict[str, str]]):
+        def __len__(self) -> int:
+            return 2
+
+        def __iter__(self):
+            raise AssertionError("outline should not be consumed")
+
+    with pytest.raises(ValidationError, match="outline must be a concrete list or tuple"):
+        PsychologyLearningSeriesPlanIntent(
+            topic="情绪整理",
+            outline=DeceptiveOutline(),
+        )
+
+
 @pytest.mark.parametrize(
     "topic",
     (

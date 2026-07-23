@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from typing import Any
 
 from ptsm.domain.psychology_learning import (
@@ -16,7 +16,9 @@ from ptsm.domain.psychology_learning import (
 def plan_psychology_learning_series(
     *,
     topic: str,
-    outline: Sequence[Mapping[str, Any] | PsychologyLearningOutlineItem] | None = None,
+    outline: list[Mapping[str, Any] | PsychologyLearningOutlineItem]
+    | tuple[Mapping[str, Any] | PsychologyLearningOutlineItem, ...]
+    | None = None,
 ) -> PsychologyLearningSeriesProposal:
     """Return a safe review proposal without writing or resolving a catalog.
 
@@ -25,8 +27,8 @@ def plan_psychology_learning_series(
     reader-visible runtime input.
     """
     if outline is not None:
-        if not isinstance(outline, Sequence):
-            raise TypeError("outline must be a sized sequence")
+        if type(outline) not in (list, tuple):
+            raise TypeError("outline must be a concrete list or tuple")
         if not 2 <= len(outline) <= 6:
             raise ValueError("outline must contain between 2 and 6 lessons")
     return build_psychology_learning_series_proposal(
