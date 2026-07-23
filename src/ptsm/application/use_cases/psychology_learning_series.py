@@ -16,10 +16,13 @@ from ptsm.domain.psychology_learning import (
     PsychologyLearningSeriesPlanIntent,
     PsychologyLearningSeriesProposal,
     _build_confirmed_psychology_learning_catalog,
+    _build_confirmed_psychology_learning_catalog_for_template,
     _build_psychology_learning_catalog_revision_record,
     _confirmed_catalog_snapshot_versions,
     _load_confirmed_psychology_learning_catalog_snapshot,
     _read_psychology_learning_catalog_revision_records,
+    _sync_existing_directory,
+    _sync_existing_json,
     build_psychology_learning_series_proposal,
     list_confirmed_psychology_learning_catalog_revisions,
     load_confirmed_psychology_learning_catalog,
@@ -117,6 +120,7 @@ class PsychologyLearningSeriesStore:
         proposal = self.read_proposal(proposal_id=proposal_id)
         if proposal.proposal_fingerprint != proposal_fingerprint:
             raise ValueError("psychology learning proposal fingerprint does not match")
+        self._sync_existing_catalog_history(series_id=proposal.series_id_candidate)
         records = _read_psychology_learning_catalog_revision_records(
             series_id=proposal.series_id_candidate,
             catalog_root=self.catalog_root,
@@ -152,6 +156,15 @@ class PsychologyLearningSeriesStore:
         self._persist_confirmation_record(catalog)
         return self._persist_catalog_snapshot(catalog)
 
+    def _sync_existing_catalog_history(self, *, series_id: str) -> None:
+        """Complete a prior durable commit barrier before accepting existing history."""
+        for directory in (
+            self.catalog_root / "confirmations" / series_id,
+            self.catalog_root / "catalogs" / series_id,
+        ):
+            if directory.exists():
+                _sync_existing_directory(directory)
+
     def _recover_pending_catalog_snapshot(
         self,
         *,
@@ -178,9 +191,10 @@ class PsychologyLearningSeriesStore:
             or pending.approval.proposal_fingerprint != proposal.proposal_fingerprint
         ):
             raise ValueError("invalid psychology learning catalog revision history")
-        catalog = _build_confirmed_psychology_learning_catalog(
+        catalog = _build_confirmed_psychology_learning_catalog_for_template(
             proposal,
             curriculum_version=pending.curriculum_version,
+            controlled_template_version=pending.controlled_template_version,
         )
         if _build_psychology_learning_catalog_revision_record(catalog) != pending:
             raise ValueError("invalid psychology learning catalog revision history")
@@ -221,7 +235,8 @@ class PsychologyLearningSeriesStore:
             except ValueError as exc:
                 raise ValueError("invalid psychology learning catalog revision history") from exc
             if (
-                catalog.approval != record.approval
+                catalog.controlled_template_version != record.controlled_template_version
+                or catalog.approval != record.approval
                 or catalog.catalog_digest != record.catalog_digest
             ):
                 raise ValueError("invalid psychology learning catalog revision history")
@@ -296,6 +311,7 @@ class PsychologyLearningSeriesStore:
                 curriculum_version=catalog.curriculum_version,
                 catalog_digest=catalog.catalog_digest,
             )
+        _sync_existing_json(path)
         payload = _read_progress_json(path)
         try:
             progress = PsychologyLearningProductionProgress.model_validate(payload)
@@ -377,35 +393,88 @@ def confirm_psychology_learning_series_proposal(
 
 def _write_new_json(path: Path, payload: dict[str, Any]) -> None:
     staging_directory = path.parent.parent / ".staging"
-    staging_directory.mkdir(parents=True, exist_ok=True)
+    _ensure_durable_directory(staging_directory)
+    created_target_directories = _ensure_durable_directory(path.parent)
     temp_path = staging_directory / f"{path.name}.{uuid4().hex}.tmp"
     try:
-        temp_path.write_text(_canonical_json(payload), encoding="utf-8")
-        path.parent.mkdir(parents=True, exist_ok=True)
-        os.link(temp_path, path)
+        _write_and_sync_json(temp_path, payload)
+        try:
+            os.link(temp_path, path)
+        except FileExistsError:
+            _sync_existing_json(path)
+            raise
+        _sync_existing_directory(path.parent)
     except OSError:
         if not path.exists():
-            try:
-                path.parent.rmdir()
-            except OSError:
-                pass
+            _remove_empty_directories(created_target_directories)
         raise
     finally:
+        _best_effort_unlink(temp_path)
+
+
+def _replace_json(path: Path, payload: dict[str, Any]) -> None:
+    created_target_directories = _ensure_durable_directory(path.parent)
+    temp_path = path.with_name(f"{path.name}.{uuid4().hex}.tmp")
+    try:
+        _write_and_sync_json(temp_path, payload)
+        temp_path.replace(path)
+        _sync_existing_directory(path.parent)
+    except OSError:
+        if not path.exists():
+            _remove_empty_directories(created_target_directories)
+        raise
+    finally:
+        _best_effort_unlink(temp_path)
+
+
+def _write_and_sync_json(path: Path, payload: dict[str, Any]) -> None:
+    """Create one staged JSON file and make its content durable before commit."""
+    with path.open("x", encoding="utf-8") as handle:
+        handle.write(_canonical_json(payload))
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
+def _ensure_durable_directory(path: Path) -> tuple[Path, ...]:
+    """Create missing directory ancestors and sync each new entry before use."""
+    missing: list[Path] = []
+    current = path
+    while not current.exists():
+        missing.append(current)
+        parent = current.parent
+        if parent == current:
+            raise OSError(f"cannot create durable directory {path}")
+        current = parent
+    if not current.is_dir():
+        raise NotADirectoryError(current)
+    created: list[Path] = []
+    try:
+        _sync_existing_directory(current)
+        for directory in reversed(missing):
+            directory.mkdir()
+            created.append(directory)
+            _sync_existing_directory(directory)
+    except OSError:
+        _remove_empty_directories(tuple(created))
+        raise
+    return tuple(created)
+
+
+def _remove_empty_directories(directories: tuple[Path, ...]) -> None:
+    """Best-effort cleanup for directories created by an unsuccessful write."""
+    for directory in reversed(directories):
         try:
-            temp_path.unlink()
+            directory.rmdir()
+            _sync_existing_directory(directory.parent)
         except OSError:
             pass
 
 
-def _replace_json(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temp_path = path.with_name(f"{path.name}.{uuid4().hex}.tmp")
+def _best_effort_unlink(path: Path) -> None:
     try:
-        temp_path.write_text(_canonical_json(payload), encoding="utf-8")
-        temp_path.replace(path)
-    finally:
-        if temp_path.exists():
-            temp_path.unlink()
+        path.unlink()
+    except OSError:
+        pass
 
 
 def _read_progress_json(path: Path) -> dict[str, Any]:

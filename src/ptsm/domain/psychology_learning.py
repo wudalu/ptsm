@@ -8,12 +8,15 @@ resolved into the same controlled lesson contract as the builtin catalog.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
+from types import MappingProxyType
 import unicodedata
-from typing import Any, Literal, Mapping
+from typing import Any, Callable, Literal, Mapping
 
 from pydantic import (
     BaseModel,
@@ -28,8 +31,15 @@ from pydantic import (
 PSYCHOLOGY_LEARNING_MODE = "learning_series"
 PSYCHOLOGY_LEARNING_CURRICULUM_VERSION = "1"
 STARTER_SERIES_ID = "after_work_rumination"
-PSYCHOLOGY_LEARNING_PROPOSAL_SCHEMA_VERSION = "1"
-PSYCHOLOGY_LEARNING_CATALOG_SNAPSHOT_SCHEMA_VERSION = "1"
+_PSYCHOLOGY_LEARNING_PROPOSAL_SCHEMA_VERSION_V1 = "1"
+PSYCHOLOGY_LEARNING_PROPOSAL_SCHEMA_VERSION = (
+    _PSYCHOLOGY_LEARNING_PROPOSAL_SCHEMA_VERSION_V1
+)
+_PSYCHOLOGY_LEARNING_CATALOG_SNAPSHOT_SCHEMA_VERSION_V1 = "1"
+PSYCHOLOGY_LEARNING_CATALOG_SNAPSHOT_SCHEMA_VERSION = (
+    _PSYCHOLOGY_LEARNING_CATALOG_SNAPSHOT_SCHEMA_VERSION_V1
+)
+CURRENT_PSYCHOLOGY_LEARNING_CONTROLLED_TEMPLATE_VERSION = "1"
 PSYCHOLOGY_LEARNING_PROGRESS_SCHEMA_VERSION = "1"
 DEFAULT_PSYCHOLOGY_LEARNING_SERIES_CATALOG_ROOT = (
     Path("outputs") / "artifacts" / "psychology-learning-series"
@@ -1075,7 +1085,9 @@ class PsychologyLearningProposalReview(_FrozenDomainModel):
 class PsychologyLearningSeriesProposal(_FrozenDomainModel):
     """Immutable, deterministic proposal that cannot be selected for a run."""
 
-    proposal_schema_version: Literal["1"] = PSYCHOLOGY_LEARNING_PROPOSAL_SCHEMA_VERSION
+    proposal_schema_version: Literal["1"] = (
+        _PSYCHOLOGY_LEARNING_PROPOSAL_SCHEMA_VERSION_V1
+    )
     proposal_id: str
     proposal_fingerprint: str
     topic: str
@@ -1122,12 +1134,12 @@ class PsychologyLearningSeriesProposal(_FrozenDomainModel):
                 raise ValueError("publication plan must preserve canonical lesson numbers")
             if item.instructional_stage != lesson.instructional_stage:
                 raise ValueError("publication plan stage must match the proposed lesson")
-        if self.catalog.series_id != _series_id_candidate(self.topic):
+        if self.catalog.series_id != _series_id_candidate_v1(self.topic):
             raise ValueError("proposal series_id candidate does not match the topic")
         if self.catalog.series_title != f"{self.topic}学习系列":
             raise ValueError("proposal series_title candidate does not match the topic")
-        digest = _stable_proposal_digest(
-            _proposal_material(
+        digest = _stable_proposal_digest_v1(
+            _proposal_material_v1(
                 topic=self.topic,
                 catalog=self.catalog,
                 publication_plan=self.publication_plan,
@@ -1179,8 +1191,11 @@ class PsychologyLearningCatalog(_FrozenDomainModel):
     sanitized review record and never becomes runtime input by itself.
     """
 
-    snapshot_schema_version: Literal["1"] = PSYCHOLOGY_LEARNING_CATALOG_SNAPSHOT_SCHEMA_VERSION
+    snapshot_schema_version: Literal["1"] = (
+        _PSYCHOLOGY_LEARNING_CATALOG_SNAPSHOT_SCHEMA_VERSION_V1
+    )
     origin: Literal["user_confirmed"] = "user_confirmed"
+    controlled_template_version: str
     series_id: str
     series_title: str
     curriculum_version: str
@@ -1193,6 +1208,11 @@ class PsychologyLearningCatalog(_FrozenDomainModel):
     @classmethod
     def _validate_series_id(cls, value: str) -> str:
         return _require_identifier(value, field_name="series_id")
+
+    @field_validator("controlled_template_version")
+    @classmethod
+    def _validate_controlled_template_version(cls, value: str) -> str:
+        return _require_controlled_catalog_template_version(value)
 
     @field_validator("series_title")
     @classmethod
@@ -1211,6 +1231,11 @@ class PsychologyLearningCatalog(_FrozenDomainModel):
 
     @model_validator(mode="after")
     def _validate_snapshot_integrity(self) -> "PsychologyLearningCatalog":
+        template = _controlled_catalog_template_for_version(
+            self.controlled_template_version
+        )
+        if self.snapshot_schema_version != template.snapshot_schema_version:
+            raise ValueError("confirmed catalog snapshot schema does not match its template")
         lessons_by_id = {lesson.lesson_id: lesson for lesson in self.lessons}
         if len(lessons_by_id) != len(self.lessons):
             raise ValueError("confirmed catalog lesson ids must be unique")
@@ -1224,7 +1249,7 @@ class PsychologyLearningCatalog(_FrozenDomainModel):
             for lesson in self.lessons
         ):
             raise ValueError("confirmed catalog lessons must match catalog identity")
-        if self.approval.approval_id != _confirmed_catalog_approval_id(
+        if self.approval.approval_id != template.build_approval_id(
             proposal_id=self.approval.proposal_id,
             proposal_fingerprint=self.approval.proposal_fingerprint,
             curriculum_version=self.curriculum_version,
@@ -1238,7 +1263,7 @@ class PsychologyLearningCatalog(_FrozenDomainModel):
             if item.canonical_lesson_number != lesson.lesson_number:
                 raise ValueError("confirmed catalog publication plan must preserve lesson numbers")
         for lesson in self.lessons:
-            expected_lesson = _build_confirmed_psychology_learning_lesson(
+            expected_lesson = template.build_lesson(
                 series_id=self.series_id,
                 series_title=self.series_title,
                 curriculum_version=self.curriculum_version,
@@ -1249,7 +1274,9 @@ class PsychologyLearningCatalog(_FrozenDomainModel):
             )
             if lesson != expected_lesson:
                 raise ValueError("confirmed catalog lesson fields do not match the controlled template")
-        expected_digest = _confirmed_catalog_digest(
+        expected_digest = template.build_catalog_digest(
+            snapshot_schema_version=template.snapshot_schema_version,
+            controlled_template_version=self.controlled_template_version,
             series_id=self.series_id,
             series_title=self.series_title,
             curriculum_version=self.curriculum_version,
@@ -1265,8 +1292,11 @@ class PsychologyLearningCatalog(_FrozenDomainModel):
 class PsychologyLearningCatalogRevisionRecord(_FrozenDomainModel):
     """Append-only confirmation ledger entry for one immutable snapshot."""
 
-    record_schema_version: Literal["1"] = PSYCHOLOGY_LEARNING_CATALOG_SNAPSHOT_SCHEMA_VERSION
+    record_schema_version: Literal["1"] = (
+        _PSYCHOLOGY_LEARNING_CATALOG_SNAPSHOT_SCHEMA_VERSION_V1
+    )
     origin: Literal["user_confirmed"] = "user_confirmed"
+    controlled_template_version: str
     series_id: str
     curriculum_version: str
     approval: PsychologyLearningCatalogApproval
@@ -1276,6 +1306,11 @@ class PsychologyLearningCatalogRevisionRecord(_FrozenDomainModel):
     @classmethod
     def _validate_series_id(cls, value: str) -> str:
         return _require_identifier(value, field_name="series_id")
+
+    @field_validator("controlled_template_version")
+    @classmethod
+    def _validate_controlled_template_version(cls, value: str) -> str:
+        return _require_controlled_catalog_template_version(value)
 
     @field_validator("curriculum_version")
     @classmethod
@@ -1289,7 +1324,10 @@ class PsychologyLearningCatalogRevisionRecord(_FrozenDomainModel):
 
     @model_validator(mode="after")
     def _validate_confirmation_identity(self) -> "PsychologyLearningCatalogRevisionRecord":
-        expected_approval_id = _confirmed_catalog_approval_id(
+        template = _controlled_catalog_template_for_version(
+            self.controlled_template_version
+        )
+        expected_approval_id = template.build_approval_id(
             proposal_id=self.approval.proposal_id,
             proposal_fingerprint=self.approval.proposal_fingerprint,
             curriculum_version=self.curriculum_version,
@@ -1357,7 +1395,7 @@ def build_psychology_learning_series_proposal(
         for index, item in enumerate(outline, start=1)
     )
     catalog = PsychologyLearningProposedCatalog(
-        series_id=_series_id_candidate(normalized_intent.topic),
+        series_id=_series_id_candidate_v1(normalized_intent.topic),
         series_title=f"{normalized_intent.topic}学习系列",
         lessons=proposed_lessons,
     )
@@ -1382,12 +1420,12 @@ def build_psychology_learning_series_proposal(
             for index, lesson in enumerate(ordered_lessons, start=1)
         )
     )
-    material = _proposal_material(
+    material = _proposal_material_v1(
         topic=normalized_intent.topic,
         catalog=catalog,
         publication_plan=publication_plan,
     )
-    digest = _stable_proposal_digest(material)
+    digest = _stable_proposal_digest_v1(material)
     return PsychologyLearningSeriesProposal(
         proposal_id=f"proposal_{digest[:24]}",
         proposal_fingerprint=f"proposal:{digest}",
@@ -1414,7 +1452,21 @@ def _build_confirmed_psychology_learning_catalog(
     *,
     curriculum_version: str,
 ) -> PsychologyLearningCatalog:
-    """Materialize one immutable, controlled catalog from a confirmed proposal.
+    """Materialize a new catalog with the current controlled template version."""
+    return _build_confirmed_psychology_learning_catalog_for_template(
+        proposal,
+        curriculum_version=curriculum_version,
+        controlled_template_version=CURRENT_PSYCHOLOGY_LEARNING_CONTROLLED_TEMPLATE_VERSION,
+    )
+
+
+def _build_confirmed_psychology_learning_catalog_for_template(
+    proposal: PsychologyLearningSeriesProposal | dict[str, Any],
+    *,
+    curriculum_version: str,
+    controlled_template_version: str,
+) -> PsychologyLearningCatalog:
+    """Materialize one immutable catalog from its explicitly frozen template.
 
     This is intentionally not reachable from proposal planning.  The application
     confirmation use case calls it only after loading the exact persisted proposal
@@ -1426,29 +1478,38 @@ def _build_confirmed_psychology_learning_catalog(
     normalized_version = _require_psychology_learning_curriculum_version(
         curriculum_version
     )
+    normalized_template_version = _require_controlled_catalog_template_version(
+        controlled_template_version
+    )
+    template = _controlled_catalog_template_for_version(normalized_template_version)
     approval = PsychologyLearningCatalogApproval(
         proposal_id=normalized_proposal.proposal_id,
         proposal_fingerprint=normalized_proposal.proposal_fingerprint,
-        approval_id=_confirmed_catalog_approval_id(
+        approval_id=template.build_approval_id(
             proposal_id=normalized_proposal.proposal_id,
             proposal_fingerprint=normalized_proposal.proposal_fingerprint,
             curriculum_version=normalized_version,
         ),
     )
-    series_title = _confirmed_catalog_series_title(normalized_proposal.topic)
+    series_title = template.build_series_title(normalized_proposal.topic)
     lessons = tuple(
-        _build_confirmed_psychology_learning_lesson(
+        template.build_lesson(
             series_id=normalized_proposal.catalog.series_id,
             series_title=series_title,
             curriculum_version=normalized_version,
             lesson_id=proposal_lesson.lesson_id,
             lesson_number=proposal_lesson.lesson_number,
-            lesson_title=_compact_confirmed_reader_text(proposal_lesson.title, max_length=18),
+            lesson_title=template.compact_reader_text(
+                proposal_lesson.title,
+                max_length=18,
+            ),
             approval_id=approval.approval_id,
         )
         for proposal_lesson in normalized_proposal.catalog.lessons
     )
-    catalog_digest = _confirmed_catalog_digest(
+    catalog_digest = template.build_catalog_digest(
+        snapshot_schema_version=template.snapshot_schema_version,
+        controlled_template_version=normalized_template_version,
         series_id=normalized_proposal.catalog.series_id,
         series_title=series_title,
         curriculum_version=normalized_version,
@@ -1457,6 +1518,8 @@ def _build_confirmed_psychology_learning_catalog(
         publication_plan=normalized_proposal.publication_plan,
     )
     return PsychologyLearningCatalog(
+        snapshot_schema_version=template.snapshot_schema_version,
+        controlled_template_version=normalized_template_version,
         series_id=normalized_proposal.catalog.series_id,
         series_title=series_title,
         curriculum_version=normalized_version,
@@ -1473,6 +1536,7 @@ def _build_psychology_learning_catalog_revision_record(
     """Return the opaque append-only ledger record for a confirmed snapshot."""
     normalized_catalog = PsychologyLearningCatalog.model_validate(catalog)
     return PsychologyLearningCatalogRevisionRecord(
+        controlled_template_version=normalized_catalog.controlled_template_version,
         series_id=normalized_catalog.series_id,
         curriculum_version=normalized_catalog.curriculum_version,
         approval=normalized_catalog.approval,
@@ -1486,7 +1550,7 @@ def _require_psychology_learning_curriculum_version(value: str) -> str:
     return value
 
 
-def _compact_confirmed_reader_text(value: str, *, max_length: int) -> str:
+def _compact_confirmed_reader_text_v1(value: str, *, max_length: int) -> str:
     text = _require_drafting_safe_text(value, field_name="confirmed catalog text")
     if len(text) <= max_length:
         return text
@@ -1494,17 +1558,22 @@ def _compact_confirmed_reader_text(value: str, *, max_length: int) -> str:
     return f"{compact or text[: max_length - 1]}…"
 
 
-def _confirmed_catalog_series_title(topic: str) -> str:
-    return f"{_compact_confirmed_reader_text(topic, max_length=20)}学习系列"
+def _compact_confirmed_reader_text(value: str, *, max_length: int) -> str:
+    """Current copy compactor; historic templates bind their own implementation."""
+    return _compact_confirmed_reader_text_v1(value, max_length=max_length)
 
 
-def _confirmed_catalog_approval_id(
+def _confirmed_catalog_series_title_v1(topic: str) -> str:
+    return f"{_compact_confirmed_reader_text_v1(topic, max_length=20)}学习系列"
+
+
+def _confirmed_catalog_approval_id_v1(
     *,
     proposal_id: str,
     proposal_fingerprint: str,
     curriculum_version: str,
 ) -> str:
-    digest = _stable_proposal_digest(
+    digest = _stable_proposal_digest_v1(
         {
             "proposal_id": proposal_id,
             "proposal_fingerprint": proposal_fingerprint,
@@ -1515,7 +1584,21 @@ def _confirmed_catalog_approval_id(
     return f"approval_{digest[:24]}"
 
 
-def _build_confirmed_psychology_learning_lesson(
+def _confirmed_catalog_approval_id(
+    *,
+    proposal_id: str,
+    proposal_fingerprint: str,
+    curriculum_version: str,
+) -> str:
+    """Current approval-id helper; persisted v1 binds its own implementation."""
+    return _confirmed_catalog_approval_id_v1(
+        proposal_id=proposal_id,
+        proposal_fingerprint=proposal_fingerprint,
+        curriculum_version=curriculum_version,
+    )
+
+
+def _build_confirmed_psychology_learning_lesson_v1(
     *,
     series_id: str,
     series_title: str,
@@ -1526,7 +1609,7 @@ def _build_confirmed_psychology_learning_lesson(
     approval_id: str,
 ) -> PsychologyLearningLesson:
     """Build fixed reader-visible slots for an approved custom lesson."""
-    compact_title = _compact_confirmed_reader_text(lesson_title, max_length=18)
+    compact_title = _compact_confirmed_reader_text_v1(lesson_title, max_length=18)
     return PsychologyLearningLesson(
         series_id=series_id,
         series_title=series_title,
@@ -1534,11 +1617,11 @@ def _build_confirmed_psychology_learning_lesson(
         lesson_id=lesson_id,
         lesson_number=lesson_number,
         lesson_title=compact_title,
-        post_title=_compact_confirmed_reader_text(
+        post_title=_compact_confirmed_reader_text_v1(
             f"第{lesson_number}课｜{compact_title}",
             max_length=22,
         ),
-        cover_text=_compact_confirmed_reader_text(
+        cover_text=_compact_confirmed_reader_text_v1(
             f"第{lesson_number}课｜{compact_title}",
             max_length=16,
         ),
@@ -1560,8 +1643,10 @@ def _build_confirmed_psychology_learning_lesson(
     )
 
 
-def _confirmed_catalog_digest(
+def _confirmed_catalog_digest_v1(
     *,
+    snapshot_schema_version: str,
+    controlled_template_version: str,
     series_id: str,
     series_title: str,
     curriculum_version: str,
@@ -1569,10 +1654,11 @@ def _confirmed_catalog_digest(
     lessons: tuple[PsychologyLearningLesson, ...],
     publication_plan: PsychologyLearningPublicationPlan,
 ) -> str:
-    digest = _stable_proposal_digest(
+    digest = _stable_proposal_digest_v1(
         {
-            "snapshot_schema_version": PSYCHOLOGY_LEARNING_CATALOG_SNAPSHOT_SCHEMA_VERSION,
+            "snapshot_schema_version": snapshot_schema_version,
             "origin": "user_confirmed",
+            "controlled_template_version": controlled_template_version,
             "series_id": series_id,
             "series_title": series_title,
             "curriculum_version": curriculum_version,
@@ -1582,6 +1668,73 @@ def _confirmed_catalog_digest(
         }
     )
     return f"catalog:{digest}"
+
+
+@dataclass(frozen=True)
+class _ControlledCatalogTemplate:
+    """One immutable reader-copy template for a persisted custom catalog."""
+
+    snapshot_schema_version: Literal["1"]
+    build_series_title: Callable[[str], str]
+    compact_reader_text: Callable[..., str]
+    build_lesson: Callable[..., PsychologyLearningLesson]
+    build_approval_id: Callable[..., str]
+    build_catalog_digest: Callable[..., str]
+
+
+_CONTROLLED_CATALOG_TEMPLATE_REGISTRY: Mapping[str, _ControlledCatalogTemplate] = (
+    MappingProxyType(
+        {
+            "1": _ControlledCatalogTemplate(
+                snapshot_schema_version=(
+                    _PSYCHOLOGY_LEARNING_CATALOG_SNAPSHOT_SCHEMA_VERSION_V1
+                ),
+                build_series_title=_confirmed_catalog_series_title_v1,
+                compact_reader_text=_compact_confirmed_reader_text_v1,
+                build_lesson=_build_confirmed_psychology_learning_lesson_v1,
+                build_approval_id=_confirmed_catalog_approval_id_v1,
+                build_catalog_digest=_confirmed_catalog_digest_v1,
+            ),
+        }
+    )
+)
+
+
+def _require_controlled_catalog_template_version(value: str) -> str:
+    if not isinstance(value, str) or value not in _CONTROLLED_CATALOG_TEMPLATE_REGISTRY:
+        raise ValueError("unsupported psychology learning controlled template version")
+    return value
+
+
+def _controlled_catalog_template_for_version(
+    controlled_template_version: str,
+) -> _ControlledCatalogTemplate:
+    version = _require_controlled_catalog_template_version(controlled_template_version)
+    return _CONTROLLED_CATALOG_TEMPLATE_REGISTRY[version]
+
+
+def _confirmed_catalog_digest(
+    *,
+    snapshot_schema_version: str,
+    controlled_template_version: str,
+    series_id: str,
+    series_title: str,
+    curriculum_version: str,
+    approval: PsychologyLearningCatalogApproval,
+    lessons: tuple[PsychologyLearningLesson, ...],
+    publication_plan: PsychologyLearningPublicationPlan,
+) -> str:
+    """Current digest helper; persisted v1 binds its own implementation."""
+    return _confirmed_catalog_digest_v1(
+        snapshot_schema_version=snapshot_schema_version,
+        controlled_template_version=controlled_template_version,
+        series_id=series_id,
+        series_title=series_title,
+        curriculum_version=curriculum_version,
+        approval=approval,
+        lessons=lessons,
+        publication_plan=publication_plan,
+    )
 
 
 def _assert_raw_series_plan_intent_bounds(value: Any) -> None:
@@ -1990,9 +2143,14 @@ def _outline_lesson_id(item: PsychologyLearningOutlineItem) -> str:
     return f"lesson_{digest}"
 
 
-def _series_id_candidate(topic: str) -> str:
+def _series_id_candidate_v1(topic: str) -> str:
     digest = hashlib.sha256(topic.casefold().encode("utf-8")).hexdigest()[:16]
     return f"custom_psychology_{digest}"
+
+
+def _series_id_candidate(topic: str) -> str:
+    """Current proposal helper; persisted v1 binds its own implementation."""
+    return _series_id_candidate_v1(topic)
 
 
 def _infer_instructional_stage(item: PsychologyLearningOutlineItem) -> Literal[
@@ -2030,7 +2188,7 @@ def _synthesized_outline(topic: str) -> tuple[PsychologyLearningOutlineItem, ...
     )
 
 
-def _stable_proposal_digest(value: Mapping[str, Any]) -> str:
+def _stable_proposal_digest_v1(value: Mapping[str, Any]) -> str:
     encoded = json.dumps(
         value,
         ensure_ascii=False,
@@ -2040,18 +2198,37 @@ def _stable_proposal_digest(value: Mapping[str, Any]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def _proposal_material(
+def _stable_proposal_digest(value: Mapping[str, Any]) -> str:
+    """Current digest helper; persisted v1 binds its own implementation."""
+    return _stable_proposal_digest_v1(value)
+
+
+def _proposal_material_v1(
     *,
     topic: str,
     catalog: PsychologyLearningProposedCatalog,
     publication_plan: PsychologyLearningPublicationPlan,
 ) -> dict[str, Any]:
     return {
-        "proposal_schema_version": PSYCHOLOGY_LEARNING_PROPOSAL_SCHEMA_VERSION,
+        "proposal_schema_version": _PSYCHOLOGY_LEARNING_PROPOSAL_SCHEMA_VERSION_V1,
         "topic": topic,
         "catalog": catalog.model_dump(mode="json"),
         "publication_plan": publication_plan.model_dump(mode="json"),
     }
+
+
+def _proposal_material(
+    *,
+    topic: str,
+    catalog: PsychologyLearningProposedCatalog,
+    publication_plan: PsychologyLearningPublicationPlan,
+) -> dict[str, Any]:
+    """Current proposal material helper; persisted v1 binds its own implementation."""
+    return _proposal_material_v1(
+        topic=topic,
+        catalog=catalog,
+        publication_plan=publication_plan,
+    )
 
 
 def _lesson(
@@ -2264,6 +2441,42 @@ def psychology_learning_series_progress_sidecar_path(
     )
 
 
+def _fsync_directory(directory: Path) -> None:
+    """Synchronize a directory; unsupported directory sync fails closed."""
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+    fd = os.open(directory, flags)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def _sync_directory_entry_ancestors(directory: Path) -> None:
+    """Synchronize every parent entry that makes ``directory`` reachable."""
+    current = directory.parent
+    if current == directory:
+        return
+    while True:
+        _fsync_directory(current)
+        parent = current.parent
+        if parent == current:
+            return
+        current = parent
+
+
+def _sync_existing_directory(directory: Path) -> None:
+    """Complete the durability barrier for an existing directory and its entry."""
+    _fsync_directory(directory)
+    _sync_directory_entry_ancestors(directory)
+
+
+def _sync_existing_json(path: Path) -> None:
+    """Complete the file and directory durability barrier before accepting JSON."""
+    with path.open("rb") as handle:
+        os.fsync(handle.fileno())
+    _sync_existing_directory(path.parent)
+
+
 def read_psychology_learning_series_proposal_snapshot(
     *,
     proposal_id: str,
@@ -2348,7 +2561,8 @@ def _validated_confirmed_psychology_learning_catalog_revisions(
         except ValueError as exc:
             raise ValueError("invalid psychology learning catalog revision history") from exc
         if (
-            catalog.approval != record.approval
+            catalog.controlled_template_version != record.controlled_template_version
+            or catalog.approval != record.approval
             or catalog.catalog_digest != record.catalog_digest
         ):
             raise ValueError("invalid psychology learning catalog revision history")
@@ -2390,9 +2604,10 @@ def _load_confirmed_psychology_learning_catalog_snapshot(
         raise ValueError("invalid psychology learning catalog revision") from exc
     if catalog.approval.proposal_fingerprint != proposal.proposal_fingerprint:
         raise ValueError("invalid psychology learning catalog revision")
-    expected_catalog = _build_confirmed_psychology_learning_catalog(
+    expected_catalog = _build_confirmed_psychology_learning_catalog_for_template(
         proposal,
         curriculum_version=curriculum_version,
+        controlled_template_version=catalog.controlled_template_version,
     )
     if catalog != expected_catalog:
         raise ValueError("invalid psychology learning catalog revision")
@@ -2413,6 +2628,7 @@ def _read_psychology_learning_catalog_revision_records(
         return ()
     records: list[tuple[int, PsychologyLearningCatalogRevisionRecord]] = []
     try:
+        _sync_existing_directory(directory)
         paths = tuple(directory.iterdir())
     except OSError as exc:
         raise ValueError("invalid psychology learning catalog revision history") from exc
@@ -2447,6 +2663,7 @@ def _read_psychology_learning_catalog_revision_records(
 def _confirmed_catalog_snapshot_versions(catalog_directory: Path) -> list[int]:
     """Return the immutable snapshot versions for one catalog directory."""
     try:
+        _sync_existing_directory(catalog_directory)
         paths = tuple(catalog_directory.iterdir())
     except OSError as exc:
         raise ValueError("invalid psychology learning catalog revision history") from exc
@@ -2470,6 +2687,7 @@ def _read_psychology_learning_series_json(
     if not path.is_file():
         raise ValueError(missing_message)
     try:
+        _sync_existing_json(path)
         raw = path.read_text(encoding="utf-8")
         payload = json.loads(raw)
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
