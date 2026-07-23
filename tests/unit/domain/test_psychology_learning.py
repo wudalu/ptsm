@@ -218,12 +218,17 @@ def test_custom_series_proposal_rejects_a_tampered_stable_identifier_or_fingerpr
     "topic,outline,error",
     (
         ("https://example.com/心理学", None, "source locator or reference"),
+        ("example.xyz", None, "source locator or reference"),
         ("source:operator-note", None, "source locator or reference"),
+        ("s\u043eurce:operator-note", None, "source locator or reference"),
         ("doi 10.1000/182 的学习", None, "source locator or reference"),
         ("参考文献 APA 2024", None, "source locator or reference"),
         ("抑郁症自测", None, "unsafe clinical or crisis content"),
         ("自我伤害危机", None, "unsafe clinical or crisis content"),
         ("自\u200b伤应对", None, "unsafe clinical or crisis content"),
+        ("自\u3000伤 journal", None, "unsafe clinical or crisis content"),
+        ("诊\u00a0断 入门", None, "unsafe clinical or crisis content"),
+        ("self\u00a0harm journal", None, "unsafe clinical or crisis content"),
         ("ＡＤＨＤ日常整理", None, "unsafe clinical or crisis content"),
         (
             "情绪整理",
@@ -255,3 +260,11 @@ def test_custom_series_plan_intent_rejects_unsafe_or_malformed_operator_values(
 ) -> None:
     with pytest.raises(ValidationError, match=error):
         PsychologyLearningSeriesPlanIntent(topic=topic, outline=outline)
+
+
+def test_proposal_validation_keeps_safe_reader_visible_unicode_text_unchanged() -> None:
+    topic = "我的\u3000下班整理"
+
+    intent = PsychologyLearningSeriesPlanIntent(topic=topic)
+
+    assert intent.topic == topic

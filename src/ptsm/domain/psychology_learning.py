@@ -75,6 +75,7 @@ _PROPOSAL_UNSAFE_CLINICAL_MARKERS = (
     "危机",
     "crisis",
     "self-harm",
+    "selfharm",
     "suicide",
     "diagnos",
     "treat",
@@ -83,10 +84,62 @@ _PROPOSAL_UNSAFE_CLINICAL_MARKERS = (
 )
 _PROPOSAL_SOURCE_REFERENCE_PATTERN = re.compile(
     r"(?:source|来源|参考|ref|doi)\s*[:：]"
-    r"|(?:\bdoi\b\s*[:：]?\s*10\.\d{4,9}/\S+)"
+    r"|(?<![a-z])doi[:：]?10\.\d{4,9}/\S+"
     r"|(?:参考(?:文献|资料))"
     r"|(?:\bcitation\b|\bbibliograph\w*)",
     flags=re.IGNORECASE,
+)
+_PROPOSAL_RAW_DOMAIN_PATTERN = re.compile(
+    r"(?<![a-z0-9_-])(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}(?![a-z0-9_-])",
+    flags=re.IGNORECASE,
+)
+_PROPOSAL_SECURITY_CONFUSABLE_TRANSLATION = str.maketrans(
+    {
+        # Common Cyrillic/Greek lookalikes for the ASCII letters used by source
+        # markers and clinical-risk tokens.  This is only a security skeleton;
+        # accepted proposal text keeps its original reader-visible spelling.
+        "А": "A",
+        "а": "a",
+        "В": "B",
+        "Е": "E",
+        "е": "e",
+        "І": "I",
+        "і": "i",
+        "К": "K",
+        "М": "M",
+        "Н": "H",
+        "О": "O",
+        "о": "o",
+        "Р": "P",
+        "р": "p",
+        "С": "C",
+        "с": "c",
+        "Т": "T",
+        "Х": "X",
+        "х": "x",
+        "Υ": "Y",
+        "у": "y",
+        "Α": "A",
+        "Β": "B",
+        "Ε": "E",
+        "Ι": "I",
+        "Κ": "K",
+        "Μ": "M",
+        "Ν": "N",
+        "Ο": "O",
+        "Ρ": "P",
+        "Τ": "T",
+        "Χ": "X",
+        "α": "a",
+        "β": "b",
+        "ε": "e",
+        "ι": "i",
+        "κ": "k",
+        "ο": "o",
+        "ρ": "p",
+        "τ": "t",
+        "χ": "x",
+    }
 )
 _INSTRUCTIONAL_STAGE_ORDER: tuple[str, ...] = (
     "notice",
@@ -1022,38 +1075,44 @@ def _require_safe_proposal_text(
     min_length: int,
     max_length: int,
 ) -> str:
-    text = _normalize_proposal_safety_text(value)
-    if not min_length <= len(text) <= max_length:
+    text = value.strip()
+    security_text = _proposal_security_text(text)
+    if not min_length <= len(security_text) <= max_length:
         raise ValueError(
             f"{field_name} must contain between {min_length} and {max_length} characters"
         )
-    if _contains_source_reference(text) or _PROPOSAL_SOURCE_REFERENCE_PATTERN.search(text):
+    if (
+        _contains_source_reference(security_text)
+        or _PROPOSAL_SOURCE_REFERENCE_PATTERN.search(security_text)
+        or _PROPOSAL_RAW_DOMAIN_PATTERN.search(security_text)
+    ):
         raise ValueError(f"{field_name} must not contain a source locator or reference")
-    normalized = text.casefold()
-    if any(marker in normalized for marker in _PROPOSAL_UNSAFE_CLINICAL_MARKERS):
+    if any(marker in security_text for marker in _PROPOSAL_UNSAFE_CLINICAL_MARKERS):
         raise ValueError(f"{field_name} must not contain unsafe clinical or crisis content")
     return text
 
 
-def _normalize_proposal_safety_text(value: str) -> str:
-    """Canonicalize text before applying proposal-only safety checks.
+def _proposal_security_text(value: str) -> str:
+    """Return a security-only text skeleton without changing display text.
 
-    NFKC closes common full-width homoglyph bypasses, while removing Unicode
-    control and format characters closes invisible separator bypasses such as
-    ``自\\u200b伤``.  The normalized value is also what becomes proposal data, so a
-    later fingerprint cannot distinguish display-only invisible variants.
+    NFKC closes full-width bypasses; a bounded confusable map covers common
+    cross-script lookalikes; and category-C/category-Z characters are removed
+    before matching.  This catches invisible and Unicode-space separators such
+    as ``自\\u200b伤`` and ``self\\u00a0harm`` without rewriting accepted proposal
+    text that later appears in a review surface.
     """
-    normalized = unicodedata.normalize("NFKC", value)
+    normalized = unicodedata.normalize("NFKC", value).translate(
+        _PROPOSAL_SECURITY_CONFUSABLE_TRANSLATION
+    )
     return "".join(
         character
         for character in normalized
-        if not unicodedata.category(character).startswith("C")
-    ).strip()
+        if not unicodedata.category(character).startswith(("C", "Z"))
+    ).casefold()
 
 
 def _normalized_security_key(value: object) -> str:
-    normalized = _normalize_proposal_safety_text(str(value)).casefold()
-    return re.sub(r"[^a-z0-9]", "", normalized)
+    return re.sub(r"[^a-z0-9]", "", _proposal_security_text(str(value)))
 
 
 def _outline_lesson_id(item: PsychologyLearningOutlineItem) -> str:
