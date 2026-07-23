@@ -143,6 +143,7 @@ _PROPOSAL_UNSAFE_CLINICAL_MARKERS = (
     "危机",
     "危機",
     "crisis",
+    "selfharm",
     "suicide",
     "ptsd",
     "ocd",
@@ -169,10 +170,20 @@ _PROPOSAL_ASCII_UNSAFE_CLINICAL_MARKERS = tuple(
     for marker in _PROPOSAL_UNSAFE_CLINICAL_MARKERS
     if marker.isascii()
 )
-_PROPOSAL_ENGLISH_SELF_HARM_PATTERN = re.compile(
-    r"(?<![a-z0-9])self(?s:.{0,4})harm(?![a-z0-9])",
-    flags=re.IGNORECASE,
+_PROPOSAL_ENGLISH_RISK_LEET_TRANSLATION = str.maketrans(
+    {
+        "0": "o",
+        "1": "i",
+        "3": "e",
+        "4": "a",
+        "5": "s",
+        "7": "t",
+        "8": "b",
+        "@": "a",
+        "$": "s",
+    }
 )
+_PROPOSAL_OBFUSCATED_PTSD_MARKER = "ptsd"
 _PROPOSAL_SOURCE_REFERENCE_PATTERN = re.compile(
     r"(?:source|来源|來源|参考|參考|ref(?:erence)?|author|link|doi)\s*[:：]"
     r"|(?<![a-z])doi[:：]?10\.\d{4,9}/\S+"
@@ -1198,7 +1209,11 @@ def _require_safe_proposal_text(
         raise ValueError(
             f"{field_name} must contain between {min_length} and {max_length} characters"
         )
-    if _contains_unsafe_proposal_clinical_marker(text, security_text):
+    if _contains_unsafe_proposal_clinical_marker(
+        text,
+        security_text,
+        max_length=max_length,
+    ):
         raise ValueError(f"{field_name} must not contain unsafe clinical or crisis content")
     if _contains_proposal_source_shape(text):
         raise ValueError(f"{field_name} must not contain a source locator or reference")
@@ -1348,13 +1363,15 @@ def _is_source_domain_label(value: str) -> bool:
 def _contains_unsafe_proposal_clinical_marker(
     text: str,
     security_text: str,
+    *,
+    max_length: int,
 ) -> bool:
     """Check proposal-only clinical and crisis markers without rewriting text.
 
     Han markers use a separate Han-only skeleton, so punctuation, ASCII, and
-    format characters cannot split a Chinese danger marker.  English
-    ``self...harm`` is kept as a bounded, ordered pattern instead of a broad
-    substring rule.
+    format characters cannot split a Chinese danger marker. English
+    ``self...harm`` and obfuscated ``PTSD`` use ordered risk-only checks that
+    cannot bridge beyond the proposal field's display-length limit.
     """
     han_marker_text = _proposal_han_marker_skeleton(text)
     ascii_marker_text = _proposal_ascii_marker_skeleton(security_text)
@@ -1368,7 +1385,16 @@ def _contains_unsafe_proposal_clinical_marker(
             marker in ascii_marker_text
             for marker in _PROPOSAL_ASCII_UNSAFE_CLINICAL_MARKERS
         )
-        or bool(_PROPOSAL_ENGLISH_SELF_HARM_PATTERN.search(english_marker_text))
+        or _contains_ordered_english_marker(
+            english_marker_text,
+            prefix="self",
+            suffix="harm",
+            max_length=max_length,
+        )
+        or _contains_obfuscated_ptsd_marker(
+            english_marker_text,
+            max_length=max_length,
+        )
     )
 
 
@@ -1388,6 +1414,45 @@ def _proposal_ascii_marker_skeleton(security_text: str) -> str:
         for character in security_text
         if character.isascii() and character.isalnum()
     )
+
+
+def _contains_ordered_english_marker(
+    value: str,
+    *,
+    prefix: str,
+    suffix: str,
+    max_length: int,
+) -> bool:
+    """Match an ordered English risk marker within one bounded proposal field."""
+    max_bridge_length = max(0, max_length - len(prefix) - len(suffix))
+    pattern = re.compile(
+        rf"(?<![a-z0-9]){re.escape(prefix)}"
+        rf"(?s:.{{0,{max_bridge_length}}}?){re.escape(suffix)}(?![a-z0-9])"
+    )
+    risk_text = value.translate(_PROPOSAL_ENGLISH_RISK_LEET_TRANSLATION)
+    return bool(pattern.search(risk_text))
+
+
+def _contains_obfuscated_ptsd_marker(value: str, *, max_length: int) -> bool:
+    """Detect a leet or letter-inserted PTSD token without spanning prose."""
+    risk_text = value.translate(_PROPOSAL_ENGLISH_RISK_LEET_TRANSLATION)
+    return any(
+        len(token) <= max_length
+        and token.startswith(_PROPOSAL_OBFUSCATED_PTSD_MARKER[0])
+        and token.endswith(_PROPOSAL_OBFUSCATED_PTSD_MARKER[-1])
+        and _is_ordered_subsequence(_PROPOSAL_OBFUSCATED_PTSD_MARKER, token)
+        for token in re.findall(r"[a-z0-9]+", risk_text)
+    )
+
+
+def _is_ordered_subsequence(marker: str, value: str) -> bool:
+    marker_index = 0
+    for character in value:
+        if character == marker[marker_index]:
+            marker_index += 1
+            if marker_index == len(marker):
+                return True
+    return False
 
 
 def _contains_unexpected_proposal_alphabetic_script(value: str) -> bool:

@@ -381,6 +381,24 @@ def test_proposal_validation_rejects_marker_bypasses_with_inserted_text(
 @pytest.mark.parametrize(
     "topic",
     (
+        "self.....harm",
+        "self" + "!" * 20 + "harm",
+        "selfxxxxxharm",
+        "self" + "x" * 52 + "harm",
+        "ptxsd",
+        "p75d",
+    ),
+)
+def test_proposal_validation_rejects_extended_english_marker_bypasses(
+    topic: str,
+) -> None:
+    with pytest.raises(ValidationError, match="unsafe clinical or crisis content"):
+        PsychologyLearningSeriesPlanIntent(topic=topic)
+
+
+@pytest.mark.parametrize(
+    "topic",
+    (
         "焦虑症",
         "焦慮症",
         "强迫症",
