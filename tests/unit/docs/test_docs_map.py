@@ -318,6 +318,26 @@ def test_docs_cover_confirmed_custom_psychology_learning_series_lifecycle() -> N
     assert "learning-series lesson facts" in topic_radar_text
 
 
+def test_local_runbook_shows_both_custom_learning_series_guide_commands() -> None:
+    local_runbook_text = (DOCS_ROOT / "operations" / "local-runbook.md").read_text(
+        encoding="utf-8"
+    )
+    custom_section = local_runbook_text.split("#### Custom topic / outline", 1)[1].split(
+        "#### Builtin catalog", 1
+    )[0]
+    guide_commands = custom_section.split("uv run python -m ptsm.bootstrap guide-post")[
+        1:
+    ]
+
+    assert len(guide_commands) == 2
+    assert "--psychology-lesson-id" not in guide_commands[0].split("```", 1)[0]
+    assert '--psychology-series-id "<returned series_id>"' in guide_commands[0]
+    assert '--psychology-lesson-id "<chosen lesson_id>"' in guide_commands[1]
+    assert '--psychology-curriculum-version "<returned curriculum_version>"' in (
+        guide_commands[1]
+    )
+
+
 def test_skills_doc_links_xhs_topic_index() -> None:
     skills_text = (DOCS_ROOT / "skills.md").read_text(encoding="utf-8")
 

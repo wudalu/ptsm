@@ -462,6 +462,26 @@ catalog 或指定 catalog-root。先不带 lesson 查询 roadmap，读取 `selec
 会 fail closed，可用 `eval-artifact --artifact <path>` 复核。
 
 ```bash
+# 先不带 lesson 查询 roadmap、recommended_next_lesson 与 production progress。
+uv run python -m ptsm.bootstrap guide-post \
+  --playbook-id modern_psychology_post \
+  --account-id acct-psychology-local \
+  --psychology-content-mode learning_series \
+  --psychology-series-id "<returned series_id>" \
+  --non-interactive --format json
+
+# 用户明确选择一课（可不是推荐课）后，再 pin 返回的 frozen version。
+uv run python -m ptsm.bootstrap guide-post \
+  --playbook-id modern_psychology_post \
+  --account-id acct-psychology-local \
+  --psychology-content-mode learning_series \
+  --psychology-series-id "<returned series_id>" \
+  --psychology-lesson-id "<chosen lesson_id>" \
+  --psychology-curriculum-version "<returned curriculum_version>" \
+  --non-interactive --format json
+```
+
+```bash
 uv run python -m ptsm.bootstrap run-playbook \
   --account-id acct-psychology-local \
   --playbook-id modern_psychology_post \
