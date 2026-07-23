@@ -5,6 +5,10 @@ from pathlib import Path
 
 import pytest
 
+from ptsm.application.use_cases.psychology_learning_series import (
+    PsychologyLearningSeriesStore,
+    plan_psychology_learning_series,
+)
 from ptsm.application.use_cases.xhs_post_metrics import (
     record_xhs_post_metrics,
     summarize_xhs_post_metrics,
@@ -47,11 +51,17 @@ def _read_jsonl(path: Path) -> list[dict[str, object]]:
     ]
 
 
-def _write_learning_artifact(path: Path, *, lesson_id: str = "notice_the_loop") -> None:
-    bundle = resolve_psychology_learning_selection(
-        series_id="after_work_rumination",
-        lesson_id=lesson_id,
-    )
+def _write_learning_artifact(
+    path: Path,
+    *,
+    lesson_id: str = "notice_the_loop",
+    bundle=None,
+) -> None:
+    if bundle is None:
+        bundle = resolve_psychology_learning_selection(
+            series_id="after_work_rumination",
+            lesson_id=lesson_id,
+        )
     contract = bundle.runtime_contract
     payload = {
         "playbook_id": "modern_psychology_post",
@@ -240,6 +250,50 @@ def test_record_xhs_post_metrics_rejects_an_unverified_learning_receipt(
 
     assert result["status"] == "error"
     assert "learning receipt" in result["reason"]
+    assert not metrics_path.exists()
+
+
+def test_record_xhs_post_metrics_rejects_default_custom_catalog_receipt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    artifact_path = tmp_path / "custom-learning-artifact.json"
+    metrics_path = tmp_path / "metrics.jsonl"
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    store = PsychologyLearningSeriesStore()
+    store.persist_proposal(proposal)
+    catalog = store.confirm(
+        proposal_id=proposal.proposal_id,
+        proposal_fingerprint=proposal.proposal_fingerprint,
+    )
+    bundle = resolve_psychology_learning_selection(
+        series_id=catalog.series_id,
+        lesson_id=catalog.lessons[0].lesson_id,
+        curriculum_version=catalog.curriculum_version,
+    )
+    _write_learning_artifact(artifact_path, bundle=bundle)
+
+    assert bundle.catalog is not None
+    result = record_xhs_post_metrics(
+        artifact_path=artifact_path,
+        checkpoint="24h",
+        views=100,
+        likes=10,
+        collects=4,
+        comments=2,
+        shares=1,
+        output_path=metrics_path,
+    )
+
+    assert result["status"] == "error"
+    assert result["reason"] == "invalid psychology learning receipt"
     assert not metrics_path.exists()
 
 

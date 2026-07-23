@@ -406,7 +406,7 @@ def _resolve_psychology_learning_receipt_bundle(
         )
         return None
     try:
-        return resolve_psychology_learning_selection(
+        bundle = resolve_psychology_learning_selection(
             series_id=series_id,
             lesson_id=lesson_id,
             curriculum_version=(
@@ -421,6 +421,15 @@ def _resolve_psychology_learning_receipt_bundle(
             )
         )
         return None
+    if bundle.catalog is not None:
+        failures.append(
+            _receipt_failure(
+                "psychology_learning_selection",
+                "custom catalog requires runtime receipt binding",
+            )
+        )
+        return None
+    return bundle
 
 
 def _parse_psychology_learning_manifest(

@@ -307,6 +307,8 @@ def _learning_metric_identity(
         )
     except (KeyError, ValueError):
         return None, "invalid psychology learning receipt"
+    if bundle.catalog is not None:
+        return None, "invalid psychology learning receipt"
 
     expected_gate = {
         "status": "passed",

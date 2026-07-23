@@ -555,6 +555,12 @@ def _resolve_psychology_learning_preflight(
             "status": "psychology_learning_invalid",
             "diagnostic": "unknown_or_malformed_catalog_selection",
         }
+    if bundle.catalog is not None:
+        return None, {
+            **response_context,
+            "status": "psychology_learning_custom_catalog_pending_runtime_binding",
+            "diagnostic": "custom_catalog_requires_runtime_receipt_binding",
+        }
     if request.local_image_style or request.publish_image_paths:
         return None, {
             **response_context,

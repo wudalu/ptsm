@@ -391,6 +391,10 @@ def _resolve_verified_psychology_learning_catalog_contract(
         )
     except (KeyError, ValueError) as exc:
         raise ValueError("psychology learning catalog selection is invalid") from exc
+    if bundle.catalog is not None:
+        raise ValueError(
+            "custom psychology learning catalog requires runtime receipt binding"
+        )
     expected_contract = bundle.runtime_contract
     expected_manifest = bundle.manifest
     if dict(contract) != expected_contract or dict(manifest) != expected_manifest:

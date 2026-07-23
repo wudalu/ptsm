@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import pytest
+from ptsm.application.use_cases.psychology_learning_series import (
+    PsychologyLearningSeriesStore,
+    plan_psychology_learning_series,
+)
 from ptsm.evaluations.contracts import EvalTarget
 from ptsm.evaluations.contracts_eval import (
     contract_ai_tech_evidence_receipt,
@@ -284,11 +288,12 @@ class TestAiTechEvidenceReceipt:
         assert "https://private.example.com" not in str(result.to_dict())
 
 
-def _psychology_learning_receipt() -> dict:
-    bundle = resolve_psychology_learning_selection(
-        series_id="after_work_rumination",
-        lesson_id="notice_the_loop",
-    )
+def _psychology_learning_receipt(*, bundle=None) -> dict:
+    if bundle is None:
+        bundle = resolve_psychology_learning_selection(
+            series_id="after_work_rumination",
+            lesson_id="notice_the_loop",
+        )
     contract = bundle.runtime_contract
     return {
         "psychology_learning_mode": "learning_series",
@@ -320,6 +325,42 @@ class TestPsychologyLearningReceipt:
 
         assert result.status == "passed"
         assert result.evaluator_id == "psychology.learning_receipt"
+
+    def test_rejects_default_custom_catalog_receipt_pending_runtime_binding(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path,
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        proposal = plan_psychology_learning_series(
+            topic="下班后的脑内回放",
+            outline=(
+                {"id": "notice", "title": "先识别重复时刻"},
+                {"id": "practice", "title": "练习一个小步骤"},
+            ),
+        )
+        store = PsychologyLearningSeriesStore()
+        store.persist_proposal(proposal)
+        catalog = store.confirm(
+            proposal_id=proposal.proposal_id,
+            proposal_fingerprint=proposal.proposal_fingerprint,
+        )
+        bundle = resolve_psychology_learning_selection(
+            series_id=catalog.series_id,
+            lesson_id=catalog.lessons[0].lesson_id,
+            curriculum_version=catalog.curriculum_version,
+        )
+
+        assert bundle.catalog is not None
+        result = contract_psychology_learning_receipt(
+            _target(
+                playbook_id="modern_psychology_post",
+                output_ref=_psychology_learning_receipt(bundle=bundle),
+            )
+        )
+
+        assert result.status == "failed"
+        assert "custom catalog requires runtime receipt binding" in result.reason
 
     def test_accepts_the_framework_owned_catalog_topic_selection_marker(self):
         receipt = _psychology_learning_receipt()

@@ -8,6 +8,10 @@ import pytest
 
 from ptsm.accounts.registry import AccountProfile, AccountRegistry
 from ptsm.application.models import FengkuangRequest, PlaybookRequest
+from ptsm.application.use_cases.psychology_learning_series import (
+    PsychologyLearningSeriesStore,
+    plan_psychology_learning_series,
+)
 from ptsm.application.use_cases.run_playbook import (
     _build_image_generation_prompt,
     _build_note_card_image_payload,
@@ -3428,6 +3432,75 @@ def test_psychology_learning_preflight_rejects_operator_image_overrides(
         "status": "psychology_learning_image_override_invalid",
         "diagnostic": "learning_series_uses_the_catalog_image_plan_only",
     }
+
+
+def test_run_playbook_rejects_default_custom_catalog_pending_runtime_binding(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    proposal_goal = "写下一次下班后的具体时刻"
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {
+                "id": "notice",
+                "title": "先识别重复时刻",
+                "goal": proposal_goal,
+            },
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    store = PsychologyLearningSeriesStore()
+    store.persist_proposal(proposal)
+    catalog = store.confirm(
+        proposal_id=proposal.proposal_id,
+        proposal_fingerprint=proposal.proposal_fingerprint,
+    )
+    bundle = resolve_psychology_learning_selection(
+        series_id=catalog.series_id,
+        lesson_id=catalog.lessons[0].lesson_id,
+        curriculum_version=catalog.curriculum_version,
+    )
+    assert bundle.catalog is not None
+    request = PlaybookRequest(
+        account_id="acct-psychology-local",
+        playbook_id="modern_psychology_post",
+        psychology_content_mode="learning_series",
+        psychology_series_id=bundle.series_id,
+        psychology_lesson_id=bundle.lesson_id,
+        psychology_curriculum_version=catalog.curriculum_version,
+        topic_direction_id=bundle.direction_id,
+    )
+
+    preflight_bundle, failure = _resolve_psychology_learning_preflight(
+        request=request,
+        platform="xiaohongshu",
+        playbook_id="modern_psychology_post",
+    )
+
+    assert preflight_bundle is None
+    assert failure == {
+        "scene": "心理学学习专题",
+        "platform": "xiaohongshu",
+        "account_id": "acct-psychology-local",
+        "playbook_id": "modern_psychology_post",
+        "status": "psychology_learning_custom_catalog_pending_runtime_binding",
+        "diagnostic": "custom_catalog_requires_runtime_receipt_binding",
+    }
+    assert proposal_goal not in json.dumps(failure, ensure_ascii=False)
+
+    class NoRunStart:
+        def start(self, **_: object) -> object:
+            raise AssertionError("RunStore.start must not be called")
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        lambda **_: pytest.fail("workflow must not be built"),
+    )
+    result = run_playbook(request, run_store=NoRunStart())  # type: ignore[arg-type]
+
+    assert result == failure
 
 
 def test_run_playbook_binds_psychology_learning_contract_without_free_scene_or_sources(

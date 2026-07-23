@@ -7,7 +7,10 @@ from pathlib import Path
 from langgraph.checkpoint.memory import InMemorySaver
 import pytest
 
-from ptsm.agent_runtime.runtime import build_playbook_workflow
+from ptsm.agent_runtime.runtime import (
+    _resolve_verified_psychology_learning_catalog_contract,
+    build_playbook_workflow,
+)
 from ptsm.application.use_cases.psychology_learning_series import (
     PsychologyLearningSeriesStore,
     plan_psychology_learning_series,
@@ -83,6 +86,52 @@ def test_learning_workflow_rejects_a_well_formed_but_tampered_catalog_contract()
             domain="现代心理困境观察",
             settings=_settings(),
             psychology_learning_contract=tampered_contract,
+            psychology_learning_manifest=bundle.manifest,
+        )
+
+
+def test_runtime_contract_rejects_default_custom_catalog_pending_receipt_binding(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    store = PsychologyLearningSeriesStore()
+    store.persist_proposal(proposal)
+    catalog = store.confirm(
+        proposal_id=proposal.proposal_id,
+        proposal_fingerprint=proposal.proposal_fingerprint,
+    )
+    bundle = resolve_psychology_learning_selection(
+        series_id=catalog.series_id,
+        lesson_id=catalog.lessons[0].lesson_id,
+        curriculum_version=catalog.curriculum_version,
+    )
+
+    assert bundle.catalog is not None
+    with pytest.raises(
+        ValueError,
+        match="custom psychology learning catalog requires runtime receipt binding",
+    ):
+        _resolve_verified_psychology_learning_catalog_contract(
+            contract=bundle.runtime_contract,
+            manifest=bundle.manifest,
+        )
+    with pytest.raises(
+        ValueError,
+        match="custom psychology learning catalog requires runtime receipt binding",
+    ):
+        build_playbook_workflow(
+            playbook_id="modern_psychology_post",
+            domain="现代心理困境观察",
+            settings=_settings(),
+            psychology_learning_contract=bundle.runtime_contract,
             psychology_learning_manifest=bundle.manifest,
         )
 
