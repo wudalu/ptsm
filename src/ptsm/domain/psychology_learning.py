@@ -94,29 +94,9 @@ _PROPOSAL_RAW_DOMAIN_PATTERN = re.compile(
     flags=re.IGNORECASE,
 )
 _PROPOSAL_SOURCE_STRUCTURAL_ASCII = frozenset(":/?&=#._-@%")
-_SPLIT_SOURCE_DOMAIN_SUFFIXES = frozenset(
-    {
-        "ai",
-        "app",
-        "biz",
-        "cc",
-        "cn",
-        "co",
-        "com",
-        "dev",
-        "edu",
-        "gov",
-        "io",
-        "me",
-        "net",
-        "org",
-        "pro",
-        "tv",
-        "uk",
-        "us",
-        "vip",
-        "xyz",
-    }
+_OBFUSCATED_URL_SCHEME_PATTERN = re.compile(
+    r"(?<![a-z0-9])(?P<scheme>https?)(?P<separator>[^a-z0-9]+)",
+    flags=re.IGNORECASE,
 )
 _PROPOSAL_SECURITY_CONFUSABLE_TRANSLATION = str.maketrans(
     {
@@ -1113,7 +1093,6 @@ def _require_safe_proposal_text(
         or _PROPOSAL_SOURCE_REFERENCE_PATTERN.search(source_security_text)
         or _PROPOSAL_SOURCE_REFERENCE_PATTERN.search(source_label_text)
         or _PROPOSAL_RAW_DOMAIN_PATTERN.search(source_security_text)
-        or _contains_split_source_domain_shape(text)
     ):
         raise ValueError(f"{field_name} must not contain a source locator or reference")
     if _contains_unexpected_proposal_alphabetic_script(text):
@@ -1121,6 +1100,8 @@ def _require_safe_proposal_text(
     marker_text = _proposal_marker_text(security_text)
     if any(marker in marker_text for marker in _PROPOSAL_UNSAFE_CLINICAL_MARKERS):
         raise ValueError(f"{field_name} must not contain unsafe clinical or crisis content")
+    if _contains_split_source_domain_shape(text):
+        raise ValueError(f"{field_name} must not contain a source locator or reference")
     return text
 
 
@@ -1143,7 +1124,7 @@ def _proposal_security_text(value: str) -> str:
 
 def _proposal_source_security_text(value: str) -> str:
     """Normalize source/reference forms while preserving ASCII URL structure."""
-    normalized = _proposal_security_unicode_text(value)
+    normalized = _normalize_obfuscated_url_schemes(value)
     return "".join(
         character
         for character in normalized
@@ -1173,20 +1154,34 @@ def _proposal_security_unicode_text(value: str) -> str:
     ).casefold()
 
 
-def _contains_split_source_domain_shape(value: str) -> bool:
-    """Detect a common domain suffix bridged by non-ASCII ignorable punctuation.
-
-    This intentionally applies only to a bounded set of common suffixes and
-    requires a non-ASCII separator.  Explicit ASCII-dot domains are handled by
-    the regular domain pattern, avoiding broad false positives for normal text.
-    """
+def _normalize_obfuscated_url_schemes(value: str) -> str:
+    """Restore non-whitespace Unicode punctuation used to hide ``http(s)://``."""
     normalized = _proposal_security_unicode_text(value)
+
+    def _replace(match: re.Match[str]) -> str:
+        separator = match.group("separator")
+        if _is_split_source_domain_separator(separator):
+            return f"{match.group('scheme')}://"
+        return match.group(0)
+
+    return _OBFUSCATED_URL_SCHEME_PATTERN.sub(_replace, normalized)
+
+
+def _contains_split_source_domain_shape(value: str) -> bool:
+    """Detect an obfuscated domain boundary without a suffix allowlist.
+
+    A non-whitespace Unicode punctuation, symbol, mark, or ignorable character
+    between ASCII label tokens is treated as a hidden domain boundary. This
+    deliberately rejects values such as ``note·card`` as a safe proposal-input
+    tradeoff; normal ASCII-space prose is not treated as a source locator.
+    """
+    normalized = _normalize_obfuscated_url_schemes(value)
     runs = tuple(re.finditer(r"[a-z0-9]+", normalized))
     for host, suffix in zip(runs, runs[1:]):
         gap = normalized[host.end() : suffix.start()]
         if not _is_split_source_domain_separator(gap):
             continue
-        if suffix.group() not in _SPLIT_SOURCE_DOMAIN_SUFFIXES:
+        if not re.fullmatch(r"[a-z]{2,63}", suffix.group()):
             continue
         if _is_source_domain_label(host.group()):
             return True
@@ -1194,10 +1189,18 @@ def _contains_split_source_domain_shape(value: str) -> bool:
 
 
 def _is_split_source_domain_separator(value: str) -> bool:
-    if not value or not any(not character.isascii() for character in value):
+    if (
+        not value
+        or not any(not character.isascii() for character in value)
+        or any(character.isspace() for character in value)
+    ):
         return False
     return all(
-        unicodedata.category(character).startswith(("C", "Z", "M", "S", "P"))
+        character in ":/"
+        or (
+            not character.isascii()
+            and unicodedata.category(character).startswith(("C", "M", "S", "P"))
+        )
         for character in value
     )
 

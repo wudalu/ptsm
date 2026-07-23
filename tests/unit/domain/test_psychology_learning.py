@@ -221,6 +221,12 @@ def test_custom_series_proposal_rejects_a_tampered_stable_identifier_or_fingerpr
         ("example.xyz", None, "source locator or reference"),
         ("example\ufe0f.xyz", None, "source locator or reference"),
         ("example·xyz", None, "source locator or reference"),
+        ("example·info", None, "source locator or reference"),
+        ("example。technology", None, "source locator or reference"),
+        ("example\ufe0fonline", None, "source locator or reference"),
+        ("example\u2044site", None, "source locator or reference"),
+        ("https∶∕∕example·technology", None, "source locator or reference"),
+        ("note·card", None, "source locator or reference"),
         ("source:operator-note", None, "source locator or reference"),
         ("source\ufe0f:operator-note", None, "source locator or reference"),
         ("source·:operator-note", None, "source locator or reference"),
@@ -289,6 +295,8 @@ def test_custom_series_plan_intent_rejects_unsafe_or_malformed_operator_values(
         "我的\u2044下班整理",
         "我的\ufe0f下班整理",
         "下班后的整理",
+        "note card",
+        "下班后的note card整理",
     ),
 )
 def test_proposal_validation_keeps_safe_reader_visible_unicode_text_unchanged(
