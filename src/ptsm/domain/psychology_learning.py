@@ -1,15 +1,16 @@
-"""Closed runtime curriculum and proposal-only planning contracts.
+"""Controlled psychology curricula, proposals, and immutable custom snapshots.
 
 Unlike time-sensitive AI facts, psychology learning claims must not be supplied
-by an operator for each run.  The builtin catalog remains the only runnable
-curriculum here.  Custom operator intent can only become a safe, deterministic
-proposal; it has no runtime contract, manifest, persistence, or resolver path.
+by an operator for each run.  Custom operator intent first becomes a safe,
+non-runnable proposal.  Only an explicitly confirmed local revision can be
+resolved into the same controlled lesson contract as the builtin catalog.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+from pathlib import Path
 import re
 import unicodedata
 from typing import Any, Literal, Mapping
@@ -28,6 +29,11 @@ PSYCHOLOGY_LEARNING_MODE = "learning_series"
 PSYCHOLOGY_LEARNING_CURRICULUM_VERSION = "1"
 STARTER_SERIES_ID = "after_work_rumination"
 PSYCHOLOGY_LEARNING_PROPOSAL_SCHEMA_VERSION = "1"
+PSYCHOLOGY_LEARNING_CATALOG_SNAPSHOT_SCHEMA_VERSION = "1"
+PSYCHOLOGY_LEARNING_PROGRESS_SCHEMA_VERSION = "1"
+DEFAULT_PSYCHOLOGY_LEARNING_SERIES_CATALOG_ROOT = (
+    Path("outputs") / "artifacts" / "psychology-learning-series"
+)
 _PROPOSAL_OUTLINE_MIN_LESSON_COUNT = 2
 _PROPOSAL_OUTLINE_MAX_LESSON_COUNT = 6
 _PROPOSAL_PLAN_INTENT_RAW_FIELDS = frozenset({"topic", "outline"})
@@ -734,6 +740,7 @@ class PsychologyLearningBundle(_FrozenDomainModel):
 
     lesson: PsychologyLearningLesson
     lessons: tuple[PsychologyLearningLesson, ...] = Field(min_length=1)
+    catalog: PsychologyLearningCatalog | None = Field(default=None, exclude=True)
 
     @model_validator(mode="after")
     def _validate_series(self) -> "PsychologyLearningBundle":
@@ -744,6 +751,13 @@ class PsychologyLearningBundle(_FrozenDomainModel):
             raise ValueError("all lessons must belong to the selected series")
         if self.lesson not in self.lessons:
             raise ValueError("selected lesson must exist in the series roadmap")
+        if self.catalog is not None:
+            if self.catalog.lessons != self.lessons:
+                raise ValueError("bundle lessons must match the confirmed catalog")
+            if self.catalog.series_id != self.lesson.series_id:
+                raise ValueError("bundle catalog must match the selected series")
+            if self.catalog.curriculum_version != self.lesson.curriculum_version:
+                raise ValueError("bundle catalog must match the selected curriculum version")
         return self
 
     @property
@@ -781,6 +795,13 @@ class PsychologyLearningBundle(_FrozenDomainModel):
     @property
     def roadmap(self) -> tuple[dict[str, Any], ...]:
         return tuple(item.roadmap_item for item in self.lessons)
+
+    @property
+    def publication_plan(self) -> PsychologyLearningPublicationPlan | None:
+        """Expose frozen custom-catalog scheduling metadata outside runtime input."""
+        if self.catalog is None:
+            return None
+        return self.catalog.publication_plan
 
 
 class PsychologyLearningOutlineItem(_FrozenDomainModel):
@@ -1132,6 +1153,187 @@ class PsychologyLearningSeriesProposal(_FrozenDomainModel):
         return self.catalog.lessons
 
 
+class PsychologyLearningCatalogApproval(_FrozenDomainModel):
+    """Opaque confirmation receipt for one user-confirmed curriculum revision."""
+
+    proposal_id: str
+    proposal_fingerprint: str
+    approval_id: str
+
+    @field_validator("proposal_id")
+    @classmethod
+    def _validate_proposal_id(cls, value: str) -> str:
+        return _require_identifier(value, field_name="proposal_id")
+
+    @field_validator("proposal_fingerprint", "approval_id")
+    @classmethod
+    def _validate_opaque_approval_values(cls, value: str, info: Any) -> str:
+        return _require_opaque_reference(value, field_name=info.field_name)
+
+
+class PsychologyLearningCatalog(_FrozenDomainModel):
+    """An immutable, user-confirmed custom curriculum snapshot.
+
+    The snapshot deliberately stores only generated controlled lesson fields and
+    opaque confirmation metadata.  The original proposal remains a separate,
+    sanitized review record and never becomes runtime input by itself.
+    """
+
+    snapshot_schema_version: Literal["1"] = PSYCHOLOGY_LEARNING_CATALOG_SNAPSHOT_SCHEMA_VERSION
+    origin: Literal["user_confirmed"] = "user_confirmed"
+    series_id: str
+    series_title: str
+    curriculum_version: str
+    approval: PsychologyLearningCatalogApproval
+    catalog_digest: str
+    lessons: tuple[PsychologyLearningLesson, ...] = Field(min_length=2, max_length=6)
+    publication_plan: PsychologyLearningPublicationPlan
+
+    @field_validator("series_id")
+    @classmethod
+    def _validate_series_id(cls, value: str) -> str:
+        return _require_identifier(value, field_name="series_id")
+
+    @field_validator("series_title")
+    @classmethod
+    def _validate_series_title(cls, value: str) -> str:
+        return _require_drafting_safe_text(value, field_name="series_title")
+
+    @field_validator("curriculum_version")
+    @classmethod
+    def _validate_curriculum_version(cls, value: str) -> str:
+        return _require_psychology_learning_curriculum_version(value)
+
+    @field_validator("catalog_digest")
+    @classmethod
+    def _validate_catalog_digest(cls, value: str) -> str:
+        return _require_opaque_reference(value, field_name="catalog_digest")
+
+    @model_validator(mode="after")
+    def _validate_snapshot_integrity(self) -> "PsychologyLearningCatalog":
+        lessons_by_id = {lesson.lesson_id: lesson for lesson in self.lessons}
+        if len(lessons_by_id) != len(self.lessons):
+            raise ValueError("confirmed catalog lesson ids must be unique")
+        numbers = tuple(lesson.lesson_number for lesson in self.lessons)
+        if numbers != tuple(range(1, len(self.lessons) + 1)):
+            raise ValueError("confirmed catalog lesson numbers must be canonical and contiguous")
+        if any(
+            lesson.series_id != self.series_id
+            or lesson.series_title != self.series_title
+            or lesson.curriculum_version != self.curriculum_version
+            for lesson in self.lessons
+        ):
+            raise ValueError("confirmed catalog lessons must match catalog identity")
+        if self.approval.approval_id != _confirmed_catalog_approval_id(
+            proposal_id=self.approval.proposal_id,
+            proposal_fingerprint=self.approval.proposal_fingerprint,
+            curriculum_version=self.curriculum_version,
+        ):
+            raise ValueError("confirmed catalog approval_id does not match its confirmation")
+        expected_plan_ids = {item.lesson_id for item in self.publication_plan.items}
+        if expected_plan_ids != set(lessons_by_id):
+            raise ValueError("confirmed catalog publication plan must cover every lesson")
+        for item in self.publication_plan.items:
+            lesson = lessons_by_id[item.lesson_id]
+            if item.canonical_lesson_number != lesson.lesson_number:
+                raise ValueError("confirmed catalog publication plan must preserve lesson numbers")
+        for lesson in self.lessons:
+            expected_lesson = _build_confirmed_psychology_learning_lesson(
+                series_id=self.series_id,
+                series_title=self.series_title,
+                curriculum_version=self.curriculum_version,
+                lesson_id=lesson.lesson_id,
+                lesson_number=lesson.lesson_number,
+                lesson_title=lesson.lesson_title,
+                approval_id=self.approval.approval_id,
+            )
+            if lesson != expected_lesson:
+                raise ValueError("confirmed catalog lesson fields do not match the controlled template")
+        expected_digest = _confirmed_catalog_digest(
+            series_id=self.series_id,
+            series_title=self.series_title,
+            curriculum_version=self.curriculum_version,
+            approval=self.approval,
+            lessons=self.lessons,
+            publication_plan=self.publication_plan,
+        )
+        if self.catalog_digest != expected_digest:
+            raise ValueError("confirmed catalog digest does not match its snapshot")
+        return self
+
+
+class PsychologyLearningCatalogRevisionRecord(_FrozenDomainModel):
+    """Append-only confirmation ledger entry for one immutable snapshot."""
+
+    record_schema_version: Literal["1"] = PSYCHOLOGY_LEARNING_CATALOG_SNAPSHOT_SCHEMA_VERSION
+    origin: Literal["user_confirmed"] = "user_confirmed"
+    series_id: str
+    curriculum_version: str
+    approval: PsychologyLearningCatalogApproval
+    catalog_digest: str
+
+    @field_validator("series_id")
+    @classmethod
+    def _validate_series_id(cls, value: str) -> str:
+        return _require_identifier(value, field_name="series_id")
+
+    @field_validator("curriculum_version")
+    @classmethod
+    def _validate_curriculum_version(cls, value: str) -> str:
+        return _require_psychology_learning_curriculum_version(value)
+
+    @field_validator("catalog_digest")
+    @classmethod
+    def _validate_catalog_digest(cls, value: str) -> str:
+        return _require_opaque_reference(value, field_name="catalog_digest")
+
+    @model_validator(mode="after")
+    def _validate_confirmation_identity(self) -> "PsychologyLearningCatalogRevisionRecord":
+        expected_approval_id = _confirmed_catalog_approval_id(
+            proposal_id=self.approval.proposal_id,
+            proposal_fingerprint=self.approval.proposal_fingerprint,
+            curriculum_version=self.curriculum_version,
+        )
+        if self.approval.approval_id != expected_approval_id:
+            raise ValueError("catalog revision approval_id does not match its confirmation")
+        return self
+
+
+class PsychologyLearningProductionProgress(_FrozenDomainModel):
+    """Mutable operator production progress stored separately from curriculum data."""
+
+    progress_schema_version: Literal["1"] = PSYCHOLOGY_LEARNING_PROGRESS_SCHEMA_VERSION
+    series_id: str
+    curriculum_version: str
+    catalog_digest: str
+    completed_lesson_ids: tuple[str, ...] = Field(default_factory=tuple, max_length=6)
+
+    @field_validator("series_id")
+    @classmethod
+    def _validate_series_id(cls, value: str) -> str:
+        return _require_identifier(value, field_name="series_id")
+
+    @field_validator("curriculum_version")
+    @classmethod
+    def _validate_curriculum_version(cls, value: str) -> str:
+        return _require_psychology_learning_curriculum_version(value)
+
+    @field_validator("catalog_digest")
+    @classmethod
+    def _validate_catalog_digest(cls, value: str) -> str:
+        return _require_opaque_reference(value, field_name="catalog_digest")
+
+    @field_validator("completed_lesson_ids")
+    @classmethod
+    def _validate_completed_lesson_ids(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        normalized = tuple(
+            _require_identifier(item, field_name="completed_lesson_id") for item in value
+        )
+        if len(set(normalized)) != len(normalized):
+            raise ValueError("completed_lesson_ids must be unique")
+        return normalized
+
+
 def build_psychology_learning_series_proposal(
     intent: PsychologyLearningSeriesPlanIntent | dict[str, Any],
 ) -> PsychologyLearningSeriesProposal:
@@ -1205,6 +1407,181 @@ def build_psychology_learning_series_proposal(
         ),
         publication_plan=publication_plan,
     )
+
+
+def _build_confirmed_psychology_learning_catalog(
+    proposal: PsychologyLearningSeriesProposal | dict[str, Any],
+    *,
+    curriculum_version: str,
+) -> PsychologyLearningCatalog:
+    """Materialize one immutable, controlled catalog from a confirmed proposal.
+
+    This is intentionally not reachable from proposal planning.  The application
+    confirmation use case calls it only after loading the exact persisted proposal
+    and checking its fingerprint.  All reader-visible lesson copy is generated
+    from fixed templates here; operator goal/source text is not copied into the
+    confirmed catalog.
+    """
+    normalized_proposal = PsychologyLearningSeriesProposal.model_validate(proposal)
+    normalized_version = _require_psychology_learning_curriculum_version(
+        curriculum_version
+    )
+    approval = PsychologyLearningCatalogApproval(
+        proposal_id=normalized_proposal.proposal_id,
+        proposal_fingerprint=normalized_proposal.proposal_fingerprint,
+        approval_id=_confirmed_catalog_approval_id(
+            proposal_id=normalized_proposal.proposal_id,
+            proposal_fingerprint=normalized_proposal.proposal_fingerprint,
+            curriculum_version=normalized_version,
+        ),
+    )
+    series_title = _confirmed_catalog_series_title(normalized_proposal.topic)
+    lessons = tuple(
+        _build_confirmed_psychology_learning_lesson(
+            series_id=normalized_proposal.catalog.series_id,
+            series_title=series_title,
+            curriculum_version=normalized_version,
+            lesson_id=proposal_lesson.lesson_id,
+            lesson_number=proposal_lesson.lesson_number,
+            lesson_title=_compact_confirmed_reader_text(proposal_lesson.title, max_length=18),
+            approval_id=approval.approval_id,
+        )
+        for proposal_lesson in normalized_proposal.catalog.lessons
+    )
+    catalog_digest = _confirmed_catalog_digest(
+        series_id=normalized_proposal.catalog.series_id,
+        series_title=series_title,
+        curriculum_version=normalized_version,
+        approval=approval,
+        lessons=lessons,
+        publication_plan=normalized_proposal.publication_plan,
+    )
+    return PsychologyLearningCatalog(
+        series_id=normalized_proposal.catalog.series_id,
+        series_title=series_title,
+        curriculum_version=normalized_version,
+        approval=approval,
+        catalog_digest=catalog_digest,
+        lessons=lessons,
+        publication_plan=normalized_proposal.publication_plan,
+    )
+
+
+def _build_psychology_learning_catalog_revision_record(
+    catalog: PsychologyLearningCatalog | dict[str, Any],
+) -> PsychologyLearningCatalogRevisionRecord:
+    """Return the opaque append-only ledger record for a confirmed snapshot."""
+    normalized_catalog = PsychologyLearningCatalog.model_validate(catalog)
+    return PsychologyLearningCatalogRevisionRecord(
+        series_id=normalized_catalog.series_id,
+        curriculum_version=normalized_catalog.curriculum_version,
+        approval=normalized_catalog.approval,
+        catalog_digest=normalized_catalog.catalog_digest,
+    )
+
+
+def _require_psychology_learning_curriculum_version(value: str) -> str:
+    if not isinstance(value, str) or not re.fullmatch(r"[1-9][0-9]{0,3}", value):
+        raise ValueError("curriculum_version must be a positive integer string")
+    return value
+
+
+def _compact_confirmed_reader_text(value: str, *, max_length: int) -> str:
+    text = _require_drafting_safe_text(value, field_name="confirmed catalog text")
+    if len(text) <= max_length:
+        return text
+    compact = text[: max_length - 1].rstrip("，。；、：:｜| ")
+    return f"{compact or text[: max_length - 1]}…"
+
+
+def _confirmed_catalog_series_title(topic: str) -> str:
+    return f"{_compact_confirmed_reader_text(topic, max_length=20)}学习系列"
+
+
+def _confirmed_catalog_approval_id(
+    *,
+    proposal_id: str,
+    proposal_fingerprint: str,
+    curriculum_version: str,
+) -> str:
+    digest = _stable_proposal_digest(
+        {
+            "proposal_id": proposal_id,
+            "proposal_fingerprint": proposal_fingerprint,
+            "curriculum_version": curriculum_version,
+            "origin": "user_confirmed",
+        }
+    )
+    return f"approval_{digest[:24]}"
+
+
+def _build_confirmed_psychology_learning_lesson(
+    *,
+    series_id: str,
+    series_title: str,
+    curriculum_version: str,
+    lesson_id: str,
+    lesson_number: int,
+    lesson_title: str,
+    approval_id: str,
+) -> PsychologyLearningLesson:
+    """Build fixed reader-visible slots for an approved custom lesson."""
+    compact_title = _compact_confirmed_reader_text(lesson_title, max_length=18)
+    return PsychologyLearningLesson(
+        series_id=series_id,
+        series_title=series_title,
+        curriculum_version=curriculum_version,
+        lesson_id=lesson_id,
+        lesson_number=lesson_number,
+        lesson_title=compact_title,
+        post_title=_compact_confirmed_reader_text(
+            f"第{lesson_number}课｜{compact_title}",
+            max_length=22,
+        ),
+        cover_text=_compact_confirmed_reader_text(
+            f"第{lesson_number}课｜{compact_title}",
+            max_length=16,
+        ),
+        scene_anchor=f"今天又卡住时，先试试“{compact_title}”",
+        concept_label="生活练习",
+        learning_goal=(
+            f"这一课只练“{compact_title}”，先把注意力放回眼前的一步。"
+        ),
+        approved_explanation="它不是结论，只是帮你从反复想里找出一个能看见的步骤。",
+        applicability="适合在反复想、想太多或不知道从哪开始的时刻。",
+        micro_exercise="写下：现在发生什么；十分钟内先做哪一步。",
+        scope_limit="不替自己下判断，只把事情缩小到眼前的一步。",
+        professional_boundary="若持续影响生活，找专业支持比继续硬扛更重要。",
+        comment_prompt="这一步，你想先在哪个时刻试？",
+        source_refs=(f"approval:{approval_id}",),
+        lesson_fingerprint=(
+            f"lesson:{series_id}:{lesson_id}:v{curriculum_version}:{approval_id[-12:]}"
+        ),
+    )
+
+
+def _confirmed_catalog_digest(
+    *,
+    series_id: str,
+    series_title: str,
+    curriculum_version: str,
+    approval: PsychologyLearningCatalogApproval,
+    lessons: tuple[PsychologyLearningLesson, ...],
+    publication_plan: PsychologyLearningPublicationPlan,
+) -> str:
+    digest = _stable_proposal_digest(
+        {
+            "snapshot_schema_version": PSYCHOLOGY_LEARNING_CATALOG_SNAPSHOT_SCHEMA_VERSION,
+            "origin": "user_confirmed",
+            "series_id": series_id,
+            "series_title": series_title,
+            "curriculum_version": curriculum_version,
+            "approval": approval.model_dump(mode="json"),
+            "lessons": [lesson.model_dump(mode="json") for lesson in lessons],
+            "publication_plan": publication_plan.model_dump(mode="json"),
+        }
+    )
+    return f"catalog:{digest}"
 
 
 def _assert_raw_series_plan_intent_bounds(value: Any) -> None:
@@ -1817,28 +2194,355 @@ _STARTER_SERIES: tuple[PsychologyLearningLesson, ...] = (
 )
 
 
+PsychologyLearningBundle.model_rebuild()
+
+
+def psychology_learning_series_catalog_root(
+    catalog_root: Path | str | None = None,
+) -> Path:
+    """Return the injected or default local root for custom series snapshots."""
+    if catalog_root is None:
+        return DEFAULT_PSYCHOLOGY_LEARNING_SERIES_CATALOG_ROOT
+    return Path(catalog_root)
+
+
+def psychology_learning_series_proposal_snapshot_path(
+    *,
+    proposal_id: str,
+    catalog_root: Path | str | None = None,
+) -> Path:
+    _require_identifier(proposal_id, field_name="proposal_id")
+    return psychology_learning_series_catalog_root(catalog_root) / "proposals" / f"{proposal_id}.json"
+
+
+def psychology_learning_series_catalog_snapshot_path(
+    *,
+    series_id: str,
+    curriculum_version: str,
+    catalog_root: Path | str | None = None,
+) -> Path:
+    _require_identifier(series_id, field_name="series_id")
+    version = _require_psychology_learning_curriculum_version(curriculum_version)
+    return (
+        psychology_learning_series_catalog_root(catalog_root)
+        / "catalogs"
+        / series_id
+        / f"v{version}.json"
+    )
+
+
+def psychology_learning_series_catalog_confirmation_path(
+    *,
+    series_id: str,
+    curriculum_version: str,
+    catalog_root: Path | str | None = None,
+) -> Path:
+    """Return the append-only confirmation record path for one revision."""
+    _require_identifier(series_id, field_name="series_id")
+    version = _require_psychology_learning_curriculum_version(curriculum_version)
+    return (
+        psychology_learning_series_catalog_root(catalog_root)
+        / "catalogs"
+        / series_id
+        / "confirmations"
+        / f"v{version}.json"
+    )
+
+
+def psychology_learning_series_progress_sidecar_path(
+    *,
+    series_id: str,
+    curriculum_version: str,
+    catalog_root: Path | str | None = None,
+) -> Path:
+    _require_identifier(series_id, field_name="series_id")
+    version = _require_psychology_learning_curriculum_version(curriculum_version)
+    return (
+        psychology_learning_series_catalog_root(catalog_root)
+        / "progress"
+        / series_id
+        / f"v{version}.json"
+    )
+
+
+def read_psychology_learning_series_proposal_snapshot(
+    *,
+    proposal_id: str,
+    catalog_root: Path | str | None = None,
+) -> PsychologyLearningSeriesProposal:
+    """Load and revalidate one sanitized proposal snapshot, or fail closed."""
+    path = psychology_learning_series_proposal_snapshot_path(
+        proposal_id=proposal_id,
+        catalog_root=catalog_root,
+    )
+    payload = _read_psychology_learning_series_json(
+        path,
+        missing_message="unknown psychology learning proposal",
+        invalid_message="invalid psychology learning proposal snapshot",
+    )
+    try:
+        proposal = PsychologyLearningSeriesProposal.model_validate(payload)
+    except (TypeError, ValidationError) as exc:
+        raise ValueError("invalid psychology learning proposal snapshot") from exc
+    if proposal.proposal_id != proposal_id:
+        raise ValueError("invalid psychology learning proposal snapshot")
+    return proposal
+
+
+def load_confirmed_psychology_learning_catalog(
+    *,
+    series_id: str,
+    curriculum_version: str,
+    catalog_root: Path | str | None = None,
+) -> PsychologyLearningCatalog:
+    """Load one custom revision after validating the full immutable history."""
+    version = _require_psychology_learning_curriculum_version(curriculum_version)
+    revisions = _validated_confirmed_psychology_learning_catalog_revisions(
+        series_id=series_id,
+        catalog_root=catalog_root,
+    )
+    for catalog in revisions:
+        if catalog.curriculum_version == version:
+            return catalog
+    raise ValueError("unknown psychology learning catalog revision")
+
+
+def list_confirmed_psychology_learning_catalog_revisions(
+    *,
+    series_id: str,
+    catalog_root: Path | str | None = None,
+) -> tuple[PsychologyLearningCatalog, ...]:
+    """Return every validated custom revision in immutable version order."""
+    _require_identifier(series_id, field_name="series_id")
+    return _validated_confirmed_psychology_learning_catalog_revisions(
+        series_id=series_id,
+        catalog_root=catalog_root,
+    )
+
+
+def _validated_confirmed_psychology_learning_catalog_revisions(
+    *,
+    series_id: str,
+    catalog_root: Path | str | None,
+) -> tuple[PsychologyLearningCatalog, ...]:
+    """Validate every ledger entry and its immutable catalog snapshot."""
+    records = _read_psychology_learning_catalog_revision_records(
+        series_id=series_id,
+        catalog_root=catalog_root,
+    )
+    if not records:
+        return ()
+    catalogs: list[PsychologyLearningCatalog] = []
+    for record in records:
+        try:
+            catalog = _load_confirmed_psychology_learning_catalog_snapshot(
+                series_id=series_id,
+                curriculum_version=record.curriculum_version,
+                catalog_root=catalog_root,
+            )
+        except ValueError as exc:
+            raise ValueError("invalid psychology learning catalog revision history") from exc
+        if (
+            catalog.approval != record.approval
+            or catalog.catalog_digest != record.catalog_digest
+        ):
+            raise ValueError("invalid psychology learning catalog revision history")
+        catalogs.append(catalog)
+    return tuple(catalogs)
+
+
+def _load_confirmed_psychology_learning_catalog_snapshot(
+    *,
+    series_id: str,
+    curriculum_version: str,
+    catalog_root: Path | str | None,
+) -> PsychologyLearningCatalog:
+    path = psychology_learning_series_catalog_snapshot_path(
+        series_id=series_id,
+        curriculum_version=curriculum_version,
+        catalog_root=catalog_root,
+    )
+    payload = _read_psychology_learning_series_json(
+        path,
+        missing_message="unknown psychology learning catalog revision",
+        invalid_message="invalid psychology learning catalog revision",
+    )
+    try:
+        catalog = PsychologyLearningCatalog.model_validate(payload)
+    except (TypeError, ValidationError) as exc:
+        raise ValueError("invalid psychology learning catalog revision") from exc
+    if (
+        catalog.series_id != series_id
+        or catalog.curriculum_version != curriculum_version
+    ):
+        raise ValueError("invalid psychology learning catalog revision")
+    try:
+        proposal = read_psychology_learning_series_proposal_snapshot(
+            proposal_id=catalog.approval.proposal_id,
+            catalog_root=catalog_root,
+        )
+    except ValueError as exc:
+        raise ValueError("invalid psychology learning catalog revision") from exc
+    if catalog.approval.proposal_fingerprint != proposal.proposal_fingerprint:
+        raise ValueError("invalid psychology learning catalog revision")
+    expected_catalog = _build_confirmed_psychology_learning_catalog(
+        proposal,
+        curriculum_version=curriculum_version,
+    )
+    if catalog != expected_catalog:
+        raise ValueError("invalid psychology learning catalog revision")
+    return catalog
+
+
+def _read_psychology_learning_catalog_revision_records(
+    *,
+    series_id: str,
+    catalog_root: Path | str | None,
+) -> tuple[PsychologyLearningCatalogRevisionRecord, ...]:
+    root = psychology_learning_series_catalog_root(catalog_root)
+    catalog_directory = root / "catalogs" / series_id
+    directory = catalog_directory / "confirmations"
+    if not directory.is_dir():
+        if catalog_directory.exists():
+            raise ValueError("invalid psychology learning catalog revision history")
+        return ()
+    records: list[tuple[int, PsychologyLearningCatalogRevisionRecord]] = []
+    try:
+        paths = tuple(directory.iterdir())
+    except OSError as exc:
+        raise ValueError("invalid psychology learning catalog revision history") from exc
+    for path in paths:
+        match = re.fullmatch(r"v([1-9][0-9]{0,3})\.json", path.name)
+        if match is None or not path.is_file():
+            raise ValueError("invalid psychology learning catalog revision history")
+        payload = _read_psychology_learning_series_json(
+            path,
+            missing_message="invalid psychology learning catalog revision history",
+            invalid_message="invalid psychology learning catalog revision history",
+        )
+        try:
+            record = PsychologyLearningCatalogRevisionRecord.model_validate(payload)
+        except (TypeError, ValidationError) as exc:
+            raise ValueError("invalid psychology learning catalog revision history") from exc
+        version = match.group(1)
+        if record.series_id != series_id or record.curriculum_version != version:
+            raise ValueError("invalid psychology learning catalog revision history")
+        records.append((int(version), record))
+    records.sort(key=lambda item: item[0])
+    versions = [version for version, _ in records]
+    if not versions or versions != list(range(1, versions[-1] + 1)):
+        raise ValueError("invalid psychology learning catalog revision history")
+    if _confirmed_catalog_snapshot_versions(catalog_directory) != versions:
+        raise ValueError("invalid psychology learning catalog revision history")
+    return tuple(record for _, record in records)
+
+
+def _confirmed_catalog_snapshot_versions(catalog_directory: Path) -> list[int]:
+    """Return the immutable snapshot versions, excluding the confirmation ledger."""
+    try:
+        paths = tuple(catalog_directory.iterdir())
+    except OSError as exc:
+        raise ValueError("invalid psychology learning catalog revision history") from exc
+    versions: list[int] = []
+    for path in paths:
+        if path.name == "confirmations":
+            continue
+        match = re.fullmatch(r"v([1-9][0-9]{0,3})\.json", path.name)
+        if match is None:
+            if path.suffix == ".json":
+                raise ValueError("invalid psychology learning catalog revision history")
+            continue
+        if not path.is_file():
+            raise ValueError("invalid psychology learning catalog revision history")
+        versions.append(int(match.group(1)))
+    return sorted(versions)
+
+
+def _read_psychology_learning_series_json(
+    path: Path,
+    *,
+    missing_message: str,
+    invalid_message: str,
+) -> dict[str, Any]:
+    if not path.is_file():
+        raise ValueError(missing_message)
+    try:
+        raw = path.read_text(encoding="utf-8")
+        payload = json.loads(raw)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError(invalid_message) from exc
+    if type(payload) is not dict:
+        raise ValueError(invalid_message)
+    return payload
+
+
 def resolve_psychology_learning_selection(
     *,
     series_id: str,
     lesson_id: str,
     curriculum_version: str | None = None,
+    catalog_root: Path | str | None = None,
 ) -> PsychologyLearningBundle:
     """Resolve explicit identifiers to one approved catalog lesson."""
     _require_identifier(series_id, field_name="series_id")
     _require_identifier(lesson_id, field_name="lesson_id")
-    lessons = _series_lessons(series_id)
-    if curriculum_version is not None and curriculum_version != PSYCHOLOGY_LEARNING_CURRICULUM_VERSION:
-        raise ValueError("unsupported psychology learning curriculum version")
+    if series_id == STARTER_SERIES_ID:
+        lessons = _series_lessons(series_id)
+        if (
+            curriculum_version is not None
+            and curriculum_version != PSYCHOLOGY_LEARNING_CURRICULUM_VERSION
+        ):
+            raise ValueError("unsupported psychology learning curriculum version")
+        catalog = None
+    else:
+        if curriculum_version is None:
+            raise ValueError(
+                "custom psychology learning selection requires an explicit curriculum_version"
+            )
+        catalog = load_confirmed_psychology_learning_catalog(
+            series_id=series_id,
+            curriculum_version=curriculum_version,
+            catalog_root=catalog_root,
+        )
+        lessons = catalog.lessons
     for lesson in lessons:
         if lesson.lesson_id == lesson_id:
-            return PsychologyLearningBundle(lesson=lesson, lessons=lessons)
+            return PsychologyLearningBundle(
+                lesson=lesson,
+                lessons=lessons,
+                catalog=catalog,
+            )
     raise ValueError("unknown psychology learning lesson_id for the selected series")
 
 
-def list_psychology_learning_series(*, series_id: str) -> tuple[PsychologyLearningLesson, ...]:
+def list_psychology_learning_series(
+    *,
+    series_id: str,
+    curriculum_version: str | None = None,
+    catalog_root: Path | str | None = None,
+) -> tuple[PsychologyLearningLesson, ...]:
     """Return a catalog series for safe guide-post roadmap rendering."""
     _require_identifier(series_id, field_name="series_id")
-    return _series_lessons(series_id)
+    if series_id == STARTER_SERIES_ID:
+        if (
+            curriculum_version is not None
+            and curriculum_version != PSYCHOLOGY_LEARNING_CURRICULUM_VERSION
+        ):
+            raise ValueError("unsupported psychology learning curriculum version")
+        return _series_lessons(series_id)
+    if curriculum_version is not None:
+        return load_confirmed_psychology_learning_catalog(
+            series_id=series_id,
+            curriculum_version=curriculum_version,
+            catalog_root=catalog_root,
+        ).lessons
+    revisions = list_confirmed_psychology_learning_catalog_revisions(
+        series_id=series_id,
+        catalog_root=catalog_root,
+    )
+    if not revisions:
+        raise ValueError("unknown psychology learning catalog revision")
+    return revisions[-1].lessons
 
 
 def parse_psychology_learning_runtime_contract(value: Mapping[str, Any]) -> dict[str, Any]:

@@ -8,6 +8,10 @@ from langgraph.checkpoint.memory import InMemorySaver
 import pytest
 
 from ptsm.agent_runtime.runtime import build_playbook_workflow
+from ptsm.application.use_cases.psychology_learning_series import (
+    PsychologyLearningSeriesStore,
+    plan_psychology_learning_series,
+)
 from ptsm.config.settings import Settings
 from ptsm.domain.psychology_learning import (
     list_psychology_learning_series,
@@ -236,3 +240,36 @@ def test_every_catalog_lesson_completes_with_the_bound_runtime(
     )
 
     assert result["status"] == "completed"
+
+
+def test_confirmed_catalog_reconstruction_keeps_proposal_metadata_out_of_runtime_contract(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "series-store"
+    store = PsychologyLearningSeriesStore(catalog_root=root)
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    store.persist_proposal(proposal)
+    catalog = store.confirm(
+        proposal_id=proposal.proposal_id,
+        proposal_fingerprint=proposal.proposal_fingerprint,
+    )
+
+    bundle = resolve_psychology_learning_selection(
+        series_id=catalog.series_id,
+        lesson_id="notice",
+        curriculum_version=catalog.curriculum_version,
+        catalog_root=root,
+    )
+
+    assert bundle.catalog is not None
+    assert bundle.catalog.catalog_digest == catalog.catalog_digest
+    assert bundle.catalog.publication_plan == catalog.publication_plan
+    assert "proposal" not in bundle.runtime_contract
+    assert "approval" not in bundle.runtime_contract
+    assert "source_refs" not in bundle.runtime_contract

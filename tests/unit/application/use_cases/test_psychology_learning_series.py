@@ -1,11 +1,23 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from ptsm.application.use_cases.psychology_learning_series import (
+    PsychologyLearningSeriesStore,
     plan_psychology_learning_series,
 )
-from ptsm.domain.psychology_learning import PsychologyLearningOutlineItem
+from ptsm.domain.psychology_learning import (
+    PsychologyLearningOutlineItem,
+    list_psychology_learning_series,
+    psychology_learning_series_catalog_confirmation_path,
+    psychology_learning_series_catalog_snapshot_path,
+    psychology_learning_series_proposal_snapshot_path,
+    render_psychology_learning_draft,
+    resolve_psychology_learning_selection,
+    validate_psychology_learning_draft_contract,
+)
 
 
 def test_plan_psychology_learning_series_synthesizes_a_stable_safe_four_step_proposal() -> None:
@@ -95,4 +107,442 @@ def test_plan_psychology_learning_series_rejects_oversized_concrete_outline() ->
         plan_psychology_learning_series(
             topic="下班后的脑内回放",
             outline=[{"title": "只做数量检查"}] * 7,
+        )
+
+
+def test_confirmed_custom_series_requires_exact_persisted_proposal_fingerprint(
+    tmp_path,
+) -> None:
+    store = PsychologyLearningSeriesStore(catalog_root=tmp_path / "series-store")
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+
+    with pytest.raises(ValueError, match="unknown psychology learning proposal"):
+        store.confirm(
+            proposal_id=proposal.proposal_id,
+            proposal_fingerprint=proposal.proposal_fingerprint,
+        )
+
+    store.persist_proposal(proposal)
+
+    with pytest.raises(ValueError, match="proposal fingerprint"):
+        store.confirm(
+            proposal_id=proposal.proposal_id,
+            proposal_fingerprint="proposal:wrong",
+        )
+
+    catalog = store.confirm(
+        proposal_id=proposal.proposal_id,
+        proposal_fingerprint=proposal.proposal_fingerprint,
+    )
+
+    assert catalog.origin == "user_confirmed"
+    assert catalog.curriculum_version == "1"
+    assert catalog.approval.proposal_id == proposal.proposal_id
+    assert catalog.approval.proposal_fingerprint == proposal.proposal_fingerprint
+    assert catalog.publication_plan.items[0].publication_order == 1
+    assert store.confirm(
+        proposal_id=proposal.proposal_id,
+        proposal_fingerprint=proposal.proposal_fingerprint,
+    ) == catalog
+
+
+def test_confirmation_appends_custom_revision_and_keeps_old_snapshot_resolvable(
+    tmp_path,
+) -> None:
+    store = PsychologyLearningSeriesStore(catalog_root=tmp_path / "series-store")
+    first_proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    second_proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "understand", "title": "再区分事实和猜测"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+
+    first_catalog = store.confirm(
+        proposal_id=store.persist_proposal(first_proposal).proposal_id,
+        proposal_fingerprint=first_proposal.proposal_fingerprint,
+    )
+    first_snapshot_path = psychology_learning_series_catalog_snapshot_path(
+        series_id=first_catalog.series_id,
+        curriculum_version=first_catalog.curriculum_version,
+        catalog_root=store.catalog_root,
+    )
+    first_snapshot_bytes = first_snapshot_path.read_bytes()
+    second_catalog = store.confirm(
+        proposal_id=store.persist_proposal(second_proposal).proposal_id,
+        proposal_fingerprint=second_proposal.proposal_fingerprint,
+    )
+
+    assert first_catalog.curriculum_version == "1"
+    assert second_catalog.curriculum_version == "2"
+    assert [lesson.lesson_id for lesson in first_catalog.lessons] == [
+        "notice",
+        "practice",
+    ]
+    assert [lesson.lesson_id for lesson in second_catalog.lessons] == [
+        "notice",
+        "understand",
+        "practice",
+    ]
+    assert first_snapshot_path.read_bytes() == first_snapshot_bytes
+
+    historic = resolve_psychology_learning_selection(
+        series_id=first_catalog.series_id,
+        lesson_id="practice",
+        curriculum_version="1",
+        catalog_root=store.catalog_root,
+    )
+    latest = list_psychology_learning_series(
+        series_id=second_catalog.series_id,
+        catalog_root=store.catalog_root,
+    )
+
+    assert historic.lesson.lesson_number == 2
+    assert [lesson.lesson_id for lesson in latest] == [
+        "notice",
+        "understand",
+        "practice",
+    ]
+
+
+def test_custom_revision_history_fails_closed_when_an_older_snapshot_is_missing(
+    tmp_path,
+) -> None:
+    store = PsychologyLearningSeriesStore(catalog_root=tmp_path / "series-store")
+    first = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    second = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "understand", "title": "再区分事实和猜测"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    store.persist_proposal(first)
+    first_catalog = store.confirm(
+        proposal_id=first.proposal_id,
+        proposal_fingerprint=first.proposal_fingerprint,
+    )
+    store.persist_proposal(second)
+    second_catalog = store.confirm(
+        proposal_id=second.proposal_id,
+        proposal_fingerprint=second.proposal_fingerprint,
+    )
+    psychology_learning_series_catalog_snapshot_path(
+        series_id=first_catalog.series_id,
+        curriculum_version=first_catalog.curriculum_version,
+        catalog_root=store.catalog_root,
+    ).unlink()
+
+    with pytest.raises(ValueError, match="catalog revision history"):
+        resolve_psychology_learning_selection(
+            series_id=second_catalog.series_id,
+            lesson_id="notice",
+            curriculum_version=second_catalog.curriculum_version,
+            catalog_root=store.catalog_root,
+        )
+
+
+def test_custom_revision_history_fails_closed_when_an_older_snapshot_is_tampered(
+    tmp_path,
+) -> None:
+    store = PsychologyLearningSeriesStore(catalog_root=tmp_path / "series-store")
+    first = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    second = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "understand", "title": "再区分事实和猜测"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    store.persist_proposal(first)
+    first_catalog = store.confirm(
+        proposal_id=first.proposal_id,
+        proposal_fingerprint=first.proposal_fingerprint,
+    )
+    store.persist_proposal(second)
+    second_catalog = store.confirm(
+        proposal_id=second.proposal_id,
+        proposal_fingerprint=second.proposal_fingerprint,
+    )
+    first_path = psychology_learning_series_catalog_snapshot_path(
+        series_id=first_catalog.series_id,
+        curriculum_version=first_catalog.curriculum_version,
+        catalog_root=store.catalog_root,
+    )
+    tampered = json.loads(first_path.read_text(encoding="utf-8"))
+    tampered["catalog_digest"] = "catalog:tampered"
+    first_path.write_text(json.dumps(tampered), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="invalid psychology learning catalog revision"):
+        resolve_psychology_learning_selection(
+            series_id=second_catalog.series_id,
+            lesson_id="notice",
+            curriculum_version=second_catalog.curriculum_version,
+            catalog_root=store.catalog_root,
+        )
+
+
+def test_confirmation_never_reuses_a_deleted_terminal_revision_number(
+    tmp_path,
+) -> None:
+    store = PsychologyLearningSeriesStore(catalog_root=tmp_path / "series-store")
+    first = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    second = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "understand", "title": "再区分事实和猜测"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    third = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "review", "title": "回顾一个有效动作"},
+        ),
+    )
+    store.persist_proposal(first)
+    store.confirm(
+        proposal_id=first.proposal_id,
+        proposal_fingerprint=first.proposal_fingerprint,
+    )
+    store.persist_proposal(second)
+    second_catalog = store.confirm(
+        proposal_id=second.proposal_id,
+        proposal_fingerprint=second.proposal_fingerprint,
+    )
+    psychology_learning_series_catalog_snapshot_path(
+        series_id=second_catalog.series_id,
+        curriculum_version=second_catalog.curriculum_version,
+        catalog_root=store.catalog_root,
+    ).unlink()
+    store.persist_proposal(third)
+
+    with pytest.raises(ValueError, match="catalog revision"):
+        store.confirm(
+            proposal_id=third.proposal_id,
+            proposal_fingerprint=third.proposal_fingerprint,
+        )
+
+
+def test_custom_revision_history_fails_closed_when_a_confirmation_record_is_missing(
+    tmp_path,
+) -> None:
+    store = PsychologyLearningSeriesStore(catalog_root=tmp_path / "series-store")
+    first = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    second = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "understand", "title": "再区分事实和猜测"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    store.persist_proposal(first)
+    first_catalog = store.confirm(
+        proposal_id=first.proposal_id,
+        proposal_fingerprint=first.proposal_fingerprint,
+    )
+    store.persist_proposal(second)
+    second_catalog = store.confirm(
+        proposal_id=second.proposal_id,
+        proposal_fingerprint=second.proposal_fingerprint,
+    )
+    psychology_learning_series_catalog_confirmation_path(
+        series_id=second_catalog.series_id,
+        curriculum_version=second_catalog.curriculum_version,
+        catalog_root=store.catalog_root,
+    ).unlink()
+
+    with pytest.raises(ValueError, match="catalog revision history"):
+        resolve_psychology_learning_selection(
+            series_id=first_catalog.series_id,
+            lesson_id="notice",
+            curriculum_version=first_catalog.curriculum_version,
+            catalog_root=store.catalog_root,
+        )
+
+
+def test_confirmed_custom_lessons_are_controlled_and_progress_is_a_separate_sidecar(
+    tmp_path,
+) -> None:
+    store = PsychologyLearningSeriesStore(catalog_root=tmp_path / "series-store")
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {
+                "id": "notice",
+                "title": "先识别重复时刻",
+                "goal": "在一个具体时刻停下来看看。",
+            },
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    store.persist_proposal(proposal)
+    catalog = store.confirm(
+        proposal_id=proposal.proposal_id,
+        proposal_fingerprint=proposal.proposal_fingerprint,
+    )
+
+    first_lesson = catalog.lessons[0]
+    serialized = catalog.model_dump(mode="json")
+    assert "https://" not in str(serialized)
+    assert "source:" not in str(serialized)
+    assert "在一个具体时刻停下来看看。" not in str(serialized)
+    assert first_lesson.source_refs == (f"approval:{catalog.approval.approval_id}",)
+    assert len(first_lesson.post_title) <= 22
+    assert first_lesson.runtime_contract["lesson_title"] == "先识别重复时刻"
+    assert "proposal" not in first_lesson.runtime_contract
+    rendered = render_psychology_learning_draft(first_lesson.runtime_contract)
+    assert validate_psychology_learning_draft_contract(
+        first_lesson.runtime_contract,
+        rendered,
+    ) == []
+
+    progress = store.write_production_progress(
+        series_id=catalog.series_id,
+        curriculum_version=catalog.curriculum_version,
+        completed_lesson_ids=(first_lesson.lesson_id,),
+    )
+
+    assert progress.completed_lesson_ids == (first_lesson.lesson_id,)
+    assert store.read_production_progress(
+        series_id=catalog.series_id,
+        curriculum_version=catalog.curriculum_version,
+    ) == progress
+    with pytest.raises(ValueError, match="unknown psychology learning lesson_id"):
+        store.write_production_progress(
+            series_id=catalog.series_id,
+            curriculum_version=catalog.curriculum_version,
+            completed_lesson_ids=("unknown_lesson",),
+        )
+    with pytest.raises(ValueError, match="completed_lesson_ids must be unique"):
+        store.write_production_progress(
+            series_id=catalog.series_id,
+            curriculum_version=catalog.curriculum_version,
+            completed_lesson_ids=(first_lesson.lesson_id, first_lesson.lesson_id),
+        )
+
+
+def test_custom_catalog_resolution_fails_closed_for_missing_or_tampered_snapshots(
+    tmp_path,
+) -> None:
+    store = PsychologyLearningSeriesStore(catalog_root=tmp_path / "series-store")
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    store.persist_proposal(proposal)
+    catalog = store.confirm(
+        proposal_id=proposal.proposal_id,
+        proposal_fingerprint=proposal.proposal_fingerprint,
+    )
+    catalog_path = psychology_learning_series_catalog_snapshot_path(
+        series_id=catalog.series_id,
+        curriculum_version=catalog.curriculum_version,
+        catalog_root=store.catalog_root,
+    )
+    catalog_path.unlink()
+
+    with pytest.raises(ValueError, match="catalog revision"):
+        resolve_psychology_learning_selection(
+            series_id=catalog.series_id,
+            lesson_id="notice",
+            curriculum_version=catalog.curriculum_version,
+            catalog_root=store.catalog_root,
+        )
+    with pytest.raises(ValueError, match="catalog revision history"):
+        store.confirm(
+            proposal_id=proposal.proposal_id,
+            proposal_fingerprint=proposal.proposal_fingerprint,
+        )
+
+    tampered_store = PsychologyLearningSeriesStore(
+        catalog_root=tmp_path / "tampered-series-store"
+    )
+    tampered_store.persist_proposal(proposal)
+    recreated = tampered_store.confirm(
+        proposal_id=proposal.proposal_id,
+        proposal_fingerprint=proposal.proposal_fingerprint,
+    )
+    recreated_path = psychology_learning_series_catalog_snapshot_path(
+        series_id=recreated.series_id,
+        curriculum_version=recreated.curriculum_version,
+        catalog_root=tampered_store.catalog_root,
+    )
+    tampered = json.loads(recreated_path.read_text(encoding="utf-8"))
+    tampered["catalog_digest"] = "catalog:tampered"
+    recreated_path.write_text(json.dumps(tampered), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="invalid psychology learning catalog revision"):
+        list_psychology_learning_series(
+            series_id=recreated.series_id,
+            curriculum_version=recreated.curriculum_version,
+            catalog_root=tampered_store.catalog_root,
+        )
+
+    missing_proposal_store = PsychologyLearningSeriesStore(
+        catalog_root=tmp_path / "missing-proposal-series-store"
+    )
+    missing_proposal_store.persist_proposal(proposal)
+    restored = missing_proposal_store.confirm(
+        proposal_id=proposal.proposal_id,
+        proposal_fingerprint=proposal.proposal_fingerprint,
+    )
+    proposal_path = psychology_learning_series_proposal_snapshot_path(
+        proposal_id=proposal.proposal_id,
+        catalog_root=missing_proposal_store.catalog_root,
+    )
+    proposal_path.unlink()
+
+    with pytest.raises(ValueError, match="invalid psychology learning catalog revision"):
+        resolve_psychology_learning_selection(
+            series_id=restored.series_id,
+            lesson_id="notice",
+            curriculum_version=restored.curriculum_version,
+            catalog_root=missing_proposal_store.catalog_root,
         )

@@ -7,6 +7,10 @@ import pytest
 from pydantic import ValidationError
 
 import ptsm.domain.psychology_learning as psychology_learning
+from ptsm.application.use_cases.psychology_learning_series import (
+    PsychologyLearningSeriesStore,
+    plan_psychology_learning_series,
+)
 from ptsm.domain.psychology_learning import (
     PSYCHOLOGY_LEARNING_MODE,
     PsychologyLearningOutlineItem,
@@ -48,6 +52,7 @@ def test_starter_catalog_resolves_a_closed_six_lesson_series() -> None:
     assert bundle.manifest["source_refs"]
     assert "source_refs" not in str(bundle.runtime_contract)
     assert "source:" not in str(bundle.runtime_contract)
+    assert "catalog" not in bundle.model_dump(mode="json")
 
 
 def test_each_learning_lesson_has_a_distinct_xhs_title_and_cover_hook() -> None:
@@ -754,3 +759,72 @@ def test_proposal_validation_keeps_safe_reader_visible_unicode_text_unchanged(
     intent = PsychologyLearningSeriesPlanIntent(topic=topic)
 
     assert intent.topic == topic
+
+
+def test_custom_selection_requires_an_explicit_confirmed_revision(
+    tmp_path,
+) -> None:
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    root = tmp_path / "series-store"
+
+    with pytest.raises(ValueError, match="explicit curriculum_version"):
+        resolve_psychology_learning_selection(
+            series_id=proposal.series_id_candidate,
+            lesson_id="notice",
+            catalog_root=root,
+        )
+
+    with pytest.raises(ValueError, match="unknown psychology learning catalog revision"):
+        resolve_psychology_learning_selection(
+            series_id=proposal.series_id_candidate,
+            lesson_id="notice",
+            curriculum_version="1",
+            catalog_root=root,
+        )
+
+    store = PsychologyLearningSeriesStore(catalog_root=root)
+    store.persist_proposal(proposal)
+    catalog = store.confirm(
+        proposal_id=proposal.proposal_id,
+        proposal_fingerprint=proposal.proposal_fingerprint,
+    )
+    resolved = resolve_psychology_learning_selection(
+        series_id=catalog.series_id,
+        lesson_id="notice",
+        curriculum_version=catalog.curriculum_version,
+        catalog_root=root,
+    )
+
+    assert resolved.catalog is not None
+    assert resolved.catalog.origin == "user_confirmed"
+    assert resolved.catalog.approval.proposal_fingerprint == proposal.proposal_fingerprint
+    assert [item.publication_order for item in resolved.catalog.publication_plan.items] == [
+        1,
+        2,
+    ]
+
+
+def test_builtin_catalog_stays_unchanged_when_a_custom_catalog_root_is_injected(
+    tmp_path,
+) -> None:
+    baseline = list_psychology_learning_series(series_id="after_work_rumination")
+    injected = list_psychology_learning_series(
+        series_id="after_work_rumination",
+        catalog_root=tmp_path / "series-store",
+    )
+
+    assert injected == baseline
+    assert [lesson.lesson_id for lesson in injected] == [
+        "notice_the_loop",
+        "facts_and_stories",
+        "control_and_next_step",
+        "leave_work_signal",
+        "close_the_replay",
+        "support_boundary",
+    ]
