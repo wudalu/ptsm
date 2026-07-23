@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 import re
 import sys
-from typing import Sequence
+from typing import Any, Sequence
 import uuid
 
 from ptsm.application.models import FengkuangRequest, PlaybookRequest
@@ -33,6 +33,10 @@ from ptsm.application.use_cases.hotspot_discovery import run_hotspot_discovery
 from ptsm.application.use_cases.install_git_hooks import install_git_hooks
 from ptsm.application.use_cases.logs import run_logs
 from ptsm.application.use_cases.plan_runs import run_plan_runs
+from ptsm.application.use_cases.psychology_learning_series import (
+    PsychologyLearningSeriesStore,
+    plan_psychology_learning_series,
+)
 from ptsm.application.use_cases.run_events import run_run_events
 from ptsm.application.use_cases.runs import run_runs
 from ptsm.application.use_cases.run_playbook import (
@@ -71,6 +75,7 @@ from ptsm.playbooks.registry import PlaybookRegistry
 
 LOCAL_IMAGE_STYLE_CHOICES = ("note_card", "iphone_notes", "wechat_chat")
 PLAYBOOK_ROOT = Path(__file__).resolve().parents[2] / "playbooks" / "definitions"
+MAX_PSYCHOLOGY_SERIES_OUTLINE_BYTES = 64 * 1024
 
 
 def _positive_int(value: str) -> int:
@@ -98,6 +103,106 @@ def _load_ai_evidence_bundle(
     if not isinstance(payload, dict):
         parser.error("ai evidence file must contain a JSON object")
     return payload
+
+
+def _load_psychology_series_outline(
+    *,
+    path: Path,
+    parser: argparse.ArgumentParser,
+) -> list[object]:
+    """Load a bounded JSON array before proposal planning can persist anything."""
+    try:
+        with path.open("rb") as handle:
+            raw = handle.read(MAX_PSYCHOLOGY_SERIES_OUTLINE_BYTES + 1)
+    except OSError as exc:
+        parser.error(f"could not read psychology series outline file {path}: {exc}")
+    if len(raw) > MAX_PSYCHOLOGY_SERIES_OUTLINE_BYTES:
+        parser.error("psychology series outline file is too large")
+    try:
+        payload = json.loads(raw)
+    except (RecursionError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        parser.error(f"could not parse psychology series outline file {path}: {exc}")
+    if type(payload) is not list:
+        parser.error("psychology series outline file must contain a JSON list")
+    return payload
+
+
+def _safe_psychology_series_publication_plan(
+    publication_plan: Any,
+) -> dict[str, object]:
+    """Render only reviewable schedule fields, never catalog/approval internals."""
+    return {
+        "plan_version": publication_plan.plan_version,
+        "items": [
+            {
+                "publication_order": item.publication_order,
+                "lesson_id": item.lesson_id,
+                "canonical_lesson_number": item.canonical_lesson_number,
+                "instructional_stage": item.instructional_stage,
+                "rationale": item.rationale,
+            }
+            for item in publication_plan.items
+        ],
+    }
+
+
+def _safe_psychology_series_proposal_payload(proposal: Any) -> dict[str, object]:
+    """Return the review contract without exposing storage or provenance metadata."""
+    return {
+        "status": "proposal_ready_for_confirmation",
+        "proposal_id": proposal.proposal_id,
+        "proposal_fingerprint": proposal.proposal_fingerprint,
+        "runnable": False,
+        "series": {
+            "series_id": proposal.catalog.series_id,
+            "series_title": proposal.catalog.series_title,
+            "lessons": [
+                {
+                    "lesson_id": lesson.lesson_id,
+                    "lesson_number": lesson.lesson_number,
+                    "title": lesson.title,
+                    "goal": lesson.goal,
+                    "instructional_stage": lesson.instructional_stage,
+                }
+                for lesson in proposal.catalog.lessons
+            ],
+        },
+        "publication_plan": _safe_psychology_series_publication_plan(
+            proposal.publication_plan
+        ),
+        "review": {
+            "status": proposal.review.status,
+            "structural_checks": list(proposal.review.structural_checks),
+            "safety_checks": list(proposal.review.safety_checks),
+        },
+        "next_step": (
+            "Review the proposed outline and publication order. To create an immutable "
+            "curriculum revision, run confirm-psychology-series with this exact proposal "
+            "id, fingerprint, and --confirm."
+        ),
+    }
+
+
+def _safe_confirmed_psychology_series_payload(catalog: Any) -> dict[str, object]:
+    """Render a confirmed roadmap without approval receipts or local paths."""
+    return {
+        "status": "confirmed",
+        "series": {
+            "origin": catalog.origin,
+            "series_id": catalog.series_id,
+            "series_title": catalog.series_title,
+            "curriculum_version": catalog.curriculum_version,
+            "roadmap": [lesson.roadmap_item for lesson in catalog.lessons],
+            "publication_plan": _safe_psychology_series_publication_plan(
+                catalog.publication_plan
+            ),
+        },
+        "next_step": (
+            "Use guide-post with --psychology-content-mode learning_series and this "
+            "series id. Review the recommendation, then explicitly choose one lesson id; "
+            "PTSM will not select a lesson automatically."
+        ),
+    }
 
 
 def _request_resolves_to_ai_tech_playbook(args: argparse.Namespace) -> bool:
@@ -270,6 +375,17 @@ def build_parser() -> argparse.ArgumentParser:
     guide_post.add_argument("--psychology-curriculum-version")
     guide_post.add_argument("--non-interactive", action="store_true")
     guide_post.add_argument("--format", choices=("json", "markdown"))
+
+    plan_psychology_series = subparsers.add_parser("plan-psychology-series")
+    plan_psychology_series.add_argument("--topic", required=True)
+    plan_psychology_series.add_argument("--curriculum-outline-file", type=Path)
+    plan_psychology_series.add_argument("--format", choices=("json",), default="json")
+
+    confirm_psychology_series = subparsers.add_parser("confirm-psychology-series")
+    confirm_psychology_series.add_argument("--proposal-id", required=True)
+    confirm_psychology_series.add_argument("--proposal-fingerprint", required=True)
+    confirm_psychology_series.add_argument("--confirm", action="store_true")
+    confirm_psychology_series.add_argument("--format", choices=("json",), default="json")
 
     xhs_login_status = subparsers.add_parser("xhs-login-status")
     xhs_login_status.add_argument("--server-url")
@@ -732,6 +848,54 @@ def main(argv: Sequence[str] | None = None) -> int:
             eval_enabled=args.eval,
         )
         print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "plan-psychology-series":
+        outline = (
+            _load_psychology_series_outline(
+                path=args.curriculum_outline_file,
+                parser=parser,
+            )
+            if args.curriculum_outline_file is not None
+            else None
+        )
+        try:
+            proposal = plan_psychology_learning_series(
+                topic=args.topic,
+                outline=outline,
+            )
+        except (TypeError, ValueError) as exc:
+            parser.error(f"invalid psychology learning series proposal: {exc}")
+        try:
+            persisted = PsychologyLearningSeriesStore().persist_proposal(proposal)
+        except (OSError, ValueError) as exc:
+            parser.error(f"could not persist psychology learning series proposal: {exc}")
+        print(
+            json.dumps(
+                _safe_psychology_series_proposal_payload(persisted),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+
+    if args.command == "confirm-psychology-series":
+        if not args.confirm:
+            parser.error("confirm-psychology-series requires --confirm")
+        try:
+            catalog = PsychologyLearningSeriesStore().confirm(
+                proposal_id=args.proposal_id,
+                proposal_fingerprint=args.proposal_fingerprint,
+            )
+        except (OSError, ValueError) as exc:
+            parser.error(f"could not confirm psychology learning series proposal: {exc}")
+        print(
+            json.dumps(
+                _safe_confirmed_psychology_series_payload(catalog),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
         return 0
 
     if args.command == "run-playbook":

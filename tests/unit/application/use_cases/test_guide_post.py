@@ -1,9 +1,16 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
+import ptsm.domain.psychology_learning as psychology_learning_domain
+from ptsm.application.use_cases.psychology_learning_series import (
+    PsychologyLearningSeriesStore,
+    plan_psychology_learning_series,
+)
+from ptsm.domain.psychology_learning import resolve_psychology_learning_selection
 from ptsm.application.use_cases.topic_guidance_packs import TOPIC_GUIDANCE_PACKS
 from ptsm.application.use_cases.guide_post import (
     GuidePostRequest,
@@ -1063,3 +1070,276 @@ def test_ai_prompt_direction_is_a_hands_on_test_replay_not_a_copyable_lane() -> 
     assert "实测" in prompt_direction["name"] or "复盘" in prompt_direction["name"]
     assert "直接复制" not in prompt_direction["viral_hook"]
     assert "直接复制" not in prompt_direction["saveable_tool"]
+
+
+def _confirm_custom_psychology_series(
+    *,
+    store: PsychologyLearningSeriesStore,
+    outline: tuple[dict[str, str], ...],
+    topic: str = "下班后的脑内回放",
+):
+    proposal = plan_psychology_learning_series(
+        topic=topic,
+        outline=outline,
+    )
+    store.persist_proposal(proposal)
+    return store.confirm(
+        proposal_id=proposal.proposal_id,
+        proposal_fingerprint=proposal.proposal_fingerprint,
+    )
+
+
+def test_custom_learning_series_guide_recommends_publication_order_without_autoselecting(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    store_root = tmp_path / "series-store"
+    monkeypatch.setattr(
+        psychology_learning_domain,
+        "DEFAULT_PSYCHOLOGY_LEARNING_SERIES_CATALOG_ROOT",
+        store_root,
+    )
+    store = PsychologyLearningSeriesStore()
+    catalog = _confirm_custom_psychology_series(
+        store=store,
+        outline=(
+            {"id": "review", "title": "回顾已有线索", "goal": "整理一个发现"},
+            {"id": "notice", "title": "先识别触发时刻", "goal": "看见一个瞬间"},
+            {"id": "practice", "title": "练习一个小动作", "goal": "今天尝试一次"},
+        ),
+    )
+    runtime_bundle = resolve_psychology_learning_selection(
+        series_id=catalog.series_id,
+        lesson_id="review",
+        curriculum_version=catalog.curriculum_version,
+    )
+
+    result = run_guide_post(
+        GuidePostRequest(
+            psychology_content_mode="learning_series",
+            psychology_series_id=catalog.series_id,
+        )
+    )
+
+    series = result["series"]
+    assert result["status"] == "selection_required"
+    assert result["topic_guidance"]["matched_direction_id"] == ""
+    assert "run_playbook_command" not in result
+    assert [item["lesson_id"] for item in series["publication_plan"]] == [
+        "notice",
+        "practice",
+        "review",
+    ]
+    assert series["publication_plan"][0]["canonical_lesson_number"] == 2
+    assert series["production_progress"] == {
+        "kind": "operator_content_production",
+        "completed_lesson_ids": [],
+        "completed_count": 0,
+        "total_lessons": 3,
+    }
+    assert series["origin"] == "user_confirmed"
+    assert series["recommended_next_lesson"]["lesson_id"] == "notice"
+    assert series["recommended_next_lesson_id"] == "notice"
+    assert series["recommended_next_lesson"]["publication_order"] == 1
+    serialized = json.dumps(result, ensure_ascii=False)
+    assert "整理一个发现" not in serialized
+    assert "source_refs" not in serialized
+    assert "proposal_fingerprint" not in serialized
+    assert "catalog_digest" not in serialized
+    assert str(store_root) not in serialized
+    assert "整理一个发现" not in json.dumps(
+        {
+            "runtime_contract": runtime_bundle.runtime_contract,
+            "manifest": runtime_bundle.manifest,
+        },
+        ensure_ascii=False,
+    )
+
+    markdown = format_guide_post_markdown(result)
+    assert "## Recommended Publication Order" in markdown
+    assert "## Recommended Next Lesson" in markdown
+    assert "第2课" in markdown
+    assert "整理一个发现" not in markdown
+
+    store.write_production_progress(
+        series_id=catalog.series_id,
+        curriculum_version=catalog.curriculum_version,
+        completed_lesson_ids=["notice"],
+    )
+    after_one_completed = run_guide_post(
+        GuidePostRequest(
+            psychology_content_mode="learning_series",
+            psychology_series_id=catalog.series_id,
+        )
+    )
+    assert after_one_completed["series"]["recommended_next_lesson"]["lesson_id"] == (
+        "practice"
+    )
+    assert after_one_completed["series"]["production_progress"]["completed_count"] == 1
+    assert after_one_completed["series"]["production_progress"]["total_lessons"] == 3
+
+    store.write_production_progress(
+        series_id=catalog.series_id,
+        curriculum_version=catalog.curriculum_version,
+        completed_lesson_ids=["review", "notice", "practice"],
+    )
+    all_completed = run_guide_post(
+        GuidePostRequest(
+            psychology_content_mode="learning_series",
+            psychology_series_id=catalog.series_id,
+        )
+    )
+    assert all_completed["series"]["recommended_next_lesson"] is None
+    assert all_completed["series"]["recommended_next_lesson_id"] is None
+    assert all_completed["series"]["recommendation_status"] == "all_completed"
+    assert "没有下一课" in all_completed["series"]["recommendation_message"]
+    assert all_completed["series"]["production_progress"]["completed_count"] == 3
+    assert "没有下一课" in format_guide_post_markdown(all_completed)
+
+
+def test_custom_learning_series_guide_uses_requested_historical_version_and_allows_nonrecommended_lesson(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    store_root = tmp_path / "series-store"
+    monkeypatch.setattr(
+        psychology_learning_domain,
+        "DEFAULT_PSYCHOLOGY_LEARNING_SERIES_CATALOG_ROOT",
+        store_root,
+    )
+    store = PsychologyLearningSeriesStore()
+    first_catalog = _confirm_custom_psychology_series(
+        store=store,
+        outline=(
+            {"id": "review", "title": "回顾已有线索", "goal": "整理一个发现"},
+            {"id": "notice", "title": "先识别触发时刻", "goal": "看见一个瞬间"},
+            {"id": "practice", "title": "练习一个小动作", "goal": "今天尝试一次"},
+        ),
+    )
+    second_catalog = _confirm_custom_psychology_series(
+        store=store,
+        outline=(
+            {"id": "notice", "title": "先识别触发时刻", "goal": "看见一个瞬间"},
+            {"id": "support", "title": "安排支持资源", "goal": "留一个支持选择"},
+        ),
+    )
+
+    historic = run_guide_post(
+        GuidePostRequest(
+            psychology_content_mode="learning_series",
+            psychology_series_id=first_catalog.series_id,
+            psychology_curriculum_version="1",
+        )
+    )
+    current = run_guide_post(
+        GuidePostRequest(
+            psychology_content_mode="learning_series",
+            psychology_series_id=second_catalog.series_id,
+            psychology_curriculum_version="2",
+        )
+    )
+    selected_nonrecommended = run_guide_post(
+        GuidePostRequest(
+            psychology_content_mode="learning_series",
+            psychology_series_id=first_catalog.series_id,
+            psychology_curriculum_version="1",
+            psychology_lesson_id="review",
+        )
+    )
+
+    with pytest.raises(ValueError, match="custom psychology learning selection requires"):
+        run_guide_post(
+            GuidePostRequest(
+                psychology_content_mode="learning_series",
+                psychology_series_id=first_catalog.series_id,
+                psychology_lesson_id="notice",
+            )
+        )
+
+    assert historic["series"]["curriculum_version"] == "1"
+    assert [item["lesson_id"] for item in historic["series"]["roadmap"]] == [
+        "review",
+        "notice",
+        "practice",
+    ]
+    assert "--psychology-curriculum-version 1" in historic["next_step"]
+    assert historic["series"]["origin"] == "user_confirmed"
+    assert current["series"]["curriculum_version"] == "2"
+    assert [item["lesson_id"] for item in current["series"]["roadmap"]] == [
+        "notice",
+        "support",
+    ]
+    assert selected_nonrecommended["status"] == "completed"
+    assert selected_nonrecommended["brief"]["lesson_id"] == "review"
+    assert selected_nonrecommended["brief"]["lesson_number"] == 1
+    assert selected_nonrecommended["series"]["recommended_next_lesson"]["lesson_id"] == (
+        "notice"
+    )
+    assert selected_nonrecommended["run_playbook_command"][
+        selected_nonrecommended["run_playbook_command"].index(
+            "--psychology-curriculum-version"
+        )
+        + 1
+    ] == "1"
+    assert "## Recommended Publication Order" in format_guide_post_markdown(
+        selected_nonrecommended
+    )
+
+
+def test_builtin_learning_series_guide_does_not_fabricate_custom_sequence_state() -> None:
+    result = run_guide_post(
+        GuidePostRequest(
+            psychology_content_mode="learning_series",
+            psychology_series_id="after_work_rumination",
+        )
+    )
+
+    assert result["status"] == "selection_required"
+    assert "publication_plan" not in result["series"]
+    assert "production_progress" not in result["series"]
+    assert "recommended_next_lesson" not in result["series"]
+
+
+def test_custom_learning_series_markdown_keeps_operator_line_breaks_inline(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    store_root = tmp_path / "series-store"
+    monkeypatch.setattr(
+        psychology_learning_domain,
+        "DEFAULT_PSYCHOLOGY_LEARNING_SERIES_CATALOG_ROOT",
+        store_root,
+    )
+    catalog = _confirm_custom_psychology_series(
+        store=PsychologyLearningSeriesStore(),
+        topic="下班后\n## 伪标题",
+        outline=(
+            {
+                "id": "notice",
+                "title": "先识别\n## 伪标题",
+                "goal": "看见一个瞬间",
+            },
+            {"id": "practice", "title": "练习一个小动作", "goal": "今天尝试一次"},
+        ),
+    )
+
+    result = run_guide_post(
+        GuidePostRequest(
+            psychology_content_mode="learning_series",
+            psychology_series_id=catalog.series_id,
+        )
+    )
+    markdown = format_guide_post_markdown(result)
+
+    assert "\n## 伪标题" not in markdown
+    assert "下班后 ## 伪标题" in markdown
+
+    selected = run_guide_post(
+        GuidePostRequest(
+            psychology_content_mode="learning_series",
+            psychology_series_id=catalog.series_id,
+            psychology_curriculum_version=catalog.curriculum_version,
+            psychology_lesson_id="notice",
+        )
+    )
+    assert "\n## 伪标题" not in format_guide_post_markdown(selected)

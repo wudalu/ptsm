@@ -6,6 +6,9 @@ from pathlib import Path
 import pytest
 
 from ptsm.application.models import FengkuangRequest, PlaybookRequest
+from ptsm.application.use_cases.psychology_learning_series import (
+    PsychologyLearningSeriesStore,
+)
 from ptsm.interfaces.cli.main import main
 from ptsm.interfaces.cli.main import build_default_state_path, run_plan_cli
 from ptsm.plan_runner.runner import CodexInvocation, CommandResult
@@ -1204,3 +1207,247 @@ def test_guide_post_cli_requires_and_forwards_ai_evidence_mode(
     assert payload["brief"]["content_mode"] == "news_brief"
     assert payload["run_playbook_command"][-1] == "note_card" or "--local-image-style" in payload["run_playbook_command"]
     assert "--ai-evidence-file inputs/ai-evidence.json" in payload["run_playbook_command_text"]
+
+
+def _patch_cli_psychology_series_store(
+    monkeypatch: pytest.MonkeyPatch,
+    root: Path,
+) -> PsychologyLearningSeriesStore:
+    class TempPsychologyLearningSeriesStore(PsychologyLearningSeriesStore):
+        def __init__(self) -> None:
+            super().__init__(catalog_root=root)
+
+    monkeypatch.setattr(
+        "ptsm.interfaces.cli.main.PsychologyLearningSeriesStore",
+        TempPsychologyLearningSeriesStore,
+    )
+    return TempPsychologyLearningSeriesStore()
+
+
+def test_plan_psychology_series_cli_persists_a_nonrunnable_topic_only_proposal(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    store = _patch_cli_psychology_series_store(monkeypatch, tmp_path / "series-store")
+
+    exit_code = main(
+        [
+            "plan-psychology-series",
+            "--topic",
+            "下班后的脑内回放",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    persisted = store.read_proposal(proposal_id=payload["proposal_id"])
+
+    assert exit_code == 0
+    assert payload["status"] == "proposal_ready_for_confirmation"
+    assert payload["runnable"] is False
+    assert payload["proposal_fingerprint"] == persisted.proposal_fingerprint
+    assert payload["series"]["series_id"] == persisted.catalog.series_id
+    assert len(payload["series"]["lessons"]) == 4
+    assert payload["publication_plan"]["items"][0]["publication_order"] == 1
+    assert "confirm-psychology-series" in payload["next_step"]
+    serialized = json.dumps(payload, ensure_ascii=False)
+    assert "source_refs" not in serialized
+    assert "approval" not in serialized
+    assert "series-store" not in serialized
+    assert not (store.catalog_root / "catalogs").exists()
+
+
+def test_plan_psychology_series_cli_accepts_a_safe_json_outline(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    store = _patch_cli_psychology_series_store(monkeypatch, tmp_path / "series-store")
+    outline_path = tmp_path / "outline.json"
+    outline_path.write_text(
+        json.dumps(
+            [
+                {"id": "review", "title": "回顾已有线索", "goal": "整理一个发现"},
+                {"id": "notice", "title": "先识别触发时刻", "goal": "看见一个瞬间"},
+                {"id": "practice", "title": "练习一个小动作", "goal": "今天尝试一次"},
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    exit_code = main(
+        [
+            "plan-psychology-series",
+            "--topic",
+            "下班后的脑内回放",
+            "--curriculum-outline-file",
+            str(outline_path),
+            "--format",
+            "json",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    persisted = store.read_proposal(proposal_id=payload["proposal_id"])
+
+    assert exit_code == 0
+    assert [item["lesson_id"] for item in payload["series"]["lessons"]] == [
+        "review",
+        "notice",
+        "practice",
+    ]
+    assert [item["lesson_id"] for item in payload["publication_plan"]["items"]] == [
+        "notice",
+        "practice",
+        "review",
+    ]
+    assert payload["series"]["lessons"][0]["goal"] == "整理一个发现"
+    assert persisted.catalog.lessons[0].goal == "整理一个发现"
+
+
+@pytest.mark.parametrize(
+    ("contents", "expected_error"),
+    (
+        (b'{"title":"not a list"}', "JSON list"),
+        (b'[{"title":"https://example.com"}]', "proposal"),
+        (b"[" + b" " * (64 * 1024) + b"]", "too large"),
+    ),
+)
+def test_plan_psychology_series_cli_rejects_invalid_outline_before_persisting(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    contents: bytes,
+    expected_error: str,
+) -> None:
+    store = _patch_cli_psychology_series_store(monkeypatch, tmp_path / "series-store")
+    outline_path = tmp_path / "outline.json"
+    outline_path.write_bytes(contents)
+
+    with pytest.raises(SystemExit) as exc_info:
+        main(
+            [
+                "plan-psychology-series",
+                "--topic",
+                "下班后的脑内回放",
+                "--curriculum-outline-file",
+                str(outline_path),
+                "--format",
+                "json",
+            ]
+        )
+
+    assert exc_info.value.code == 2
+    assert expected_error in capsys.readouterr().err
+    assert not (store.catalog_root / "proposals").exists()
+    assert not (store.catalog_root / "catalogs").exists()
+
+
+def test_plan_psychology_series_cli_rejects_deeply_nested_json_before_persisting(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    store = _patch_cli_psychology_series_store(monkeypatch, tmp_path / "series-store")
+    outline_path = tmp_path / "outline.json"
+    outline_path.write_bytes(b"[" * 30_000 + b"0" + b"]" * 30_000)
+
+    with pytest.raises(SystemExit) as exc_info:
+        main(
+            [
+                "plan-psychology-series",
+                "--topic",
+                "下班后的脑内回放",
+                "--curriculum-outline-file",
+                str(outline_path),
+                "--format",
+                "json",
+            ]
+        )
+
+    assert exc_info.value.code == 2
+    assert "could not parse psychology series outline file" in capsys.readouterr().err
+    assert not (store.catalog_root / "proposals").exists()
+
+
+def test_confirm_psychology_series_cli_requires_exact_receipt_and_confirmation_flag(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    store = _patch_cli_psychology_series_store(monkeypatch, tmp_path / "series-store")
+    outline_path = tmp_path / "outline.json"
+    outline_path.write_text(
+        json.dumps(
+            [
+                {
+                    "id": "notice",
+                    "title": "先识别触发时刻",
+                    "goal": "确认前用于审核的目标",
+                },
+                {
+                    "id": "practice",
+                    "title": "练习一个小动作",
+                    "goal": "今天尝试一次",
+                },
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    assert main(
+        [
+            "plan-psychology-series",
+            "--topic",
+            "下班后的脑内回放",
+            "--curriculum-outline-file",
+            str(outline_path),
+            "--format",
+            "json",
+        ]
+    ) == 0
+    proposal_payload = json.loads(capsys.readouterr().out)
+    assert proposal_payload["series"]["lessons"][0]["goal"] == "确认前用于审核的目标"
+
+    base_arguments = [
+        "confirm-psychology-series",
+        "--proposal-id",
+        proposal_payload["proposal_id"],
+        "--proposal-fingerprint",
+        proposal_payload["proposal_fingerprint"],
+    ]
+    with pytest.raises(SystemExit) as missing_confirm:
+        main(base_arguments)
+    assert missing_confirm.value.code == 2
+    assert not (store.catalog_root / "catalogs").exists()
+    capsys.readouterr()
+
+    with pytest.raises(SystemExit) as wrong_fingerprint:
+        main(
+            [
+                *base_arguments[:5],
+                "proposal:not-the-persisted-fingerprint",
+                "--confirm",
+            ]
+        )
+    assert wrong_fingerprint.value.code == 2
+    assert not (store.catalog_root / "catalogs").exists()
+    capsys.readouterr()
+
+    exit_code = main([*base_arguments, "--confirm"])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload["status"] == "confirmed"
+    assert payload["series"]["series_id"] == proposal_payload["series"]["series_id"]
+    assert payload["series"]["origin"] == "user_confirmed"
+    assert payload["series"]["curriculum_version"] == "1"
+    assert len(payload["series"]["roadmap"]) == 2
+    assert payload["series"]["publication_plan"]["items"]
+    serialized = json.dumps(payload, ensure_ascii=False)
+    assert "approval" not in serialized
+    assert "proposal_fingerprint" not in serialized
+    assert "catalog_digest" not in serialized
+    assert "source_refs" not in serialized
+    assert "确认前用于审核的目标" not in serialized

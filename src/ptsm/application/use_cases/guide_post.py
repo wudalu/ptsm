@@ -5,6 +5,9 @@ from dataclasses import dataclass
 import shlex
 from typing import Any
 
+from ptsm.application.use_cases.psychology_learning_series import (
+    PsychologyLearningSeriesStore,
+)
 from ptsm.application.use_cases.topic_guidance_packs import TOPIC_GUIDANCE_PACKS
 from ptsm.domain.topic_guidance import (
     FormatRecommendation,
@@ -15,7 +18,9 @@ from ptsm.domain.topic_guidance import (
 )
 from ptsm.domain.psychology_learning import (
     PSYCHOLOGY_LEARNING_MODE,
+    STARTER_SERIES_ID,
     list_psychology_learning_series,
+    load_confirmed_psychology_learning_catalog,
     render_psychology_learning_draft,
     resolve_psychology_learning_selection,
 )
@@ -803,34 +808,54 @@ def _run_psychology_learning_series_guide_post(
     series_id = (request.psychology_series_id or "").strip()
     if not series_id:
         raise ValueError("psychology_series_id is required for learning_series guidance")
-    lessons = list_psychology_learning_series(series_id=series_id)
-    curriculum_version = lessons[0].curriculum_version
     requested_curriculum_version = (
         (request.psychology_curriculum_version or "").strip()
     )
+    lesson_id = (request.psychology_lesson_id or "").strip()
     if (
-        requested_curriculum_version
-        and requested_curriculum_version != curriculum_version
+        series_id != STARTER_SERIES_ID
+        and lesson_id
+        and not requested_curriculum_version
     ):
-        raise ValueError("unknown curriculum_version for the selected learning series")
+        raise ValueError(
+            "custom psychology learning selection requires an explicit curriculum_version"
+        )
+    lessons = list_psychology_learning_series(
+        series_id=series_id,
+        curriculum_version=requested_curriculum_version or None,
+    )
+    curriculum_version = lessons[0].curriculum_version
+    custom_catalog = (
+        load_confirmed_psychology_learning_catalog(
+            series_id=series_id,
+            curriculum_version=curriculum_version,
+        )
+        if series_id != STARTER_SERIES_ID
+        else None
+    )
+    series_payload: dict[str, Any] = {
+        "series_id": series_id,
+        "series_title": lessons[0].series_title,
+        "curriculum_version": curriculum_version,
+        "roadmap": [lesson.roadmap_item for lesson in lessons],
+    }
+    if custom_catalog is not None:
+        series_payload["origin"] = custom_catalog.origin
+        series_payload.update(
+            _build_custom_psychology_learning_sequence(custom_catalog)
+        )
     account_id = _resolve_account_id(
         request_account_id=request.account_id,
         playbook_id=SUPPORTED_PLAYBOOK_ID,
         default_account_id=DEFAULT_ACCOUNT_ID,
     )
-    lesson_id = (request.psychology_lesson_id or "").strip()
     directions = [lesson.public_direction for lesson in lessons]
     if not lesson_id:
         return {
             "status": "selection_required",
             "playbook_id": SUPPORTED_PLAYBOOK_ID,
             "account_id": account_id,
-            "series": {
-                "series_id": series_id,
-                "series_title": lessons[0].series_title,
-                "curriculum_version": curriculum_version,
-                "roadmap": [lesson.roadmap_item for lesson in lessons],
-            },
+            "series": series_payload,
             "topic_guidance": {
                 "status": "selection_required",
                 "message": "请先从已审核路线中明确选择一课；未选择时不会默认生成第一课。",
@@ -841,9 +866,9 @@ def _run_psychology_learning_series_guide_post(
                 "direction_type_counts": {"learning_series_lesson": len(lessons)},
                 "directions": directions,
             },
-            "next_step": (
-                "Choose one returned learning_series_lesson lesson_id, then request "
-                "guidance again before generating the post."
+            "next_step": _psychology_learning_selection_next_step(
+                curriculum_version=curriculum_version,
+                requires_explicit_version=custom_catalog is not None,
             ),
             "quality_checklist": _build_psychology_learning_quality_checklist(),
             "safety_notes": _psychology_learning_safety_notes(),
@@ -908,12 +933,7 @@ def _run_psychology_learning_series_guide_post(
         "playbook_id": SUPPORTED_PLAYBOOK_ID,
         "account_id": account_id,
         "brief": brief,
-        "series": {
-            "series_id": bundle.series_id,
-            "series_title": contract["series_title"],
-            "curriculum_version": contract["curriculum_version"],
-            "roadmap": list(bundle.roadmap),
-        },
+        "series": series_payload,
         "topic_guidance": topic_guidance,
         "recommended_scene": _build_psychology_learning_recommended_scene(
             contract=contract,
@@ -924,6 +944,81 @@ def _run_psychology_learning_series_guide_post(
         "quality_checklist": _build_psychology_learning_quality_checklist(),
         "safety_notes": _psychology_learning_safety_notes(),
     }
+
+
+def _build_custom_psychology_learning_sequence(catalog: Any) -> dict[str, Any]:
+    """Expose safe operator posting advice from a frozen custom curriculum.
+
+    This is intentionally content-production state, not a reader-learning
+    tracker. A recommendation is informative only: the caller must still name
+    a lesson id before any guide command becomes available.
+    """
+    progress = PsychologyLearningSeriesStore().read_production_progress(
+        series_id=catalog.series_id,
+        curriculum_version=catalog.curriculum_version,
+    )
+    lessons_by_id = {lesson.lesson_id: lesson for lesson in catalog.lessons}
+    publication_plan = [
+        {
+            "publication_order": item.publication_order,
+            "lesson_id": item.lesson_id,
+            "canonical_lesson_number": item.canonical_lesson_number,
+            "lesson_title": lessons_by_id[item.lesson_id].lesson_title,
+            "instructional_stage": item.instructional_stage,
+            "rationale": item.rationale,
+        }
+        for item in catalog.publication_plan.items
+    ]
+    completed_lesson_ids = set(progress.completed_lesson_ids)
+    production_progress = {
+        "kind": "operator_content_production",
+        "completed_lesson_ids": list(progress.completed_lesson_ids),
+        "completed_count": len(progress.completed_lesson_ids),
+        "total_lessons": len(catalog.lessons),
+    }
+    recommended = next(
+        (
+            item
+            for item in publication_plan
+            if item["lesson_id"] not in completed_lesson_ids
+        ),
+        None,
+    )
+    if recommended is None:
+        return {
+            "publication_plan": publication_plan,
+            "production_progress": production_progress,
+            "recommended_next_lesson": None,
+            "recommended_next_lesson_id": None,
+            "recommendation_status": "all_completed",
+            "recommendation_message": "所有建议发布课次均已完成；没有下一课建议。",
+        }
+    return {
+        "publication_plan": publication_plan,
+        "production_progress": production_progress,
+        "recommended_next_lesson": recommended,
+        "recommended_next_lesson_id": recommended["lesson_id"],
+        "recommendation_status": "recommended",
+        "recommendation_message": "这是建议发布顺序；请仍然明确选择 lesson_id，不会自动选课。",
+    }
+
+
+def _psychology_learning_selection_next_step(
+    *,
+    curriculum_version: str,
+    requires_explicit_version: bool,
+) -> str:
+    """Tell custom-series callers how to pin the reviewed immutable revision."""
+    if requires_explicit_version:
+        return (
+            "Choose one returned learning_series_lesson lesson_id and pass "
+            f"--psychology-curriculum-version {curriculum_version} when requesting "
+            "guidance again before generating the post."
+        )
+    return (
+        "Choose one returned learning_series_lesson lesson_id, then request guidance "
+        "again before generating the post."
+    )
 
 
 def _run_ai_tech_guide_post(
@@ -1180,11 +1275,16 @@ def format_guide_post_markdown(result: dict[str, Any]) -> str:
         result.get("topic_guidance", {}).get("image_recommendation")
     )
     if brief.get("content_mode") == PSYCHOLOGY_LEARNING_CONTENT_MODE:
-        roadmap = result.get("series", {}).get("roadmap", [])
+        series = result.get("series", {})
+        roadmap = series.get("roadmap", []) if isinstance(series, dict) else []
         roadmap_lines = "\n".join(
-            f"- 第{item['lesson_number']}课：{item['lesson_title']}（{item['learning_goal']}）"
+            f"- 第{item['lesson_number']}课：{_markdown_inline(item['lesson_title'])}"
+            f"（{_markdown_inline(item['learning_goal'])}）"
             for item in roadmap
             if isinstance(item, dict)
+        )
+        sequence_lines = _format_custom_psychology_learning_sequence_markdown(
+            series if isinstance(series, dict) else {}
         )
         return "\n".join(
             [
@@ -1192,14 +1292,15 @@ def format_guide_post_markdown(result: dict[str, Any]) -> str:
                 "",
                 f"- playbook_id: {result['playbook_id']}",
                 f"- account_id: {result['account_id']}",
-                f"- series: {brief['series_title']} ({brief['series_id']})",
+                f"- series: {_markdown_inline(brief['series_title'])} ({brief['series_id']})",
                 f"- curriculum_version: {brief['curriculum_version']}",
-                f"- selected_lesson: 第{brief['lesson_number']}课 {brief['lesson_title']}",
-                f"- concept: {brief['concept_label']}",
+                f"- selected_lesson: 第{brief['lesson_number']}课 {_markdown_inline(brief['lesson_title'])}",
+                f"- concept: {_markdown_inline(brief['concept_label'])}",
                 "",
                 "## Series Roadmap",
                 "",
                 roadmap_lines,
+                *sequence_lines,
                 "",
                 "## Topic Directions",
                 "",
@@ -1346,16 +1447,22 @@ def _format_topic_direction_markdown(direction: dict[str, Any]) -> str:
     if not isinstance(format_recommendation, dict):
         format_recommendation = {}
     return (
-        f"- {direction['name']}（trend: {direction['trend_signal']} / "
-        f"type: {direction.get('direction_type', 'curated')} / "
-        f"mode: {direction.get('content_mode', '')} / "
-        f"hook: {direction['viral_hook']} / "
-        f"format: {format_recommendation.get('format_archetype', '')} / "
-        f"cover: {format_recommendation.get('cover_role', '')} / "
-        f"visual: {format_recommendation.get('visual_evidence_need', '')} / "
-        f"fit: {direction.get('scene_fit', '')}）"
-        f"：{direction['content_angle']}"
+        f"- {_markdown_inline(direction['name'])}（trend: "
+        f"{_markdown_inline(direction['trend_signal'])} / "
+        f"type: {_markdown_inline(direction.get('direction_type', 'curated'))} / "
+        f"mode: {_markdown_inline(direction.get('content_mode', ''))} / "
+        f"hook: {_markdown_inline(direction['viral_hook'])} / "
+        f"format: {_markdown_inline(format_recommendation.get('format_archetype', ''))} / "
+        f"cover: {_markdown_inline(format_recommendation.get('cover_role', ''))} / "
+        f"visual: {_markdown_inline(format_recommendation.get('visual_evidence_need', ''))} / "
+        f"fit: {_markdown_inline(direction.get('scene_fit', ''))}）"
+        f"：{_markdown_inline(direction['content_angle'])}"
     )
+
+
+def _markdown_inline(value: object) -> str:
+    """Keep untrusted operator text on its surrounding Markdown line."""
+    return " ".join(str(value).split())
 
 
 def _format_image_recommendation(recommendation: Any) -> str:
@@ -1744,12 +1851,12 @@ def _build_psychology_learning_recommended_scene(
 ) -> str:
     return "\n".join(
         [
-            f"学习专题：{contract['series_title']}（课程版本 {contract['curriculum_version']}）",
-            f"本课：{contract['series_badge']}｜{contract['lesson_title']}",
-            f"场景：{contract['scene_anchor']}",
-            f"概念：{contract['concept_label']}",
-            f"学习目标：{contract['learning_goal']}",
-            f"可保存练习：{contract['micro_exercise']}",
+            f"学习专题：{_markdown_inline(contract['series_title'])}（课程版本 {contract['curriculum_version']}）",
+            f"本课：{_markdown_inline(contract['series_badge'])}｜{_markdown_inline(contract['lesson_title'])}",
+            f"场景：{_markdown_inline(contract['scene_anchor'])}",
+            f"概念：{_markdown_inline(contract['concept_label'])}",
+            f"学习目标：{_markdown_inline(contract['learning_goal'])}",
+            f"可保存练习：{_markdown_inline(contract['micro_exercise'])}",
             f"封面形式：{_image_recommendation_scene_summary(image_recommendation, {'image_style': 'iphone_notes'})}",
             "运行时只使用这个已审核课次的合同，不读取自由场景、来源或热点标题。",
         ]
@@ -1790,7 +1897,8 @@ def _format_psychology_learning_selection_markdown(result: dict[str, Any]) -> st
     roadmap = series.get("roadmap", []) if isinstance(series, dict) else []
     roadmap_lines = "\n".join(
         (
-            f"- 第{item.get('lesson_number')}课：{item.get('lesson_title')} "
+            f"- 第{item.get('lesson_number')}课："
+            f"{_markdown_inline(item.get('lesson_title'))} "
             f"(`{item.get('lesson_id')}`)"
         )
         for item in roadmap
@@ -1799,6 +1907,9 @@ def _format_psychology_learning_selection_markdown(result: dict[str, Any]) -> st
     directions = "\n".join(
         _format_topic_direction_markdown(direction)
         for direction in result.get("topic_guidance", {}).get("directions", [])
+    )
+    sequence_lines = _format_custom_psychology_learning_sequence_markdown(
+        series if isinstance(series, dict) else {}
     )
     return "\n".join(
         [
@@ -1811,6 +1922,7 @@ def _format_psychology_learning_selection_markdown(result: dict[str, Any]) -> st
             "## Roadmap",
             "",
             roadmap_lines,
+            *sequence_lines,
             "",
             "## Available Lesson Directions",
             "",
@@ -1821,6 +1933,57 @@ def _format_psychology_learning_selection_markdown(result: dict[str, Any]) -> st
             str(result.get("next_step", "")),
         ]
     )
+
+
+def _format_custom_psychology_learning_sequence_markdown(
+    series: dict[str, Any],
+) -> list[str]:
+    """Render custom-only schedule advice without exposing private receipts."""
+    publication_plan = series.get("publication_plan")
+    if not isinstance(publication_plan, list):
+        return []
+    plan_lines = "\n".join(
+        (
+            f"- 发布第{item.get('publication_order')}篇：第"
+            f"{item.get('canonical_lesson_number')}课 "
+            f"{_markdown_inline(item.get('lesson_title'))} "
+            f"(`{item.get('lesson_id')}`)｜{_markdown_inline(item.get('rationale'))}"
+        )
+        for item in publication_plan
+        if isinstance(item, dict)
+    )
+    progress = series.get("production_progress")
+    completed = (
+        progress.get("completed_lesson_ids", [])
+        if isinstance(progress, dict)
+        else []
+    )
+    completed_text = "、".join(str(item) for item in completed) if completed else "暂无"
+    recommended = series.get("recommended_next_lesson")
+    if isinstance(recommended, dict):
+        recommendation_line = (
+            f"- 建议下一篇：发布第{recommended.get('publication_order')}篇，"
+            f"第{recommended.get('canonical_lesson_number')}课 "
+            f"{_markdown_inline(recommended.get('lesson_title'))} "
+            f"(`{recommended.get('lesson_id')}`)"
+        )
+    else:
+        recommendation_line = "- 没有下一课建议：所有建议发布课次均已完成。"
+    return [
+        "",
+        "## Recommended Publication Order",
+        "",
+        plan_lines,
+        "",
+        "## Production Progress",
+        "",
+        f"- operator_content_production：已完成 {completed_text}",
+        "",
+        "## Recommended Next Lesson",
+        "",
+        recommendation_line,
+        "- 建议不代替选择；请明确传入一个 lesson_id。",
+    ]
 
 
 def _image_recommendation_scene_summary(
