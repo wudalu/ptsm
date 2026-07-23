@@ -1223,6 +1223,12 @@ def _assert_raw_outline_item_text_bounds(value: Any) -> None:
     if not isinstance(value, Mapping):
         return
     _require_raw_proposal_text_bounds(
+        value.get("id"),
+        field_name="outline id",
+        min_length=2,
+        max_length=80,
+    )
+    _require_raw_proposal_text_bounds(
         value.get("title"),
         field_name="outline title",
         min_length=2,

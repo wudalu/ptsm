@@ -5,6 +5,7 @@ from copy import deepcopy
 import pytest
 from pydantic import ValidationError
 
+import ptsm.domain.psychology_learning as psychology_learning
 from ptsm.domain.psychology_learning import (
     PSYCHOLOGY_LEARNING_MODE,
     PsychologyLearningOutlineItem,
@@ -486,6 +487,25 @@ def test_proposal_validation_keeps_reasonable_outer_whitespace_behavior() -> Non
 
     assert intent.topic == "情绪整理"
     assert item.title == "先记录感受"
+
+
+def test_proposal_validation_rejects_raw_oversized_outline_id_before_scanning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def should_not_scan(value: object) -> None:
+        raise AssertionError(f"raw scanner should not receive {value!r}")
+
+    monkeypatch.setattr(
+        psychology_learning,
+        "_assert_no_raw_provenance",
+        should_not_scan,
+    )
+
+    with pytest.raises(ValidationError, match="between 2 and 80 characters"):
+        PsychologyLearningOutlineItem(
+            id=" " * 1000 + "valid_id",
+            title="先记录感受",
+        )
 
 
 def test_proposal_validation_rejects_deceptive_outline_sequence_before_iteration() -> None:
