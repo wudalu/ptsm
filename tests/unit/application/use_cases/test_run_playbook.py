@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -3513,10 +3514,25 @@ def test_psychology_learning_artifact_ownership_excludes_every_catalog_store_des
         / "psychology-learning-series"
         / reserved_relative_path
     )
+    reserved_path.parent.mkdir(parents=True, exist_ok=True)
+    reserved_path.write_text("reserved", encoding="utf-8")
 
     assert _owned_psychology_learning_artifact_path(
         artifact_store=artifact_store,
         artifact_path=str(reserved_path),
+    ) is None
+
+
+def test_psychology_learning_artifact_ownership_rejects_missing_candidates(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    missing_path = tmp_path / "outputs" / "artifacts" / "not-created-yet.json"
+
+    assert _owned_psychology_learning_artifact_path(
+        artifact_store=FileArtifactStore(),
+        artifact_path=str(missing_path),
     ) is None
 
 
@@ -3605,6 +3621,213 @@ def test_run_playbook_preserves_custom_catalog_snapshot_when_workflow_returns_it
     assert private_goal not in serialized
     assert proposal.proposal_id not in serialized
     assert snapshot_before.decode("utf-8") not in serialized
+
+
+def test_run_playbook_preserves_custom_catalog_snapshot_through_case_alias(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Case-insensitive filesystems must not turn the store into an artifact."""
+    monkeypatch.chdir(tmp_path)
+    private_goal = "大小写别名不得泄露确认前私有目标"
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻", "goal": private_goal},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    store = PsychologyLearningSeriesStore()
+    store.persist_proposal(proposal)
+    catalog = store.confirm(
+        proposal_id=proposal.proposal_id,
+        proposal_fingerprint=proposal.proposal_fingerprint,
+    )
+    bundle = resolve_psychology_learning_selection(
+        series_id=catalog.series_id,
+        lesson_id="notice",
+        curriculum_version=catalog.curriculum_version,
+    )
+    snapshot_path = psychology_learning_series_catalog_snapshot_path(
+        series_id=catalog.series_id,
+        curriculum_version=catalog.curriculum_version,
+    )
+    alias_parts = list(snapshot_path.parts)
+    alias_parts[alias_parts.index("psychology-learning-series")] = (
+        "PSYCHOLOGY-LEARNING-SERIES"
+    )
+    alias_snapshot_path = Path(*alias_parts)
+    try:
+        alias_is_snapshot = alias_snapshot_path.exists() and os.path.samefile(
+            alias_snapshot_path,
+            snapshot_path,
+        )
+    except OSError:
+        alias_is_snapshot = False
+    if not alias_is_snapshot:
+        pytest.skip("filesystem does not resolve a case-varied catalog-store alias")
+
+    snapshot_before = snapshot_path.read_bytes()
+    final_content = render_psychology_learning_draft(bundle.runtime_contract)
+
+    class AliasSnapshotReturningWorkflow:
+        def invoke(
+            self,
+            payload: dict[str, object],
+            config: dict[str, object] | None = None,
+        ) -> dict[str, object]:
+            return {
+                "status": "completed",
+                "artifact_path": str(alias_snapshot_path),
+                "final_content": final_content,
+                "runtime_skill_contents": [],
+                "activated_skills": [],
+                "activated_skill_details": [],
+                "runtime_skill_details": [],
+            }
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        lambda **_: AliasSnapshotReturningWorkflow(),
+    )
+
+    result = run_playbook(
+        PlaybookRequest(
+            account_id="acct-psychology-local",
+            playbook_id="modern_psychology_post",
+            psychology_content_mode="learning_series",
+            psychology_series_id=bundle.series_id,
+            psychology_lesson_id=bundle.lesson_id,
+            psychology_curriculum_version=catalog.curriculum_version,
+            topic_direction_id=bundle.direction_id,
+        ),
+        publisher=SuccessfulPublisher(),
+        run_store=RunStore(base_dir=tmp_path / "runs"),
+    )
+
+    assert result["status"] == "psychology_learning_artifact_invalid"
+    assert snapshot_path.read_bytes() == snapshot_before
+    assert resolve_psychology_learning_selection(
+        series_id=catalog.series_id,
+        lesson_id="notice",
+        curriculum_version=catalog.curriculum_version,
+    ) == bundle
+    assert store.read_production_progress(
+        series_id=catalog.series_id,
+        curriculum_version=catalog.curriculum_version,
+    ).completed_lesson_ids == ()
+    serialized = json.dumps(result, ensure_ascii=False)
+    assert private_goal not in serialized
+    assert snapshot_before.decode("utf-8") not in serialized
+
+
+def test_run_playbook_rechecks_ownership_before_replacing_learning_artifact(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A post-read symlink swap cannot redirect envelope replacement to the store."""
+    monkeypatch.chdir(tmp_path)
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    store = PsychologyLearningSeriesStore()
+    store.persist_proposal(proposal)
+    catalog = store.confirm(
+        proposal_id=proposal.proposal_id,
+        proposal_fingerprint=proposal.proposal_fingerprint,
+    )
+    bundle = resolve_psychology_learning_selection(
+        series_id=catalog.series_id,
+        lesson_id="notice",
+        curriculum_version=catalog.curriculum_version,
+    )
+    snapshot_path = psychology_learning_series_catalog_snapshot_path(
+        series_id=catalog.series_id,
+        curriculum_version=catalog.curriculum_version,
+    )
+    snapshot_before = snapshot_path.read_bytes()
+    final_content = render_psychology_learning_draft(bundle.runtime_contract)
+    artifact_path = tmp_path / "outputs" / "artifacts" / "replace-target.json"
+    artifact_path.parent.mkdir(parents=True, exist_ok=True)
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "modern_psychology_post",
+                "final_content": final_content,
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    class NormalArtifactWorkflow:
+        def invoke(
+            self,
+            payload: dict[str, object],
+            config: dict[str, object] | None = None,
+        ) -> dict[str, object]:
+            return {
+                "status": "completed",
+                "artifact_path": str(artifact_path),
+                "final_content": final_content,
+                "runtime_skill_contents": [],
+                "activated_skills": [],
+                "activated_skill_details": [],
+                "runtime_skill_details": [],
+            }
+
+    original_read = FileArtifactStore.read
+    original_artifact_path = artifact_path.resolve()
+    swapped = False
+
+    def read_then_swap(
+        self: FileArtifactStore,
+        path: Path | str,
+    ) -> dict[str, object]:
+        nonlocal swapped
+        payload = original_read(self, path)
+        if not swapped and Path(path).resolve() == original_artifact_path:
+            swapped = True
+            artifact_path.unlink()
+            artifact_path.symlink_to(snapshot_path.resolve())
+        return payload
+
+    monkeypatch.setattr(FileArtifactStore, "read", read_then_swap)
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        lambda **_: NormalArtifactWorkflow(),
+    )
+
+    result = run_playbook(
+        PlaybookRequest(
+            account_id="acct-psychology-local",
+            playbook_id="modern_psychology_post",
+            psychology_content_mode="learning_series",
+            psychology_series_id=bundle.series_id,
+            psychology_lesson_id=bundle.lesson_id,
+            psychology_curriculum_version=catalog.curriculum_version,
+            topic_direction_id=bundle.direction_id,
+        ),
+        publisher=SuccessfulPublisher(),
+        run_store=RunStore(base_dir=tmp_path / "runs"),
+    )
+
+    assert swapped
+    assert result["status"] == "psychology_learning_artifact_invalid"
+    assert snapshot_path.read_bytes() == snapshot_before
+    assert resolve_psychology_learning_selection(
+        series_id=catalog.series_id,
+        lesson_id="notice",
+        curriculum_version=catalog.curriculum_version,
+    ) == bundle
+    assert store.read_production_progress(
+        series_id=catalog.series_id,
+        curriculum_version=catalog.curriculum_version,
+    ).completed_lesson_ids == ()
 
 
 def test_run_playbook_completes_a_confirmed_custom_lesson_and_marks_production_progress(

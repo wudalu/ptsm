@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import re
 import shlex
@@ -850,20 +851,55 @@ def _owned_psychology_learning_artifact_path(
     try:
         owned_root = artifact_store.base_dir.resolve()
         path = Path(artifact_path).resolve()
-        path.relative_to(owned_root)
-        reserved_catalog_root = (
-            DEFAULT_PSYCHOLOGY_LEARNING_SERIES_CATALOG_ROOT.resolve()
-        )
     except (OSError, ValueError):
         return None
+    if _has_existing_filesystem_ancestor(path=path, ancestor=owned_root) is not True:
+        # A missing or racing candidate cannot be safely read, replaced, or
+        # removed based solely on a string prefix.
+        return None
+
+    reserved_catalog_root = DEFAULT_PSYCHOLOGY_LEARNING_SERIES_CATALOG_ROOT.resolve()
     try:
-        path.relative_to(reserved_catalog_root)
-    except ValueError:
+        reserved_catalog_root.stat()
+    except FileNotFoundError:
+        # No custom-series store exists yet, so no immutable subtree exists to
+        # protect. Existing ordinary artifacts remain eligible for cleanup.
         return path
-    # The default custom-series store shares the artifact parent directory,
-    # but it is application-owned persistence rather than a workflow artifact.
-    # Reject its entire tree before any read, replace, or cleanup operation.
-    return None
+    except OSError:
+        return None
+    if (
+        _has_existing_filesystem_ancestor(
+            path=path,
+            ancestor=reserved_catalog_root,
+        )
+        is not False
+    ):
+        # The default custom-series store shares the artifact parent directory,
+        # but it is application-owned persistence rather than a workflow
+        # artifact. Identity comparison catches case aliases, symlinks, and
+        # normalized parent traversals before any read, replace, or cleanup.
+        return None
+    return path
+
+
+def _has_existing_filesystem_ancestor(*, path: Path, ancestor: Path) -> bool | None:
+    """Compare an existing path's ancestors by filesystem identity.
+
+    ``None`` means a stat failed while walking, so callers must fail closed
+    rather than authorize a later file operation using an unresolved path.
+    """
+    try:
+        ancestor_stat = ancestor.stat()
+        current = path
+        while True:
+            if os.path.samestat(current.stat(), ancestor_stat):
+                return True
+            parent = current.parent
+            if parent == current:
+                return False
+            current = parent
+    except OSError:
+        return None
 
 
 def _remove_owned_unsafe_psychology_learning_artifact(
@@ -1344,28 +1380,42 @@ def run_playbook(
                     artifact_path=artifact_path,
                 )
             else:
-                learning_receipt = _build_psychology_learning_receipt(
-                    psychology_learning_bundle
+                sealed_artifact_path = _owned_psychology_learning_artifact_path(
+                    artifact_store=artifact_store,
+                    artifact_path=artifact_path,
                 )
-                try:
-                    artifact_store.replace(
-                        artifact_path,
-                        _build_psychology_learning_artifact_envelope(
-                            final_content=draft_mapping,
-                            learning_receipt=learning_receipt,
-                        ),
-                    )
-                except (OSError, json.JSONDecodeError):
+                if sealed_artifact_path is None:
                     result["status"] = "psychology_learning_artifact_invalid"
                     result["psychology_learning_artifact_validation"] = {
-                        "error": "could not persist learning receipt before publish"
+                        "error": "learning artifact failed ownership or provenance validation"
                     }
                     _remove_owned_unsafe_psychology_learning_artifact(
                         artifact_store=artifact_store,
                         artifact_path=artifact_path,
                     )
                 else:
-                    result.update(learning_receipt)
+                    learning_receipt = _build_psychology_learning_receipt(
+                        psychology_learning_bundle
+                    )
+                    try:
+                        artifact_store.replace(
+                            sealed_artifact_path,
+                            _build_psychology_learning_artifact_envelope(
+                                final_content=draft_mapping,
+                                learning_receipt=learning_receipt,
+                            ),
+                        )
+                    except (OSError, json.JSONDecodeError):
+                        result["status"] = "psychology_learning_artifact_invalid"
+                        result["psychology_learning_artifact_validation"] = {
+                            "error": "could not persist learning receipt before publish"
+                        }
+                        _remove_owned_unsafe_psychology_learning_artifact(
+                            artifact_store=artifact_store,
+                            artifact_path=artifact_path,
+                        )
+                    else:
+                        result.update(learning_receipt)
     format_patterns_used = (
         {"status": "not_used"}
         if psychology_learning_bundle is not None
