@@ -35,8 +35,9 @@ DRAMATIC_TITLE_CUES = (
 
 
 def test_run_playbook_cli_outputs_modern_psychology_publish_receipt(
-    capsys, monkeypatch
+    capsys, monkeypatch, tmp_path
 ) -> None:
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("DEFAULT_LLM_PROVIDER", "deterministic")
     monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
     get_settings.cache_clear()
@@ -72,8 +73,9 @@ def test_run_playbook_cli_outputs_modern_psychology_publish_receipt(
 
 
 def test_run_playbook_cli_outputs_psychology_learning_series_lesson(
-    capsys, monkeypatch
+    capsys, monkeypatch, tmp_path
 ) -> None:
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("DEFAULT_LLM_PROVIDER", "deterministic")
     monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
     get_settings.cache_clear()
@@ -127,8 +129,9 @@ def test_run_playbook_cli_outputs_psychology_learning_series_lesson(
 
 
 def test_run_playbook_cli_outputs_modern_psychology_mechanics(
-    capsys, monkeypatch
+    capsys, monkeypatch, tmp_path
 ) -> None:
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("DEFAULT_LLM_PROVIDER", "deterministic")
     monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
     get_settings.cache_clear()
@@ -175,8 +178,9 @@ def test_run_playbook_cli_outputs_modern_psychology_mechanics(
 
 
 def test_run_playbook_cli_outputs_sandwich_refusal_boundary_tool(
-    capsys, monkeypatch
+    capsys, monkeypatch, tmp_path
 ) -> None:
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("DEFAULT_LLM_PROVIDER", "deterministic")
     monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
     get_settings.cache_clear()
@@ -212,8 +216,9 @@ def test_run_playbook_cli_outputs_sandwich_refusal_boundary_tool(
 
 
 def test_run_playbook_cli_outputs_sleep_recovery_growth_sublane(
-    capsys, monkeypatch
+    capsys, monkeypatch, tmp_path
 ) -> None:
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("DEFAULT_LLM_PROVIDER", "deterministic")
     monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
     get_settings.cache_clear()
