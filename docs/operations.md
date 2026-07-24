@@ -217,6 +217,15 @@ AI playbook。AI mode 使用 `--fresh-topic-research` 会返回
 精确确认；确认后只从 frozen catalog 选课。目录的标题、正文、封面和 catalog-owned image plan 受控
 渲染，不能手改或用 `--local-image-style` / `--publish-image-path` 覆盖。
 
+### Choose a publication mode first
+
+面向用户的心理学发布先确认入口，而不是从 flags 倒推：**单篇心理学帖** 走普通 `guide-post --scene`
+场景流；**内置学习系列** 查询 builtin `after_work_rumination` roadmap 后等待用户选课；**自定义学习系列**
+由用户给主题和可选 2–6 项目录，再进入本节的 trusted provision、proposal/review/exact-confirmation、roadmap
+和选课流程。意图不明确时先让用户选择，不能默认建立 custom catalog、生成或发布。“继续下一课”或“看系列进度”
+先重新查询 roadmap，推荐顺序不是自动选课/生成/发布；“改目录”必须创建新 proposal 和 immutable version，不能
+原地改已确认 catalog。下面保留各路径的精确命令和安全边界。
+
 ### Custom user-confirmed curriculum
 
 先完成一次可信初始化。仅在首次创建该本地存储，或进行受信任离线维护时，在所有 writer 已停止且操作者

@@ -260,6 +260,25 @@ def test_docs_cover_psychology_learning_series_contract() -> None:
         assert marker in doc_text, f"{relative_path} must document {marker}"
 
 
+def test_psychology_publication_mode_router_is_discoverable_in_skill_and_operator_docs() -> None:
+    document_paths = [
+        PROJECT_ROOT
+        / "integrations"
+        / "openclaw"
+        / "ptsm-xhs-psychology"
+        / "SKILL.md",
+        DOCS_ROOT / "skills.md",
+        DOCS_ROOT / "operations.md",
+        DOCS_ROOT / "operations" / "local-runbook.md",
+    ]
+
+    for document_path in document_paths:
+        text = document_path.read_text(encoding="utf-8")
+        assert "单篇心理学帖" in text, document_path
+        assert "内置学习系列" in text, document_path
+        assert "自定义学习系列" in text, document_path
+
+
 def test_learning_series_docs_cover_selection_image_and_metrics_integrity() -> None:
     runtime_text = (DOCS_ROOT / "runtime.md").read_text(encoding="utf-8")
     operations_text = (DOCS_ROOT / "operations.md").read_text(encoding="utf-8")

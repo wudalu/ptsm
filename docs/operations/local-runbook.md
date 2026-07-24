@@ -428,6 +428,15 @@ uv run python -m ptsm.bootstrap run-playbook \
 研究笔记直接传入课程 run。普通心理学场景帖仍走上面的通用 psychology guide flow。受控系列的标题、
 正文、封面和图片计划都不能手改或加 `--local-image-style` / `--publish-image-path`。
 
+#### Choose a publication mode first
+
+把用户请求先路由为 **单篇心理学帖**、**内置学习系列** 或 **自定义学习系列**。单篇帖使用上面的普通
+psychology `guide-post --scene`；内置系列从 `after_work_rumination` roadmap 开始并等待显式选课；自定义系列
+由用户提供主题和可选 2–6 项目录，随后依次走下面的 provision、proposal/review、exact confirmation、roadmap
+和选课命令。意图不清时先问用户选哪一种，不默认创建 catalog、生成或发布。“继续下一课”或“看系列进度”必须先
+重新查询 roadmap；`recommended_next_lesson` 只是建议。“改目录”必须创建新 proposal 和 immutable version，
+不能改写已确认 catalog 或 progress。
+
 #### Provision custom storage
 
 首次创建 custom series 前，先初始化固定的私有存储树。这个动作只能在**所有 writer 都已停止**、可信

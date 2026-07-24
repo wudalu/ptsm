@@ -68,6 +68,33 @@ def test_openclaw_psychology_skill_documents_two_step_guidance_flow() -> None:
     assert "psychology-specific wrapper" in text
 
 
+def test_openclaw_psychology_skill_routes_publication_modes_before_detail() -> None:
+    text = SKILL_PATH.read_text(encoding="utf-8")
+    router = text.split("## Choose a publication mode", 1)[1].split(
+        "## Psychology Learning Series", 1
+    )[0]
+    normalized_router = " ".join(router.split())
+
+    assert "单篇心理学帖" in router
+    assert "内置学习系列" in router
+    assert "自定义学习系列" in router
+    assert "If the request is ambiguous, show these three choices and wait." in normalized_router
+    assert "Do not default to a custom series, generate a post, or publish." in normalized_router
+    assert "after_work_rumination" in router
+    assert "selection_required" in router
+    assert "explicit lesson choice" in normalized_router
+    assert "provision → plan → review → exact confirmation → roadmap" in normalized_router
+    assert "继续下一课" in router
+    assert "看系列进度" in router
+    assert "re-query the roadmap" in normalized_router
+    assert "series.roadmap" in router
+    assert "series.recommended_next_lesson" in router
+    assert "series.production_progress" in router
+    assert "not automatic selection, generation, or publishing" in normalized_router
+    assert "改目录" in router
+    assert "new proposal and immutable version" in normalized_router
+
+
 def test_openclaw_psychology_skill_documents_confirmed_custom_learning_series() -> None:
     text = SKILL_PATH.read_text(encoding="utf-8")
     normalized_text = " ".join(text.split())

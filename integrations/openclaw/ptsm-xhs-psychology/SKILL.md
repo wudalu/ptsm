@@ -1,14 +1,51 @@
 ---
 name: ptsm-xhs-psychology
-description: 当用户想发布、复盘或优化小红书心理学、情绪、关系边界、焦虑、内耗、自我关怀、睡眠恢复、AI 陪伴类内容，或想提高相关内容浏览/点赞时，先调用 PTSM 心理学选题引导或指标复盘入口。
+description: 当用户想发布、复盘或优化小红书心理学、情绪、关系边界、焦虑、内耗、自我关怀、睡眠恢复、AI 陪伴类内容，创建心理学学习系列、自定义课程目录、继续下一课、查看系列进度或调整系列目录时使用。
 metadata: {"openclaw": {"requires": {"bins": ["uv"]}}}
 ---
 
 # PTSM XHS Psychology
 
-Use this skill when the user asks OpenClaw to create, prepare, draft, save, publish, review, or optimize a Xiaohongshu post in the psychology domain. Common triggers include 心理学、情绪、焦虑、内耗、边界感、关系、自我关怀、孤独、比较焦虑、睡眠恢复、轻养生、办公室恢复、AI 陪伴, 提高浏览量、提高点赞、数据复盘, and similar wording.
+Use this skill when the user asks OpenClaw to create, prepare, draft, save, publish, review, or optimize a Xiaohongshu post in the psychology domain. Common triggers include 心理学、情绪、焦虑、内耗、边界感、关系、自我关怀、孤独、比较焦虑、睡眠恢复、轻养生、办公室恢复、AI 陪伴、学习系列、课程目录、继续下一课、系列进度、改目录, 提高浏览量、提高点赞、数据复盘, and similar wording.
 
 For non-psychology XHS playbooks, use `ptsm-xhs-topic-guide`; this file remains the psychology-specific wrapper.
+
+## Choose a publication mode
+
+Treat this as a user-facing publication-mode router before showing commands or
+drafting content. Resolve a clear request into exactly one of these paths:
+
+- **单篇心理学帖**: the user has one concrete psychology scene or direction and
+  wants one post. Use the existing generic `guide-post --scene ...` flow in
+  [Required Flow](#required-flow).
+- **内置学习系列**: the user wants a structured psychology series without making
+  their own curriculum. Query only the builtin `after_work_rumination` roadmap,
+  show its `selection_required` response, and wait for an explicit lesson choice.
+- **自定义学习系列**: the user wants their own study topic or publication
+  directory. Collect a safe topic and optional 2–6 item outline; then use the
+  existing custom path: `provision → plan → review → exact confirmation → roadmap`
+  before the user explicitly selects a lesson.
+
+If the request is ambiguous, show these three choices and wait. Do not default to a custom series, generate a post, or publish.
+
+For a custom series with no supplied outline, let PTSM produce review-only
+proposal material. Do not invent psychology course facts, lesson goals, or a
+directory outside PTSM's returned proposal.
+
+### Continue, review progress, or revise a custom series
+
+When the user says **继续下一课** or **看系列进度**, first require the known
+series identity and re-query the roadmap. For a custom catalog, show the
+returned `series.roadmap`, `series.recommended_next_lesson`, and
+`series.production_progress`; for the builtin catalog, show its returned roadmap
+only. The recommendation is not automatic selection, generation, or publishing:
+wait for an explicit lesson choice and use its returned frozen version and
+matching direction.
+
+When the user says **改目录**, do not edit a confirmed catalog or progress file.
+Changes to a custom topic, outline, lesson identity, or order require a new
+proposal and immutable version, followed by the same exact confirmation and
+roadmap flow. Existing versions remain valid historical records.
 
 ## Psychology Learning Series
 
