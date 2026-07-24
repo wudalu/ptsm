@@ -428,6 +428,19 @@ uv run python -m ptsm.bootstrap run-playbook \
 研究笔记直接传入课程 run。普通心理学场景帖仍走上面的通用 psychology guide flow。受控系列的标题、
 正文、封面和图片计划都不能手改或加 `--local-image-style` / `--publish-image-path`。
 
+#### Provision custom storage
+
+首次创建 custom series 前，先初始化固定的私有存储树。这个动作只能在**所有 writer 都已停止**、可信
+operator 独占 storage parent 时执行；不要把它作为正在失败的 plan、confirm 或 run 的重试手段。
+
+```bash
+uv run python -m ptsm.bootstrap provision-psychology-learning-storage --format json
+```
+
+命令只在返回的 catalog root 下建立固定的 `proposals`、`confirmations`、`catalogs` 和 `progress`
+目录。之后 `plan-psychology-series`、`confirm-psychology-series`、guide 与 run 都不会隐式 provision：
+目录缺失、被替换或不再是 private storage 时会 fail closed，先停止操作并由可信 operator 检查。
+
 #### Custom topic / outline
 
 可选 outline 文件是 2–6 项 JSON list，每项只允许安全的 `id`、`title` 和可选 `goal`。例如：
@@ -494,6 +507,18 @@ uv run python -m ptsm.bootstrap run-playbook \
   --topic-direction-id "<matching returned direction id>" \
   --publish-mode dry-run --eval
 ```
+
+#### Custom storage failures and production progress
+
+proposal、confirmation 和 catalog 都以 immutable 新文件名写入。若中断或同 UID race 在名字可见后才失败，
+runtime 不会再按可变路径删除或覆盖该残留；当前 run 必须视为失败，由可信 operator 在所有 writer 停止后做
+trusted offline maintenance（review、cleanup 或重建），再重新开始。这里的保护是 transaction 内的 fail-closed 检查，
+不是对持续运行的同 UID writer 的跨操作、持久防篡改保证。
+
+`series.production_progress` 是 operator 内容生产记账，并采用 at-least-once 语义：安全 artifact 后若
+progress rename/durability barrier 报错并返回 `psychology_learning_progress_persist_failed` 时，完成标记仍可能
+已经落盘。不要手改 sidecar；重新查询 roadmap，或用同一 series/version/lesson 重试，重试是 idempotent。它仍不是读者学习进度、发布状态或自动
+下一课指令。
 
 #### Builtin catalog
 

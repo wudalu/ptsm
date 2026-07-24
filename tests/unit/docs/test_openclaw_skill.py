@@ -91,3 +91,15 @@ def test_openclaw_psychology_skill_documents_confirmed_custom_learning_series() 
     assert "not reader learning progress" in normalized_text
     assert "after_work_rumination" in text
     assert "不会默认生成第一课" in text
+
+
+def test_openclaw_psychology_skill_documents_trusted_custom_series_provisioning() -> None:
+    text = SKILL_PATH.read_text(encoding="utf-8")
+    normalized_text = " ".join(text.split())
+
+    assert "provision-psychology-learning-storage" in text
+    assert text.index("provision-psychology-learning-storage") < text.index(
+        "plan-psychology-series"
+    )
+    assert "trusted offline maintenance" in normalized_text
+    assert "path-based cleanup" in text

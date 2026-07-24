@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import json
 import os
 from pathlib import Path
 import re
 import shlex
+import stat
 import sys
 from typing import Any, Mapping, Sequence
 
@@ -37,7 +39,10 @@ from ptsm.application.use_cases.xhs_browser import open_xhs_browser
 from ptsm.application.use_cases.xhs_publish_status import check_xhs_publish_status
 from ptsm.config.settings import Settings, get_settings
 from ptsm.infrastructure.observability.run_store import RunStore
-from ptsm.infrastructure.artifacts.file_store import FileArtifactStore
+from ptsm.infrastructure.artifacts.file_store import (
+    ArtifactFileIdentity,
+    FileArtifactStore,
+)
 from ptsm.infrastructure.memory.store import ExecutionMemoryStore
 from ptsm.infrastructure.images.asset_ledger import append_generated_image_assets
 from ptsm.infrastructure.images.factory import build_image_backend
@@ -60,9 +65,12 @@ from ptsm.domain.psychology_learning import (
     PSYCHOLOGY_LEARNING_MODE,
     PsychologyLearningBundle,
     PsychologyLearningEvidenceManifest,
+    _PsychologyLearningPreflightCapability,
     build_psychology_learning_catalog_receipt,
     contains_psychology_learning_raw_provenance,
+    require_sealed_psychology_learning_preflight_bundle,
     resolve_psychology_learning_selection,
+    seal_psychology_learning_preflight_bundle,
     validate_psychology_learning_draft_contract,
 )
 from ptsm.skills.runtime_context import (
@@ -519,7 +527,7 @@ def _resolve_psychology_learning_preflight(
     request: PlaybookRequest,
     platform: str,
     playbook_id: str,
-) -> tuple[PsychologyLearningBundle | None, dict[str, Any] | None]:
+) -> tuple[_PsychologyLearningPreflightCapability | None, dict[str, Any] | None]:
     """Resolve only an explicit catalog selection before side effects exist."""
     response_context = {
         # Never echo a free scene on this path. It may include an operator's
@@ -567,7 +575,14 @@ def _resolve_psychology_learning_preflight(
             "status": "psychology_learning_image_override_invalid",
             "diagnostic": "learning_series_uses_the_catalog_image_plan_only",
         }
-    return bundle, None
+    try:
+        return seal_psychology_learning_preflight_bundle(bundle), None
+    except ValueError:
+        return None, {
+            **response_context,
+            "status": "psychology_learning_invalid",
+            "diagnostic": "catalog_confirmation_could_not_be_verified",
+        }
 
 
 def _build_psychology_learning_runtime_scene(bundle: PsychologyLearningBundle) -> str:
@@ -814,24 +829,167 @@ def _normalize_psychology_learning_post_publish_status(value: object) -> str:
     )
 
 
+@dataclass(frozen=True)
+class _PsychologyLearningArtifactScope:
+    """Filesystem identities trusted before an untrusted learning workflow runs."""
+
+    owned_root_path: Path
+    owned_root_identity: os.stat_result
+    reserved_catalog_root_path: Path
+    reserved_catalog_root_identity: os.stat_result | None
+    reserved_progress_identity: os.stat_result | None
+
+
+def _capture_psychology_learning_artifact_scope(
+    *,
+    artifact_store: FileArtifactStore,
+    require_progress_identity: bool = False,
+) -> _PsychologyLearningArtifactScope | None:
+    """Freeze storage roots so later validation cannot re-authorize a rebound path."""
+    try:
+        # ``absolute`` preserves the operator-facing path spelling.  We must
+        # revisit that spelling later, rather than resolving a fresh root
+        # after workflow code has had an opportunity to rebind it.
+        owned_root_path = artifact_store.base_dir.absolute()
+        reserved_catalog_root_path = (
+            DEFAULT_PSYCHOLOGY_LEARNING_SERIES_CATALOG_ROOT.absolute()
+        )
+        # A fresh builtin lesson has no catalog persistence yet, so establish
+        # its writable root before workflow code can touch it.  The lexical
+        # leaf itself must be a real directory rather than a final symlink.
+        owned_root_path.mkdir(parents=True, exist_ok=True)
+        owned_root_entry = owned_root_path.lstat()
+        if not stat.S_ISDIR(owned_root_entry.st_mode):
+            return None
+        owned_root_identity = owned_root_path.resolve().stat()
+        if not stat.S_ISDIR(owned_root_identity.st_mode):
+            return None
+        try:
+            reserved_catalog_root_entry = reserved_catalog_root_path.lstat()
+        except FileNotFoundError:
+            # ``None`` records that the catalog root was intentionally absent
+            # at preflight.  Its later appearance is a scope violation, not a
+            # reason to rediscover a mutable path.
+            reserved_catalog_root_identity = None
+            reserved_progress_identity = None
+        else:
+            if not stat.S_ISDIR(reserved_catalog_root_entry.st_mode):
+                return None
+            reserved_catalog_root_identity = reserved_catalog_root_path.resolve().stat()
+            if not stat.S_ISDIR(reserved_catalog_root_identity.st_mode):
+                return None
+            reserved_progress_identity = None
+            if require_progress_identity:
+                reserved_progress_identity = (
+                    PsychologyLearningSeriesStore(
+                        catalog_root=reserved_catalog_root_path
+                    )._capture_pinned_progress_directory_identity(
+                        expected_catalog_root_identity=(
+                            reserved_catalog_root_identity
+                        )
+                    )
+                )
+        if require_progress_identity and reserved_progress_identity is None:
+            return None
+    except (OSError, RuntimeError, ValueError):
+        return None
+    return _PsychologyLearningArtifactScope(
+        owned_root_path=owned_root_path,
+        owned_root_identity=owned_root_identity,
+        reserved_catalog_root_path=reserved_catalog_root_path,
+        reserved_catalog_root_identity=reserved_catalog_root_identity,
+        reserved_progress_identity=reserved_progress_identity,
+    )
+
+
+def _is_psychology_learning_artifact_scope_intact(
+    scope: _PsychologyLearningArtifactScope,
+) -> bool:
+    """Reject a learning run once either trusted storage boundary changes."""
+    try:
+        current_owned_root_entry = scope.owned_root_path.lstat()
+        if not stat.S_ISDIR(current_owned_root_entry.st_mode):
+            return False
+        current_owned_root = scope.owned_root_path.resolve().stat()
+        try:
+            current_reserved_catalog_root_entry = (
+                scope.reserved_catalog_root_path.lstat()
+            )
+        except FileNotFoundError:
+            current_reserved_catalog_root = None
+        else:
+            if not stat.S_ISDIR(current_reserved_catalog_root_entry.st_mode):
+                return False
+            current_reserved_catalog_root = (
+                scope.reserved_catalog_root_path.resolve().stat()
+            )
+    except (OSError, RuntimeError, ValueError):
+        return False
+    if scope.reserved_catalog_root_identity is None:
+        reserved_catalog_root_matches = current_reserved_catalog_root is None
+    else:
+        reserved_catalog_root_matches = (
+            current_reserved_catalog_root is not None
+            and os.path.samestat(
+                current_reserved_catalog_root,
+                scope.reserved_catalog_root_identity,
+            )
+        )
+    return (
+        stat.S_ISDIR(current_owned_root.st_mode)
+        and os.path.samestat(current_owned_root, scope.owned_root_identity)
+        and reserved_catalog_root_matches
+    )
+
+
 def _is_safe_psychology_learning_artifact(
     *,
     artifact_store: FileArtifactStore,
     artifact_path: str,
     expected_final_content: dict[str, Any],
     strict_artifact_shape: bool = False,
+    scope: _PsychologyLearningArtifactScope | None = None,
+    psychology_learning_preflight_capability: _PsychologyLearningPreflightCapability | None = None,
 ) -> bool:
     """Require an owned, provenance-safe artifact before a lesson can publish."""
-    path = _owned_psychology_learning_artifact_path(
+    entry = _owned_psychology_learning_artifact_entry(
         artifact_store=artifact_store,
         artifact_path=artifact_path,
+        scope=scope,
     )
-    if path is None:
+    if entry is None:
+        return False
+    path, parent_identity = entry
+    try:
+        entry_stat = path.lstat()
+    except OSError:
+        return False
+    if stat.S_ISLNK(entry_stat.st_mode) or not stat.S_ISREG(entry_stat.st_mode):
         return False
     try:
-        artifact = artifact_store.read(path)
+        artifact, _ = artifact_store.read_with_identity(
+            path,
+            expected_parent_identity=parent_identity,
+        )
     except (OSError, json.JSONDecodeError):
         return False
+    return _is_safe_psychology_learning_artifact_payload(
+        artifact=artifact,
+        expected_final_content=expected_final_content,
+        strict_artifact_shape=strict_artifact_shape,
+        psychology_learning_preflight_capability=(
+            psychology_learning_preflight_capability
+        ),
+    )
+
+
+def _is_safe_psychology_learning_artifact_payload(
+    *,
+    artifact: Mapping[str, object],
+    expected_final_content: dict[str, Any],
+    strict_artifact_shape: bool,
+    psychology_learning_preflight_capability: _PsychologyLearningPreflightCapability | None = None,
+) -> bool:
     if artifact.get("playbook_id") != MODERN_PSYCHOLOGY_PLAYBOOK_ID:
         return False
     if artifact.get("final_content") != expected_final_content:
@@ -839,57 +997,221 @@ def _is_safe_psychology_learning_artifact(
     return not contains_psychology_learning_raw_provenance(
         artifact,
         strict_artifact_shape=strict_artifact_shape,
+        preflight_capability=psychology_learning_preflight_capability,
     )
+
+
+def _read_verified_psychology_learning_artifact(
+    *,
+    artifact_store: FileArtifactStore,
+    artifact_path: str,
+    expected_final_content: dict[str, Any],
+    strict_artifact_shape: bool,
+    scope: _PsychologyLearningArtifactScope | None = None,
+    psychology_learning_preflight_capability: _PsychologyLearningPreflightCapability | None = None,
+) -> tuple[Path, dict[str, object], ArtifactFileIdentity] | None:
+    """Read one sealed lesson artifact once, pinned to a regular file identity."""
+    entry = _owned_psychology_learning_artifact_entry(
+        artifact_store=artifact_store,
+        artifact_path=artifact_path,
+        scope=scope,
+    )
+    if entry is None:
+        return None
+    path, parent_identity = entry
+    try:
+        entry_stat = path.lstat()
+    except OSError:
+        return None
+    if stat.S_ISLNK(entry_stat.st_mode) or not stat.S_ISREG(entry_stat.st_mode):
+        return None
+    try:
+        artifact, identity = artifact_store.read_with_identity(
+            path,
+            expected_parent_identity=parent_identity,
+        )
+    except (OSError, json.JSONDecodeError):
+        return None
+    if identity.file.st_nlink != 1:
+        # A catalog snapshot can be exposed under an owned-looking filename
+        # through a hard link.  Learning receipts must never accept it.
+        return None
+    if not _is_safe_psychology_learning_artifact_payload(
+        artifact=artifact,
+        expected_final_content=expected_final_content,
+        strict_artifact_shape=strict_artifact_shape,
+        psychology_learning_preflight_capability=(
+            psychology_learning_preflight_capability
+        ),
+    ):
+        return None
+    return path, artifact, identity
+
+
+def _update_verified_psychology_learning_artifact(
+    *,
+    artifact_store: FileArtifactStore,
+    artifact_path: str,
+    expected_final_content: dict[str, Any],
+    update: Mapping[str, object],
+    scope: _PsychologyLearningArtifactScope | None = None,
+    psychology_learning_preflight_capability: _PsychologyLearningPreflightCapability | None = None,
+) -> bool:
+    """Apply one post-publish update without merging an unverified artifact.
+
+    The safe read supplies the exact sealed payload and inode identity.  A
+    later path swap therefore either fails before replacement or is replaced
+    as a directory entry by the store's atomic write; it cannot redirect a
+    write into a catalog snapshot.
+    """
+    verified = _read_verified_psychology_learning_artifact(
+        artifact_store=artifact_store,
+        artifact_path=artifact_path,
+        expected_final_content=expected_final_content,
+        strict_artifact_shape=True,
+        scope=scope,
+        psychology_learning_preflight_capability=(
+            psychology_learning_preflight_capability
+        ),
+    )
+    if verified is None:
+        return False
+    path, artifact, identity = verified
+    updated_artifact = dict(artifact)
+    updated_artifact.update(update)
+    try:
+        artifact_store.replace(
+            path,
+            updated_artifact,
+            expected_identity=identity,
+            require_single_link=True,
+        )
+    except (OSError, json.JSONDecodeError):
+        return False
+    return True
 
 
 def _owned_psychology_learning_artifact_path(
     *,
     artifact_store: FileArtifactStore,
     artifact_path: str,
+    scope: _PsychologyLearningArtifactScope | None = None,
 ) -> Path | None:
-    """Resolve an artifact only when it is owned and outside reserved storage."""
+    """Return an owned regular artifact without resolving its terminal leaf."""
+    entry = _owned_psychology_learning_artifact_entry(
+        artifact_store=artifact_store,
+        artifact_path=artifact_path,
+        scope=scope,
+    )
+    if entry is None:
+        return None
+    path, _ = entry
     try:
-        owned_root = artifact_store.base_dir.resolve()
-        path = Path(artifact_path).resolve()
-    except (OSError, ValueError):
+        entry_stat = path.lstat()
+    except (OSError, RuntimeError, ValueError):
         return None
-    if _has_existing_filesystem_ancestor(path=path, ancestor=owned_root) is not True:
-        # A missing or racing candidate cannot be safely read, replaced, or
-        # removed based solely on a string prefix.
-        return None
-
-    reserved_catalog_root = DEFAULT_PSYCHOLOGY_LEARNING_SERIES_CATALOG_ROOT.resolve()
-    try:
-        reserved_catalog_root.stat()
-    except FileNotFoundError:
-        # No custom-series store exists yet, so no immutable subtree exists to
-        # protect. Existing ordinary artifacts remain eligible for cleanup.
-        return path
-    except OSError:
-        return None
-    if (
-        _has_existing_filesystem_ancestor(
-            path=path,
-            ancestor=reserved_catalog_root,
-        )
-        is not False
-    ):
-        # The default custom-series store shares the artifact parent directory,
-        # but it is application-owned persistence rather than a workflow
-        # artifact. Identity comparison catches case aliases, symlinks, and
-        # normalized parent traversals before any read, replace, or cleanup.
+    if stat.S_ISLNK(entry_stat.st_mode) or not stat.S_ISREG(entry_stat.st_mode):
+        # FileArtifactStore must be the first component allowed to open the
+        # leaf.  A symlink is never an owned learning artifact, even when its
+        # target happens to sit under the ordinary artifact root.
         return None
     return path
 
 
-def _has_existing_filesystem_ancestor(*, path: Path, ancestor: Path) -> bool | None:
+def _owned_psychology_learning_artifact_entry(
+    *,
+    artifact_store: FileArtifactStore,
+    artifact_path: str,
+    scope: _PsychologyLearningArtifactScope | None = None,
+) -> tuple[Path, os.stat_result] | None:
+    """Anchor an artifact entry under owned parents while preserving its leaf.
+
+    Resolving ``artifact_path`` itself would turn a final symlink into its
+    target before FileArtifactStore has a chance to no-follow it.  Resolve only
+    the parent, then append the original lexical filename.
+    """
+    if scope is not None and not _is_psychology_learning_artifact_scope_intact(scope):
+        return None
+    raw_path = Path(artifact_path)
+    leaf_name = raw_path.name
+    if leaf_name in {"", ".", ".."}:
+        return None
+    try:
+        parent = raw_path.parent.resolve()
+        parent_identity = parent.stat()
+    except (OSError, RuntimeError, ValueError):
+        return None
+    path = parent / leaf_name
+    if scope is None:
+        try:
+            owned_root_identity = artifact_store.base_dir.resolve().stat()
+        except (OSError, RuntimeError):
+            return None
+    else:
+        owned_root_identity = scope.owned_root_identity
+    if (
+        _has_existing_filesystem_ancestor(
+            path=parent,
+            ancestor_identity=owned_root_identity,
+        )
+        is not True
+    ):
+        # A missing or racing parent cannot be safely authorized from a string
+        # prefix. The leaf is intentionally not stat'ed here: rejected entries
+        # remain untouched for trusted offline maintenance.
+        return None
+
+    if scope is None:
+        try:
+            reserved_catalog_root = (
+                DEFAULT_PSYCHOLOGY_LEARNING_SERIES_CATALOG_ROOT.resolve()
+            )
+            reserved_catalog_root_identity = reserved_catalog_root.stat()
+        except FileNotFoundError:
+            # No custom-series store exists yet, so no immutable subtree exists to
+            # reserve. Ordinary candidates may still be validated, but rejected
+            # leaves are never removed online.
+            reserved_catalog_root_identity = None
+        except (OSError, RuntimeError):
+            return None
+    else:
+        reserved_catalog_root_identity = scope.reserved_catalog_root_identity
+    if reserved_catalog_root_identity is not None:
+        if (
+            _has_existing_filesystem_ancestor(
+                path=parent,
+                ancestor_identity=reserved_catalog_root_identity,
+            )
+            is not False
+        ):
+            # The default custom-series store shares the artifact parent directory,
+            # but it is application-owned persistence rather than a workflow
+            # artifact. Identity comparison catches case aliases, symlinks, and
+            # normalized parent traversals before artifact validation.
+            return None
+    # Check the lexical anchors again after resolving the candidate.  A
+    # rebind that races this authorization therefore fails closed; a later
+    # parent-FD operation is additionally pinned by ``parent_identity``.
+    if scope is not None and not _is_psychology_learning_artifact_scope_intact(scope):
+        return None
+    return path, parent_identity
+
+
+def _has_existing_filesystem_ancestor(
+    *,
+    path: Path,
+    ancestor: Path | None = None,
+    ancestor_identity: os.stat_result | None = None,
+) -> bool | None:
     """Compare an existing path's ancestors by filesystem identity.
 
     ``None`` means a stat failed while walking, so callers must fail closed
     rather than authorize a later file operation using an unresolved path.
     """
+    if (ancestor is None) == (ancestor_identity is None):
+        raise ValueError("provide exactly one ancestor identity source")
     try:
-        ancestor_stat = ancestor.stat()
+        ancestor_stat = ancestor_identity if ancestor_identity is not None else ancestor.stat()
         current = path
         while True:
             if os.path.samestat(current.stat(), ancestor_stat):
@@ -906,23 +1228,16 @@ def _remove_owned_unsafe_psychology_learning_artifact(
     *,
     artifact_store: FileArtifactStore,
     artifact_path: object,
+    scope: _PsychologyLearningArtifactScope | None = None,
 ) -> None:
-    """Remove a rejected owned artifact so raw provenance is not retained."""
-    if not isinstance(artifact_path, str):
-        return
-    path = _owned_psychology_learning_artifact_path(
-        artifact_store=artifact_store,
-        artifact_path=artifact_path,
-    )
-    if path is None:
-        return
-    try:
-        if path.is_file():
-            path.unlink()
-    except OSError:
-        # The caller returns a safe error status even if an external process
-        # races this cleanup; it never reuses or publishes the artifact.
-        return
+    """Leave rejected artifacts for trusted offline cleanup.
+
+    Runtime cleanup would have to unlink a mutable leaf by name after an
+    untrusted workflow ran.  A same-UID writer can replace that name between
+    verification and unlink, so the run fails closed and never reuses or
+    publishes the artifact instead of attempting online deletion.
+    """
+    del artifact_store, artifact_path, scope
 
 
 def run_playbook(
@@ -979,7 +1294,9 @@ def run_playbook(
         }
     ai_tech_evidence_bundle: AiTechEvidenceBundle | None = None
     psychology_learning_bundle: PsychologyLearningBundle | None = None
+    psychology_learning_preflight_capability: _PsychologyLearningPreflightCapability | None = None
     psychology_learning_catalog_receipt: dict[str, Any] | None = None
+    psychology_learning_artifact_scope: _PsychologyLearningArtifactScope | None = None
     if playbook.playbook_id == AI_TECH_PLAYBOOK_ID:
         ai_tech_evidence_bundle, preflight_failure = _resolve_ai_tech_evidence_preflight(
             request=request,
@@ -1006,14 +1323,20 @@ def run_playbook(
     elif playbook.playbook_id == MODERN_PSYCHOLOGY_PLAYBOOK_ID and _is_psychology_learning_request(
         request
     ):
-        psychology_learning_bundle, preflight_failure = _resolve_psychology_learning_preflight(
+        (
+            psychology_learning_preflight_capability,
+            preflight_failure,
+        ) = _resolve_psychology_learning_preflight(
             request=request,
             platform=resolved_platform,
             playbook_id=playbook.playbook_id,
         )
         if preflight_failure is not None:
             return preflight_failure
-        assert psychology_learning_bundle is not None
+        assert psychology_learning_preflight_capability is not None
+        psychology_learning_bundle = require_sealed_psychology_learning_preflight_bundle(
+            psychology_learning_preflight_capability
+        )
         if request.topic_direction_id != psychology_learning_bundle.direction_id:
             return {
                 "scene": _build_psychology_learning_runtime_scene(
@@ -1028,6 +1351,25 @@ def run_playbook(
         psychology_learning_catalog_receipt = (
             build_psychology_learning_catalog_receipt(psychology_learning_bundle)
         )
+        psychology_learning_artifact_scope = (
+            _capture_psychology_learning_artifact_scope(
+                artifact_store=artifact_store,
+                require_progress_identity=(
+                    psychology_learning_bundle.catalog is not None
+                ),
+            )
+        )
+        if psychology_learning_artifact_scope is None:
+            return {
+                "scene": _build_psychology_learning_runtime_scene(
+                    psychology_learning_bundle
+                ),
+                "platform": resolved_platform,
+                "account_id": request.account_id,
+                "playbook_id": playbook.playbook_id,
+                "status": "psychology_learning_artifact_store_invalid",
+                "diagnostic": "could_not_freeze_artifact_and_catalog_storage_identities",
+            }
     effective_scene = request.scene
     if ai_tech_evidence_bundle is not None:
         effective_scene = _build_ai_tech_runtime_scene(ai_tech_evidence_bundle)
@@ -1275,6 +1617,15 @@ def run_playbook(
             else None
         ),
         psychology_learning_catalog_receipt=psychology_learning_catalog_receipt,
+        psychology_learning_preflight_capability=(
+            psychology_learning_preflight_capability
+        ),
+        artifact_store=artifact_store,
+        expected_artifact_root_identity=(
+            psychology_learning_artifact_scope.owned_root_identity
+            if psychology_learning_artifact_scope is not None
+            else None
+        ),
     )
     effective_thread_id = thread_id or run.run_id
     config = {"configurable": {"thread_id": effective_thread_id}}
@@ -1358,6 +1709,7 @@ def run_playbook(
             _remove_owned_unsafe_psychology_learning_artifact(
                 artifact_store=artifact_store,
                 artifact_path=result.get("artifact_path"),
+                scope=psychology_learning_artifact_scope,
             )
         else:
             artifact_path = result.get("artifact_path")
@@ -1370,6 +1722,10 @@ def run_playbook(
                 artifact_store=artifact_store,
                 artifact_path=artifact_path,
                 expected_final_content=draft_mapping,
+                scope=psychology_learning_artifact_scope,
+                psychology_learning_preflight_capability=(
+                    psychology_learning_preflight_capability
+                ),
             ):
                 result["status"] = "psychology_learning_artifact_invalid"
                 result["psychology_learning_artifact_validation"] = {
@@ -1378,13 +1734,20 @@ def run_playbook(
                 _remove_owned_unsafe_psychology_learning_artifact(
                     artifact_store=artifact_store,
                     artifact_path=artifact_path,
+                    scope=psychology_learning_artifact_scope,
                 )
             else:
-                sealed_artifact_path = _owned_psychology_learning_artifact_path(
+                sealed_artifact = _read_verified_psychology_learning_artifact(
                     artifact_store=artifact_store,
                     artifact_path=artifact_path,
+                    expected_final_content=draft_mapping,
+                    strict_artifact_shape=False,
+                    scope=psychology_learning_artifact_scope,
+                    psychology_learning_preflight_capability=(
+                        psychology_learning_preflight_capability
+                    ),
                 )
-                if sealed_artifact_path is None:
+                if sealed_artifact is None:
                     result["status"] = "psychology_learning_artifact_invalid"
                     result["psychology_learning_artifact_validation"] = {
                         "error": "learning artifact failed ownership or provenance validation"
@@ -1392,8 +1755,10 @@ def run_playbook(
                     _remove_owned_unsafe_psychology_learning_artifact(
                         artifact_store=artifact_store,
                         artifact_path=artifact_path,
+                        scope=psychology_learning_artifact_scope,
                     )
                 else:
+                    sealed_artifact_path, _, sealed_artifact_identity = sealed_artifact
                     learning_receipt = _build_psychology_learning_receipt(
                         psychology_learning_bundle
                     )
@@ -1404,6 +1769,8 @@ def run_playbook(
                                 final_content=draft_mapping,
                                 learning_receipt=learning_receipt,
                             ),
+                            expected_identity=sealed_artifact_identity,
+                            require_single_link=True,
                         )
                     except (OSError, json.JSONDecodeError):
                         result["status"] = "psychology_learning_artifact_invalid"
@@ -1413,6 +1780,7 @@ def run_playbook(
                         _remove_owned_unsafe_psychology_learning_artifact(
                             artifact_store=artifact_store,
                             artifact_path=artifact_path,
+                            scope=psychology_learning_artifact_scope,
                         )
                     else:
                         result.update(learning_receipt)
@@ -1660,7 +2028,29 @@ def run_playbook(
             }
             if topic_selection_metadata is not None:
                 artifact_update["topic_selection"] = topic_selection_metadata
-        artifact_store.merge(result["artifact_path"], artifact_update)
+        if psychology_learning_bundle is not None:
+            final_content = result.get("final_content")
+            if not isinstance(final_content, dict) or not _update_verified_psychology_learning_artifact(
+                artifact_store=artifact_store,
+                artifact_path=str(result["artifact_path"]),
+                expected_final_content=final_content,
+                update=artifact_update,
+                scope=psychology_learning_artifact_scope,
+                psychology_learning_preflight_capability=(
+                    psychology_learning_preflight_capability
+                ),
+            ):
+                result["status"] = "psychology_learning_artifact_invalid"
+                result["psychology_learning_artifact_validation"] = {
+                    "error": "learning artifact failed final provenance validation"
+                }
+                _remove_owned_unsafe_psychology_learning_artifact(
+                    artifact_store=artifact_store,
+                    artifact_path=result.get("artifact_path"),
+                    scope=psychology_learning_artifact_scope,
+                )
+        else:
+            artifact_store.merge(result["artifact_path"], artifact_update)
 
     if result["status"] == "completed" and result.get("artifact_path"):
         artifact_path = Path(result["artifact_path"])
@@ -1672,9 +2062,12 @@ def run_playbook(
                 search_retry_attempts=WAIT_FOR_PUBLISH_STATUS_SEARCH_RETRY_ATTEMPTS,
                 search_retry_interval_seconds=WAIT_FOR_PUBLISH_STATUS_SEARCH_RETRY_INTERVAL_SECONDS,
                 publish_result=(
-                    publish_result
+                    (
+                        publish_result
+                        if isinstance(publish_result, Mapping)
+                        else {}
+                    )
                     if psychology_learning_bundle is not None
-                    and isinstance(publish_result, Mapping)
                     else None
                 ),
                 fallback_title=(
@@ -1710,26 +2103,53 @@ def run_playbook(
                 }
 
         if should_open_browser:
-            browser_result = open_xhs_browser(
-                target="artifact",
-                artifact_path=artifact_path,
-                qrcode_output_path=qrcode_output_path,
-            )
+            if psychology_learning_bundle is not None:
+                # Learning artifacts are a sealed, mutable filesystem boundary.
+                # Browser assistance must not reopen them merely to discover a
+                # provider URL; the controlled creator surface is sufficient.
+                browser_result = open_xhs_browser(
+                    target="creator",
+                    qrcode_output_path=qrcode_output_path,
+                )
+            else:
+                browser_result = open_xhs_browser(
+                    target="artifact",
+                    artifact_path=artifact_path,
+                    qrcode_output_path=qrcode_output_path,
+                )
             post_publish_checks["browser_opened"] = browser_result.get("status") == "opened"
             post_publish_checks["browser_result"] = browser_result
 
-        artifact_store.merge(
-            artifact_path,
-            {
-                "post_publish_checks": (
-                    _sanitize_psychology_learning_post_publish_checks(
-                        post_publish_checks
-                    )
-                    if psychology_learning_bundle is not None
-                    else post_publish_checks
+        post_publish_update = {
+            "post_publish_checks": (
+                _sanitize_psychology_learning_post_publish_checks(post_publish_checks)
+                if psychology_learning_bundle is not None
+                else post_publish_checks
+            ),
+        }
+        if psychology_learning_bundle is not None:
+            final_content = result.get("final_content")
+            if not isinstance(final_content, dict) or not _update_verified_psychology_learning_artifact(
+                artifact_store=artifact_store,
+                artifact_path=str(artifact_path),
+                expected_final_content=final_content,
+                update=post_publish_update,
+                scope=psychology_learning_artifact_scope,
+                psychology_learning_preflight_capability=(
+                    psychology_learning_preflight_capability
                 ),
-            },
-        )
+            ):
+                result["status"] = "psychology_learning_artifact_invalid"
+                result["psychology_learning_artifact_validation"] = {
+                    "error": "learning artifact failed final provenance validation"
+                }
+                _remove_owned_unsafe_psychology_learning_artifact(
+                    artifact_store=artifact_store,
+                    artifact_path=result.get("artifact_path"),
+                    scope=psychology_learning_artifact_scope,
+                )
+        else:
+            artifact_store.merge(artifact_path, post_publish_update)
 
     if (
         psychology_learning_bundle is not None
@@ -1740,6 +2160,10 @@ def run_playbook(
             artifact_path=str(result["artifact_path"]),
             expected_final_content=result["final_content"],
             strict_artifact_shape=True,
+            scope=psychology_learning_artifact_scope,
+            psychology_learning_preflight_capability=(
+                psychology_learning_preflight_capability
+            ),
         )
     ):
         result["status"] = "psychology_learning_artifact_invalid"
@@ -1749,6 +2173,7 @@ def run_playbook(
         _remove_owned_unsafe_psychology_learning_artifact(
             artifact_store=artifact_store,
             artifact_path=result.get("artifact_path"),
+            scope=psychology_learning_artifact_scope,
         )
 
     eval_result = None
@@ -1758,15 +2183,68 @@ def run_playbook(
         and psychology_learning_bundle.catalog is not None
         and result["status"] == "completed"
     ):
-        eval_result = _run_eval_on_artifact(
-            artifact_path=result.get("artifact_path"),
-            run_id=run.run_id,
+        final_content = result.get("final_content")
+        verified_eval_artifact = (
+            _read_verified_psychology_learning_artifact(
+                artifact_store=artifact_store,
+                artifact_path=str(result.get("artifact_path") or ""),
+                expected_final_content=final_content,
+                strict_artifact_shape=True,
+                scope=psychology_learning_artifact_scope,
+                psychology_learning_preflight_capability=(
+                    psychology_learning_preflight_capability
+                ),
+            )
+            if isinstance(final_content, dict)
+            else None
         )
-        if not isinstance(eval_result, Mapping) or eval_result.get("status") != "passed":
-            result["status"] = "psychology_learning_eval_failed"
-            result["psychology_learning_eval_validation"] = {
-                "error": "learning artifact did not pass offline evaluation"
+        if verified_eval_artifact is None:
+            result["status"] = "psychology_learning_artifact_invalid"
+            result["psychology_learning_artifact_validation"] = {
+                "error": "learning artifact failed final provenance validation"
             }
+            _remove_owned_unsafe_psychology_learning_artifact(
+                artifact_store=artifact_store,
+                artifact_path=result.get("artifact_path"),
+                scope=psychology_learning_artifact_scope,
+            )
+        else:
+            _, eval_artifact_payload, _ = verified_eval_artifact
+            eval_result = _run_eval_on_artifact(
+                artifact_path=result.get("artifact_path"),
+                run_id=run.run_id,
+                artifact_payload=eval_artifact_payload,
+                psychology_learning_preflight_capability=(
+                    psychology_learning_preflight_capability
+                ),
+            )
+            if not _is_safe_psychology_learning_artifact(
+                artifact_store=artifact_store,
+                artifact_path=str(result.get("artifact_path") or ""),
+                expected_final_content=final_content,
+                strict_artifact_shape=True,
+                scope=psychology_learning_artifact_scope,
+                psychology_learning_preflight_capability=(
+                    psychology_learning_preflight_capability
+                ),
+            ):
+                result["status"] = "psychology_learning_artifact_invalid"
+                result["psychology_learning_artifact_validation"] = {
+                    "error": "learning artifact failed final provenance validation"
+                }
+                _remove_owned_unsafe_psychology_learning_artifact(
+                    artifact_store=artifact_store,
+                    artifact_path=result.get("artifact_path"),
+                    scope=psychology_learning_artifact_scope,
+                )
+            elif (
+                not isinstance(eval_result, Mapping)
+                or eval_result.get("status") != "passed"
+            ):
+                result["status"] = "psychology_learning_eval_failed"
+                result["psychology_learning_eval_validation"] = {
+                    "error": "learning artifact did not pass offline evaluation"
+                }
 
     if (
         psychology_learning_bundle is not None
@@ -1774,23 +2252,133 @@ def run_playbook(
         and result["status"] == "completed"
         and result.get("artifact_path")
     ):
-        try:
-            PsychologyLearningSeriesStore().mark_production_lesson_completed(
-                series_id=psychology_learning_bundle.series_id,
-                curriculum_version=str(
-                    psychology_learning_bundle.runtime_contract["curriculum_version"]
-                ),
-                lesson_id=psychology_learning_bundle.lesson_id,
-            )
-        except (OSError, ValueError):
-            # The content artifact is safe, but reporting it as a completed
-            # production step would make the sequence recommendation lie.  A
-            # retry can re-mark idempotently after storage recovers.
-            result["status"] = "psychology_learning_progress_persist_failed"
-            result["psychology_learning_progress"] = {
-                "status": "not_recorded",
-                "reason": "production_progress_persist_failed",
+        final_content = result.get("final_content")
+        if not isinstance(final_content, dict) or not _is_safe_psychology_learning_artifact(
+            artifact_store=artifact_store,
+            artifact_path=str(result.get("artifact_path") or ""),
+            expected_final_content=final_content,
+            strict_artifact_shape=True,
+            scope=psychology_learning_artifact_scope,
+            psychology_learning_preflight_capability=(
+                psychology_learning_preflight_capability
+            ),
+        ):
+            result["status"] = "psychology_learning_artifact_invalid"
+            result["psychology_learning_artifact_validation"] = {
+                "error": "learning artifact failed final provenance validation"
             }
+            _remove_owned_unsafe_psychology_learning_artifact(
+                artifact_store=artifact_store,
+                artifact_path=result.get("artifact_path"),
+                scope=psychology_learning_artifact_scope,
+            )
+        else:
+            try:
+                if (
+                    psychology_learning_artifact_scope is None
+                    or psychology_learning_artifact_scope.reserved_catalog_root_identity
+                    is None
+                    or psychology_learning_artifact_scope.reserved_progress_identity
+                    is None
+                ):
+                    raise OSError("psychology learning storage scope is unavailable")
+                PsychologyLearningSeriesStore(
+                    catalog_root=(
+                        psychology_learning_artifact_scope.reserved_catalog_root_path
+                    )
+                ).mark_production_lesson_completed(
+                    series_id=psychology_learning_bundle.series_id,
+                    curriculum_version=str(
+                        psychology_learning_bundle.runtime_contract["curriculum_version"]
+                    ),
+                    lesson_id=psychology_learning_bundle.lesson_id,
+                    catalog=psychology_learning_bundle.catalog,
+                    expected_catalog_root_identity=(
+                        psychology_learning_artifact_scope.reserved_catalog_root_identity
+                    ),
+                    expected_progress_identity=(
+                        psychology_learning_artifact_scope.reserved_progress_identity
+                    ),
+                    expected_artifact_root_path=(
+                        psychology_learning_artifact_scope.owned_root_path
+                    ),
+                    expected_artifact_root_identity=(
+                        psychology_learning_artifact_scope.owned_root_identity
+                    ),
+                )
+            except (OSError, ValueError):
+                # The content artifact is safe, but reporting it as a completed
+                # production step would make the sequence recommendation lie.  A
+                # retry can re-mark idempotently after storage recovers.
+                result["status"] = "psychology_learning_progress_persist_failed"
+                result["psychology_learning_progress"] = {
+                    "status": "not_recorded",
+                    "reason": "production_progress_persist_failed",
+                }
+
+    if (
+        eval_enabled
+        and psychology_learning_bundle is not None
+        and psychology_learning_bundle.catalog is None
+        and result["status"] == "completed"
+    ):
+        # Builtin lessons do not gate production progress on evaluation, but
+        # their eval still consumes an artifact path.  Run it before the final
+        # run summary and pin both sides to the same frozen storage boundary.
+        final_content = result.get("final_content")
+        verified_eval_artifact = (
+            _read_verified_psychology_learning_artifact(
+                artifact_store=artifact_store,
+                artifact_path=str(result.get("artifact_path") or ""),
+                expected_final_content=final_content,
+                strict_artifact_shape=True,
+                scope=psychology_learning_artifact_scope,
+                psychology_learning_preflight_capability=(
+                    psychology_learning_preflight_capability
+                ),
+            )
+            if isinstance(final_content, dict)
+            else None
+        )
+        if verified_eval_artifact is None:
+            result["status"] = "psychology_learning_artifact_invalid"
+            result["psychology_learning_artifact_validation"] = {
+                "error": "learning artifact failed final provenance validation"
+            }
+            _remove_owned_unsafe_psychology_learning_artifact(
+                artifact_store=artifact_store,
+                artifact_path=result.get("artifact_path"),
+                scope=psychology_learning_artifact_scope,
+            )
+        else:
+            _, eval_artifact_payload, _ = verified_eval_artifact
+            eval_result = _run_eval_on_artifact(
+                artifact_path=result.get("artifact_path"),
+                run_id=run.run_id,
+                artifact_payload=eval_artifact_payload,
+                psychology_learning_preflight_capability=(
+                    psychology_learning_preflight_capability
+                ),
+            )
+            if not _is_safe_psychology_learning_artifact(
+                artifact_store=artifact_store,
+                artifact_path=str(result.get("artifact_path") or ""),
+                expected_final_content=final_content,
+                strict_artifact_shape=True,
+                scope=psychology_learning_artifact_scope,
+                psychology_learning_preflight_capability=(
+                    psychology_learning_preflight_capability
+                ),
+            ):
+                result["status"] = "psychology_learning_artifact_invalid"
+                result["psychology_learning_artifact_validation"] = {
+                    "error": "learning artifact failed final provenance validation"
+                }
+                _remove_owned_unsafe_psychology_learning_artifact(
+                    artifact_store=artifact_store,
+                    artifact_path=result.get("artifact_path"),
+                    scope=psychology_learning_artifact_scope,
+                )
 
     learning_publish_receipt = (
         _sanitize_psychology_learning_publish_result(publish_result)
@@ -1844,11 +2432,9 @@ def run_playbook(
         payload=run_summary_payload,
     )
 
-    # Preserve the established post-run evaluation order for ordinary and
-    # builtin flows. A confirmed custom catalog is the exception because its
-    # passed offline receipt evaluation is a prerequisite for updating the
-    # operator-facing publication sequence above.
-    if eval_enabled and eval_result is None:
+    # Learning-series evaluation has already run inside its frozen storage
+    # boundary. Ordinary playbooks retain the established post-run order.
+    if eval_enabled and eval_result is None and psychology_learning_bundle is None:
         eval_result = _run_eval_on_artifact(
             artifact_path=result.get("artifact_path"),
             run_id=run.run_id,
@@ -2006,11 +2592,14 @@ def _build_workflow_for_playbook(
     checkpointer: object,
     settings: Settings,
     format_pattern_path: str | None = None,
+    artifact_store: FileArtifactStore | None = None,
+    expected_artifact_root_identity: os.stat_result | None = None,
     ai_tech_evidence: dict[str, Any] | None = None,
     ai_tech_evidence_manifest: dict[str, Any] | None = None,
     psychology_learning_contract: dict[str, Any] | None = None,
     psychology_learning_manifest: dict[str, Any] | None = None,
     psychology_learning_catalog_receipt: dict[str, Any] | None = None,
+    psychology_learning_preflight_capability: _PsychologyLearningPreflightCapability | None = None,
 ):
     skill_context_resolver = _build_runtime_skill_context_resolver(
         settings,
@@ -2029,12 +2618,17 @@ def _build_workflow_for_playbook(
         memory=memory,
         checkpointer=checkpointer,
         settings=settings,
+        artifact_store=artifact_store,
+        expected_artifact_root_identity=expected_artifact_root_identity,
         skill_context_resolver=skill_context_resolver,
         ai_tech_evidence=ai_tech_evidence,
         ai_tech_evidence_manifest=ai_tech_evidence_manifest,
         psychology_learning_contract=psychology_learning_contract,
         psychology_learning_manifest=psychology_learning_manifest,
         psychology_learning_catalog_receipt=psychology_learning_catalog_receipt,
+        psychology_learning_preflight_capability=(
+            psychology_learning_preflight_capability
+        ),
     )
 
 
@@ -2823,6 +3417,8 @@ def _run_eval_on_artifact(
     *,
     artifact_path: str | None,
     run_id: str,
+    artifact_payload: dict[str, object] | None = None,
+    psychology_learning_preflight_capability: _PsychologyLearningPreflightCapability | None = None,
 ) -> dict[str, Any] | None:
     if artifact_path is None:
         return None
@@ -2832,6 +3428,10 @@ def _run_eval_on_artifact(
         return run_eval_artifact(
             artifact_path=artifact_path,
             run_id=run_id,
+            artifact_payload=artifact_payload,
+            psychology_learning_preflight_capability=(
+                psychology_learning_preflight_capability
+            ),
         )
     except Exception:
         return {"status": "error", "reason": "eval step raised exception"}

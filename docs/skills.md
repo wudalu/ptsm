@@ -2,7 +2,7 @@
 title: PTSM Skills
 status: active
 owner: ptsm
-last_verified: 2026-07-23
+last_verified: 2026-07-24
 source_of_truth: true
 related_paths:
   - src/ptsm/skills/contracts.py
@@ -69,6 +69,16 @@ Skill 层负责让运行时按请求范围暴露合适的 builtin skills，而�
 - `human_enrichment_style` / `xhs_enrichment_visuals` / `xhs_enrichment_hashtagging` 只服务 `human_enrichment_daily_post`。其中 `human_enrichment_style` 要求“具体角落/物件 -> 原本惯性 -> 一个低成本变量 -> 三步清单 -> 评论区例子”，并能借鉴本地 pattern library 的 `sudden_realization`、`you_should_enrich`、`before_after_contrast`、`saveable_list`、`process_or_tutorial` 结构，以及 2026-05-23 研究里的适我主义、新独居、手作心流和一平米节庆角落，但禁止复写样本标题；`xhs_enrichment_visuals` 编码 3:4 竖版封面、每页文字约束和轮播图形式，`xhs_enrichment_hashtagging` 要求 `#人类丰容计划` 等搜索友好标签。
 - `world_cup_style` / `xhs_world_cup_visuals` / `xhs_world_cup_hashtagging` 只服务 `world_cup_daily_post`。其中 `world_cup_style` 要求“比赛语境 -> 普通球迷入口 -> 2 到 3 个看点 -> 看球清单 -> 赛事情绪 -> 评论区问题”，禁止赌球、盘口、下注、预测比分和内部/官方消息伪装；`xhs_world_cup_visuals` 约束 3:4 赛前看点卡、看球清单、赛后复盘和球迷氛围图；`xhs_world_cup_hashtagging` 要求 `#世界杯` 等搜索友好标签。
 - `reddit_discussion_scan` / `reddit_curation_style` / `xhs_reddit_curation_hashtagging` 只服务 `reddit_curation_daily_post`。其中 `reddit_discussion_scan` 读取已获批 Reddit app-only OAuth 的公开 hot/top 英文讨论，或在 app 创建受阻时用 `REDDIT_PUBLIC_JSON_FALLBACK=true` 和非占位 `REDDIT_USER_AGENT` 走低频只读 public JSON fallback；它优先筛选 AI 工具焦虑、心理/生活压力和工作流切口。缺少 `REDDIT_CLIENT_ID`、`REDDIT_CLIENT_SECRET`、`REDDIT_USER_AGENT` 且没有可用 fallback 时会注入缺配置/缺权限上下文。`reddit_curation_style` 要求“外网热点素材 -> 中文读者能懂的现象 -> 共鸣解释 -> 自然可保存的小结 -> 评论区问题”，读者可见标题、封面、正文和标签不暴露 Reddit、subreddit、英文讨论、翻译过程、来源 URL 或“可收藏小结：”这类内部标签；`xhs_reddit_curation_hashtagging` 要求 `#热点观察` 等中文话题标签，并禁止 `#Reddit`。
+
+## Learning-series Storage Boundary
+
+`learning_series` 的 custom catalog 在 PTSM skill/wrapper 之外还有一个显式 trusted setup：首次
+`plan-psychology-series` 前，操作员先在所有 writer 停止且独占存储父目录时运行
+`provision-psychology-learning-storage`。它只建立/验证私有固定的 `proposals`、`confirmations`、
+`catalogs`、`progress` 树；普通 plan/confirm/run 不会把缺失目录重建为可信状态。wrapper 只展示
+PTSM 返回的 proposal、frozen catalog 和 guide payload，不能把该命令作为运行期修复动作。异常
+artifact/progress fail closed，不在线 cleanup 或复用；progress rename 后失败按 at-least-once 处理，
+同一课次可幂等 retry，文件残留只由 trusted offline maintenance 处理。
 
 ## Strategy Layer
 

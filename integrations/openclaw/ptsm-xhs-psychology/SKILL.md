@@ -21,6 +21,20 @@ directly into a runnable lesson.
 
 ### Custom topic and outline
 
+Before creating the first custom catalog, run this setup command exactly once
+while **all writers are stopped** and a trusted operator exclusively controls
+the storage parent. Do not use it as a retry while a plan, confirmation, or run
+may still be writing.
+
+```bash
+uv run python -m ptsm.bootstrap provision-psychology-learning-storage --format json
+```
+
+It creates PTSM's fixed private `proposals`, `confirmations`, `catalogs`, and
+`progress` directories. `plan-psychology-series` and
+`confirm-psychology-series` never provision missing directories themselves;
+they fail closed if that storage is absent or rebound.
+
 1. Let the user provide a safe topic and, if useful, a 2–6 item JSON outline.
 Each item may have `id`, `title`, and optional `goal`. Use PTSM to create a
 proposal; it is review material, not a runnable catalog.
@@ -110,6 +124,16 @@ uv run python -m ptsm.bootstrap run-playbook \
 Use `eval-artifact --artifact <path>` to audit the completed artifact. A missing
 or tampered custom catalog/receipt must fail closed; do not expose proposal topic,
 outline goal, source, URL, or local path.
+
+If PTSM reports a storage, artifact, or progress race, do not report that lesson
+as completed and do not issue path-based cleanup. Runtime deliberately does not
+delete or overwrite an untrusted residual by its mutable name; trusted offline maintenance
+handles review, cleanup, or rebuild only after all writers have stopped. Production progress is at-least-once: after a safe artifact, a later
+rename/durability error can still leave the completion marker visible. Re-query
+the roadmap and retry the exact series/version/lesson idempotently instead of
+assuming no update occurred. These checks fail closed within a transaction; they
+are not a promise of persistent tamper resistance to a continuing same-UID writer
+between independent operations.
 
 ### Builtin catalog
 
@@ -233,7 +257,7 @@ recommendation; do not claim a direction is proven until real metrics support it
 - 不要展示原始研究笔记。
 - Do not mention hidden research documents, file paths, raw source URLs, or provenance to the user.
 - Do not copy topic logic into this skill; PTSM owns the guidance payload.
-- Do not run a lesson outside the PTSM plan → review → exact confirmation boundary. For builtin catalogs, use only the returned `learning_series_lesson`; for custom catalogs, the user may define topic/outline only through `plan-psychology-series`, then review and exact `--confirm`. Never invent a lesson, concept, exercise, source reference, or learning outcome in a run.
+- Do not run a lesson outside the PTSM plan → review → exact confirmation boundary. For builtin catalogs, use only the returned `learning_series_lesson`; for custom catalogs, first use `provision-psychology-learning-storage` only during trusted exclusive setup, then let the user define topic/outline through `plan-psychology-series`, review, and exact `--confirm`. Never invent a lesson, concept, exercise, source reference, or learning outcome in a run.
 - Do not add `--local-image-style` or `--publish-image-path` to a learning-series run; its catalog-owned image plan is part of the approved lesson contract.
 - Do not use `fresh-topic-research` as a way to write psychology lesson facts. Topic Radar/hotspot discovery is a separate discovery decision step, not custom lesson evidence, outline, or run input.
 - Do not invent, expand, or replace PTSM-returned open_scene direction(s); only display them when they are present in `topic_guidance.directions`.

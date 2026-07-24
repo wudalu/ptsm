@@ -2,7 +2,7 @@
 title: PTSM Runtime
 status: active
 owner: ptsm
-last_verified: 2026-07-23
+last_verified: 2026-07-24
 source_of_truth: true
 related_paths:
   - src/ptsm/agent_runtime/runtime.py
@@ -92,6 +92,14 @@ cluster 或热度当成事实/测试证据。
 热点或自由 scene 都不能绕过确认边界直接变成 lesson run。更改课次、标题、目标或 publication
 order 必须产生新 proposal/version，既有 version 保持可审计。
 
+首次 custom proposal 前，可信操作者必须在所有 writer 停止且独占存储父目录时运行
+`provision-psychology-learning-storage`。它只在 trusted setup 创建/验证私有的
+`proposals`、`confirmations`、`catalogs`、`progress` 固定目录；普通 plan、confirm、guide、run 和
+progress mutation 只打开既有树，缺失、重绑、symlink、hardlink 或非私有叶子都会 fail closed，绝不
+把 provision 当作 runtime repair。事务内的 descriptor/identity checks 防御路径替换竞态，但不承诺
+防御持续拥有同一 UID 写权限者在最终检查之后的 at-rest 修改；可疑残留不在线删除，交给
+`trusted offline maintenance`。
+
 有效 lesson run 必须同时给出 `--psychology-content-mode learning_series`、
 `--psychology-series-id`、`--psychology-lesson-id`、显式
 `--psychology-curriculum-version`，以及与 frozen catalog lesson 完全匹配的
@@ -130,7 +138,10 @@ reader-visible content 或 artifact。
 dry-run 和内容成功但 publish 失败可计为 operator 产出，preflight/workflow/eval/final-artifact failure
 则不可计；它不是读者学习进度，也不会触发自动发布。catalog exact gate 是本模式的正文质量真相来源：
 普通自由场景的心理学反思规则或 LLM judge 不会用不相容的开放式条件推翻已通过的课程合同，既有安全
-边界仍然保留。
+边界仍然保留。progress replacement 在 rename 已发生后若后续边界校验失败，返回
+`psychology_learning_progress_persist_failed`；这具有 at-least-once 语义，不能把该状态解读为
+sidecar 一定未写入，也不能在线回滚或删除。恢复可信存储后重试同一课次是幂等的；任何不可信
+progress/artifact 仍交给 `trusted offline maintenance`。
 
 ## Current Runtime Facts
 

@@ -271,7 +271,7 @@ def test_record_xhs_post_metrics_accepts_confirmed_custom_catalog_receipt(
             {"id": "practice", "title": "练习一个小步骤"},
         ),
     )
-    store = PsychologyLearningSeriesStore()
+    store = PsychologyLearningSeriesStore(trusted_provision=True, )
     store.persist_proposal(proposal)
     catalog = store.confirm(
         proposal_id=proposal.proposal_id,
@@ -316,7 +316,7 @@ def test_record_xhs_post_metrics_rejects_a_tampered_custom_catalog_receipt(
             {"id": "practice", "title": "练习一个小步骤"},
         ),
     )
-    store = PsychologyLearningSeriesStore()
+    store = PsychologyLearningSeriesStore(trusted_provision=True, )
     store.persist_proposal(proposal)
     catalog = store.confirm(
         proposal_id=proposal.proposal_id,

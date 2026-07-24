@@ -2,7 +2,7 @@
 title: PTSM Operations
 status: active
 owner: ptsm
-last_verified: 2026-07-23
+last_verified: 2026-07-24
 source_of_truth: true
 related_paths:
   - docs/operations/publish-quickstart.md
@@ -219,6 +219,18 @@ AI playbook。AI mode 使用 `--fresh-topic-research` 会返回
 
 ### Custom user-confirmed curriculum
 
+先完成一次可信初始化。仅在首次创建该本地存储，或进行受信任离线维护时，在所有 writer 已停止且操作者
+独占存储父目录的条件下执行；不要把它放进 workflow 或不可信 hook：
+
+```bash
+uv run python -m ptsm.bootstrap provision-psychology-learning-storage --format json
+```
+
+它创建/验证仅当前用户可访问的 `proposals`、`confirmations`、`catalogs`、`progress` 固定树。后续
+`plan-psychology-series`、确认和 progress 写入只使用既有树，缺失、重绑或不可信目录会 fail closed，
+不会补建为可信状态。这个命令不是清理或修复异常文件的手段；不可信残留只在所有 writer 停止后由
+`trusted offline maintenance` 检查、重建或移除。
+
 先把主题和可选 2–6 项 outline 交给 PTSM。outline 是 JSON list，每项只含安全的 `id`、`title` 与可选
 `goal`；下面是两个条目的安全示例，保存为 `outline.json`：
 
@@ -273,7 +285,10 @@ uv run python -m ptsm.bootstrap guide-post \
 `series.production_progress` 的 `kind` 是 `operator_content_production`，仅表示已经安全生成的运营内容，绝不是读者学习进度；安全
 completed artifact（含 dry-run，或内容成功但 publish 失败）才会推进，preflight/workflow/eval/final-artifact
 failure 不会推进，也不会自动发布下一课。用 `eval-artifact --artifact <path>` 审计 strict
-`psychology_learning_catalog_receipt`；缺失或被篡改的 catalog/receipt 会安全拒绝。
+`psychology_learning_catalog_receipt`；缺失或被篡改的 catalog/receipt 会安全拒绝。若 atomic rename 后的
+边界检查失败，状态为 `psychology_learning_progress_persist_failed`：这具有 at-least-once 语义，不能据此
+断言 progress 一定没有写入，也不能手工在线回滚/删除。恢复可信存储后重试同一课次是幂等的；可疑
+artifact/progress 不复用、不发布，交给 `trusted offline maintenance`。
 
 ```bash
 # 只用第二次 guide 返回的 exact version、lesson 和 matching direction；先 dry-run + eval。
@@ -328,7 +343,9 @@ uv run python -m ptsm.bootstrap run-playbook \
 
 常见早停状态为 `psychology_learning_required`、`psychology_learning_invalid`、
 `psychology_learning_topic_direction_invalid`、`psychology_learning_draft_invalid` 和
-`psychology_learning_artifact_invalid`。它们都发生在对应副作用之前。系列 artifact 可用
+`psychology_learning_artifact_invalid`。`psychology_learning_progress_persist_failed` 表示安全 artifact
+可能已经完成、但 progress 边界未能确认，按 at-least-once 的幂等 retry/`trusted offline maintenance`
+处理。其余状态都发生在对应副作用之前。系列 artifact 可用
 `eval-artifact --artifact <path>` 复核，并通过实际数据而非推测复盘：
 
 ```bash

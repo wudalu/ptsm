@@ -27,7 +27,10 @@ from ptsm.infrastructure.evaluations.eval_store import EvalStore
 
 from ptsm.evaluations.rules import ALL_RULE_EVALUATORS
 from ptsm.evaluations.contracts_eval import ALL_CONTRACT_EVALUATORS
-from ptsm.domain.psychology_learning import PSYCHOLOGY_LEARNING_MODE
+from ptsm.domain.psychology_learning import (
+    PSYCHOLOGY_LEARNING_MODE,
+    _PsychologyLearningPreflightCapability,
+)
 
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[2]
@@ -80,6 +83,8 @@ def _scope_allows(scope: object, value: object) -> bool:
 def run_eval_artifact(
     *,
     artifact_path: Path | str,
+    artifact_payload: dict[str, Any] | None = None,
+    psychology_learning_preflight_capability: _PsychologyLearningPreflightCapability | None = None,
     evals_base_dir: Path | str = ".ptsm/evals",
     run_id: str | None = None,
     playbook_definitions_root: Path | str = DEFAULT_PLAYBOOK_DEFINITIONS_ROOT,
@@ -87,13 +92,18 @@ def run_eval_artifact(
     llm_judge_backend: LLMJudgeBackend | None = None,
 ) -> dict[str, Any]:
     artifact_path = Path(artifact_path)
-    if not artifact_path.exists():
-        return {
-            "status": "error",
-            "reason": f"artifact not found: {artifact_path}",
-        }
-
-    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+    if artifact_payload is None:
+        if not artifact_path.exists():
+            return {
+                "status": "error",
+                "reason": f"artifact not found: {artifact_path}",
+            }
+        artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+    else:
+        # A guarded caller may already have read the artifact through a pinned
+        # directory descriptor.  Reopening its mutable path here would create
+        # a second authorization race before contract evaluation.
+        artifact = dict(artifact_payload)
     effective_run_id = run_id or artifact_path.stem
 
     targets = extract_targets_from_artifact(artifact, run_id=effective_run_id)
@@ -131,7 +141,17 @@ def run_eval_artifact(
         for evaluator_id, fn in CONTRACT_EVALUATOR_FNS.items():
             if not _evaluator_applies(evaluator_id, all_specs, target):
                 continue
-            result = fn(target)
+            if evaluator_id == "psychology.learning_receipt":
+                # A guarded learning run validates its catalog selection before
+                # the mutable artifact workflow begins.  Keep evaluation within
+                # that same authority boundary rather than resolving catalog
+                # storage again from a later, potentially rebound path.
+                result = fn(
+                    target,
+                    preflight_capability=psychology_learning_preflight_capability,
+                )
+            else:
+                result = fn(target)
             _apply_spec_metadata(result, specs_by_id.get(evaluator_id))
             result.eval_run_id = handle.eval_run_id
             all_results.append(result)

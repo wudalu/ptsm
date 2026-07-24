@@ -36,6 +36,7 @@ from ptsm.application.use_cases.plan_runs import run_plan_runs
 from ptsm.application.use_cases.psychology_learning_series import (
     PsychologyLearningSeriesStore,
     plan_psychology_learning_series,
+    provision_psychology_learning_series_storage,
 )
 from ptsm.application.use_cases.run_events import run_run_events
 from ptsm.application.use_cases.runs import run_runs
@@ -380,6 +381,15 @@ def build_parser() -> argparse.ArgumentParser:
     plan_psychology_series.add_argument("--topic", required=True)
     plan_psychology_series.add_argument("--curriculum-outline-file", type=Path)
     plan_psychology_series.add_argument("--format", choices=("json",), default="json")
+
+    provision_psychology_storage = subparsers.add_parser(
+        "provision-psychology-learning-storage"
+    )
+    provision_psychology_storage.add_argument(
+        "--format",
+        choices=("json",),
+        default="json",
+    )
 
     confirm_psychology_series = subparsers.add_parser("confirm-psychology-series")
     confirm_psychology_series.add_argument("--proposal-id", required=True)
@@ -850,6 +860,24 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
 
+    if args.command == "provision-psychology-learning-storage":
+        try:
+            root = provision_psychology_learning_series_storage()
+        except OSError as exc:
+            parser.error(f"could not provision psychology learning storage: {exc}")
+        print(
+            json.dumps(
+                {
+                    "status": "provisioned",
+                    "catalog_root": str(root),
+                    "next_step": "Run plan-psychology-series to create a review-only proposal.",
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+
     if args.command == "plan-psychology-series":
         outline = (
             _load_psychology_series_outline(
@@ -869,7 +897,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         try:
             persisted = PsychologyLearningSeriesStore().persist_proposal(proposal)
         except (OSError, ValueError) as exc:
-            parser.error(f"could not persist psychology learning series proposal: {exc}")
+            parser.error(
+                "could not persist psychology learning series proposal: "
+                f"{exc}. Run provision-psychology-learning-storage first."
+            )
         print(
             json.dumps(
                 _safe_psychology_series_proposal_payload(persisted),
@@ -888,7 +919,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 proposal_fingerprint=args.proposal_fingerprint,
             )
         except (OSError, ValueError) as exc:
-            parser.error(f"could not confirm psychology learning series proposal: {exc}")
+            parser.error(
+                "could not confirm psychology learning series proposal: "
+                f"{exc}. Run provision-psychology-learning-storage first."
+            )
         print(
             json.dumps(
                 _safe_confirmed_psychology_series_payload(catalog),

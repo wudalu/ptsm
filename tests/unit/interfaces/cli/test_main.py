@@ -1215,13 +1215,77 @@ def _patch_cli_psychology_series_store(
 ) -> PsychologyLearningSeriesStore:
     class TempPsychologyLearningSeriesStore(PsychologyLearningSeriesStore):
         def __init__(self) -> None:
-            super().__init__(catalog_root=root)
+            super().__init__(catalog_root=root, trusted_provision=True)
 
     monkeypatch.setattr(
         "ptsm.interfaces.cli.main.PsychologyLearningSeriesStore",
         TempPsychologyLearningSeriesStore,
     )
     return TempPsychologyLearningSeriesStore()
+
+
+def _assert_provisioned_series_directory_has_no_json_entries(
+    store: PsychologyLearningSeriesStore,
+    directory_name: str,
+) -> None:
+    """A failed CLI step must not write a snapshot into a fixed provisioned dir."""
+    directory = store.catalog_root / directory_name
+    assert directory.is_dir()
+    assert not tuple(directory.glob("*.json"))
+
+
+def test_psychology_series_cli_requires_explicit_storage_provisioning(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The real CLI never provisions mutable learning storage implicitly."""
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(SystemExit) as fresh_plan:
+        main(
+            [
+                "plan-psychology-series",
+                "--topic",
+                "下班后的脑内回放",
+            ]
+        )
+
+    assert fresh_plan.value.code == 2
+    assert "Run provision-psychology-learning-storage first" in capsys.readouterr().err
+
+    assert main(["provision-psychology-learning-storage", "--format", "json"]) == 0
+    provisioned = json.loads(capsys.readouterr().out)
+    provisioned_root = Path(provisioned["catalog_root"])
+    assert provisioned["status"] == "provisioned"
+    assert provisioned_root.is_absolute()
+    assert provisioned_root.is_dir()
+    assert (provisioned_root / "proposals").is_dir()
+    assert "plan-psychology-series" in provisioned["next_step"]
+
+    assert main(
+        [
+            "plan-psychology-series",
+            "--topic",
+            "下班后的脑内回放",
+        ]
+    ) == 0
+    proposal = json.loads(capsys.readouterr().out)
+    assert proposal["status"] == "proposal_ready_for_confirmation"
+
+    assert main(
+        [
+            "confirm-psychology-series",
+            "--proposal-id",
+            proposal["proposal_id"],
+            "--proposal-fingerprint",
+            proposal["proposal_fingerprint"],
+            "--confirm",
+        ]
+    ) == 0
+    confirmed = json.loads(capsys.readouterr().out)
+    assert confirmed["status"] == "confirmed"
+    assert confirmed["series"]["origin"] == "user_confirmed"
 
 
 def test_plan_psychology_series_cli_persists_a_nonrunnable_topic_only_proposal(
@@ -1254,7 +1318,7 @@ def test_plan_psychology_series_cli_persists_a_nonrunnable_topic_only_proposal(
     assert "source_refs" not in serialized
     assert "approval" not in serialized
     assert "series-store" not in serialized
-    assert not (store.catalog_root / "catalogs").exists()
+    _assert_provisioned_series_directory_has_no_json_entries(store, "catalogs")
 
 
 def test_plan_psychology_series_cli_accepts_a_safe_json_outline(
@@ -1340,8 +1404,8 @@ def test_plan_psychology_series_cli_rejects_invalid_outline_before_persisting(
 
     assert exc_info.value.code == 2
     assert expected_error in capsys.readouterr().err
-    assert not (store.catalog_root / "proposals").exists()
-    assert not (store.catalog_root / "catalogs").exists()
+    _assert_provisioned_series_directory_has_no_json_entries(store, "proposals")
+    _assert_provisioned_series_directory_has_no_json_entries(store, "catalogs")
 
 
 def test_plan_psychology_series_cli_rejects_deeply_nested_json_before_persisting(
@@ -1368,7 +1432,7 @@ def test_plan_psychology_series_cli_rejects_deeply_nested_json_before_persisting
 
     assert exc_info.value.code == 2
     assert "could not parse psychology series outline file" in capsys.readouterr().err
-    assert not (store.catalog_root / "proposals").exists()
+    _assert_provisioned_series_directory_has_no_json_entries(store, "proposals")
 
 
 def test_plan_psychology_series_cli_rejects_oversized_json_integer_before_persisting(
@@ -1395,8 +1459,8 @@ def test_plan_psychology_series_cli_rejects_oversized_json_integer_before_persis
 
     assert exc_info.value.code == 2
     assert "could not parse psychology series outline file" in capsys.readouterr().err
-    assert not (store.catalog_root / "proposals").exists()
-    assert not (store.catalog_root / "catalogs").exists()
+    _assert_provisioned_series_directory_has_no_json_entries(store, "proposals")
+    _assert_provisioned_series_directory_has_no_json_entries(store, "catalogs")
 
 
 def test_confirm_psychology_series_cli_requires_exact_receipt_and_confirmation_flag(
@@ -1448,7 +1512,8 @@ def test_confirm_psychology_series_cli_requires_exact_receipt_and_confirmation_f
     with pytest.raises(SystemExit) as missing_confirm:
         main(base_arguments)
     assert missing_confirm.value.code == 2
-    assert not (store.catalog_root / "catalogs").exists()
+    _assert_provisioned_series_directory_has_no_json_entries(store, "catalogs")
+    _assert_provisioned_series_directory_has_no_json_entries(store, "confirmations")
     capsys.readouterr()
 
     with pytest.raises(SystemExit) as wrong_fingerprint:
@@ -1460,7 +1525,8 @@ def test_confirm_psychology_series_cli_requires_exact_receipt_and_confirmation_f
             ]
         )
     assert wrong_fingerprint.value.code == 2
-    assert not (store.catalog_root / "catalogs").exists()
+    _assert_provisioned_series_directory_has_no_json_entries(store, "catalogs")
+    _assert_provisioned_series_directory_has_no_json_entries(store, "confirmations")
     capsys.readouterr()
 
     exit_code = main([*base_arguments, "--confirm"])

@@ -1099,7 +1099,7 @@ def test_custom_learning_series_guide_recommends_publication_order_without_autos
         "DEFAULT_PSYCHOLOGY_LEARNING_SERIES_CATALOG_ROOT",
         store_root,
     )
-    store = PsychologyLearningSeriesStore()
+    store = PsychologyLearningSeriesStore(trusted_provision=True, )
     catalog = _confirm_custom_psychology_series(
         store=store,
         outline=(
@@ -1207,7 +1207,7 @@ def test_custom_learning_series_guide_uses_requested_historical_version_and_allo
         "DEFAULT_PSYCHOLOGY_LEARNING_SERIES_CATALOG_ROOT",
         store_root,
     )
-    store = PsychologyLearningSeriesStore()
+    store = PsychologyLearningSeriesStore(trusted_provision=True, )
     first_catalog = _confirm_custom_psychology_series(
         store=store,
         outline=(
@@ -1311,7 +1311,7 @@ def test_custom_learning_series_markdown_keeps_operator_line_breaks_inline(
         store_root,
     )
     catalog = _confirm_custom_psychology_series(
-        store=PsychologyLearningSeriesStore(),
+        store=PsychologyLearningSeriesStore(trusted_provision=True, ),
         topic="下班后\n## 伪标题",
         outline=(
             {
@@ -1355,7 +1355,7 @@ def test_custom_learning_series_markdown_escapes_operator_html_and_link_syntax(
         "DEFAULT_PSYCHOLOGY_LEARNING_SERIES_CATALOG_ROOT",
         store_root,
     )
-    store = PsychologyLearningSeriesStore()
+    store = PsychologyLearningSeriesStore(trusted_provision=True, )
     injected_catalog = _confirm_custom_psychology_series(
         store=store,
         topic="专题</li><h1>",

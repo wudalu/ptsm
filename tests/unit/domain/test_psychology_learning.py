@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from copy import deepcopy
+import os
 from pathlib import Path
+import shutil
 
 import pytest
 from pydantic import ValidationError
@@ -218,7 +220,7 @@ def test_non_strict_artifact_scan_preserves_custom_catalog_pre_envelope_receipts
 ) -> None:
     """The application may close a generic workflow artifact after this check."""
     monkeypatch.chdir(tmp_path)
-    store = PsychologyLearningSeriesStore()
+    store = PsychologyLearningSeriesStore(trusted_provision=True, )
     proposal = plan_psychology_learning_series(
         topic="下班后的脑内回放",
         outline=(
@@ -270,7 +272,7 @@ def test_strict_artifact_scan_rejects_forged_learning_receipt_fields(
 ) -> None:
     """A shape-valid receipt still has to exactly match its selected lesson."""
     monkeypatch.chdir(tmp_path)
-    store = PsychologyLearningSeriesStore()
+    store = PsychologyLearningSeriesStore(trusted_provision=True, )
     proposal = plan_psychology_learning_series(
         topic="下班后的脑内回放",
         outline=(
@@ -932,7 +934,7 @@ def test_custom_selection_requires_an_explicit_confirmed_revision(
             catalog_root=root,
         )
 
-    store = PsychologyLearningSeriesStore(catalog_root=root)
+    store = PsychologyLearningSeriesStore(trusted_provision=True, catalog_root=root)
     store.persist_proposal(proposal)
     catalog = store.confirm(
         proposal_id=proposal.proposal_id,
@@ -952,6 +954,140 @@ def test_custom_selection_requires_an_explicit_confirmed_revision(
         1,
         2,
     ]
+
+
+@pytest.mark.parametrize("storage_directory", ("proposals", "confirmations", "catalogs"))
+def test_custom_selection_rejects_a_rebound_immutable_storage_directory(
+    tmp_path: Path,
+    storage_directory: str,
+) -> None:
+    root = tmp_path / "series-store"
+    store = PsychologyLearningSeriesStore(trusted_provision=True, catalog_root=root)
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    store.persist_proposal(proposal)
+    catalog = store.confirm(
+        proposal_id=proposal.proposal_id,
+        proposal_fingerprint=proposal.proposal_fingerprint,
+    )
+    source = root / storage_directory
+    outside = tmp_path / "outside" / storage_directory
+    outside.parent.mkdir()
+    shutil.copytree(source, outside)
+    shutil.rmtree(source)
+    source.symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(ValueError, match="psychology learning|catalog revision history"):
+        resolve_psychology_learning_selection(
+            series_id=catalog.series_id,
+            lesson_id="notice",
+            curriculum_version=catalog.curriculum_version,
+            catalog_root=root,
+        )
+
+
+def test_custom_selection_rejects_a_coherent_child_rebind_before_first_read(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A reader must not adopt a replacement tree after pinning only its root."""
+    root = tmp_path / "series-store"
+    store = PsychologyLearningSeriesStore(trusted_provision=True, catalog_root=root)
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    store.persist_proposal(proposal)
+    catalog = store.confirm(
+        proposal_id=proposal.proposal_id,
+        proposal_fingerprint=proposal.proposal_fingerprint,
+    )
+    former_root = tmp_path / "former-tree"
+    replacement_root = tmp_path / "replacement-tree"
+    former_root.mkdir()
+    replacement_root.mkdir()
+    for directory_name in ("proposals", "confirmations", "catalogs"):
+        shutil.copytree(root / directory_name, replacement_root / directory_name)
+    original_open_directory = (
+        psychology_learning._PinnedPsychologyLearningCatalogReader._open_directory
+    )
+    rebound = False
+
+    def rebind_before_first_child_read(self, *components: str) -> int:
+        nonlocal rebound
+        if components and not rebound:
+            rebound = True
+            for directory_name in ("proposals", "confirmations", "catalogs"):
+                (root / directory_name).rename(former_root / directory_name)
+                (replacement_root / directory_name).rename(root / directory_name)
+        return original_open_directory(self, *components)
+
+    monkeypatch.setattr(
+        psychology_learning._PinnedPsychologyLearningCatalogReader,
+        "_open_directory",
+        rebind_before_first_child_read,
+    )
+
+    with pytest.raises(ValueError, match="psychology learning|catalog revision history"):
+        resolve_psychology_learning_selection(
+            series_id=catalog.series_id,
+            lesson_id="notice",
+            curriculum_version=catalog.curriculum_version,
+            catalog_root=root,
+        )
+
+    assert rebound
+
+
+@pytest.mark.parametrize("storage_directory", ("proposals", "confirmations", "catalogs"))
+def test_custom_selection_rejects_a_hard_linked_immutable_snapshot(
+    tmp_path: Path,
+    storage_directory: str,
+) -> None:
+    root = tmp_path / "series-store"
+    store = PsychologyLearningSeriesStore(trusted_provision=True, catalog_root=root)
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    store.persist_proposal(proposal)
+    catalog = store.confirm(
+        proposal_id=proposal.proposal_id,
+        proposal_fingerprint=proposal.proposal_fingerprint,
+    )
+    snapshot_path = {
+        "proposals": root / "proposals" / f"{proposal.proposal_id}.json",
+        "confirmations": psychology_learning.psychology_learning_series_catalog_confirmation_path(
+            series_id=catalog.series_id,
+            curriculum_version=catalog.curriculum_version,
+            catalog_root=root,
+        ),
+        "catalogs": psychology_learning.psychology_learning_series_catalog_snapshot_path(
+            series_id=catalog.series_id,
+            curriculum_version=catalog.curriculum_version,
+            catalog_root=root,
+        ),
+    }[storage_directory]
+    os.link(snapshot_path, tmp_path / f"{storage_directory}-peer.json")
+
+    with pytest.raises(ValueError, match="psychology learning|catalog revision history"):
+        resolve_psychology_learning_selection(
+            series_id=catalog.series_id,
+            lesson_id="notice",
+            curriculum_version=catalog.curriculum_version,
+            catalog_root=root,
+        )
 
 
 def test_builtin_catalog_stays_unchanged_when_a_custom_catalog_root_is_injected(

@@ -9,11 +9,13 @@ resolved into the same controlled lesson contract as the builtin catalog.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import errno
 import hashlib
 import json
 import os
 from pathlib import Path
 import re
+import stat
 from types import MappingProxyType
 import unicodedata
 from typing import Any, Callable, Literal, Mapping
@@ -50,6 +52,7 @@ _PROPOSAL_OUTLINE_MAX_LESSON_COUNT = 6
 _PROPOSAL_PLAN_INTENT_RAW_FIELDS = frozenset({"topic", "outline"})
 _PROPOSAL_OUTLINE_ITEM_RAW_FIELDS = frozenset({"id", "title", "goal"})
 _PROPOSAL_RAW_FIELD_NAME_MAX_LENGTH = 80
+_PSYCHOLOGY_LEARNING_PREFLIGHT_CAPABILITY_ISSUER = object()
 
 _IDENTIFIER_PATTERN = re.compile(r"^[a-z][a-z0-9_]{1,79}$")
 _OPAQUE_REFERENCE_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_:-]{0,127}$")
@@ -752,8 +755,14 @@ class PsychologyLearningBundle(_FrozenDomainModel):
 
     lesson: PsychologyLearningLesson
     lessons: tuple[PsychologyLearningLesson, ...] = Field(min_length=1)
-    catalog: PsychologyLearningCatalog | None = Field(default=None, exclude=True)
-
+    # The catalog is an in-process verification capability.  It is excluded
+    # from serialized runtime data and repr output so opaque confirmation
+    # metadata cannot leak through ordinary diagnostics.
+    catalog: PsychologyLearningCatalog | None = Field(
+        default=None,
+        exclude=True,
+        repr=False,
+    )
     @model_validator(mode="after")
     def _validate_series(self) -> "PsychologyLearningBundle":
         identities = {(item.lesson_number, item.lesson_id) for item in self.lessons}
@@ -814,6 +823,44 @@ class PsychologyLearningBundle(_FrozenDomainModel):
         if self.catalog is None:
             return None
         return self.catalog.publication_plan
+
+
+class _PsychologyLearningPreflightCapability:
+    """Private, non-serializable authority for one verified lesson selection.
+
+    A ``PsychologyLearningBundle`` is intentionally ordinary immutable data;
+    Pydantic's ``model_copy`` can therefore never serve as an authority
+    boundary.  This wrapper is created only by the preflight issuer, retains
+    the exact freshly resolved bundle outside model state, and binds a
+    canonical snapshot that is rechecked before every trust-bypass use.
+    """
+
+    __slots__ = ("__bundle", "__snapshot")
+
+    def __init__(
+        self,
+        *,
+        bundle: PsychologyLearningBundle,
+        snapshot: str,
+        issuer: object,
+    ) -> None:
+        if issuer is not _PSYCHOLOGY_LEARNING_PREFLIGHT_CAPABILITY_ISSUER:
+            raise TypeError("psychology learning preflight capability is issuer-only")
+        self.__bundle = bundle
+        self.__snapshot = snapshot
+
+    def __copy__(self) -> "_PsychologyLearningPreflightCapability":
+        return self
+
+    def __deepcopy__(
+        self,
+        memo: dict[int, object],
+    ) -> "_PsychologyLearningPreflightCapability":
+        memo[id(self)] = self
+        return self
+
+    def __reduce_ex__(self, protocol: int) -> object:
+        raise TypeError("psychology learning preflight capability is not serializable")
 
 
 class PsychologyLearningOutlineItem(_FrozenDomainModel):
@@ -2421,19 +2468,29 @@ def psychology_learning_series_proposal_snapshot_path(
     return psychology_learning_series_catalog_root(catalog_root) / "proposals" / f"{proposal_id}.json"
 
 
+def _psychology_learning_series_revision_filename(
+    *,
+    series_id: str,
+    curriculum_version: str,
+) -> str:
+    _require_identifier(series_id, field_name="series_id")
+    version = _require_psychology_learning_curriculum_version(curriculum_version)
+    return f"{series_id}--v{version}.json"
+
+
 def psychology_learning_series_catalog_snapshot_path(
     *,
     series_id: str,
     curriculum_version: str,
     catalog_root: Path | str | None = None,
 ) -> Path:
-    _require_identifier(series_id, field_name="series_id")
-    version = _require_psychology_learning_curriculum_version(curriculum_version)
     return (
         psychology_learning_series_catalog_root(catalog_root)
         / "catalogs"
-        / series_id
-        / f"v{version}.json"
+        / _psychology_learning_series_revision_filename(
+            series_id=series_id,
+            curriculum_version=curriculum_version,
+        )
     )
 
 
@@ -2444,13 +2501,13 @@ def psychology_learning_series_catalog_confirmation_path(
     catalog_root: Path | str | None = None,
 ) -> Path:
     """Return the append-only confirmation record path for one revision."""
-    _require_identifier(series_id, field_name="series_id")
-    version = _require_psychology_learning_curriculum_version(curriculum_version)
     return (
         psychology_learning_series_catalog_root(catalog_root)
         / "confirmations"
-        / series_id
-        / f"v{version}.json"
+        / _psychology_learning_series_revision_filename(
+            series_id=series_id,
+            curriculum_version=curriculum_version,
+        )
     )
 
 
@@ -2460,20 +2517,437 @@ def psychology_learning_series_progress_sidecar_path(
     curriculum_version: str,
     catalog_root: Path | str | None = None,
 ) -> Path:
-    _require_identifier(series_id, field_name="series_id")
-    version = _require_psychology_learning_curriculum_version(curriculum_version)
     return (
         psychology_learning_series_catalog_root(catalog_root)
         / "progress"
-        / series_id
-        / f"v{version}.json"
+        / _psychology_learning_series_revision_filename(
+            series_id=series_id,
+            curriculum_version=curriculum_version,
+        )
     )
 
 
+def _pinned_catalog_directory_flags() -> int:
+    if not hasattr(os, "O_NOFOLLOW"):
+        raise OSError(
+            errno.ENOTSUP,
+            "psychology learning catalog reads require O_NOFOLLOW",
+        )
+    return os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | os.O_NOFOLLOW
+
+
+def _pinned_catalog_file_flags() -> int:
+    if not hasattr(os, "O_NOFOLLOW"):
+        raise OSError(
+            errno.ENOTSUP,
+            "psychology learning catalog reads require O_NOFOLLOW",
+        )
+    return os.O_RDONLY | os.O_NOFOLLOW
+
+
+def _pinned_catalog_directory_version(identity: os.stat_result) -> tuple[int, int, int, int]:
+    return (
+        identity.st_dev,
+        identity.st_ino,
+        identity.st_mtime_ns,
+        identity.st_ctime_ns,
+    )
+
+
+def _assert_pinned_catalog_private_directory(*, fd: int, label: str) -> None:
+    identity = os.fstat(fd)
+    if not stat.S_ISDIR(identity.st_mode):
+        raise OSError(f"{label} is not a directory")
+    if identity.st_mode & 0o077:
+        raise OSError(f"{label} must not grant group or other access")
+    if hasattr(os, "geteuid") and identity.st_uid != os.geteuid():
+        raise OSError(f"{label} must be owned by the current user")
+
+
+def _pinned_catalog_file_version(identity: os.stat_result) -> tuple[int, int, int, int, int]:
+    return (
+        identity.st_dev,
+        identity.st_ino,
+        identity.st_size,
+        identity.st_mtime_ns,
+        identity.st_ctime_ns,
+    )
+
+
+def _open_pinned_catalog_directory_entry(*, parent_fd: int, name: str) -> int:
+    if name in {"", ".", ".."} or "/" in name:
+        raise OSError(errno.EINVAL, "invalid psychology learning catalog directory")
+    fd = os.open(name, _pinned_catalog_directory_flags(), dir_fd=parent_fd)
+    try:
+        entry = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+        identity = os.fstat(fd)
+        if (
+            not stat.S_ISDIR(entry.st_mode)
+            or not stat.S_ISDIR(identity.st_mode)
+            or not os.path.samestat(entry, identity)
+        ):
+            raise OSError(
+                errno.ELOOP,
+                "psychology learning catalog directory changed",
+                name,
+            )
+        return fd
+    except Exception:
+        os.close(fd)
+        raise
+
+
+def _open_pinned_catalog_directory_path(path: Path | str) -> tuple[Path, int]:
+    normalized = Path(os.path.abspath(os.fspath(path)))
+    if not normalized.is_absolute():  # pragma: no cover - abspath guarantees this.
+        raise OSError("psychology learning catalog root must be absolute")
+    current_fd = os.open("/", _pinned_catalog_directory_flags())
+    try:
+        for component in normalized.parts[1:]:
+            next_fd = _open_pinned_catalog_directory_entry(
+                parent_fd=current_fd,
+                name=component,
+            )
+            os.close(current_fd)
+            current_fd = next_fd
+        os.fsync(current_fd)
+        result = current_fd
+        current_fd = -1
+        return normalized, result
+    finally:
+        if current_fd >= 0:
+            os.close(current_fd)
+
+
+def _assert_pinned_catalog_private_regular_file(
+    *,
+    parent_fd: int,
+    name: str,
+    fd: int,
+) -> None:
+    entry = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+    identity = os.fstat(fd)
+    if (
+        not stat.S_ISREG(entry.st_mode)
+        or not stat.S_ISREG(identity.st_mode)
+        or not os.path.samestat(entry, identity)
+        or entry.st_nlink != 1
+        or identity.st_nlink != 1
+    ):
+        raise OSError(
+            errno.EMLINK,
+            "psychology learning immutable snapshot must be a private regular file",
+            name,
+        )
+
+
+class _PinnedPsychologyLearningCatalogReader:
+    """Read one custom catalog from a single no-follow descriptor snapshot."""
+
+    def __init__(self, *, root_path: Path, root_fd: int) -> None:
+        self._root_path = root_path
+        self._root_fd = root_fd
+        self._root_identity = os.fstat(root_fd)
+        self._root_version = _pinned_catalog_directory_version(self._root_identity)
+        self._directory_fds: dict[tuple[str, ...], int] = {}
+        self._directory_identities: dict[tuple[str, ...], os.stat_result] = {}
+        self._directory_versions: dict[tuple[str, ...], tuple[int, int, int, int]] = {}
+        self._missing_directory_prefixes: set[tuple[str, ...]] = set()
+        self._closed = False
+
+    @classmethod
+    def open(
+        cls,
+        catalog_root: Path | str | None,
+    ) -> _PinnedPsychologyLearningCatalogReader:
+        root_path, root_fd = _open_pinned_catalog_directory_path(
+            psychology_learning_series_catalog_root(catalog_root)
+        )
+        reader: _PinnedPsychologyLearningCatalogReader | None = None
+        try:
+            _assert_pinned_catalog_private_directory(
+                fd=root_fd,
+                label="psychology learning catalog root",
+            )
+            reader = cls(root_path=root_path, root_fd=root_fd)
+            for directory_name in ("proposals", "confirmations", "catalogs"):
+                reader._bind_optional_directory(directory_name)
+            return reader
+        except Exception:
+            if reader is None:
+                os.close(root_fd)
+            else:
+                reader.close()
+            raise
+
+    def __enter__(self) -> _PinnedPsychologyLearningCatalogReader:
+        return self
+
+    def __exit__(self, exc_type: object, exc: object, traceback: object) -> None:
+        try:
+            if exc_type is None:
+                self.assert_consistent()
+        finally:
+            self.close()
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            for fd in self._directory_fds.values():
+                os.close(fd)
+        finally:
+            os.close(self._root_fd)
+
+    def assert_consistent(self) -> None:
+        """Reject a read that observed a root or child directory rebind."""
+        if self._closed:
+            raise OSError("psychology learning catalog reader is closed")
+        root_path, reopened_root_fd = _open_pinned_catalog_directory_path(self._root_path)
+        try:
+            original_root = os.fstat(self._root_fd)
+            reopened_root = os.fstat(reopened_root_fd)
+            if (
+                root_path != self._root_path
+                or not os.path.samestat(original_root, self._root_identity)
+                or not os.path.samestat(reopened_root, self._root_identity)
+                or _pinned_catalog_directory_version(original_root)
+                != self._root_version
+                or _pinned_catalog_directory_version(reopened_root)
+                != self._root_version
+            ):
+                raise OSError("psychology learning catalog root changed")
+            for components in self._directory_fds:
+                self._assert_directory_view(components)
+            for components in self._missing_directory_prefixes:
+                self._assert_missing_directory_view(components)
+        finally:
+            os.close(reopened_root_fd)
+
+    def _assert_directory_view(self, components: tuple[str, ...]) -> None:
+        if not components:
+            identity = os.fstat(self._root_fd)
+            if (
+                not os.path.samestat(identity, self._root_identity)
+                or _pinned_catalog_directory_version(identity) != self._root_version
+            ):
+                raise OSError("psychology learning catalog root changed")
+            _assert_pinned_catalog_private_directory(
+                fd=self._root_fd,
+                label="psychology learning catalog root",
+            )
+            return
+        fd = self._directory_fds.get(components)
+        if fd is None:
+            raise OSError("psychology learning catalog directory changed")
+        parent_fd = (
+            self._root_fd
+            if len(components) == 1
+            else self._directory_fds.get(components[:-1])
+        )
+        if parent_fd is None:
+            raise OSError("psychology learning catalog directory changed")
+        entry = os.stat(
+            components[-1],
+            dir_fd=parent_fd,
+            follow_symlinks=False,
+        )
+        identity = os.fstat(fd)
+        if (
+            not stat.S_ISDIR(entry.st_mode)
+            or not stat.S_ISDIR(identity.st_mode)
+            or not os.path.samestat(entry, self._directory_identities[components])
+            or not os.path.samestat(identity, self._directory_identities[components])
+            or _pinned_catalog_directory_version(identity)
+            != self._directory_versions[components]
+        ):
+            raise OSError("psychology learning catalog directory changed")
+        _assert_pinned_catalog_private_directory(
+            fd=fd,
+            label=f"psychology learning catalog directory {'/'.join(components)}",
+        )
+
+    def _assert_missing_directory_view(self, components: tuple[str, ...]) -> None:
+        if not components:
+            raise OSError("invalid psychology learning catalog directory")
+        self._assert_directory_view(components[:-1])
+        parent_fd = (
+            self._root_fd
+            if len(components) == 1
+            else self._directory_fds[components[:-1]]
+        )
+        try:
+            os.stat(components[-1], dir_fd=parent_fd, follow_symlinks=False)
+        except FileNotFoundError:
+            return
+        raise OSError("psychology learning catalog directory changed")
+
+    def _bind_optional_directory(self, *components: str) -> None:
+        if not components:
+            raise OSError("missing psychology learning catalog directory")
+        prefix = tuple(components)
+        if prefix in self._directory_fds or prefix in self._missing_directory_prefixes:
+            return
+        self._assert_directory_view(prefix[:-1])
+        parent_fd = (
+            self._root_fd
+            if len(prefix) == 1
+            else self._directory_fds.get(prefix[:-1])
+        )
+        if parent_fd is None:
+            raise OSError("psychology learning catalog directory changed")
+        try:
+            fd = _open_pinned_catalog_directory_entry(
+                parent_fd=parent_fd,
+                name=prefix[-1],
+            )
+        except FileNotFoundError:
+            self._missing_directory_prefixes.add(prefix)
+            self._assert_missing_directory_view(prefix)
+            return
+        try:
+            identity = os.fstat(fd)
+            _assert_pinned_catalog_private_directory(
+                fd=fd,
+                label=f"psychology learning catalog directory {'/'.join(prefix)}",
+            )
+            self._directory_fds[prefix] = os.dup(fd)
+            self._directory_identities[prefix] = identity
+            self._directory_versions[prefix] = _pinned_catalog_directory_version(
+                identity
+            )
+        finally:
+            os.close(fd)
+        self._assert_directory_view(prefix[:-1])
+        self._assert_directory_view(prefix)
+
+    def directory_exists(self, *components: str) -> bool:
+        try:
+            fd = self._open_directory(*components)
+        except FileNotFoundError:
+            return False
+        try:
+            os.fsync(fd)
+            return True
+        finally:
+            os.close(fd)
+
+    def list_private_regular_names(self, *components: str) -> tuple[str, ...]:
+        directory_fd = self._open_directory(*components)
+        try:
+            os.fsync(directory_fd)
+            names = tuple(os.listdir(directory_fd))
+            for name in names:
+                if name in {"", ".", ".."} or "/" in name:
+                    raise OSError("invalid psychology learning catalog entry")
+                fd = os.open(
+                    name,
+                    _pinned_catalog_file_flags(),
+                    dir_fd=directory_fd,
+                )
+                try:
+                    _assert_pinned_catalog_private_regular_file(
+                        parent_fd=directory_fd,
+                        name=name,
+                        fd=fd,
+                    )
+                    os.fsync(fd)
+                finally:
+                    os.close(fd)
+            os.fsync(directory_fd)
+            return names
+        finally:
+            os.close(directory_fd)
+
+    def read_json_bytes(self, *components: str) -> bytes:
+        if not components:
+            raise OSError("missing psychology learning catalog JSON entry")
+        *parent_components, name = components
+        if name in {"", ".", ".."} or "/" in name:
+            raise OSError("invalid psychology learning catalog JSON entry")
+        parent_fd = self._open_directory(*parent_components)
+        try:
+            fd = os.open(name, _pinned_catalog_file_flags(), dir_fd=parent_fd)
+            try:
+                _assert_pinned_catalog_private_regular_file(
+                    parent_fd=parent_fd,
+                    name=name,
+                    fd=fd,
+                )
+                before = os.fstat(fd)
+                chunks: list[bytes] = []
+                while True:
+                    chunk = os.read(fd, 64 * 1024)
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+                after = os.fstat(fd)
+                if (
+                    not os.path.samestat(before, after)
+                    or _pinned_catalog_file_version(before)
+                    != _pinned_catalog_file_version(after)
+                ):
+                    raise OSError("psychology learning immutable snapshot changed")
+                os.fsync(fd)
+                return b"".join(chunks)
+            finally:
+                os.close(fd)
+        finally:
+            os.fsync(parent_fd)
+            os.close(parent_fd)
+
+    def _open_directory(self, *components: str) -> int:
+        current_fd = os.dup(self._root_fd)
+        prefix: tuple[str, ...] = ()
+        try:
+            for component in components:
+                prefix += (component,)
+                self._assert_directory_view(prefix[:-1])
+                cached_fd = self._directory_fds.get(prefix)
+                if cached_fd is not None:
+                    self._assert_directory_view(prefix)
+                    # Re-establish the durability barrier on the descriptor
+                    # whose identity is retained for this full read.
+                    os.fsync(cached_fd)
+                    os.close(current_fd)
+                    current_fd = os.dup(cached_fd)
+                    continue
+                if prefix in self._missing_directory_prefixes:
+                    raise FileNotFoundError(component)
+                try:
+                    next_fd = _open_pinned_catalog_directory_entry(
+                        parent_fd=current_fd,
+                        name=component,
+                    )
+                except FileNotFoundError:
+                    self._missing_directory_prefixes.add(prefix)
+                    self._assert_missing_directory_view(prefix)
+                    raise
+                self._assert_directory_view(prefix[:-1])
+                self._directory_fds[prefix] = os.dup(next_fd)
+                _assert_pinned_catalog_private_directory(
+                    fd=next_fd,
+                    label=f"psychology learning catalog directory {'/'.join(prefix)}",
+                )
+                self._directory_identities[prefix] = os.fstat(next_fd)
+                self._directory_versions[prefix] = _pinned_catalog_directory_version(
+                    self._directory_identities[prefix]
+                )
+                self._assert_directory_view(prefix)
+                os.close(current_fd)
+                current_fd = next_fd
+            result = current_fd
+            current_fd = -1
+            return result
+        finally:
+            if current_fd >= 0:
+                os.close(current_fd)
+
+
 def _fsync_directory(directory: Path) -> None:
-    """Synchronize a directory; unsupported directory sync fails closed."""
-    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
-    fd = os.open(directory, flags)
+    """Synchronize a no-follow directory; unsupported sync fails closed."""
+    _, fd = _open_pinned_catalog_directory_path(directory)
     try:
         os.fsync(fd)
     finally:
@@ -2481,7 +2955,7 @@ def _fsync_directory(directory: Path) -> None:
 
 
 def _sync_directory_entry_ancestors(directory: Path) -> None:
-    """Synchronize every parent entry that makes ``directory`` reachable."""
+    """Synchronize every no-follow parent entry that reaches ``directory``."""
     current = directory.parent
     if current == directory:
         return
@@ -2494,16 +2968,28 @@ def _sync_directory_entry_ancestors(directory: Path) -> None:
 
 
 def _sync_existing_directory(directory: Path) -> None:
-    """Complete the durability barrier for an existing directory and its entry."""
+    """Complete the durability barrier for an existing safe directory."""
     _fsync_directory(directory)
     _sync_directory_entry_ancestors(directory)
 
 
 def _sync_existing_json(path: Path) -> None:
-    """Complete the file and directory durability barrier before accepting JSON."""
-    with path.open("rb") as handle:
-        os.fsync(handle.fileno())
-    _sync_existing_directory(path.parent)
+    """Synchronize a private immutable JSON file without following links."""
+    _, parent_fd = _open_pinned_catalog_directory_path(path.parent)
+    try:
+        fd = os.open(path.name, _pinned_catalog_file_flags(), dir_fd=parent_fd)
+        try:
+            _assert_pinned_catalog_private_regular_file(
+                parent_fd=parent_fd,
+                name=path.name,
+                fd=fd,
+            )
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        os.fsync(parent_fd)
+    finally:
+        os.close(parent_fd)
 
 
 def read_psychology_learning_series_proposal_snapshot(
@@ -2512,12 +2998,26 @@ def read_psychology_learning_series_proposal_snapshot(
     catalog_root: Path | str | None = None,
 ) -> PsychologyLearningSeriesProposal:
     """Load and revalidate one sanitized proposal snapshot, or fail closed."""
-    path = psychology_learning_series_proposal_snapshot_path(
-        proposal_id=proposal_id,
-        catalog_root=catalog_root,
-    )
-    payload = _read_psychology_learning_series_json(
-        path,
+    try:
+        with _PinnedPsychologyLearningCatalogReader.open(catalog_root) as reader:
+            return _read_psychology_learning_series_proposal_snapshot_from_reader(
+                reader=reader,
+                proposal_id=proposal_id,
+            )
+    except FileNotFoundError as exc:
+        raise ValueError("unknown psychology learning proposal") from exc
+    except OSError as exc:
+        raise ValueError("invalid psychology learning proposal snapshot") from exc
+
+
+def _read_psychology_learning_series_proposal_snapshot_from_reader(
+    *,
+    reader: _PinnedPsychologyLearningCatalogReader,
+    proposal_id: str,
+) -> PsychologyLearningSeriesProposal:
+    payload = _read_psychology_learning_series_json_from_reader(
+        reader=reader,
+        components=("proposals", f"{proposal_id}.json"),
         missing_message="unknown psychology learning proposal",
         invalid_message="invalid psychology learning proposal snapshot",
     )
@@ -2538,10 +3038,16 @@ def load_confirmed_psychology_learning_catalog(
 ) -> PsychologyLearningCatalog:
     """Load one custom revision after validating the full immutable history."""
     version = _require_psychology_learning_curriculum_version(curriculum_version)
-    revisions = _validated_confirmed_psychology_learning_catalog_revisions(
-        series_id=series_id,
-        catalog_root=catalog_root,
-    )
+    try:
+        with _PinnedPsychologyLearningCatalogReader.open(catalog_root) as reader:
+            revisions = _validated_confirmed_psychology_learning_catalog_revisions_from_reader(
+                reader=reader,
+                series_id=series_id,
+            )
+    except FileNotFoundError:
+        revisions = ()
+    except OSError as exc:
+        raise ValueError("invalid psychology learning catalog revision history") from exc
     for catalog in revisions:
         if catalog.curriculum_version == version:
             return catalog
@@ -2566,26 +3072,43 @@ def _validated_confirmed_psychology_learning_catalog_revisions(
     series_id: str,
     catalog_root: Path | str | None,
 ) -> tuple[PsychologyLearningCatalog, ...]:
-    """Validate every ledger entry and its immutable catalog snapshot."""
-    records = _read_psychology_learning_catalog_revision_records(
+    """Validate every ledger entry and immutable snapshot from one reader."""
+    try:
+        with _PinnedPsychologyLearningCatalogReader.open(catalog_root) as reader:
+            return _validated_confirmed_psychology_learning_catalog_revisions_from_reader(
+                reader=reader,
+                series_id=series_id,
+            )
+    except FileNotFoundError:
+        return ()
+    except OSError as exc:
+        raise ValueError("invalid psychology learning catalog revision history") from exc
+
+
+def _validated_confirmed_psychology_learning_catalog_revisions_from_reader(
+    *,
+    reader: _PinnedPsychologyLearningCatalogReader,
+    series_id: str,
+) -> tuple[PsychologyLearningCatalog, ...]:
+    records = _read_psychology_learning_catalog_revision_records_from_reader(
+        reader=reader,
         series_id=series_id,
-        catalog_root=catalog_root,
     )
     if not records:
         return ()
-    catalog_directory = (
-        psychology_learning_series_catalog_root(catalog_root) / "catalogs" / series_id
-    )
     versions = [int(record.curriculum_version) for record in records]
-    if _confirmed_catalog_snapshot_versions(catalog_directory) != versions:
+    if _confirmed_catalog_snapshot_versions_from_reader(
+        reader=reader,
+        series_id=series_id,
+    ) != versions:
         raise ValueError("invalid psychology learning catalog revision history")
     catalogs: list[PsychologyLearningCatalog] = []
     for record in records:
         try:
-            catalog = _load_confirmed_psychology_learning_catalog_snapshot(
+            catalog = _load_confirmed_psychology_learning_catalog_snapshot_from_reader(
+                reader=reader,
                 series_id=series_id,
                 curriculum_version=record.curriculum_version,
-                catalog_root=catalog_root,
             )
         except ValueError as exc:
             raise ValueError("invalid psychology learning catalog revision history") from exc
@@ -2605,13 +3128,32 @@ def _load_confirmed_psychology_learning_catalog_snapshot(
     curriculum_version: str,
     catalog_root: Path | str | None,
 ) -> PsychologyLearningCatalog:
-    path = psychology_learning_series_catalog_snapshot_path(
-        series_id=series_id,
-        curriculum_version=curriculum_version,
-        catalog_root=catalog_root,
-    )
-    payload = _read_psychology_learning_series_json(
-        path,
+    try:
+        with _PinnedPsychologyLearningCatalogReader.open(catalog_root) as reader:
+            return _load_confirmed_psychology_learning_catalog_snapshot_from_reader(
+                reader=reader,
+                series_id=series_id,
+                curriculum_version=curriculum_version,
+            )
+    except OSError as exc:
+        raise ValueError("invalid psychology learning catalog revision") from exc
+
+
+def _load_confirmed_psychology_learning_catalog_snapshot_from_reader(
+    *,
+    reader: _PinnedPsychologyLearningCatalogReader,
+    series_id: str,
+    curriculum_version: str,
+) -> PsychologyLearningCatalog:
+    payload = _read_psychology_learning_series_json_from_reader(
+        reader=reader,
+        components=(
+            "catalogs",
+            _psychology_learning_series_revision_filename(
+                series_id=series_id,
+                curriculum_version=curriculum_version,
+            ),
+        ),
         missing_message="unknown psychology learning catalog revision",
         invalid_message="invalid psychology learning catalog revision",
     )
@@ -2625,9 +3167,9 @@ def _load_confirmed_psychology_learning_catalog_snapshot(
     ):
         raise ValueError("invalid psychology learning catalog revision")
     try:
-        proposal = read_psychology_learning_series_proposal_snapshot(
+        proposal = _read_psychology_learning_series_proposal_snapshot_from_reader(
+            reader=reader,
             proposal_id=catalog.approval.proposal_id,
-            catalog_root=catalog_root,
         )
     except ValueError as exc:
         raise ValueError("invalid psychology learning catalog revision") from exc
@@ -2648,29 +3190,56 @@ def _read_psychology_learning_catalog_revision_records(
     series_id: str,
     catalog_root: Path | str | None,
 ) -> tuple[PsychologyLearningCatalogRevisionRecord, ...]:
-    root = psychology_learning_series_catalog_root(catalog_root)
-    catalog_directory = root / "catalogs" / series_id
-    directory = root / "confirmations" / series_id
-    if not directory.is_dir():
-        if directory.exists() or catalog_directory.exists():
+    try:
+        with _PinnedPsychologyLearningCatalogReader.open(catalog_root) as reader:
+            return _read_psychology_learning_catalog_revision_records_from_reader(
+                reader=reader,
+                series_id=series_id,
+            )
+    except FileNotFoundError:
+        return ()
+    except OSError as exc:
+        raise ValueError("invalid psychology learning catalog revision history") from exc
+
+
+def _read_psychology_learning_catalog_revision_records_from_reader(
+    *,
+    reader: _PinnedPsychologyLearningCatalogReader,
+    series_id: str,
+) -> tuple[PsychologyLearningCatalogRevisionRecord, ...]:
+    try:
+        confirmation_exists = reader.directory_exists("confirmations")
+        catalog_exists = reader.directory_exists("catalogs")
+    except OSError as exc:
+        raise ValueError("invalid psychology learning catalog revision history") from exc
+    if not confirmation_exists:
+        if catalog_exists:
+            raise ValueError("invalid psychology learning catalog revision history")
+        return ()
+    try:
+        names = reader.list_private_regular_names("confirmations")
+    except OSError as exc:
+        raise ValueError("invalid psychology learning catalog revision history") from exc
+    target_prefix = f"{series_id}--"
+    target_names = tuple(name for name in names if name.startswith(target_prefix))
+    if not target_names:
+        if catalog_exists and _confirmed_catalog_snapshot_versions_from_reader(
+            reader=reader,
+            series_id=series_id,
+        ):
             raise ValueError("invalid psychology learning catalog revision history")
         return ()
     records: list[tuple[int, PsychologyLearningCatalogRevisionRecord]] = []
-    try:
-        _sync_existing_directory(directory)
-        paths = tuple(directory.iterdir())
-    except OSError as exc:
-        raise ValueError("invalid psychology learning catalog revision history") from exc
-    if not paths:
-        if catalog_directory.exists():
+    for name in target_names:
+        match = re.fullmatch(
+            rf"{re.escape(series_id)}--v([1-9][0-9]{{0,3}})\.json",
+            name,
+        )
+        if match is None:
             raise ValueError("invalid psychology learning catalog revision history")
-        return ()
-    for path in paths:
-        match = re.fullmatch(r"v([1-9][0-9]{0,3})\.json", path.name)
-        if match is None or not path.is_file():
-            raise ValueError("invalid psychology learning catalog revision history")
-        payload = _read_psychology_learning_series_json(
-            path,
+        payload = _read_psychology_learning_series_json_from_reader(
+            reader=reader,
+            components=("confirmations", name),
             missing_message="invalid psychology learning catalog revision history",
             invalid_message="invalid psychology learning catalog revision history",
         )
@@ -2689,36 +3258,42 @@ def _read_psychology_learning_catalog_revision_records(
     return tuple(record for _, record in records)
 
 
-def _confirmed_catalog_snapshot_versions(catalog_directory: Path) -> list[int]:
-    """Return the immutable snapshot versions for one catalog directory."""
+def _confirmed_catalog_snapshot_versions_from_reader(
+    *,
+    reader: _PinnedPsychologyLearningCatalogReader,
+    series_id: str,
+) -> list[int]:
+    """Return immutable snapshot versions from the reader's pinned catalog FD."""
     try:
-        _sync_existing_directory(catalog_directory)
-        paths = tuple(catalog_directory.iterdir())
+        names = reader.list_private_regular_names("catalogs")
     except OSError as exc:
         raise ValueError("invalid psychology learning catalog revision history") from exc
     versions: list[int] = []
-    for path in paths:
-        match = re.fullmatch(r"v([1-9][0-9]{0,3})\.json", path.name)
+    for name in names:
+        if not name.startswith(f"{series_id}--"):
+            continue
+        match = re.fullmatch(
+            rf"{re.escape(series_id)}--v([1-9][0-9]{{0,3}})\.json",
+            name,
+        )
         if match is None:
-            raise ValueError("invalid psychology learning catalog revision history")
-        if not path.is_file():
             raise ValueError("invalid psychology learning catalog revision history")
         versions.append(int(match.group(1)))
     return sorted(versions)
 
 
-def _read_psychology_learning_series_json(
-    path: Path,
+def _read_psychology_learning_series_json_from_reader(
     *,
+    reader: _PinnedPsychologyLearningCatalogReader,
+    components: tuple[str, ...],
     missing_message: str,
     invalid_message: str,
 ) -> dict[str, Any]:
-    if not path.is_file():
-        raise ValueError(missing_message)
     try:
-        _sync_existing_json(path)
-        raw = path.read_text(encoding="utf-8")
-        payload = json.loads(raw)
+        raw = reader.read_json_bytes(*components)
+        payload = json.loads(raw.decode("utf-8"))
+    except FileNotFoundError as exc:
+        raise ValueError(missing_message) from exc
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ValueError(invalid_message) from exc
     if type(payload) is not dict:
@@ -2763,6 +3338,76 @@ def resolve_psychology_learning_selection(
                 catalog=catalog,
             )
     raise ValueError("unknown psychology learning lesson_id for the selected series")
+
+
+def seal_psychology_learning_preflight_bundle(
+    bundle: PsychologyLearningBundle,
+) -> _PsychologyLearningPreflightCapability:
+    """Return a preflight-only capability backed by a confirmed catalog snapshot.
+
+    ``PsychologyLearningBundle`` is intentionally a public data model and can
+    be constructed by ordinary callers.  It therefore cannot itself prove that
+    a custom catalog passed proposal persistence and exact confirmation.  This
+    function re-resolves the selected lesson at the one permitted preflight
+    boundary, compares every runtime-visible receipt field, and issues a
+    private non-Pydantic capability for later no-reresolve runtime/eval use.
+    """
+    if not isinstance(bundle, PsychologyLearningBundle):
+        raise ValueError("psychology learning preflight requires a resolved bundle")
+    try:
+        approved = resolve_psychology_learning_selection(
+            series_id=bundle.series_id,
+            lesson_id=bundle.lesson_id,
+            curriculum_version=bundle.runtime_contract["curriculum_version"],
+        )
+    except (KeyError, ValueError) as exc:
+        raise ValueError(
+            "psychology learning preflight selection is not a confirmed catalog lesson"
+        ) from exc
+    if (
+        bundle.runtime_contract != approved.runtime_contract
+        or bundle.manifest != approved.manifest
+        or build_psychology_learning_catalog_receipt(bundle)
+        != build_psychology_learning_catalog_receipt(approved)
+    ):
+        raise ValueError("psychology learning preflight bundle does not match confirmation")
+    return _PsychologyLearningPreflightCapability(
+        bundle=approved,
+        snapshot=_psychology_learning_preflight_snapshot(approved),
+        issuer=_PSYCHOLOGY_LEARNING_PREFLIGHT_CAPABILITY_ISSUER,
+    )
+
+
+def require_sealed_psychology_learning_preflight_bundle(
+    capability: object,
+) -> PsychologyLearningBundle:
+    """Return the exact snapshot-bound bundle from a preflight capability."""
+    if type(capability) is not _PsychologyLearningPreflightCapability:
+        raise ValueError(
+            "psychology learning preflight capability must originate from verified preflight"
+        )
+    bundle = capability._PsychologyLearningPreflightCapability__bundle
+    snapshot = capability._PsychologyLearningPreflightCapability__snapshot
+    if (
+        not isinstance(bundle, PsychologyLearningBundle)
+        or not isinstance(snapshot, str)
+        or _psychology_learning_preflight_snapshot(bundle) != snapshot
+    ):
+        raise ValueError("psychology learning preflight capability no longer matches its selection")
+    return bundle
+
+
+def _psychology_learning_preflight_snapshot(
+    bundle: PsychologyLearningBundle,
+) -> str:
+    """Hash every catalog-owned value a guarded consumer may rely on."""
+    return _stable_proposal_digest_v1(
+        {
+            "runtime_contract": bundle.runtime_contract,
+            "manifest": bundle.manifest,
+            "catalog_receipt": build_psychology_learning_catalog_receipt(bundle),
+        }
+    )
 
 
 def build_psychology_learning_catalog_receipt(
@@ -2953,6 +3598,8 @@ def is_psychology_learning_drafting_safe_text(value: object) -> bool:
 
 def verify_psychology_learning_artifact_receipt(
     artifact: Mapping[object, object],
+    *,
+    preflight_capability: _PsychologyLearningPreflightCapability | None = None,
 ) -> PsychologyLearningBundle:
     """Rebuild and verify every catalog-owned field in a closed lesson artifact.
 
@@ -2974,16 +3621,27 @@ def verify_psychology_learning_artifact_receipt(
         for value in (series_id, curriculum_version, lesson_id)
     ):
         raise ValueError("psychology learning artifact is missing its selection")
-    try:
-        bundle = resolve_psychology_learning_selection(
-            series_id=series_id,
-            lesson_id=lesson_id,
-            curriculum_version=curriculum_version,
+    if preflight_capability is None:
+        try:
+            bundle = resolve_psychology_learning_selection(
+                series_id=series_id,
+                lesson_id=lesson_id,
+                curriculum_version=curriculum_version,
+            )
+        except ValueError as exc:
+            raise ValueError(
+                "psychology learning artifact selection is not an approved lesson"
+            ) from exc
+    else:
+        bundle = require_sealed_psychology_learning_preflight_bundle(
+            preflight_capability
         )
-    except ValueError as exc:
-        raise ValueError(
-            "psychology learning artifact selection is not an approved lesson"
-        ) from exc
+        if (
+            series_id != bundle.series_id
+            or lesson_id != bundle.lesson_id
+            or curriculum_version != bundle.runtime_contract["curriculum_version"]
+        ):
+            raise ValueError("psychology learning artifact selection is not an approved lesson")
 
     expected_identity = {
         "psychology_learning_series_id": bundle.series_id,
@@ -3069,6 +3727,7 @@ def contains_psychology_learning_raw_provenance(
     _path: tuple[str, ...] = (),
     _artifact_root: Mapping[object, object] | None = None,
     strict_artifact_shape: bool = True,
+    preflight_capability: _PsychologyLearningPreflightCapability | None = None,
 ) -> bool:
     """Detect raw provenance anywhere except the validated opaque manifest.
 
@@ -3082,7 +3741,11 @@ def contains_psychology_learning_raw_provenance(
             _artifact_root = value
         if strict_artifact_shape and _path == () and _artifact_root is not None:
             if _artifact_declares_psychology_learning_selection(_artifact_root) and (
-                _verified_psychology_learning_artifact_bundle(_artifact_root) is None
+                _verified_psychology_learning_artifact_bundle(
+                    _artifact_root,
+                    preflight_capability=preflight_capability,
+                )
+                is None
             ):
                 return True
         if strict_artifact_shape:
@@ -3108,6 +3771,7 @@ def contains_psychology_learning_raw_provenance(
                 if not _is_valid_psychology_learning_topic_selection_marker(
                     nested,
                     artifact=_artifact_root,
+                    preflight_capability=preflight_capability,
                 ):
                     return True
                 continue
@@ -3121,6 +3785,7 @@ def contains_psychology_learning_raw_provenance(
                 if not _is_valid_psychology_learning_catalog_receipt(
                     nested,
                     artifact=_artifact_root,
+                    preflight_capability=preflight_capability,
                 ):
                     return True
                 continue
@@ -3128,6 +3793,7 @@ def contains_psychology_learning_raw_provenance(
                 path=child_path,
                 value=nested,
                 artifact=_artifact_root,
+                preflight_capability=preflight_capability,
             ):
                 return True
             normalized_key = _normalized_security_key(key)
@@ -3158,6 +3824,7 @@ def contains_psychology_learning_raw_provenance(
                 _path=child_path,
                 _artifact_root=_artifact_root,
                 strict_artifact_shape=strict_artifact_shape,
+                preflight_capability=preflight_capability,
             ):
                 return True
         return False
@@ -3168,6 +3835,7 @@ def contains_psychology_learning_raw_provenance(
                 _path=(*_path, str(index)),
                 _artifact_root=_artifact_root,
                 strict_artifact_shape=strict_artifact_shape,
+                preflight_capability=preflight_capability,
             )
             for index, item in enumerate(value)
         )
@@ -3183,6 +3851,7 @@ def _is_valid_psychology_learning_artifact_value(
     path: tuple[str, ...],
     value: object,
     artifact: Mapping[object, object] | None,
+    preflight_capability: _PsychologyLearningPreflightCapability | None = None,
 ) -> bool:
     """Validate the closed operational receipt rather than trusting text tokens.
 
@@ -3194,7 +3863,10 @@ def _is_valid_psychology_learning_artifact_value(
     if path == ("playbook_id",):
         return value == "modern_psychology_post"
     if path == ("scene",):
-        expected_scene = _expected_psychology_learning_artifact_scene(artifact)
+        expected_scene = _expected_psychology_learning_artifact_scene(
+            artifact,
+            preflight_capability=preflight_capability,
+        )
         return expected_scene is not None and value == expected_scene
     if path == ("platform",):
         return value == "xiaohongshu"
@@ -3267,10 +3939,15 @@ def _is_valid_psychology_learning_artifact_value(
 
 def _expected_psychology_learning_artifact_scene(
     artifact: Mapping[object, object] | None,
+    *,
+    preflight_capability: _PsychologyLearningPreflightCapability | None = None,
 ) -> str | None:
     if not isinstance(artifact, Mapping):
         return None
-    bundle = _verified_psychology_learning_artifact_bundle(artifact)
+    bundle = _verified_psychology_learning_artifact_bundle(
+        artifact,
+        preflight_capability=preflight_capability,
+    )
     if bundle is None:
         return None
     return f"心理学学习专题：{bundle.lesson.series_badge}｜{bundle.lesson.lesson_title}"
@@ -3341,6 +4018,7 @@ def _is_valid_psychology_learning_topic_selection_marker(
     value: object,
     *,
     artifact: Mapping[object, object] | None = None,
+    preflight_capability: _PsychologyLearningPreflightCapability | None = None,
 ) -> bool:
     if not isinstance(value, Mapping):
         return False
@@ -3368,7 +4046,10 @@ def _is_valid_psychology_learning_topic_selection_marker(
         except (KeyError, ValueError):
             return False
     else:
-        bundle = _verified_psychology_learning_artifact_bundle(artifact)
+        bundle = _verified_psychology_learning_artifact_bundle(
+            artifact,
+            preflight_capability=preflight_capability,
+        )
         if bundle is None:
             return False
     if selection.get("lesson_number") != bundle.lesson_number:
@@ -3405,16 +4086,23 @@ def _artifact_declares_psychology_learning_selection(
 
 def _verified_psychology_learning_artifact_bundle(
     artifact: Mapping[object, object],
+    *,
+    preflight_capability: _PsychologyLearningPreflightCapability | None = None,
 ) -> PsychologyLearningBundle | None:
     """Resolve a full persisted receipt without exposing catalog storage details."""
     try:
-        return verify_psychology_learning_artifact_receipt(artifact)
+        return verify_psychology_learning_artifact_receipt(
+            artifact,
+            preflight_capability=preflight_capability,
+        )
     except (TypeError, ValueError):
         return None
 
 
 def _catalog_receipt_bundle_for_pre_envelope_artifact(
     artifact: Mapping[object, object],
+    *,
+    preflight_capability: _PsychologyLearningPreflightCapability | None = None,
 ) -> PsychologyLearningBundle | None:
     """Verify only the catalog receipt retained by a generic pre-envelope artifact.
 
@@ -3424,11 +4112,23 @@ def _catalog_receipt_bundle_for_pre_envelope_artifact(
     artifact scans and cannot be bypassed after the envelope exists.
     """
     try:
-        bundle = resolve_psychology_learning_selection(
-            series_id=str(artifact["psychology_learning_series_id"]),
-            lesson_id=str(artifact["psychology_learning_lesson_id"]),
-            curriculum_version=str(artifact["psychology_learning_curriculum_version"]),
-        )
+        if preflight_capability is None:
+            bundle = resolve_psychology_learning_selection(
+                series_id=str(artifact["psychology_learning_series_id"]),
+                lesson_id=str(artifact["psychology_learning_lesson_id"]),
+                curriculum_version=str(artifact["psychology_learning_curriculum_version"]),
+            )
+        else:
+            bundle = require_sealed_psychology_learning_preflight_bundle(
+                preflight_capability
+            )
+            if (
+                artifact.get("psychology_learning_series_id") != bundle.series_id
+                or artifact.get("psychology_learning_lesson_id") != bundle.lesson_id
+                or artifact.get("psychology_learning_curriculum_version")
+                != bundle.runtime_contract["curriculum_version"]
+            ):
+                return None
         raw_receipt = artifact.get("psychology_learning_catalog_receipt")
         verify_psychology_learning_catalog_receipt(
             bundle=bundle,
@@ -3443,10 +4143,14 @@ def _is_valid_psychology_learning_catalog_receipt(
     value: object,
     *,
     artifact: Mapping[object, object] | None,
+    preflight_capability: _PsychologyLearningPreflightCapability | None = None,
 ) -> bool:
     if artifact is None or not isinstance(value, Mapping):
         return False
-    bundle = _catalog_receipt_bundle_for_pre_envelope_artifact(artifact)
+    bundle = _catalog_receipt_bundle_for_pre_envelope_artifact(
+        artifact,
+        preflight_capability=preflight_capability,
+    )
     if bundle is None or bundle.catalog is None:
         return False
     expected = build_psychology_learning_catalog_receipt(bundle)

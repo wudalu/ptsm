@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
+import ptsm.agent_runtime.runtime as psychology_learning_runtime
+import ptsm.application.use_cases.run_playbook as psychology_learning_run_playbook
+import ptsm.domain.psychology_learning as psychology_learning_domain
+import ptsm.evaluations.contracts_eval as psychology_learning_contracts_eval
 from ptsm.application.use_cases.psychology_learning_series import (
     PsychologyLearningSeriesStore,
 )
@@ -169,6 +174,11 @@ def test_custom_psychology_learning_series_cli_plans_guides_runs_and_advances(
         encoding="utf-8",
     )
 
+    assert main(["provision-psychology-learning-storage", "--format", "json"]) == 0
+    provisioned = json.loads(capsys.readouterr().out)
+    assert provisioned["status"] == "provisioned"
+    assert Path(provisioned["catalog_root"]).is_dir()
+
     assert main(
         [
             "plan-psychology-series",
@@ -237,6 +247,45 @@ def test_custom_psychology_learning_series_cli_plans_guides_runs_and_advances(
     selected_guide = json.loads(capsys.readouterr().out)
     assert selected_guide["status"] == "completed"
     assert selected_guide["brief"]["lesson_id"] == chosen_lesson_id
+
+    def reject_catalog_reresolution(**_: object) -> object:
+        raise AssertionError(
+            "post-preflight custom learning run must not resolve the mutable catalog"
+        )
+
+    original_build_workflow = psychology_learning_run_playbook._build_workflow_for_playbook
+
+    def freeze_catalog_then_build_workflow(**kwargs: object) -> object:
+        # Preflight has already resolved the selected lesson before this hook.
+        # From runtime construction through strict checks, eval, and progress,
+        # only the frozen preflight bundle is an authority.
+        monkeypatch.setattr(
+            psychology_learning_run_playbook,
+            "resolve_psychology_learning_selection",
+            reject_catalog_reresolution,
+        )
+        monkeypatch.setattr(
+            psychology_learning_runtime,
+            "resolve_psychology_learning_selection",
+            reject_catalog_reresolution,
+        )
+        monkeypatch.setattr(
+            psychology_learning_domain,
+            "resolve_psychology_learning_selection",
+            reject_catalog_reresolution,
+        )
+        monkeypatch.setattr(
+            psychology_learning_contracts_eval,
+            "resolve_psychology_learning_selection",
+            reject_catalog_reresolution,
+        )
+        return original_build_workflow(**kwargs)
+
+    monkeypatch.setattr(
+        psychology_learning_run_playbook,
+        "_build_workflow_for_playbook",
+        freeze_catalog_then_build_workflow,
+    )
 
     assert main(
         [

@@ -2,7 +2,7 @@
 title: PTSM Playbooks
 status: active
 owner: ptsm
-last_verified: 2026-07-23
+last_verified: 2026-07-24
 source_of_truth: true
 related_paths:
   - src/ptsm/playbooks/registry.py
@@ -49,6 +49,18 @@ Playbook 是 PTSM 的业务编排单元。它把领域、平台、技能需求�
 - `PlaybookRegistry` 支持列出定义、按 id 查询，以及按账号选择。
 - `PlaybookDefinition.reflection` 是结构化规则字典，支持必需规则（如 `required_hashtag`、非空 `must_include_phrase`）、可选内容质量规则（如 `title_must_not_equal_any`、`body_must_include_any`、`body_must_not_include_any`）和推荐规则（如 `recommended_phrases`）。推荐词只作为风格提示，不应被 runtime 当成硬门槛。
 - `PlaybookLoader` 负责把 markdown 资产读出来供运行时使用，包括 planner、persona 和 reflection 三类文本输入。
+
+## Learning-series Storage Boundary
+
+Custom `modern_psychology_post --psychology-content-mode learning_series` begins with
+`provision-psychology-learning-storage`, run once by a trusted operator while all writers
+are stopped and the storage parent is exclusively controlled. It creates/verifies the
+private `proposals`、`confirmations`、`catalogs`、`progress` tree; `plan-psychology-series`
+and `confirm-psychology-series` do not provision a missing tree or repair a rebound one.
+The subsequent frozen catalog contract still owns all reader-visible fields. Unsafe artifact
+or progress states fail closed and are neither reused nor cleaned up online. A post-rename
+progress failure is at-least-once: retry the same lesson idempotently after the trusted
+storage is healthy, and reserve filesystem cleanup for trusted offline maintenance.
 
 ## Definition Layout
 

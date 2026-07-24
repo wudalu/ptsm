@@ -346,7 +346,7 @@ class TestPsychologyLearningReceipt:
                 {"id": "practice", "title": "练习一个小步骤"},
             ),
         )
-        store = PsychologyLearningSeriesStore()
+        store = PsychologyLearningSeriesStore(trusted_provision=True, )
         store.persist_proposal(proposal)
         catalog = store.confirm(
             proposal_id=proposal.proposal_id,
@@ -393,7 +393,7 @@ class TestPsychologyLearningReceipt:
                 {"id": "practice", "title": "练习一个小步骤"},
             ),
         )
-        store = PsychologyLearningSeriesStore()
+        store = PsychologyLearningSeriesStore(trusted_provision=True, )
         store.persist_proposal(proposal)
         catalog = store.confirm(
             proposal_id=proposal.proposal_id,

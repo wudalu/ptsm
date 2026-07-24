@@ -318,6 +318,49 @@ def test_docs_cover_confirmed_custom_psychology_learning_series_lifecycle() -> N
     assert "learning-series lesson facts" in topic_radar_text
 
 
+def test_custom_learning_series_docs_cover_trusted_storage_and_recovery_boundary() -> None:
+    document_paths = [
+        "architecture.md",
+        "runtime.md",
+        "playbooks.md",
+        "skills.md",
+        "harness-engineering.md",
+        "observability.md",
+        "operations.md",
+        "operations/local-runbook.md",
+        "operations/content-experiment-runbook.md",
+    ]
+
+    for relative_path in document_paths:
+        doc_text = (DOCS_ROOT / relative_path).read_text(encoding="utf-8")
+        assert "provision-psychology-learning-storage" in doc_text, relative_path
+
+    for relative_path in [
+        "architecture.md",
+        "runtime.md",
+        "harness-engineering.md",
+        "observability.md",
+        "operations.md",
+        "operations/local-runbook.md",
+        "operations/content-experiment-runbook.md",
+    ]:
+        doc_text = (DOCS_ROOT / relative_path).read_text(encoding="utf-8")
+        assert "trusted offline maintenance" in doc_text, relative_path
+
+    for relative_path in [
+        "runtime.md",
+        "observability.md",
+        "operations.md",
+        "operations/local-runbook.md",
+    ]:
+        doc_text = (DOCS_ROOT / relative_path).read_text(encoding="utf-8")
+        assert "psychology_learning_progress_persist_failed" in doc_text, relative_path
+        assert "at-least-once" in doc_text, relative_path
+
+    observability_text = (DOCS_ROOT / "observability.md").read_text(encoding="utf-8")
+    assert "应用层会先删除它" not in observability_text
+
+
 def test_custom_learning_series_docs_name_progress_field_and_kind() -> None:
     required_documents = [
         "runtime.md",

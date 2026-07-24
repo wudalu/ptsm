@@ -7,6 +7,7 @@ from pathlib import Path
 from langgraph.checkpoint.memory import InMemorySaver
 import pytest
 
+import ptsm.agent_runtime.runtime as psychology_learning_runtime
 from ptsm.agent_runtime.runtime import (
     _resolve_verified_psychology_learning_catalog_contract,
     build_playbook_workflow,
@@ -17,10 +18,14 @@ from ptsm.application.use_cases.psychology_learning_series import (
 )
 from ptsm.config.settings import Settings
 from ptsm.domain.psychology_learning import (
+    PsychologyLearningBundle,
+    _build_confirmed_psychology_learning_catalog,
     build_psychology_learning_catalog_receipt,
     list_psychology_learning_series,
     render_psychology_learning_draft,
+    require_sealed_psychology_learning_preflight_bundle,
     resolve_psychology_learning_selection,
+    seal_psychology_learning_preflight_bundle,
 )
 from ptsm.infrastructure.artifacts.file_store import FileArtifactStore
 from ptsm.infrastructure.memory.store import InMemoryExecutionMemory
@@ -103,7 +108,7 @@ def test_runtime_contract_requires_an_exact_custom_catalog_receipt(
             {"id": "practice", "title": "练习一个小步骤"},
         ),
     )
-    store = PsychologyLearningSeriesStore()
+    store = PsychologyLearningSeriesStore(trusted_provision=True, )
     store.persist_proposal(proposal)
     catalog = store.confirm(
         proposal_id=proposal.proposal_id,
@@ -150,7 +155,102 @@ def test_runtime_contract_requires_an_exact_custom_catalog_receipt(
         )
 
 
-def test_confirmed_custom_catalog_runtime_keeps_proposal_goal_out_of_state(
+def test_runtime_rejects_an_unconfirmed_custom_bundle_as_trust_proof() -> None:
+    """A controlled catalog built from a proposal is not a runnable authority."""
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    unconfirmed_catalog = _build_confirmed_psychology_learning_catalog(
+        proposal,
+        curriculum_version="1",
+    )
+    unconfirmed_bundle = PsychologyLearningBundle(
+        lesson=unconfirmed_catalog.lessons[0],
+        lessons=unconfirmed_catalog.lessons,
+        catalog=unconfirmed_catalog,
+    )
+    receipt = build_psychology_learning_catalog_receipt(unconfirmed_bundle)
+    assert receipt is not None
+
+    with pytest.raises(ValueError, match="preflight"):
+        _resolve_verified_psychology_learning_catalog_contract(
+            contract=unconfirmed_bundle.runtime_contract,
+            manifest=unconfirmed_bundle.manifest,
+            catalog_receipt=receipt,
+            psychology_learning_preflight_capability=unconfirmed_bundle,
+        )
+
+
+def test_runtime_rejects_a_sealed_bundle_copied_onto_an_unconfirmed_catalog() -> None:
+    """A preflight marker is bound to the exact selection, not merely the object."""
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    unconfirmed_catalog = _build_confirmed_psychology_learning_catalog(
+        proposal,
+        curriculum_version="1",
+    )
+    capability = seal_psychology_learning_preflight_bundle(_bundle())
+    forged_bundle = require_sealed_psychology_learning_preflight_bundle(
+        capability
+    ).model_copy(
+        update={
+            "lesson": unconfirmed_catalog.lessons[0],
+            "lessons": unconfirmed_catalog.lessons,
+            "catalog": unconfirmed_catalog,
+        }
+    )
+    receipt = build_psychology_learning_catalog_receipt(forged_bundle)
+    assert receipt is not None
+
+    with pytest.raises(ValueError, match="preflight"):
+        _resolve_verified_psychology_learning_catalog_contract(
+            contract=forged_bundle.runtime_contract,
+            manifest=forged_bundle.manifest,
+            catalog_receipt=receipt,
+            psychology_learning_preflight_capability=forged_bundle,
+        )
+
+
+def test_runtime_rejects_a_preflight_capability_after_its_bound_bundle_is_mutated() -> None:
+    """The capability snapshots its exact preflight selection, not a marker."""
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    unconfirmed_catalog = _build_confirmed_psychology_learning_catalog(
+        proposal,
+        curriculum_version="1",
+    )
+    capability = seal_psychology_learning_preflight_bundle(_bundle())
+    bound_bundle = require_sealed_psychology_learning_preflight_bundle(capability)
+    object.__setattr__(bound_bundle, "lesson", unconfirmed_catalog.lessons[0])
+    object.__setattr__(bound_bundle, "lessons", unconfirmed_catalog.lessons)
+    object.__setattr__(bound_bundle, "catalog", unconfirmed_catalog)
+    receipt = build_psychology_learning_catalog_receipt(bound_bundle)
+    assert receipt is not None
+
+    with pytest.raises(ValueError, match="preflight"):
+        _resolve_verified_psychology_learning_catalog_contract(
+            contract=bound_bundle.runtime_contract,
+            manifest=bound_bundle.manifest,
+            catalog_receipt=receipt,
+            psychology_learning_preflight_capability=capability,
+        )
+
+
+def test_confirmed_custom_catalog_runtime_reuses_preflight_bundle_and_keeps_goal_out_of_state(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -172,19 +272,31 @@ def test_confirmed_custom_catalog_runtime_keeps_proposal_goal_out_of_state(
             },
         ),
     )
-    store = PsychologyLearningSeriesStore()
+    store = PsychologyLearningSeriesStore(trusted_provision=True, )
     store.persist_proposal(proposal)
     catalog = store.confirm(
         proposal_id=proposal.proposal_id,
         proposal_fingerprint=proposal.proposal_fingerprint,
     )
-    bundle = resolve_psychology_learning_selection(
-        series_id=catalog.series_id,
-        lesson_id="notice",
-        curriculum_version=catalog.curriculum_version,
+    capability = seal_psychology_learning_preflight_bundle(
+        resolve_psychology_learning_selection(
+            series_id=catalog.series_id,
+            lesson_id="notice",
+            curriculum_version=catalog.curriculum_version,
+        )
     )
+    bundle = require_sealed_psychology_learning_preflight_bundle(capability)
     receipt = build_psychology_learning_catalog_receipt(bundle)
     assert receipt is not None
+
+    def reject_catalog_reresolution(**_: object) -> object:
+        pytest.fail("guarded runtime must reuse the preflight psychology learning bundle")
+
+    monkeypatch.setattr(
+        psychology_learning_runtime,
+        "resolve_psychology_learning_selection",
+        reject_catalog_reresolution,
+    )
 
     checkpointer = InMemorySaver()
     memory = InMemoryExecutionMemory()
@@ -203,6 +315,7 @@ def test_confirmed_custom_catalog_runtime_keeps_proposal_goal_out_of_state(
         psychology_learning_contract=bundle.runtime_contract,
         psychology_learning_manifest=bundle.manifest,
         psychology_learning_catalog_receipt=receipt,
+        psychology_learning_preflight_capability=capability,
     )
     config = {"configurable": {"thread_id": "custom-learning-boundary"}}
     result = workflow.invoke(
@@ -233,6 +346,43 @@ def test_confirmed_custom_catalog_runtime_keeps_proposal_goal_out_of_state(
         assert forbidden not in snapshots
         assert forbidden not in json.dumps(artifact, ensure_ascii=False)
         assert forbidden not in serialized_memory
+
+
+def test_learning_finalize_rejects_a_rebound_artifact_root_before_first_write(
+    tmp_path: Path,
+) -> None:
+    """A frozen learning root must constrain the finalizer's first artifact write."""
+    bundle = _bundle()
+    artifact_root = tmp_path / "artifacts"
+    artifact_root.mkdir()
+    expected_artifact_root_identity = artifact_root.stat()
+    former_artifact_root = tmp_path / "former-artifacts"
+    workflow = build_playbook_workflow(
+        playbook_id="modern_psychology_post",
+        domain="现代心理困境观察",
+        settings=_settings(),
+        drafting_agent=CapturingLearningDraftAgent(_valid_draft()),  # type: ignore[arg-type]
+        max_attempts=0,
+        artifact_store=FileArtifactStore(base_dir=artifact_root),
+        psychology_learning_contract=bundle.runtime_contract,
+        psychology_learning_manifest=bundle.manifest,
+        expected_artifact_root_identity=expected_artifact_root_identity,
+    )
+    artifact_root.rename(former_artifact_root)
+    artifact_root.mkdir()
+
+    with pytest.raises(OSError, match="artifact parent changed"):
+        workflow.invoke(
+            {
+                "scene": "ignored",
+                "platform": "xiaohongshu",
+                "account_id": "acct-psychology-local",
+            },
+            config={"configurable": {"thread_id": "rebound-learning-root"}},
+        )
+
+    assert not tuple(artifact_root.iterdir())
+    assert not tuple(former_artifact_root.iterdir())
 
 
 def test_learning_workflow_isolates_reused_thread_history_from_ordinary_psychology(
@@ -394,7 +544,7 @@ def test_confirmed_catalog_reconstruction_keeps_proposal_metadata_out_of_runtime
     tmp_path: Path,
 ) -> None:
     root = tmp_path / "series-store"
-    store = PsychologyLearningSeriesStore(catalog_root=root)
+    store = PsychologyLearningSeriesStore(trusted_provision=True, catalog_root=root)
     proposal = plan_psychology_learning_series(
         topic="下班后的脑内回放",
         outline=(

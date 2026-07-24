@@ -2,7 +2,7 @@
 title: PTSM Architecture
 status: active
 owner: ptsm
-last_verified: 2026-07-23
+last_verified: 2026-07-24
 source_of_truth: true
 related_paths:
   - src/ptsm
@@ -51,15 +51,24 @@ playbook、skill 与 eval contract，但每次生成必须先选择一种证据�
 
 `modern_psychology_post` 的 `learning_series` 是同一心理学 playbook 的受控子模式，
 不是第十个领域或新的账号。它同时保留 builtin `after_work_rumination`，并支持经
-`plan-psychology-series` → review → exact `confirm-psychology-series --confirm` 创建的
-immutable `user_confirmed` curriculum revision。`psychology_learning_series.py` 只持久化安全化的
-proposal 和确认后的快照；proposal 本身绝不可运行。运行时从 frozen series / version / lesson
-identity 重新构建并逐字段比对课程合同，而不是信任 caller payload。读者可见文案由受控模板
-渲染，artifact 只保留 opaque audit receipt。系列 checkpoint 使用课程派生的私有 thread lane，
-不会复用普通心理学帖的 scene/history。普通心理学场景帖仍沿用既有 lane/guide flow，不能被
-自动编号或转化为课程。路线图查询明确停在 `selection_required`；推荐顺序只是建议，用户明确
-选择一课后才会取得该课的 catalog-owned title、cover hook、image plan 和可运行方向。任何 topic、
-outline 或热点都不能直接进入 lesson run。
+`provision-psychology-learning-storage` → `plan-psychology-series` → review → exact
+`confirm-psychology-series --confirm` 创建的 immutable `user_confirmed` curriculum revision。
+首次 provision 只能在可信操作者独占存储父目录、所有 writer 已停止时执行；它创建并验证仅当前
+用户可访问的 `proposals`、`confirmations`、`catalogs`、`progress` 固定树。后续 proposal、确认和
+进度写入不会补建、重绑或修复运行时目录。`psychology_learning_series.py` 只持久化安全化的 proposal
+和确认后的快照；proposal 本身绝不可运行。运行时从 frozen series / version / lesson identity
+重新构建并逐字段比对课程合同，而不是信任 caller payload。读者可见文案由受控模板渲染，artifact
+只保留 opaque audit receipt。系列 checkpoint 使用课程派生的私有 thread lane，不会复用普通心理学帖的
+scene/history。普通心理学场景帖仍沿用既有 lane/guide flow，不能被自动编号或转化为课程。路线图查询明确
+停在 `selection_required`；推荐顺序只是建议，用户明确选择一课后才会取得该课的 catalog-owned title、
+cover hook、image plan 和可运行方向。任何 topic、outline 或热点都不能直接进入 lesson run。
+
+运行期以 no-follow descriptor、目录/叶子 identity pin 和私有 regular-file 校验防御单次事务内的目录
+重绑、symlink、hardlink、临时源替换和 payload 竞态；遇到异常即 fail closed。它不会沿可变路径在线
+unlink、覆盖或“修复”不可信 artifact/progress，残留只能交给 `trusted offline maintenance`，在所有
+writer 停止后检查、重建或移除。这不是对持续拥有同一 UID 任意写权限的进程的永久 at-rest 防篡改保证：
+such a same-UID writer can still modify an inode after a transaction's final check. 需要这一保证时，必须使用
+独立 OS principal、签名或不可变存储边界。
 
 ## Package Boundaries
 

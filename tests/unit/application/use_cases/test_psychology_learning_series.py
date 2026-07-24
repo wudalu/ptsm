@@ -15,12 +15,14 @@ import ptsm.domain.psychology_learning as psychology_learning_domain
 from ptsm.application.use_cases.psychology_learning_series import (
     PsychologyLearningSeriesStore,
     plan_psychology_learning_series,
+    provision_psychology_learning_series_storage,
 )
 from ptsm.domain.psychology_learning import (
     PsychologyLearningOutlineItem,
     list_psychology_learning_series,
     psychology_learning_series_catalog_confirmation_path,
     psychology_learning_series_catalog_snapshot_path,
+    psychology_learning_series_progress_sidecar_path,
     psychology_learning_series_proposal_snapshot_path,
     render_psychology_learning_draft,
     resolve_psychology_learning_selection,
@@ -121,7 +123,7 @@ def test_plan_psychology_learning_series_rejects_oversized_concrete_outline() ->
 def test_confirmed_custom_series_requires_exact_persisted_proposal_fingerprint(
     tmp_path,
 ) -> None:
-    store = PsychologyLearningSeriesStore(catalog_root=tmp_path / "series-store")
+    store = PsychologyLearningSeriesStore(trusted_provision=True, catalog_root=tmp_path / "series-store")
     proposal = plan_psychology_learning_series(
         topic="下班后的脑内回放",
         outline=(
@@ -163,7 +165,7 @@ def test_confirmed_custom_series_requires_exact_persisted_proposal_fingerprint(
 def test_confirmation_appends_custom_revision_and_keeps_old_snapshot_resolvable(
     tmp_path,
 ) -> None:
-    store = PsychologyLearningSeriesStore(catalog_root=tmp_path / "series-store")
+    store = PsychologyLearningSeriesStore(trusted_provision=True, catalog_root=tmp_path / "series-store")
     first_proposal = plan_psychology_learning_series(
         topic="下班后的脑内回放",
         outline=(
@@ -230,7 +232,7 @@ def test_confirmation_appends_custom_revision_and_keeps_old_snapshot_resolvable(
 def test_custom_revision_history_fails_closed_when_an_older_snapshot_is_missing(
     tmp_path,
 ) -> None:
-    store = PsychologyLearningSeriesStore(catalog_root=tmp_path / "series-store")
+    store = PsychologyLearningSeriesStore(trusted_provision=True, catalog_root=tmp_path / "series-store")
     first = plan_psychology_learning_series(
         topic="下班后的脑内回放",
         outline=(
@@ -274,7 +276,7 @@ def test_custom_revision_history_fails_closed_when_an_older_snapshot_is_missing(
 def test_custom_revision_history_fails_closed_when_an_older_snapshot_is_tampered(
     tmp_path,
 ) -> None:
-    store = PsychologyLearningSeriesStore(catalog_root=tmp_path / "series-store")
+    store = PsychologyLearningSeriesStore(trusted_provision=True, catalog_root=tmp_path / "series-store")
     first = plan_psychology_learning_series(
         topic="下班后的脑内回放",
         outline=(
@@ -321,7 +323,7 @@ def test_custom_revision_history_fails_closed_when_an_older_snapshot_is_tampered
 def test_confirmation_never_reuses_a_deleted_terminal_revision_number(
     tmp_path,
 ) -> None:
-    store = PsychologyLearningSeriesStore(catalog_root=tmp_path / "series-store")
+    store = PsychologyLearningSeriesStore(trusted_provision=True, catalog_root=tmp_path / "series-store")
     first = plan_psychology_learning_series(
         topic="下班后的脑内回放",
         outline=(
@@ -368,10 +370,10 @@ def test_confirmation_never_reuses_a_deleted_terminal_revision_number(
         )
 
 
-def test_deleting_a_series_catalog_directory_preserves_its_confirmation_history(
+def test_deleting_a_flat_catalog_snapshot_preserves_its_confirmation_history(
     tmp_path,
 ) -> None:
-    store = PsychologyLearningSeriesStore(catalog_root=tmp_path / "series-store")
+    store = PsychologyLearningSeriesStore(trusted_provision=True, catalog_root=tmp_path / "series-store")
     first = plan_psychology_learning_series(
         topic="下班后的脑内回放",
         outline=(
@@ -398,7 +400,11 @@ def test_deleting_a_series_catalog_directory_preserves_its_confirmation_history(
         catalog_root=store.catalog_root,
     )
 
-    shutil.rmtree(store.catalog_root / "catalogs" / catalog.series_id)
+    psychology_learning_series_catalog_snapshot_path(
+        series_id=catalog.series_id,
+        curriculum_version=catalog.curriculum_version,
+        catalog_root=store.catalog_root,
+    ).unlink()
 
     assert confirmation_path.exists()
     with pytest.raises(ValueError, match="catalog revision history"):
@@ -418,7 +424,7 @@ def test_deleting_a_series_catalog_directory_preserves_its_confirmation_history(
 def test_confirmation_does_not_recover_a_nonterminal_missing_snapshot(
     tmp_path,
 ) -> None:
-    store = PsychologyLearningSeriesStore(catalog_root=tmp_path / "series-store")
+    store = PsychologyLearningSeriesStore(trusted_provision=True, catalog_root=tmp_path / "series-store")
     first = plan_psychology_learning_series(
         topic="下班后的脑内回放",
         outline=(
@@ -460,7 +466,7 @@ def test_confirmation_recovers_only_the_matching_pending_snapshot_write(
     tmp_path,
     monkeypatch,
 ) -> None:
-    store = PsychologyLearningSeriesStore(catalog_root=tmp_path / "series-store")
+    store = PsychologyLearningSeriesStore(trusted_provision=True, catalog_root=tmp_path / "series-store")
     proposal = plan_psychology_learning_series(
         topic="下班后的脑内回放",
         outline=(
@@ -490,12 +496,12 @@ def test_confirmation_recovers_only_the_matching_pending_snapshot_write(
     original_write_new_json = psychology_learning_series_use_case._write_new_json
     snapshot_write_failed = False
 
-    def fail_once_for_catalog_snapshot(path, payload) -> None:
+    def fail_once_for_catalog_snapshot(path, payload, **kwargs) -> None:
         nonlocal snapshot_write_failed
         if path == expected_snapshot_path and not snapshot_write_failed:
             snapshot_write_failed = True
             raise OSError("injected catalog snapshot write failure")
-        original_write_new_json(path, payload)
+        original_write_new_json(path, payload, **kwargs)
 
     monkeypatch.setattr(
         psychology_learning_series_use_case,
@@ -554,7 +560,7 @@ def test_confirmation_retry_after_ledger_write_failure_leaves_no_snapshot_orphan
     tmp_path,
     monkeypatch,
 ) -> None:
-    store = PsychologyLearningSeriesStore(catalog_root=tmp_path / "series-store")
+    store = PsychologyLearningSeriesStore(trusted_provision=True, catalog_root=tmp_path / "series-store")
     proposal = plan_psychology_learning_series(
         topic="下班后的脑内回放",
         outline=(
@@ -573,16 +579,25 @@ def test_confirmation_retry_after_ledger_write_failure_leaves_no_snapshot_orphan
         curriculum_version="1",
         catalog_root=store.catalog_root,
     )
-    original_link = psychology_learning_series_use_case.os.link
+    original_open = psychology_learning_series_use_case.os.open
 
-    def fail_for_confirmation_record(source, destination, *args, **kwargs) -> None:
-        if destination == expected_confirmation_path:
+    def fail_for_confirmation_record(
+        path: Path | str,
+        flags: int,
+        *args: object,
+        **kwargs: object,
+    ) -> int:
+        if (
+            str(path) == expected_confirmation_path.name
+            and flags & os.O_EXCL
+            and isinstance(kwargs.get("dir_fd"), int)
+        ):
             raise OSError("injected confirmation ledger write failure")
-        return original_link(source, destination, *args, **kwargs)
+        return original_open(path, flags, *args, **kwargs)
 
     monkeypatch.setattr(
         psychology_learning_series_use_case.os,
-        "link",
+        "open",
         fail_for_confirmation_record,
     )
 
@@ -594,12 +609,12 @@ def test_confirmation_retry_after_ledger_write_failure_leaves_no_snapshot_orphan
 
     assert not expected_confirmation_path.exists()
     assert not expected_snapshot_path.exists()
-    assert not expected_confirmation_path.parent.exists()
+    assert expected_confirmation_path.parent.is_dir()
 
     monkeypatch.setattr(
         psychology_learning_series_use_case.os,
-        "link",
-        original_link,
+        "open",
+        original_open,
     )
     confirmed = store.confirm(
         proposal_id=proposal.proposal_id,
@@ -611,10 +626,10 @@ def test_confirmation_retry_after_ledger_write_failure_leaves_no_snapshot_orphan
     assert expected_snapshot_path.exists()
 
 
-def test_confirmation_retries_after_an_abandoned_empty_ledger_directory(
+def test_confirmation_uses_the_preprovisioned_flat_ledger_directory(
     tmp_path,
 ) -> None:
-    store = PsychologyLearningSeriesStore(catalog_root=tmp_path / "series-store")
+    store = PsychologyLearningSeriesStore(trusted_provision=True, catalog_root=tmp_path / "series-store")
     proposal = plan_psychology_learning_series(
         topic="下班后的脑内回放",
         outline=(
@@ -628,7 +643,7 @@ def test_confirmation_retries_after_an_abandoned_empty_ledger_directory(
         curriculum_version="1",
         catalog_root=store.catalog_root,
     )
-    confirmation_path.parent.mkdir(parents=True)
+    assert confirmation_path.parent.is_dir()
 
     confirmed = store.confirm(
         proposal_id=proposal.proposal_id,
@@ -639,11 +654,11 @@ def test_confirmation_retries_after_an_abandoned_empty_ledger_directory(
     assert confirmation_path.exists()
 
 
-def test_confirmation_ignores_staging_cleanup_failure_after_durable_ledger_write(
+def test_confirmation_never_attempts_online_staging_cleanup(
     tmp_path,
     monkeypatch,
 ) -> None:
-    store = PsychologyLearningSeriesStore(catalog_root=tmp_path / "series-store")
+    store = PsychologyLearningSeriesStore(trusted_provision=True, catalog_root=tmp_path / "series-store")
     proposal = plan_psychology_learning_series(
         topic="下班后的脑内回放",
         outline=(
@@ -652,25 +667,18 @@ def test_confirmation_ignores_staging_cleanup_failure_after_durable_ledger_write
         ),
     )
     store.persist_proposal(proposal)
-    original_unlink = Path.unlink
-    cleanup_failed = False
+    def reject_online_unlink(*args: object, **kwargs: object) -> None:
+        raise AssertionError("confirmation must not clean mutable names online")
 
-    def fail_one_temp_cleanup(path, *args, **kwargs) -> None:
-        nonlocal cleanup_failed
-        if path.suffix == ".tmp" and not cleanup_failed:
-            cleanup_failed = True
-            raise OSError("injected staging cleanup failure")
-        return original_unlink(path, *args, **kwargs)
-
-    monkeypatch.setattr(Path, "unlink", fail_one_temp_cleanup)
-
+    monkeypatch.setattr(
+        psychology_learning_series_use_case.os,
+        "unlink",
+        reject_online_unlink,
+    )
     catalog = store.confirm(
         proposal_id=proposal.proposal_id,
         proposal_fingerprint=proposal.proposal_fingerprint,
     )
-
-    assert cleanup_failed
-    assert tuple((store.catalog_root / "confirmations" / ".staging").glob("*.tmp"))
     assert resolve_psychology_learning_selection(
         series_id=catalog.series_id,
         lesson_id="notice",
@@ -682,7 +690,7 @@ def test_confirmation_ignores_staging_cleanup_failure_after_durable_ledger_write
 def test_custom_revision_history_fails_closed_when_a_confirmation_record_is_missing(
     tmp_path,
 ) -> None:
-    store = PsychologyLearningSeriesStore(catalog_root=tmp_path / "series-store")
+    store = PsychologyLearningSeriesStore(trusted_provision=True, catalog_root=tmp_path / "series-store")
     first = plan_psychology_learning_series(
         topic="下班后的脑内回放",
         outline=(
@@ -726,7 +734,7 @@ def test_custom_revision_history_fails_closed_when_a_confirmation_record_is_miss
 def test_confirmed_custom_lessons_are_controlled_and_progress_is_a_separate_sidecar(
     tmp_path,
 ) -> None:
-    store = PsychologyLearningSeriesStore(catalog_root=tmp_path / "series-store")
+    store = PsychologyLearningSeriesStore(trusted_provision=True, catalog_root=tmp_path / "series-store")
     proposal = plan_psychology_learning_series(
         topic="下班后的脑内回放",
         outline=(
@@ -784,11 +792,53 @@ def test_confirmed_custom_lessons_are_controlled_and_progress_is_a_separate_side
         )
 
 
+def test_public_progress_write_rejects_a_preprovisioned_progress_directory_symlink(
+    tmp_path: Path,
+) -> None:
+    """The legacy progress API must never follow a link into catalog snapshots."""
+    store = PsychologyLearningSeriesStore(trusted_provision=True, catalog_root=tmp_path / "series-store")
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    store.persist_proposal(proposal)
+    catalog = store.confirm(
+        proposal_id=proposal.proposal_id,
+        proposal_fingerprint=proposal.proposal_fingerprint,
+    )
+    snapshot_path = psychology_learning_series_catalog_snapshot_path(
+        series_id=catalog.series_id,
+        curriculum_version=catalog.curriculum_version,
+        catalog_root=store.catalog_root,
+    )
+    snapshot_before = snapshot_path.read_bytes()
+    progress_path = psychology_learning_series_progress_sidecar_path(
+        series_id=catalog.series_id,
+        curriculum_version=catalog.curriculum_version,
+        catalog_root=store.catalog_root,
+    )
+    former_progress = tmp_path / "former-progress"
+    progress_path.parent.rename(former_progress)
+    progress_path.parent.symlink_to(snapshot_path.parent, target_is_directory=True)
+
+    with pytest.raises(OSError):
+        store.write_production_progress(
+            series_id=catalog.series_id,
+            curriculum_version=catalog.curriculum_version,
+            completed_lesson_ids=(catalog.lessons[0].lesson_id,),
+        )
+
+    assert snapshot_path.read_bytes() == snapshot_before
+
+
 def test_mark_production_lesson_completed_is_idempotent_and_concurrency_safe(
     tmp_path: Path,
 ) -> None:
     root = tmp_path / "series-store"
-    store = PsychologyLearningSeriesStore(catalog_root=root)
+    store = PsychologyLearningSeriesStore(trusted_provision=True, catalog_root=root)
     proposal = plan_psychology_learning_series(
         topic="下班后的脑内回放",
         outline=(
@@ -807,7 +857,7 @@ def test_mark_production_lesson_completed_is_idempotent_and_concurrency_safe(
     def mark(lesson_id: str) -> None:
         try:
             start.wait(timeout=5)
-            PsychologyLearningSeriesStore(catalog_root=root).mark_production_lesson_completed(
+            PsychologyLearningSeriesStore(trusted_provision=True, catalog_root=root).mark_production_lesson_completed(
                 series_id=catalog.series_id,
                 curriculum_version=catalog.curriculum_version,
                 lesson_id=lesson_id,
@@ -840,10 +890,543 @@ def test_mark_production_lesson_completed_is_idempotent_and_concurrency_safe(
     ) == progress
 
 
+def test_mark_pinned_progress_is_at_least_once_when_artifact_root_rebinds_after_replace(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A post-replace root swap fails closed but must not roll back by name."""
+    monkeypatch.chdir(tmp_path)
+    store = PsychologyLearningSeriesStore(trusted_provision=True, )
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    store.persist_proposal(proposal)
+    catalog = store.confirm(
+        proposal_id=proposal.proposal_id,
+        proposal_fingerprint=proposal.proposal_fingerprint,
+    )
+    store.mark_production_lesson_completed(
+        series_id=catalog.series_id,
+        curriculum_version=catalog.curriculum_version,
+        lesson_id=catalog.lessons[0].lesson_id,
+    )
+    artifact_root = tmp_path / "outputs" / "artifacts"
+    catalog_root = artifact_root / "psychology-learning-series"
+    former_artifact_root = tmp_path / "outputs" / "former-artifacts"
+    snapshot_path = psychology_learning_series_catalog_snapshot_path(
+        series_id=catalog.series_id,
+        curriculum_version=catalog.curriculum_version,
+    )
+    snapshot_before = snapshot_path.read_bytes()
+    original_replace = os.replace
+    rebound = False
+
+    def replace_then_rebind(*args: object, **kwargs: object) -> None:
+        nonlocal rebound
+        original_replace(*args, **kwargs)  # type: ignore[arg-type]
+        if not rebound:
+            rebound = True
+            artifact_root.rename(former_artifact_root)
+            artifact_root.symlink_to(former_artifact_root, target_is_directory=True)
+
+    monkeypatch.setattr(
+        psychology_learning_series_use_case.os,
+        "replace",
+        replace_then_rebind,
+    )
+
+    with pytest.raises(OSError, match="storage root changed"):
+        store.mark_production_lesson_completed(
+            series_id=catalog.series_id,
+            curriculum_version=catalog.curriculum_version,
+            lesson_id=catalog.lessons[1].lesson_id,
+            catalog=catalog,
+            expected_catalog_root_identity=catalog_root.stat(),
+            expected_progress_identity=store._capture_pinned_progress_directory_identity(
+                expected_catalog_root_identity=catalog_root.stat()
+            ),
+            expected_artifact_root_path=artifact_root,
+            expected_artifact_root_identity=artifact_root.stat(),
+        )
+
+    assert rebound
+    assert (
+        former_artifact_root
+        / "psychology-learning-series"
+        / "catalogs"
+        / snapshot_path.name
+    ).read_bytes() == snapshot_before
+    with pytest.raises(OSError, match="storage root changed"):
+        store.read_production_progress(
+            series_id=catalog.series_id,
+            curriculum_version=catalog.curriculum_version,
+        )
+    assert PsychologyLearningSeriesStore(
+        catalog_root=former_artifact_root / "psychology-learning-series"
+    ).read_production_progress(
+        series_id=catalog.series_id,
+        curriculum_version=catalog.curriculum_version,
+    ).completed_lesson_ids == (
+        catalog.lessons[0].lesson_id,
+        catalog.lessons[1].lesson_id,
+    )
+
+
+@pytest.mark.parametrize(
+    ("replacement_kind", "seed_existing_progress"),
+    (
+        ("symlink", False),
+        ("hardlink", False),
+        ("symlink", True),
+        ("hardlink", True),
+    ),
+)
+def test_mark_pinned_progress_leaves_a_temporary_source_swap_for_offline_cleanup(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    replacement_kind: str,
+    seed_existing_progress: bool,
+) -> None:
+    """A raced temp entry fails closed without unlinking an attacker replacement."""
+    monkeypatch.chdir(tmp_path)
+    store = PsychologyLearningSeriesStore(trusted_provision=True, )
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    store.persist_proposal(proposal)
+    catalog = store.confirm(
+        proposal_id=proposal.proposal_id,
+        proposal_fingerprint=proposal.proposal_fingerprint,
+    )
+    artifact_root = tmp_path / "outputs" / "artifacts"
+    catalog_root = artifact_root / "psychology-learning-series"
+    snapshot_path = psychology_learning_series_catalog_snapshot_path(
+        series_id=catalog.series_id,
+        curriculum_version=catalog.curriculum_version,
+    )
+    snapshot_before = snapshot_path.read_bytes()
+    progress_path = psychology_learning_series_progress_sidecar_path(
+        series_id=catalog.series_id,
+        curriculum_version=catalog.curriculum_version,
+    )
+    if seed_existing_progress:
+        store.mark_production_lesson_completed(
+            series_id=catalog.series_id,
+            curriculum_version=catalog.curriculum_version,
+            lesson_id=catalog.lessons[0].lesson_id,
+            catalog=catalog,
+            expected_catalog_root_identity=catalog_root.stat(),
+            expected_progress_identity=store._capture_pinned_progress_directory_identity(
+                expected_catalog_root_identity=catalog_root.stat()
+            ),
+            expected_artifact_root_path=artifact_root,
+            expected_artifact_root_identity=artifact_root.stat(),
+        )
+    original_replace = os.replace
+    swapped = False
+
+    def replace_after_temporary_source_swap(
+        source: object,
+        destination: object,
+        **kwargs: object,
+    ) -> None:
+        nonlocal swapped
+        source_name = str(source)
+        source_parent_fd = kwargs.get("src_dir_fd")
+        if (
+            not swapped
+            and source_name.endswith(".tmp")
+            and isinstance(source_parent_fd, int)
+        ):
+            swapped = True
+            os.unlink(source_name, dir_fd=source_parent_fd)
+            if replacement_kind == "symlink":
+                os.symlink(snapshot_path, source_name, dir_fd=source_parent_fd)
+            else:
+                os.link(snapshot_path, source_name, dst_dir_fd=source_parent_fd)
+        original_replace(source, destination, **kwargs)
+
+    monkeypatch.setattr(
+        psychology_learning_series_use_case.os,
+        "replace",
+        replace_after_temporary_source_swap,
+    )
+
+    with pytest.raises(OSError, match="psychology learning file changed"):
+        store.mark_production_lesson_completed(
+            series_id=catalog.series_id,
+            curriculum_version=catalog.curriculum_version,
+            lesson_id=(
+                catalog.lessons[1].lesson_id
+                if seed_existing_progress
+                else catalog.lessons[0].lesson_id
+            ),
+            catalog=catalog,
+            expected_catalog_root_identity=catalog_root.stat(),
+            expected_progress_identity=store._capture_pinned_progress_directory_identity(
+                expected_catalog_root_identity=catalog_root.stat()
+            ),
+            expected_artifact_root_path=artifact_root,
+            expected_artifact_root_identity=artifact_root.stat(),
+        )
+
+    assert swapped
+    if replacement_kind == "symlink":
+        assert progress_path.is_symlink()
+    else:
+        assert progress_path.exists()
+        assert os.path.samestat(progress_path.stat(), snapshot_path.stat())
+    assert snapshot_path.read_bytes() == snapshot_before
+    with pytest.raises((OSError, ValueError)):
+        store.read_production_progress(
+            series_id=catalog.series_id,
+            curriculum_version=catalog.curriculum_version,
+        )
+
+
+def test_write_progress_rejects_a_hidden_temporary_payload_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """An attacker cannot hide a valid progress rewrite by unlinking its peer."""
+    monkeypatch.chdir(tmp_path)
+    store = PsychologyLearningSeriesStore(trusted_provision=True)
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    store.persist_proposal(proposal)
+    catalog = store.confirm(
+        proposal_id=proposal.proposal_id,
+        proposal_fingerprint=proposal.proposal_fingerprint,
+    )
+    progress_path = psychology_learning_series_progress_sidecar_path(
+        series_id=catalog.series_id,
+        curriculum_version=catalog.curriculum_version,
+    )
+    peer_name = "attacker-peer.json"
+    attacker_payload = psychology_learning_series_use_case._canonical_json(
+        {
+            "series_id": catalog.series_id,
+            "curriculum_version": catalog.curriculum_version,
+            "catalog_digest": catalog.catalog_digest,
+            "completed_lesson_ids": [
+                catalog.lessons[0].lesson_id,
+                catalog.lessons[1].lesson_id,
+            ],
+        }
+    ).encode("utf-8")
+    original_replace = psychology_learning_series_use_case.os.replace
+    mutated = False
+
+    def replace_after_hidden_temporary_mutation(
+        source: object,
+        destination: object,
+        **kwargs: object,
+    ) -> None:
+        nonlocal mutated
+        source_name = str(source)
+        source_parent_fd = kwargs.get("src_dir_fd")
+        destination_parent_fd = kwargs.get("dst_dir_fd")
+        if (
+            not mutated
+            and source_name.endswith(".tmp")
+            and isinstance(source_parent_fd, int)
+            and isinstance(destination_parent_fd, int)
+        ):
+            mutated = True
+            os.link(
+                source_name,
+                peer_name,
+                src_dir_fd=source_parent_fd,
+                dst_dir_fd=destination_parent_fd,
+            )
+            peer_fd = os.open(
+                peer_name,
+                os.O_WRONLY | os.O_TRUNC,
+                dir_fd=destination_parent_fd,
+            )
+            try:
+                os.write(peer_fd, attacker_payload)
+                os.fsync(peer_fd)
+            finally:
+                os.close(peer_fd)
+            os.unlink(peer_name, dir_fd=destination_parent_fd)
+        original_replace(source, destination, **kwargs)
+
+    monkeypatch.setattr(
+        psychology_learning_series_use_case.os,
+        "replace",
+        replace_after_hidden_temporary_mutation,
+    )
+
+    with pytest.raises(OSError, match="psychology learning progress payload changed"):
+        store.write_production_progress(
+            series_id=catalog.series_id,
+            curriculum_version=catalog.curriculum_version,
+            completed_lesson_ids=(catalog.lessons[0].lesson_id,),
+        )
+
+    assert mutated
+    assert progress_path.read_bytes() == attacker_payload
+    assert not (progress_path.parent / peer_name).exists()
+
+
+def test_write_progress_rechecks_payload_after_the_inner_replace_returns(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """The outer transaction closes the gap after the inner fd's final check."""
+    monkeypatch.chdir(tmp_path)
+    store = PsychologyLearningSeriesStore(trusted_provision=True)
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    store.persist_proposal(proposal)
+    catalog = store.confirm(
+        proposal_id=proposal.proposal_id,
+        proposal_fingerprint=proposal.proposal_fingerprint,
+    )
+    progress_path = psychology_learning_series_progress_sidecar_path(
+        series_id=catalog.series_id,
+        curriculum_version=catalog.curriculum_version,
+    )
+    peer_name = "attacker-peer.json"
+    attacker_payload = psychology_learning_series_use_case._canonical_json(
+        {
+            "series_id": catalog.series_id,
+            "curriculum_version": catalog.curriculum_version,
+            "catalog_digest": catalog.catalog_digest,
+            "completed_lesson_ids": [
+                catalog.lessons[0].lesson_id,
+                catalog.lessons[1].lesson_id,
+            ],
+        }
+    ).encode("utf-8")
+    original_replace = psychology_learning_series_use_case._replace_pinned_regular_file
+    mutated = False
+
+    def replace_then_mutate_after_inner_check(
+        *,
+        parent_fd: int,
+        name: str,
+        payload: bytes,
+        expected_identity: os.stat_result | None,
+    ) -> os.stat_result:
+        nonlocal mutated
+        committed = original_replace(
+            parent_fd=parent_fd,
+            name=name,
+            payload=payload,
+            expected_identity=expected_identity,
+        )
+        mutated = True
+        os.link(name, peer_name, src_dir_fd=parent_fd, dst_dir_fd=parent_fd)
+        peer_fd = os.open(peer_name, os.O_WRONLY | os.O_TRUNC, dir_fd=parent_fd)
+        try:
+            os.write(peer_fd, attacker_payload)
+            os.fsync(peer_fd)
+        finally:
+            os.close(peer_fd)
+        os.unlink(peer_name, dir_fd=parent_fd)
+        return committed
+
+    monkeypatch.setattr(
+        psychology_learning_series_use_case,
+        "_replace_pinned_regular_file",
+        replace_then_mutate_after_inner_check,
+    )
+
+    with pytest.raises(OSError, match="psychology learning progress payload changed"):
+        store.write_production_progress(
+            series_id=catalog.series_id,
+            curriculum_version=catalog.curriculum_version,
+            completed_lesson_ids=(catalog.lessons[0].lesson_id,),
+        )
+
+    assert mutated
+    assert progress_path.read_bytes() == attacker_payload
+    assert not (progress_path.parent / peer_name).exists()
+
+
+def test_mark_pinned_progress_serializes_concurrent_marks_on_the_series_directory(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Pinned callers share one directory flock even without a mutable lock file."""
+    monkeypatch.chdir(tmp_path)
+    store = PsychologyLearningSeriesStore(trusted_provision=True, )
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    store.persist_proposal(proposal)
+    catalog = store.confirm(
+        proposal_id=proposal.proposal_id,
+        proposal_fingerprint=proposal.proposal_fingerprint,
+    )
+    artifact_root = tmp_path / "outputs" / "artifacts"
+    catalog_root = artifact_root / "psychology-learning-series"
+    start = threading.Barrier(2)
+    failures: list[BaseException] = []
+
+    def mark(lesson_id: str) -> None:
+        try:
+            start.wait(timeout=5)
+            PsychologyLearningSeriesStore(trusted_provision=True, ).mark_production_lesson_completed(
+                series_id=catalog.series_id,
+                curriculum_version=catalog.curriculum_version,
+                lesson_id=lesson_id,
+                catalog=catalog,
+                expected_catalog_root_identity=catalog_root.stat(),
+                expected_progress_identity=store._capture_pinned_progress_directory_identity(
+                    expected_catalog_root_identity=catalog_root.stat()
+                ),
+                expected_artifact_root_path=artifact_root,
+                expected_artifact_root_identity=artifact_root.stat(),
+            )
+        except BaseException as exc:  # pragma: no cover - asserted below
+            failures.append(exc)
+
+    threads = [
+        threading.Thread(target=mark, args=(lesson.lesson_id,))
+        for lesson in catalog.lessons
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+
+    assert not failures
+    assert all(not thread.is_alive() for thread in threads)
+    assert store.read_production_progress(
+        series_id=catalog.series_id,
+        curriculum_version=catalog.curriculum_version,
+    ).completed_lesson_ids == tuple(lesson.lesson_id for lesson in catalog.lessons)
+
+
+def test_mark_pinned_progress_shares_its_lock_with_legacy_progress_marks(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A guarded run and the public retry API cannot form separate lock domains."""
+    monkeypatch.chdir(tmp_path)
+    store = PsychologyLearningSeriesStore(trusted_provision=True, )
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    store.persist_proposal(proposal)
+    catalog = store.confirm(
+        proposal_id=proposal.proposal_id,
+        proposal_fingerprint=proposal.proposal_fingerprint,
+    )
+    artifact_root = tmp_path / "outputs" / "artifacts"
+    catalog_root = artifact_root / "psychology-learning-series"
+    pinned_read_entered = threading.Event()
+    allow_pinned_read = threading.Event()
+    legacy_read_entered = threading.Event()
+    failures: list[BaseException] = []
+    original_pinned_read = psychology_learning_series_use_case._read_pinned_production_progress
+    original_legacy_read = PsychologyLearningSeriesStore.read_production_progress
+
+    def pause_pinned_read(**kwargs: object):
+        pinned_read_entered.set()
+        assert allow_pinned_read.wait(timeout=5)
+        return original_pinned_read(**kwargs)
+
+    def record_legacy_read(
+        self: PsychologyLearningSeriesStore,
+        **kwargs: object,
+    ):
+        legacy_read_entered.set()
+        return original_legacy_read(self, **kwargs)
+
+    monkeypatch.setattr(
+        psychology_learning_series_use_case,
+        "_read_pinned_production_progress",
+        pause_pinned_read,
+    )
+    monkeypatch.setattr(
+        PsychologyLearningSeriesStore,
+        "read_production_progress",
+        record_legacy_read,
+    )
+
+    def mark_pinned() -> None:
+        try:
+            store.mark_production_lesson_completed(
+                series_id=catalog.series_id,
+                curriculum_version=catalog.curriculum_version,
+                lesson_id=catalog.lessons[0].lesson_id,
+                catalog=catalog,
+                expected_catalog_root_identity=catalog_root.stat(),
+                expected_progress_identity=store._capture_pinned_progress_directory_identity(
+                    expected_catalog_root_identity=catalog_root.stat()
+                ),
+                expected_artifact_root_path=artifact_root,
+                expected_artifact_root_identity=artifact_root.stat(),
+            )
+        except BaseException as exc:  # pragma: no cover - asserted below
+            failures.append(exc)
+
+    def mark_legacy() -> None:
+        try:
+            PsychologyLearningSeriesStore(trusted_provision=True, ).mark_production_lesson_completed(
+                series_id=catalog.series_id,
+                curriculum_version=catalog.curriculum_version,
+                lesson_id=catalog.lessons[1].lesson_id,
+            )
+        except BaseException as exc:  # pragma: no cover - asserted below
+            failures.append(exc)
+
+    pinned_thread = threading.Thread(target=mark_pinned)
+    pinned_thread.start()
+    assert pinned_read_entered.wait(timeout=5)
+    legacy_thread = threading.Thread(target=mark_legacy)
+    legacy_thread.start()
+
+    # The legacy reader may not enter while the pinned writer owns the same
+    # series-directory flock. A separate `.lock` file would fail this check.
+    assert not legacy_read_entered.wait(timeout=0.25)
+    allow_pinned_read.set()
+    pinned_thread.join(timeout=10)
+    legacy_thread.join(timeout=10)
+
+    assert not failures
+    assert not pinned_thread.is_alive()
+    assert not legacy_thread.is_alive()
+    assert store.read_production_progress(
+        series_id=catalog.series_id,
+        curriculum_version=catalog.curriculum_version,
+    ).completed_lesson_ids == tuple(lesson.lesson_id for lesson in catalog.lessons)
+
+
 def test_custom_catalog_resolution_fails_closed_until_matching_retry_and_for_tampered_snapshots(
     tmp_path,
 ) -> None:
-    store = PsychologyLearningSeriesStore(catalog_root=tmp_path / "series-store")
+    store = PsychologyLearningSeriesStore(trusted_provision=True, catalog_root=tmp_path / "series-store")
     proposal = plan_psychology_learning_series(
         topic="下班后的脑内回放",
         outline=(
@@ -878,7 +1461,7 @@ def test_custom_catalog_resolution_fails_closed_until_matching_retry_and_for_tam
     assert recovered == catalog
     assert catalog_path.exists()
 
-    tampered_store = PsychologyLearningSeriesStore(
+    tampered_store = PsychologyLearningSeriesStore(trusted_provision=True,
         catalog_root=tmp_path / "tampered-series-store"
     )
     tampered_store.persist_proposal(proposal)
@@ -902,7 +1485,7 @@ def test_custom_catalog_resolution_fails_closed_until_matching_retry_and_for_tam
             catalog_root=tampered_store.catalog_root,
         )
 
-    missing_proposal_store = PsychologyLearningSeriesStore(
+    missing_proposal_store = PsychologyLearningSeriesStore(trusted_provision=True,
         catalog_root=tmp_path / "missing-proposal-series-store"
     )
     missing_proposal_store.persist_proposal(proposal)
@@ -925,51 +1508,440 @@ def test_custom_catalog_resolution_fails_closed_until_matching_retry_and_for_tam
         )
 
 
-def test_write_new_json_syncs_temp_before_link_and_destination_directory_after(
+@pytest.mark.parametrize("storage_directory", ("proposals", "confirmations", "catalogs"))
+def test_immutable_catalog_writes_reject_a_symlinked_storage_directory(
+    tmp_path: Path,
+    storage_directory: str,
+) -> None:
+    root = tmp_path / "series-store"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    store = PsychologyLearningSeriesStore(trusted_provision=True, catalog_root=root)
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+
+    if storage_directory == "proposals":
+        (root / storage_directory).rmdir()
+        (root / storage_directory).symlink_to(outside, target_is_directory=True)
+        with pytest.raises(OSError, match="symlink|directory|storage"):
+            store.persist_proposal(proposal)
+    else:
+        store.persist_proposal(proposal)
+        (root / storage_directory).rmdir()
+        (root / storage_directory).symlink_to(outside, target_is_directory=True)
+        with pytest.raises(OSError, match="symlink|directory|storage"):
+            store.confirm(
+                proposal_id=proposal.proposal_id,
+                proposal_fingerprint=proposal.proposal_fingerprint,
+            )
+
+    assert not tuple(outside.iterdir())
+
+
+def test_immutable_proposal_snapshot_rejects_a_hard_link(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "series-store"
+    outside = tmp_path / "outside-proposal.json"
+    store = PsychologyLearningSeriesStore(trusted_provision=True, catalog_root=root)
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    target = psychology_learning_series_proposal_snapshot_path(
+        proposal_id=proposal.proposal_id,
+        catalog_root=root,
+    )
+    outside.write_text(
+        json.dumps(proposal.model_dump(mode="json"), ensure_ascii=False),
+        encoding="utf-8",
+    )
+    os.link(outside, target)
+
+    with pytest.raises(OSError, match="private regular file"):
+        store.persist_proposal(proposal)
+
+    assert outside.stat().st_nlink == 2
+
+
+def test_immutable_proposal_write_rejects_a_target_replacement_after_file_sync(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A direct O_EXCL target is never cleaned up after an attacker swaps it."""
+    root = tmp_path / "series-store"
+    outside = tmp_path / "outside.json"
+    store = PsychologyLearningSeriesStore(trusted_provision=True, catalog_root=root)
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    target = psychology_learning_series_proposal_snapshot_path(
+        proposal_id=proposal.proposal_id,
+        catalog_root=root,
+    )
+    outside.write_text('{"attacker":true}', encoding="utf-8")
+    original_fsync = psychology_learning_series_use_case.os.fsync
+    swapped = False
+
+    def fsync_then_swap_target(fd: int) -> None:
+        nonlocal swapped
+        original_fsync(fd)
+        if (
+            not swapped
+            and target.exists()
+            and stat.S_ISREG(os.fstat(fd).st_mode)
+        ):
+            swapped = True
+            outside.replace(target)
+
+    monkeypatch.setattr(psychology_learning_series_use_case.os, "fsync", fsync_then_swap_target)
+
+    with pytest.raises(OSError):
+        store.persist_proposal(proposal)
+
+    assert swapped
+    assert target.read_text(encoding="utf-8") == '{"attacker":true}'
+    with pytest.raises((OSError, ValueError)):
+        store.read_proposal(proposal_id=proposal.proposal_id)
+
+
+def test_immutable_proposal_write_preserves_an_existing_private_collision(
+    tmp_path: Path,
+) -> None:
+    """A pre-existing name is never overwritten by an immutable retry."""
+    root = tmp_path / "series-store"
+    outside = tmp_path / "outside.json"
+    store = PsychologyLearningSeriesStore(trusted_provision=True, catalog_root=root)
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    target = psychology_learning_series_proposal_snapshot_path(
+        proposal_id=proposal.proposal_id,
+        catalog_root=root,
+    )
+    outside.write_text('{"attacker":true}', encoding="utf-8")
+    outside.replace(target)
+
+    with pytest.raises((OSError, ValueError)):
+        store.persist_proposal(proposal)
+
+    assert target.read_text(encoding="utf-8") == '{"attacker":true}'
+
+
+def test_immutable_proposal_write_rejects_a_hidden_content_mutation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "series-store"
+    store = PsychologyLearningSeriesStore(trusted_provision=True, catalog_root=root)
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    target = psychology_learning_series_proposal_snapshot_path(
+        proposal_id=proposal.proposal_id,
+        catalog_root=root,
+    )
+    peer_path = root / "proposals" / "attacker-peer.json"
+    attacker_bytes = b'{"attacker":true}'
+    original_fsync = psychology_learning_series_use_case.os.fsync
+    mutated = False
+
+    def fsync_then_mutate_hidden_peer(fd: int) -> None:
+        nonlocal mutated
+        original_fsync(fd)
+        if (
+            not mutated
+            and target.exists()
+            and stat.S_ISREG(os.fstat(fd).st_mode)
+        ):
+            mutated = True
+            os.link(target, peer_path)
+            peer_fd = os.open(peer_path, os.O_WRONLY | os.O_TRUNC)
+            try:
+                os.write(peer_fd, attacker_bytes)
+                original_fsync(peer_fd)
+            finally:
+                os.close(peer_fd)
+            peer_path.unlink()
+
+    monkeypatch.setattr(
+        psychology_learning_series_use_case.os,
+        "fsync",
+        fsync_then_mutate_hidden_peer,
+    )
+
+    with pytest.raises(OSError, match="immutable snapshot source changed"):
+        store.persist_proposal(proposal)
+
+    assert mutated
+    assert target.read_bytes() == attacker_bytes
+    assert not peer_path.exists()
+
+
+def test_proposal_persistence_rejects_a_proposals_directory_rebind_after_create(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "series-store"
+    former_proposals = tmp_path / "former-proposals"
+    store = PsychologyLearningSeriesStore(trusted_provision=True, catalog_root=root)
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    proposal_path = psychology_learning_series_proposal_snapshot_path(
+        proposal_id=proposal.proposal_id,
+        catalog_root=root,
+    )
+    original_fsync = psychology_learning_series_use_case.os.fsync
+    rebound = False
+
+    def fsync_then_rebind_proposals(fd: int) -> None:
+        nonlocal rebound
+        original_fsync(fd)
+        if (
+            not rebound
+            and proposal_path.exists()
+            and stat.S_ISREG(os.fstat(fd).st_mode)
+        ):
+            rebound = True
+            (root / "proposals").rename(former_proposals)
+            (root / "proposals").mkdir()
+
+    monkeypatch.setattr(
+        psychology_learning_series_use_case.os,
+        "fsync",
+        fsync_then_rebind_proposals,
+    )
+
+    with pytest.raises(OSError, match="storage (root|directory) changed"):
+        store.persist_proposal(proposal)
+
+    assert rebound
+    assert not proposal_path.exists()
+    assert (former_proposals / proposal_path.name).exists()
+    with pytest.raises(ValueError, match="unknown psychology learning proposal"):
+        store.read_proposal(proposal_id=proposal.proposal_id)
+
+
+def test_proposal_persistence_rejects_a_missing_provisioned_directory(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "series-store"
+    store = PsychologyLearningSeriesStore(trusted_provision=True, catalog_root=root)
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    (root / "proposals").rmdir()
+
+    with pytest.raises(OSError, match="storage is not provisioned"):
+        store.persist_proposal(proposal)
+
+    assert not (root / "proposals").exists()
+
+
+def test_proposal_persistence_requires_trusted_provisioning(tmp_path: Path) -> None:
+    """A content mutation never creates an unpinned storage directory."""
+    root = tmp_path / "series-store"
+    store = PsychologyLearningSeriesStore(catalog_root=root)
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    with pytest.raises(OSError, match="storage is not provisioned"):
+        store.persist_proposal(proposal)
+
+    provisioned_root = provision_psychology_learning_series_storage(catalog_root=root)
+    persisted = PsychologyLearningSeriesStore(
+        catalog_root=provisioned_root
+    ).persist_proposal(proposal)
+
+    assert persisted == proposal
+    assert psychology_learning_series_proposal_snapshot_path(
+        proposal_id=proposal.proposal_id,
+        catalog_root=provisioned_root,
+    ).is_file()
+
+
+def test_confirmation_rejects_a_catalog_root_rebind_after_proposal_read(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "series-store"
+    former_root = tmp_path / "former-series-store"
+    store = PsychologyLearningSeriesStore(trusted_provision=True, catalog_root=root)
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    store.persist_proposal(proposal)
+    original_sync = store._sync_existing_catalog_history
+    rebound = False
+
+    def sync_then_rebind(*, series_id: str) -> None:
+        nonlocal rebound
+        original_sync(series_id=series_id)
+        if not rebound:
+            rebound = True
+            root.rename(former_root)
+            root.mkdir()
+
+    monkeypatch.setattr(store, "_sync_existing_catalog_history", sync_then_rebind)
+
+    with pytest.raises(OSError, match="storage root changed"):
+        store.confirm(
+            proposal_id=proposal.proposal_id,
+            proposal_fingerprint=proposal.proposal_fingerprint,
+        )
+
+    assert rebound
+    assert not tuple(root.iterdir())
+    assert (
+        former_root / "proposals" / f"{proposal.proposal_id}.json"
+    ).is_file()
+
+
+def test_confirmation_rejects_a_catalog_child_rebind_between_commits(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "series-store"
+    former_catalogs = tmp_path / "former-catalogs"
+    store = PsychologyLearningSeriesStore(trusted_provision=True, catalog_root=root)
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    store.persist_proposal(proposal)
+    original_persist_record = store._persist_confirmation_record
+    rebound = False
+
+    def persist_record_then_rebind(
+        catalog,
+        *,
+        mutation_scope,
+    ) -> None:
+        nonlocal rebound
+        original_persist_record(catalog, mutation_scope=mutation_scope)
+        if not rebound:
+            rebound = True
+            (root / "catalogs").rename(former_catalogs)
+            (root / "catalogs").mkdir()
+
+    monkeypatch.setattr(store, "_persist_confirmation_record", persist_record_then_rebind)
+
+    with pytest.raises(OSError, match="storage (root|directory) changed"):
+        store.confirm(
+            proposal_id=proposal.proposal_id,
+            proposal_fingerprint=proposal.proposal_fingerprint,
+        )
+
+    assert rebound
+    assert not tuple((root / "catalogs").iterdir())
+    assert not tuple(former_catalogs.iterdir())
+
+
+def test_confirmation_rejects_a_directory_entry_in_flat_catalog_storage(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "series-store"
+    store = PsychologyLearningSeriesStore(trusted_provision=True, catalog_root=root)
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    store.persist_proposal(proposal)
+    original_sync = store._sync_existing_catalog_history
+
+    def sync_then_create_series_directory(*, series_id: str) -> None:
+        original_sync(series_id=series_id)
+        (root / "catalogs" / series_id).mkdir()
+
+    monkeypatch.setattr(
+        store,
+        "_sync_existing_catalog_history",
+        sync_then_create_series_directory,
+    )
+
+    with pytest.raises(ValueError, match="catalog revision history"):
+        store.confirm(
+            proposal_id=proposal.proposal_id,
+            proposal_fingerprint=proposal.proposal_fingerprint,
+        )
+
+
+def test_write_new_json_syncs_file_and_destination_directory_after_direct_create(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     path = tmp_path / "series-store" / "proposals" / "proposal.json"
     path.parent.mkdir(parents=True)
-    (path.parent.parent / ".staging").mkdir()
     events: list[str] = []
     original_fsync = psychology_learning_series_use_case.os.fsync
-    original_link = psychology_learning_series_use_case.os.link
 
     def record_fsync(fd: int) -> None:
         kind = "directory" if stat.S_ISDIR(os.fstat(fd).st_mode) else "file"
         events.append(f"{kind}-fsync")
         original_fsync(fd)
 
-    def record_link(source: Path | str, destination: Path | str, *args: object) -> None:
-        events.append("link")
-        original_link(source, destination, *args)
-
     monkeypatch.setattr(psychology_learning_series_use_case.os, "fsync", record_fsync)
-    monkeypatch.setattr(psychology_learning_series_use_case.os, "link", record_link)
 
     psychology_learning_series_use_case._write_new_json(path, {"value": "one"})
 
-    link_index = events.index("link")
+    file_sync_index = events.index("file-fsync")
     assert any(
-        index < link_index and event == "file-fsync"
-        for index, event in enumerate(events)
-    )
-    assert any(
-        index > link_index and event == "directory-fsync"
+        index > file_sync_index and event == "directory-fsync"
         for index, event in enumerate(events)
     )
     assert json.loads(path.read_text(encoding="utf-8")) == {"value": "one"}
 
 
-def test_write_new_json_file_sync_failure_leaves_immutable_target_absent(
+def test_write_new_json_file_sync_failure_leaves_immutable_target_for_offline_cleanup(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     path = tmp_path / "series-store" / "proposals" / "proposal.json"
     path.parent.mkdir(parents=True)
-    staging_directory = path.parent.parent / ".staging"
-    staging_directory.mkdir()
     original_fsync = psychology_learning_series_use_case.os.fsync
 
     def fail_file_fsync(fd: int) -> None:
@@ -986,78 +1958,15 @@ def test_write_new_json_file_sync_failure_leaves_immutable_target_absent(
     with pytest.raises(OSError, match="temporary file fsync failure"):
         psychology_learning_series_use_case._write_new_json(path, {"value": "one"})
 
-    assert not path.exists()
-    assert not tuple(staging_directory.glob("*.tmp"))
-
-
-def test_immutable_retry_syncs_a_parent_entry_left_after_failed_directory_creation(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    root = tmp_path / "series-store"
-    path = root / "proposals" / "proposal.json"
-    root.mkdir()
-    (root / ".staging").mkdir()
-    original_open = psychology_learning_series_use_case.os.open
-    original_fsync = psychology_learning_series_use_case.os.fsync
-    original_rmdir = Path.rmdir
-    fd_paths: dict[int, Path] = {}
-
-    def record_open(path: Path | str, flags: int, *args: int) -> int:
-        fd = original_open(path, flags, *args)
-        fd_paths[fd] = Path(path)
-        return fd
-
-    def fail_root_directory_fsync(fd: int) -> None:
-        if fd_paths.get(fd) == root and path.parent.is_dir():
-            raise OSError(errno.ENOTSUP, "injected parent directory fsync failure")
-        original_fsync(fd)
-
-    def preserve_target_directory(directory: Path, *args: object) -> None:
-        if directory == path.parent:
-            raise OSError("injected best-effort cleanup failure")
-        original_rmdir(directory, *args)
-
-    monkeypatch.setattr(psychology_learning_series_use_case.os, "open", record_open)
-    monkeypatch.setattr(
-        psychology_learning_series_use_case.os,
-        "fsync",
-        fail_root_directory_fsync,
-    )
-    monkeypatch.setattr(Path, "rmdir", preserve_target_directory)
-
-    with pytest.raises(OSError, match="parent directory fsync failure"):
-        psychology_learning_series_use_case._write_new_json(path, {"value": "one"})
-
-    assert path.parent.is_dir()
-    monkeypatch.setattr(psychology_learning_series_use_case.os, "fsync", original_fsync)
-    monkeypatch.setattr(Path, "rmdir", original_rmdir)
-    fd_paths.clear()
-    retry_sync_paths: list[Path] = []
-
-    def record_retry_fsync(fd: int) -> None:
-        directory = fd_paths.get(fd)
-        if directory is not None:
-            retry_sync_paths.append(directory)
-        original_fsync(fd)
-
-    monkeypatch.setattr(
-        psychology_learning_series_use_case.os,
-        "fsync",
-        record_retry_fsync,
-    )
-
-    psychology_learning_series_use_case._write_new_json(path, {"value": "one"})
-
-    assert root in retry_sync_paths
     assert path.exists()
+    assert json.loads(path.read_text(encoding="utf-8")) == {"value": "one"}
 
 
 def test_domain_custom_catalog_reads_reject_visible_snapshot_until_directory_sync_retries(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    store = PsychologyLearningSeriesStore(catalog_root=tmp_path / "series-store")
+    store = PsychologyLearningSeriesStore(trusted_provision=True, catalog_root=tmp_path / "series-store")
     proposal = plan_psychology_learning_series(
         topic="下班后的脑内回放",
         outline=(
@@ -1072,13 +1981,31 @@ def test_domain_custom_catalog_reads_reject_visible_snapshot_until_directory_syn
         catalog_root=store.catalog_root,
     )
     original_open = psychology_learning_series_use_case.os.open
+    original_dup = psychology_learning_series_use_case.os.dup
     original_fsync = psychology_learning_series_use_case.os.fsync
     fd_paths: dict[int, Path] = {}
 
-    def record_open(path: Path | str, flags: int, *args: int) -> int:
-        fd = original_open(path, flags, *args)
-        fd_paths[fd] = Path(path)
+    def record_open(
+        opened_path: Path | str,
+        flags: int,
+        *args: int,
+        **kwargs: object,
+    ) -> int:
+        fd = original_open(opened_path, flags, *args, **kwargs)
+        parent_fd = kwargs.get("dir_fd")
+        parent_path = fd_paths.get(parent_fd) if isinstance(parent_fd, int) else None
+        fd_paths[fd] = (
+            parent_path / str(opened_path)
+            if parent_path is not None
+            else Path(opened_path)
+        )
         return fd
+
+    def record_dup(fd: int) -> int:
+        duplicate = original_dup(fd)
+        if fd in fd_paths:
+            fd_paths[duplicate] = fd_paths[fd]
+        return duplicate
 
     def fail_snapshot_directory_fsync(fd: int) -> None:
         if fd_paths.get(fd) == snapshot_path.parent and snapshot_path.exists():
@@ -1086,6 +2013,7 @@ def test_domain_custom_catalog_reads_reject_visible_snapshot_until_directory_syn
         original_fsync(fd)
 
     monkeypatch.setattr(psychology_learning_series_use_case.os, "open", record_open)
+    monkeypatch.setattr(psychology_learning_series_use_case.os, "dup", record_dup)
     monkeypatch.setattr(
         psychology_learning_series_use_case.os,
         "fsync",
@@ -1132,7 +2060,7 @@ def test_immutable_directory_sync_failure_requires_a_durable_retry_without_mutat
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    store = PsychologyLearningSeriesStore(catalog_root=tmp_path / "series-store")
+    store = PsychologyLearningSeriesStore(trusted_provision=True, catalog_root=tmp_path / "series-store")
     proposal = plan_psychology_learning_series(
         topic="下班后的脑内回放",
         outline=(
@@ -1144,12 +2072,11 @@ def test_immutable_directory_sync_failure_requires_a_durable_retry_without_mutat
         proposal_id=proposal.proposal_id,
         catalog_root=store.catalog_root,
     )
-    path.parent.mkdir(parents=True)
-    (path.parent.parent / ".staging").mkdir()
+    proposal_directory_identity = os.stat(path.parent)
     original_fsync = psychology_learning_series_use_case.os.fsync
 
     def fail_destination_directory_fsync(fd: int) -> None:
-        if stat.S_ISDIR(os.fstat(fd).st_mode) and path.exists():
+        if os.path.samestat(os.fstat(fd), proposal_directory_identity):
             raise OSError(errno.ENOTSUP, "injected destination directory fsync failure")
         original_fsync(fd)
 
@@ -1181,75 +2108,11 @@ def test_immutable_directory_sync_failure_requires_a_durable_retry_without_mutat
     assert path.read_bytes() == persisted_bytes
 
 
-def test_replace_json_syncs_temp_before_replace_and_destination_directory_after(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    path = tmp_path / "series-store" / "progress" / "v1.json"
-    path.parent.mkdir(parents=True)
-    path.write_text('{"value":"old"}', encoding="utf-8")
-    events: list[str] = []
-    original_fsync = psychology_learning_series_use_case.os.fsync
-    original_replace = Path.replace
-
-    def record_fsync(fd: int) -> None:
-        kind = "directory" if stat.S_ISDIR(os.fstat(fd).st_mode) else "file"
-        events.append(f"{kind}-fsync")
-        original_fsync(fd)
-
-    def record_replace(source: Path, destination: Path) -> Path:
-        events.append("replace")
-        return original_replace(source, destination)
-
-    monkeypatch.setattr(psychology_learning_series_use_case.os, "fsync", record_fsync)
-    monkeypatch.setattr(Path, "replace", record_replace)
-
-    psychology_learning_series_use_case._replace_json(path, {"value": "new"})
-
-    replace_index = events.index("replace")
-    assert any(
-        index < replace_index and event == "file-fsync"
-        for index, event in enumerate(events)
-    )
-    assert any(
-        index > replace_index and event == "directory-fsync"
-        for index, event in enumerate(events)
-    )
-    assert json.loads(path.read_text(encoding="utf-8")) == {"value": "new"}
-
-
-def test_replace_json_file_sync_failure_preserves_existing_progress(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    path = tmp_path / "series-store" / "progress" / "v1.json"
-    path.parent.mkdir(parents=True)
-    path.write_text('{"value":"old"}', encoding="utf-8")
-    original_fsync = psychology_learning_series_use_case.os.fsync
-
-    def fail_file_fsync(fd: int) -> None:
-        if stat.S_ISREG(os.fstat(fd).st_mode):
-            raise OSError("injected progress temporary file fsync failure")
-        original_fsync(fd)
-
-    monkeypatch.setattr(
-        psychology_learning_series_use_case.os,
-        "fsync",
-        fail_file_fsync,
-    )
-
-    with pytest.raises(OSError, match="progress temporary file fsync failure"):
-        psychology_learning_series_use_case._replace_json(path, {"value": "new"})
-
-    assert json.loads(path.read_text(encoding="utf-8")) == {"value": "old"}
-    assert not tuple(path.parent.glob("*.tmp"))
-
-
 def test_confirmation_retries_a_directory_sync_failure_without_rewriting_its_ledger(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    store = PsychologyLearningSeriesStore(catalog_root=tmp_path / "series-store")
+    store = PsychologyLearningSeriesStore(trusted_provision=True, catalog_root=tmp_path / "series-store")
     proposal = plan_psychology_learning_series(
         topic="下班后的脑内回放",
         outline=(
@@ -1269,13 +2132,31 @@ def test_confirmation_retries_a_directory_sync_failure_without_rewriting_its_led
         catalog_root=store.catalog_root,
     )
     original_open = psychology_learning_series_use_case.os.open
+    original_dup = psychology_learning_series_use_case.os.dup
     original_fsync = psychology_learning_series_use_case.os.fsync
     fd_paths: dict[int, Path] = {}
 
-    def record_open(path: Path | str, flags: int, *args: int) -> int:
-        fd = original_open(path, flags, *args)
-        fd_paths[fd] = Path(path)
+    def record_open(
+        opened_path: Path | str,
+        flags: int,
+        *args: int,
+        **kwargs: object,
+    ) -> int:
+        fd = original_open(opened_path, flags, *args, **kwargs)
+        parent_fd = kwargs.get("dir_fd")
+        parent_path = fd_paths.get(parent_fd) if isinstance(parent_fd, int) else None
+        fd_paths[fd] = (
+            parent_path / str(opened_path)
+            if parent_path is not None
+            else Path(opened_path)
+        )
         return fd
+
+    def record_dup(fd: int) -> int:
+        duplicate = original_dup(fd)
+        if fd in fd_paths:
+            fd_paths[duplicate] = fd_paths[fd]
+        return duplicate
 
     def fail_confirmation_directory_fsync(fd: int) -> None:
         if fd_paths.get(fd) == confirmation_path.parent and confirmation_path.exists():
@@ -1283,6 +2164,7 @@ def test_confirmation_retries_a_directory_sync_failure_without_rewriting_its_led
         original_fsync(fd)
 
     monkeypatch.setattr(psychology_learning_series_use_case.os, "open", record_open)
+    monkeypatch.setattr(psychology_learning_series_use_case.os, "dup", record_dup)
     monkeypatch.setattr(
         psychology_learning_series_use_case.os,
         "fsync",
@@ -1328,7 +2210,7 @@ def test_progress_directory_sync_failure_is_reported_before_retrying_replace(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    store = PsychologyLearningSeriesStore(catalog_root=tmp_path / "series-store")
+    store = PsychologyLearningSeriesStore(trusted_provision=True, catalog_root=tmp_path / "series-store")
     proposal = plan_psychology_learning_series(
         topic="下班后的脑内回放",
         outline=(
@@ -1346,21 +2228,32 @@ def test_progress_directory_sync_failure_is_reported_before_retrying_replace(
         curriculum_version=catalog.curriculum_version,
         completed_lesson_ids=("notice",),
     )
-    progress_path = store.catalog_root / "progress" / catalog.series_id / "v1.json"
+    progress_path = psychology_learning_series_progress_sidecar_path(
+        series_id=catalog.series_id,
+        curriculum_version=catalog.curriculum_version,
+        catalog_root=store.catalog_root,
+    )
     original_open = psychology_learning_series_use_case.os.open
     original_fsync = psychology_learning_series_use_case.os.fsync
-    original_replace = Path.replace
+    original_replace = psychology_learning_series_use_case.os.replace
     fd_paths: dict[int, Path] = {}
     replace_completed = False
 
-    def record_open(path: Path | str, flags: int, *args: int) -> int:
-        fd = original_open(path, flags, *args)
-        fd_paths[fd] = Path(path)
+    def record_open(
+        path: Path | str,
+        flags: int,
+        *args: int,
+        **kwargs: object,
+    ) -> int:
+        fd = original_open(path, flags, *args, **kwargs)
+        parent_fd = kwargs.get("dir_fd")
+        parent_path = fd_paths.get(parent_fd) if isinstance(parent_fd, int) else None
+        fd_paths[fd] = (parent_path / str(path)) if parent_path is not None else Path(path)
         return fd
 
-    def record_replace(source: Path, destination: Path) -> Path:
+    def record_replace(source: object, destination: object, **kwargs: object) -> None:
         nonlocal replace_completed
-        result = original_replace(source, destination)
+        result = original_replace(source, destination, **kwargs)
         replace_completed = True
         return result
 
@@ -1370,7 +2263,7 @@ def test_progress_directory_sync_failure_is_reported_before_retrying_replace(
         original_fsync(fd)
 
     monkeypatch.setattr(psychology_learning_series_use_case.os, "open", record_open)
-    monkeypatch.setattr(Path, "replace", record_replace)
+    monkeypatch.setattr(psychology_learning_series_use_case.os, "replace", record_replace)
     monkeypatch.setattr(
         psychology_learning_series_use_case.os,
         "fsync",
@@ -1401,7 +2294,7 @@ def test_progress_read_rejects_a_replace_until_its_directory_sync_can_complete(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    store = PsychologyLearningSeriesStore(catalog_root=tmp_path / "series-store")
+    store = PsychologyLearningSeriesStore(trusted_provision=True, catalog_root=tmp_path / "series-store")
     proposal = plan_psychology_learning_series(
         topic="下班后的脑内回放",
         outline=(
@@ -1419,21 +2312,32 @@ def test_progress_read_rejects_a_replace_until_its_directory_sync_can_complete(
         curriculum_version=catalog.curriculum_version,
         completed_lesson_ids=("notice",),
     )
-    progress_path = store.catalog_root / "progress" / catalog.series_id / "v1.json"
+    progress_path = psychology_learning_series_progress_sidecar_path(
+        series_id=catalog.series_id,
+        curriculum_version=catalog.curriculum_version,
+        catalog_root=store.catalog_root,
+    )
     original_open = psychology_learning_series_use_case.os.open
     original_fsync = psychology_learning_series_use_case.os.fsync
-    original_replace = Path.replace
+    original_replace = psychology_learning_series_use_case.os.replace
     fd_paths: dict[int, Path] = {}
     replace_completed = False
 
-    def record_open(path: Path | str, flags: int, *args: int) -> int:
-        fd = original_open(path, flags, *args)
-        fd_paths[fd] = Path(path)
+    def record_open(
+        path: Path | str,
+        flags: int,
+        *args: int,
+        **kwargs: object,
+    ) -> int:
+        fd = original_open(path, flags, *args, **kwargs)
+        parent_fd = kwargs.get("dir_fd")
+        parent_path = fd_paths.get(parent_fd) if isinstance(parent_fd, int) else None
+        fd_paths[fd] = (parent_path / str(path)) if parent_path is not None else Path(path)
         return fd
 
-    def record_replace(source: Path, destination: Path) -> Path:
+    def record_replace(source: object, destination: object, **kwargs: object) -> None:
         nonlocal replace_completed
-        result = original_replace(source, destination)
+        result = original_replace(source, destination, **kwargs)
         replace_completed = True
         return result
 
@@ -1443,7 +2347,7 @@ def test_progress_read_rejects_a_replace_until_its_directory_sync_can_complete(
         original_fsync(fd)
 
     monkeypatch.setattr(psychology_learning_series_use_case.os, "open", record_open)
-    monkeypatch.setattr(Path, "replace", record_replace)
+    monkeypatch.setattr(psychology_learning_series_use_case.os, "replace", record_replace)
     monkeypatch.setattr(
         psychology_learning_series_use_case.os,
         "fsync",
@@ -1476,7 +2380,7 @@ def test_confirmed_catalog_template_version_and_digest_are_bound_to_its_ledger(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    store = PsychologyLearningSeriesStore(catalog_root=tmp_path / "series-store")
+    store = PsychologyLearningSeriesStore(trusted_provision=True, catalog_root=tmp_path / "series-store")
     proposal = plan_psychology_learning_series(
         topic="下班后的脑内回放",
         outline=(
@@ -1539,7 +2443,7 @@ def test_confirmed_v1_snapshot_load_uses_its_frozen_template_not_current_builder
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    store = PsychologyLearningSeriesStore(catalog_root=tmp_path / "series-store")
+    store = PsychologyLearningSeriesStore(trusted_provision=True, catalog_root=tmp_path / "series-store")
     proposal = plan_psychology_learning_series(
         topic="下班后的脑内回放",
         outline=(
@@ -1589,7 +2493,7 @@ def test_confirmed_v1_snapshot_load_does_not_use_current_copy_helpers(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    store = PsychologyLearningSeriesStore(catalog_root=tmp_path / "series-store")
+    store = PsychologyLearningSeriesStore(trusted_provision=True, catalog_root=tmp_path / "series-store")
     proposal = plan_psychology_learning_series(
         topic="下班后的脑内回放",
         outline=(
@@ -1629,7 +2533,7 @@ def test_confirmed_v1_snapshot_load_does_not_use_current_snapshot_schema_constan
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    store = PsychologyLearningSeriesStore(catalog_root=tmp_path / "series-store")
+    store = PsychologyLearningSeriesStore(trusted_provision=True, catalog_root=tmp_path / "series-store")
     proposal = plan_psychology_learning_series(
         topic="下班后的脑内回放",
         outline=(
@@ -1660,7 +2564,7 @@ def test_confirmed_v1_snapshot_load_does_not_use_current_digest_helpers(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    store = PsychologyLearningSeriesStore(catalog_root=tmp_path / "series-store")
+    store = PsychologyLearningSeriesStore(trusted_provision=True, catalog_root=tmp_path / "series-store")
     proposal = plan_psychology_learning_series(
         topic="下班后的脑内回放",
         outline=(
@@ -1725,7 +2629,7 @@ def test_terminal_snapshot_recovery_uses_ledger_recorded_v1_template(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    store = PsychologyLearningSeriesStore(catalog_root=tmp_path / "series-store")
+    store = PsychologyLearningSeriesStore(trusted_provision=True, catalog_root=tmp_path / "series-store")
     proposal = plan_psychology_learning_series(
         topic="下班后的脑内回放",
         outline=(

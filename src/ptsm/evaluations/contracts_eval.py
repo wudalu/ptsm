@@ -10,8 +10,11 @@ from ptsm.domain.ai_tech_content import (
 )
 from ptsm.domain.psychology_learning import (
     PSYCHOLOGY_LEARNING_MODE,
+    PsychologyLearningBundle,
     PsychologyLearningEvidenceManifest,
+    _PsychologyLearningPreflightCapability,
     contains_psychology_learning_raw_provenance,
+    require_sealed_psychology_learning_preflight_bundle,
     resolve_psychology_learning_selection,
     validate_psychology_learning_draft_contract,
     verify_psychology_learning_catalog_receipt,
@@ -241,7 +244,11 @@ def contract_ai_tech_evidence_receipt(target: EvalTarget) -> EvalResult:
     )
 
 
-def contract_psychology_learning_receipt(target: EvalTarget) -> EvalResult:
+def contract_psychology_learning_receipt(
+    target: EvalTarget,
+    *,
+    preflight_capability: _PsychologyLearningPreflightCapability | None = None,
+) -> EvalResult:
     """Rebuild and audit a closed psychology-learning catalog receipt offline."""
     evaluator_id = "psychology.learning_receipt"
     if target.playbook_id != _PSYCHOLOGY_LEARNING_PLAYBOOK_ID:
@@ -309,7 +316,10 @@ def contract_psychology_learning_receipt(target: EvalTarget) -> EvalResult:
         )
 
     failures: list[dict[str, str]] = []
-    if contains_psychology_learning_raw_provenance(ref):
+    if contains_psychology_learning_raw_provenance(
+        ref,
+        preflight_capability=preflight_capability,
+    ):
         failures.append(
             _receipt_failure(
                 "artifact_provenance",
@@ -324,7 +334,11 @@ def contract_psychology_learning_receipt(target: EvalTarget) -> EvalResult:
             )
         )
 
-    bundle = _resolve_psychology_learning_receipt_bundle(ref, failures)
+    bundle = _resolve_psychology_learning_receipt_bundle(
+        ref,
+        failures,
+        preflight_capability=preflight_capability,
+    )
     manifest = _parse_psychology_learning_manifest(ref, failures)
     if bundle is not None:
         _validate_psychology_learning_receipt_identity(
@@ -395,7 +409,9 @@ def _is_catalog_marked_psychology_learning_artifact(ref: Mapping[str, Any]) -> b
 def _resolve_psychology_learning_receipt_bundle(
     ref: Mapping[str, Any],
     failures: list[dict[str, str]],
-):
+    *,
+    preflight_capability: _PsychologyLearningPreflightCapability | None = None,
+) -> PsychologyLearningBundle | None:
     series_id = ref.get("psychology_learning_series_id")
     lesson_id = ref.get("psychology_learning_lesson_id")
     curriculum_version = ref.get("psychology_learning_curriculum_version")
@@ -407,22 +423,48 @@ def _resolve_psychology_learning_receipt_bundle(
             )
         )
         return None
-    try:
-        bundle = resolve_psychology_learning_selection(
-            series_id=series_id,
-            lesson_id=lesson_id,
-            curriculum_version=(
-                curriculum_version if isinstance(curriculum_version, str) else None
-            ),
-        )
-    except ValueError:
-        failures.append(
-            _receipt_failure(
-                "psychology_learning_selection",
-                "learning receipt does not resolve to an approved catalog lesson",
+    if preflight_capability is None:
+        try:
+            bundle = resolve_psychology_learning_selection(
+                series_id=series_id,
+                lesson_id=lesson_id,
+                curriculum_version=(
+                    curriculum_version if isinstance(curriculum_version, str) else None
+                ),
             )
-        )
-        return None
+        except ValueError:
+            failures.append(
+                _receipt_failure(
+                    "psychology_learning_selection",
+                    "learning receipt does not resolve to an approved catalog lesson",
+                )
+            )
+            return None
+    else:
+        try:
+            bundle = require_sealed_psychology_learning_preflight_bundle(
+                preflight_capability
+            )
+        except ValueError:
+            failures.append(
+                _receipt_failure(
+                    "psychology_learning_selection",
+                    "learning receipt does not resolve to an approved catalog lesson",
+                )
+            )
+            return None
+        if (
+            series_id != bundle.series_id
+            or lesson_id != bundle.lesson_id
+            or curriculum_version != bundle.runtime_contract["curriculum_version"]
+        ):
+            failures.append(
+                _receipt_failure(
+                    "psychology_learning_selection",
+                    "learning receipt does not resolve to an approved catalog lesson",
+                )
+            )
+            return None
     try:
         verify_psychology_learning_catalog_receipt(
             bundle=bundle,

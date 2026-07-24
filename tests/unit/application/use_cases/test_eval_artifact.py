@@ -4,6 +4,7 @@ import json
 import pytest
 import tempfile
 from pathlib import Path
+import ptsm.domain.psychology_learning as psychology_learning_domain
 from ptsm.application.use_cases.eval_artifact import (
     _gate_counts,
     _is_catalog_managed_psychology_learning,
@@ -18,7 +19,9 @@ from ptsm.domain.psychology_learning import (
     list_psychology_learning_series,
     psychology_learning_series_catalog_snapshot_path,
     render_psychology_learning_draft,
+    require_sealed_psychology_learning_preflight_bundle,
     resolve_psychology_learning_selection,
+    seal_psychology_learning_preflight_bundle,
 )
 from ptsm.evaluations.contracts import EvalResult
 
@@ -141,7 +144,7 @@ class TestRunEvalArtifact:
         tmp_path: Path,
     ) -> None:
         monkeypatch.chdir(tmp_path)
-        store = PsychologyLearningSeriesStore()
+        store = PsychologyLearningSeriesStore(trusted_provision=True, )
         proposal = plan_psychology_learning_series(
             topic="下班后的脑内回放",
             outline=(
@@ -172,6 +175,53 @@ class TestRunEvalArtifact:
 
         assert result["status"] == "passed"
 
+    def test_preflight_bundle_keeps_eval_off_the_mutable_catalog_path(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        """A live guarded eval must not resolve a catalog path for a second time."""
+        monkeypatch.chdir(tmp_path)
+        store = PsychologyLearningSeriesStore(trusted_provision=True, )
+        proposal = plan_psychology_learning_series(
+            topic="下班后的脑内回放",
+            outline=(
+                {"id": "notice", "title": "先识别重复时刻"},
+                {"id": "practice", "title": "练习一个小步骤"},
+            ),
+        )
+        store.persist_proposal(proposal)
+        catalog = store.confirm(
+            proposal_id=proposal.proposal_id,
+            proposal_fingerprint=proposal.proposal_fingerprint,
+        )
+        capability = seal_psychology_learning_preflight_bundle(
+            resolve_psychology_learning_selection(
+                series_id=catalog.series_id,
+                lesson_id="notice",
+                curriculum_version=catalog.curriculum_version,
+            )
+        )
+        bundle = require_sealed_psychology_learning_preflight_bundle(capability)
+
+        def fail_catalog_reresolution(**_: object) -> object:
+            pytest.fail("guarded eval must use the preflight bundle")
+
+        monkeypatch.setattr(
+            psychology_learning_domain,
+            "resolve_psychology_learning_selection",
+            fail_catalog_reresolution,
+        )
+
+        result = run_eval_artifact(
+            artifact_path=tmp_path / "not-reopened.json",
+            artifact_payload=_learning_artifact(bundle=bundle),
+            psychology_learning_preflight_capability=capability,
+            evals_base_dir=tmp_path / "evals",
+        )
+
+        assert result["status"] == "passed"
+
     def test_custom_catalog_artifact_fails_closed_when_its_snapshot_is_missing(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -179,7 +229,7 @@ class TestRunEvalArtifact:
     ) -> None:
         monkeypatch.chdir(tmp_path)
         private_goal = "确认前私有目标，不得出现在离线评估结果"
-        store = PsychologyLearningSeriesStore()
+        store = PsychologyLearningSeriesStore(trusted_provision=True, )
         proposal = plan_psychology_learning_series(
             topic="下班后的脑内回放",
             outline=(
@@ -243,6 +293,21 @@ class TestRunEvalArtifact:
                 evals_base_dir=Path(tmp) / "evals",
             )
             assert result["status"] == "error"
+
+    def test_supplied_artifact_payload_does_not_require_source_path(self):
+        """A caller with a verified in-memory receipt must not reread its path."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            missing_path = root / "missing-artifact.json"
+
+            result = run_eval_artifact(
+                artifact_path=missing_path,
+                artifact_payload=SAMPLE_ARTIFACT,
+                evals_base_dir=root / "evals",
+            )
+
+            assert result["status"] in {"passed", "failed", "warning"}
+            assert result["source"]["path"] == str(missing_path)
 
     def test_results_persisted(self):
         with tempfile.TemporaryDirectory() as tmp:
