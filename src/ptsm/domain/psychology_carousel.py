@@ -181,7 +181,7 @@ def _require_safe_visible_text(
         raise ValueError(f"{field_name} exceeds its visible text budget")
     if "\n" in text or "\r" in text:
         raise ValueError(f"{field_name} must be one visible line")
-    if "#" in text:
+    if re.search(r"(?<!#)#[^#\s]", text):
         raise ValueError(f"{field_name} must not contain hashtags")
     if _LOCATOR_PATTERN.search(text):
         raise ValueError(f"{field_name} must not contain a source locator")

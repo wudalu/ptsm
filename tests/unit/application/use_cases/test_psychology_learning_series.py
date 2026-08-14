@@ -30,6 +30,32 @@ from ptsm.domain.psychology_learning import (
 )
 
 
+def _confirm_with_controlled_template(
+    *,
+    store: PsychologyLearningSeriesStore,
+    proposal,
+    template_version: str,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    def build_historic_catalog(proposal_value, *, curriculum_version: str):
+        return psychology_learning_domain._build_confirmed_psychology_learning_catalog_for_template(
+            proposal_value,
+            curriculum_version=curriculum_version,
+            controlled_template_version=template_version,
+        )
+
+    with monkeypatch.context() as scoped:
+        scoped.setattr(
+            psychology_learning_series_use_case,
+            "_build_confirmed_psychology_learning_catalog",
+            build_historic_catalog,
+        )
+        return store.confirm(
+            proposal_id=proposal.proposal_id,
+            proposal_fingerprint=proposal.proposal_fingerprint,
+        )
+
+
 def test_plan_psychology_learning_series_synthesizes_a_stable_safe_four_step_proposal() -> None:
     first = plan_psychology_learning_series(topic="下班后的脑内回放")
     second = plan_psychology_learning_series(topic="下班后的脑内回放")
@@ -2406,18 +2432,19 @@ def test_confirmed_catalog_template_version_and_digest_are_bound_to_its_ledger(
     snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
     ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
 
-    assert catalog.controlled_template_version == "1"
-    assert snapshot["controlled_template_version"] == "1"
-    assert ledger["controlled_template_version"] == "1"
-    template_registry = psychology_learning_domain._CONTROLLED_CATALOG_TEMPLATE_REGISTRY
-    monkeypatch.setattr(
-        psychology_learning_domain,
-        "_CONTROLLED_CATALOG_TEMPLATE_REGISTRY",
-        {**template_registry, "2": template_registry["1"]},
-    )
-
-    snapshot["controlled_template_version"] = "2"
-    ledger["controlled_template_version"] = "2"
+    assert catalog.controlled_template_version == "2"
+    assert snapshot["controlled_template_version"] == "2"
+    assert ledger["controlled_template_version"] == "2"
+    assert render_psychology_learning_draft(
+        resolve_psychology_learning_selection(
+            series_id=catalog.series_id,
+            lesson_id=catalog.lessons[0].lesson_id,
+            curriculum_version=catalog.curriculum_version,
+            catalog_root=store.catalog_root,
+        ).runtime_contract
+    )["image_plan"]["carousel_style"] == "psychology_text_card_v1"
+    snapshot["controlled_template_version"] = "1"
+    ledger["controlled_template_version"] = "1"
     snapshot_path.write_text(json.dumps(snapshot), encoding="utf-8")
     ledger_path.write_text(json.dumps(ledger), encoding="utf-8")
 
@@ -2428,7 +2455,7 @@ def test_confirmed_catalog_template_version_and_digest_are_bound_to_its_ledger(
             catalog_root=store.catalog_root,
         )
 
-    snapshot["controlled_template_version"] = "1"
+    snapshot["controlled_template_version"] = "2"
     snapshot_path.write_text(json.dumps(snapshot), encoding="utf-8")
 
     with pytest.raises(ValueError, match="catalog revision history"):
@@ -2452,9 +2479,11 @@ def test_confirmed_v1_snapshot_load_uses_its_frozen_template_not_current_builder
         ),
     )
     store.persist_proposal(proposal)
-    catalog = store.confirm(
-        proposal_id=proposal.proposal_id,
-        proposal_fingerprint=proposal.proposal_fingerprint,
+    catalog = _confirm_with_controlled_template(
+        store=store,
+        proposal=proposal,
+        template_version="1",
+        monkeypatch=monkeypatch,
     )
     snapshot_path = psychology_learning_series_catalog_snapshot_path(
         series_id=catalog.series_id,
@@ -2487,6 +2516,21 @@ def test_confirmed_v1_snapshot_load_uses_its_frozen_template_not_current_builder
     assert listed == catalog.lessons
     assert resolved.catalog == catalog
     assert snapshot_path.read_bytes() == snapshot_bytes
+    assert catalog.controlled_template_version == "1"
+    assert resolved.runtime_contract["controlled_template_version"] == "1"
+    assert "slides" not in render_psychology_learning_draft(
+        resolved.runtime_contract
+    )["image_plan"]
+    historic_receipt = psychology_learning_domain.build_psychology_learning_catalog_receipt(
+        resolved
+    )
+    assert historic_receipt is not None
+    assert historic_receipt["controlled_template_version"] == "1"
+    assert historic_receipt["catalog_digest"] == catalog.catalog_digest
+    assert validate_psychology_learning_draft_contract(
+        resolved.runtime_contract,
+        render_psychology_learning_draft(resolved.runtime_contract),
+    ) == []
 
 
 def test_confirmed_v1_snapshot_load_does_not_use_current_copy_helpers(
@@ -2502,9 +2546,11 @@ def test_confirmed_v1_snapshot_load_does_not_use_current_copy_helpers(
         ),
     )
     store.persist_proposal(proposal)
-    catalog = store.confirm(
-        proposal_id=proposal.proposal_id,
-        proposal_fingerprint=proposal.proposal_fingerprint,
+    catalog = _confirm_with_controlled_template(
+        store=store,
+        proposal=proposal,
+        template_version="1",
+        monkeypatch=monkeypatch,
     )
 
     def future_current_compactor(*_: object, **__: object) -> str:
@@ -2542,9 +2588,11 @@ def test_confirmed_v1_snapshot_load_does_not_use_current_snapshot_schema_constan
         ),
     )
     store.persist_proposal(proposal)
-    catalog = store.confirm(
-        proposal_id=proposal.proposal_id,
-        proposal_fingerprint=proposal.proposal_fingerprint,
+    catalog = _confirm_with_controlled_template(
+        store=store,
+        proposal=proposal,
+        template_version="1",
+        monkeypatch=monkeypatch,
     )
 
     monkeypatch.setattr(
@@ -2573,9 +2621,11 @@ def test_confirmed_v1_snapshot_load_does_not_use_current_digest_helpers(
         ),
     )
     store.persist_proposal(proposal)
-    catalog = store.confirm(
-        proposal_id=proposal.proposal_id,
-        proposal_fingerprint=proposal.proposal_fingerprint,
+    catalog = _confirm_with_controlled_template(
+        store=store,
+        proposal=proposal,
+        template_version="1",
+        monkeypatch=monkeypatch,
     )
 
     def future_current_digest_helper(*_: object, **__: object) -> str:
@@ -2638,9 +2688,11 @@ def test_terminal_snapshot_recovery_uses_ledger_recorded_v1_template(
         ),
     )
     store.persist_proposal(proposal)
-    catalog = store.confirm(
-        proposal_id=proposal.proposal_id,
-        proposal_fingerprint=proposal.proposal_fingerprint,
+    catalog = _confirm_with_controlled_template(
+        store=store,
+        proposal=proposal,
+        template_version="1",
+        monkeypatch=monkeypatch,
     )
     snapshot_path = psychology_learning_series_catalog_snapshot_path(
         series_id=catalog.series_id,

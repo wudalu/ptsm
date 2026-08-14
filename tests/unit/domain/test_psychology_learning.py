@@ -15,6 +15,7 @@ from ptsm.application.use_cases.psychology_learning_series import (
     plan_psychology_learning_series,
 )
 from ptsm.domain.psychology_learning import (
+    CURRENT_PSYCHOLOGY_LEARNING_CONTROLLED_TEMPLATE_VERSION,
     PSYCHOLOGY_LEARNING_MODE,
     PsychologyLearningOutlineItem,
     PsychologyLearningSeriesPlanIntent,
@@ -116,6 +117,114 @@ def test_each_learning_lesson_has_a_distinct_xhs_title_and_cover_hook() -> None:
     assert len({draft["title"] for draft in drafts}) == len(lessons)
     assert len({draft["image_text"] for draft in drafts}) == len(lessons)
     assert all(len(str(draft["title"])) <= 22 for draft in drafts)
+
+
+def test_builtin_learning_lesson_uses_controlled_template_v2_carousel() -> None:
+    bundle = _starter_bundle()
+
+    assert CURRENT_PSYCHOLOGY_LEARNING_CONTROLLED_TEMPLATE_VERSION == "2"
+    assert bundle.runtime_contract["controlled_template_version"] == "2"
+
+    draft = render_psychology_learning_draft(bundle.runtime_contract)
+    image_plan = draft["image_plan"]
+    assert image_plan["carousel_style"] == "psychology_text_card_v1"
+    assert [slide["order"] for slide in image_plan["slides"]] == list(
+        range(1, len(image_plan["slides"]) + 1)
+    )
+    assert [slide["role"] for slide in image_plan["slides"]] == [
+        "cover_hook",
+        "concrete_scene",
+        "light_mechanism",
+        "save_tool",
+        "scope_boundary",
+        "professional_boundary",
+        "comment_prompt",
+    ]
+    visible = "\n".join(
+        text
+        for slide in image_plan["slides"]
+        for text in (slide["headline"], *slide["body_lines"])
+    )
+    for approved_field in (
+        "cover_text",
+        "scene_anchor",
+        "concept_label",
+        "learning_goal",
+        "approved_explanation",
+        "applicability",
+        "micro_exercise",
+        "scope_limit",
+        "professional_boundary",
+        "comment_prompt",
+    ):
+        assert bundle.runtime_contract[approved_field] in visible
+
+
+def test_historic_learning_template_v1_keeps_single_card_rendering() -> None:
+    contract = deepcopy(_starter_bundle().runtime_contract)
+    contract["controlled_template_version"] = "1"
+
+    draft = render_psychology_learning_draft(contract)
+
+    assert draft["image_plan"] == {
+        "backend": "local_social_screenshot",
+        "style": "iphone_notes",
+        "role": "save_tool",
+        "text_density": "low",
+        "max_text_units": "3",
+        "cover_text_strategy": "封面只放先别急着替自己判错和一条已批准的微练习。",
+        "reason": "固定学习卡用低密度记事本截图，方便读者保存。",
+        "prompt_focus": "低密度学习卡，不添加任何课程外结论。",
+    }
+
+
+def test_learning_template_version_rejects_unsupported_value() -> None:
+    contract = deepcopy(_starter_bundle().runtime_contract)
+    contract["controlled_template_version"] = "999"
+
+    with pytest.raises(ValidationError, match="controlled template version"):
+        parse_psychology_learning_runtime_contract(contract)
+
+
+def test_learning_template_v2_keeps_approved_line_break_copy_inline() -> None:
+    contract = deepcopy(_starter_bundle().runtime_contract)
+    contract["lesson_title"] = "先识别\n## 伪标题"
+    contract["cover_text"] = "第1课｜先识别\n## 伪标题"
+    contract["learning_goal"] = "这一课只练“先识别\n## 伪标题”，先看眼前一步。"
+    contract["scene_anchor"] = "今天又卡住时，先试试“先识别\n## 伪标题”"
+
+    draft = render_psychology_learning_draft(contract)
+    visible = "\n".join(
+        text
+        for slide in draft["image_plan"]["slides"]
+        for text in (slide["headline"], *slide["body_lines"])
+    )
+
+    for field_name in ("lesson_title", "cover_text", "learning_goal", "scene_anchor"):
+        assert contract[field_name].replace("\n", " ") in visible
+    assert "\n## 伪标题" not in visible
+
+
+@pytest.mark.parametrize(
+    "tamper",
+    (
+        lambda slides: slides[0].update({"headline": "被改过的封面"}),
+        lambda slides: slides[1].update({"role": "save_tool"}),
+        lambda slides: slides[1].update({"order": 7}),
+        lambda slides: slides[1].update({"slide_id": "changed"}),
+        lambda slides: slides[1]["body_lines"].__setitem__(0, "被改过的一行"),
+        lambda slides: slides.pop(),
+        lambda slides: slides[1].update({"unknown": "field"}),
+    ),
+)
+def test_learning_template_v2_rejects_any_carousel_tampering(tamper) -> None:
+    bundle = _starter_bundle()
+    draft = deepcopy(render_psychology_learning_draft(bundle.runtime_contract))
+    tamper(draft["image_plan"]["slides"])
+
+    errors = validate_psychology_learning_draft_contract(bundle.runtime_contract, draft)
+
+    assert "draft must match the controlled lesson template" in errors
 
 
 @pytest.mark.parametrize(

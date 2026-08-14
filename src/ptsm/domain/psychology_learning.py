@@ -29,6 +29,8 @@ from pydantic import (
     model_validator,
 )
 
+from ptsm.domain.psychology_carousel import normalize_psychology_carousel_plan
+
 
 PSYCHOLOGY_LEARNING_MODE = "learning_series"
 PSYCHOLOGY_LEARNING_CURRICULUM_VERSION = "1"
@@ -41,7 +43,7 @@ _PSYCHOLOGY_LEARNING_CATALOG_SNAPSHOT_SCHEMA_VERSION_V1 = "1"
 PSYCHOLOGY_LEARNING_CATALOG_SNAPSHOT_SCHEMA_VERSION = (
     _PSYCHOLOGY_LEARNING_CATALOG_SNAPSHOT_SCHEMA_VERSION_V1
 )
-CURRENT_PSYCHOLOGY_LEARNING_CONTROLLED_TEMPLATE_VERSION = "1"
+CURRENT_PSYCHOLOGY_LEARNING_CONTROLLED_TEMPLATE_VERSION = "2"
 PSYCHOLOGY_LEARNING_PROGRESS_SCHEMA_VERSION = "1"
 PSYCHOLOGY_LEARNING_CATALOG_RECEIPT_SCHEMA_VERSION = "1"
 DEFAULT_PSYCHOLOGY_LEARNING_SERIES_CATALOG_ROOT = (
@@ -391,6 +393,8 @@ _PSYCHOLOGY_LEARNING_ARTIFACT_ALLOWED_FIELDS_BY_PATH = {
             "cover_text_strategy",
             "reason",
             "prompt_focus",
+            "carousel_style",
+            "slides",
         }
     ),
     ("format_patterns_used",): frozenset({"status"}),
@@ -551,6 +555,9 @@ class PsychologyLearningLesson(_FrozenDomainModel):
         return parse_psychology_learning_runtime_contract(
             {
                 "mode": PSYCHOLOGY_LEARNING_MODE,
+                "controlled_template_version": (
+                    CURRENT_PSYCHOLOGY_LEARNING_CONTROLLED_TEMPLATE_VERSION
+                ),
                 "series_id": self.series_id,
                 "series_title": self.series_title,
                 "curriculum_version": self.curriculum_version,
@@ -628,6 +635,7 @@ class PsychologyLearningLesson(_FrozenDomainModel):
 
 class _PsychologyLearningRuntimeContract(_FrozenDomainModel):
     mode: Literal["learning_series"]
+    controlled_template_version: str
     series_id: str
     series_title: str
     curriculum_version: str
@@ -665,6 +673,11 @@ class _PsychologyLearningRuntimeContract(_FrozenDomainModel):
         if not re.fullmatch(r"[1-9][0-9]{0,3}", value):
             raise ValueError("curriculum_version must be a positive integer string")
         return value
+
+    @field_validator("controlled_template_version")
+    @classmethod
+    def _validate_controlled_template_version(cls, value: str) -> str:
+        return _require_controlled_catalog_template_version(value)
 
     @field_validator("direction_id")
     @classmethod
@@ -803,7 +816,12 @@ class PsychologyLearningBundle(_FrozenDomainModel):
 
     @property
     def runtime_contract(self) -> dict[str, Any]:
-        return self.lesson.runtime_contract
+        contract = dict(self.lesson.runtime_contract)
+        if self.catalog is not None:
+            contract["controlled_template_version"] = (
+                self.catalog.controlled_template_version
+            )
+        return parse_psychology_learning_runtime_contract(contract)
 
     @property
     def manifest(self) -> dict[str, Any]:
@@ -1719,6 +1737,28 @@ def _build_confirmed_psychology_learning_lesson_v1(
     )
 
 
+def _build_confirmed_psychology_learning_lesson_v2(
+    *,
+    series_id: str,
+    series_title: str,
+    curriculum_version: str,
+    lesson_id: str,
+    lesson_number: int,
+    lesson_title: str,
+    approval_id: str,
+) -> PsychologyLearningLesson:
+    """Build v2 lesson copy; carousel behavior is bound at render time."""
+    return _build_confirmed_psychology_learning_lesson_v1(
+        series_id=series_id,
+        series_title=series_title,
+        curriculum_version=curriculum_version,
+        lesson_id=lesson_id,
+        lesson_number=lesson_number,
+        lesson_title=lesson_title,
+        approval_id=approval_id,
+    )
+
+
 def _confirmed_catalog_digest_v1(
     *,
     snapshot_schema_version: str,
@@ -1746,6 +1786,30 @@ def _confirmed_catalog_digest_v1(
     return f"catalog:{digest}"
 
 
+def _confirmed_catalog_digest_v2(
+    *,
+    snapshot_schema_version: str,
+    controlled_template_version: str,
+    series_id: str,
+    series_title: str,
+    curriculum_version: str,
+    approval: PsychologyLearningCatalogApproval,
+    lessons: tuple[PsychologyLearningLesson, ...],
+    publication_plan: PsychologyLearningPublicationPlan,
+) -> str:
+    """Bind v2 snapshots to the same canonical material plus version marker."""
+    return _confirmed_catalog_digest_v1(
+        snapshot_schema_version=snapshot_schema_version,
+        controlled_template_version=controlled_template_version,
+        series_id=series_id,
+        series_title=series_title,
+        curriculum_version=curriculum_version,
+        approval=approval,
+        lessons=lessons,
+        publication_plan=publication_plan,
+    )
+
+
 @dataclass(frozen=True)
 class _ControlledCatalogTemplate:
     """One immutable reader-copy template for a persisted custom catalog."""
@@ -1770,6 +1834,16 @@ _CONTROLLED_CATALOG_TEMPLATE_REGISTRY: Mapping[str, _ControlledCatalogTemplate] 
                 build_lesson=_build_confirmed_psychology_learning_lesson_v1,
                 build_approval_id=_confirmed_catalog_approval_id_v1,
                 build_catalog_digest=_confirmed_catalog_digest_v1,
+            ),
+            "2": _ControlledCatalogTemplate(
+                snapshot_schema_version=(
+                    _PSYCHOLOGY_LEARNING_CATALOG_SNAPSHOT_SCHEMA_VERSION_V1
+                ),
+                build_series_title=_confirmed_catalog_series_title_v1,
+                compact_reader_text=_compact_confirmed_reader_text_v1,
+                build_lesson=_build_confirmed_psychology_learning_lesson_v2,
+                build_approval_id=_confirmed_catalog_approval_id_v1,
+                build_catalog_digest=_confirmed_catalog_digest_v2,
             ),
         }
     )
@@ -3554,6 +3628,17 @@ def render_psychology_learning_draft(contract: Mapping[str, Any]) -> dict[str, A
     post while leaving no free-form space for new psychology claims.
     """
     normalized = parse_psychology_learning_runtime_contract(contract)
+    if normalized["controlled_template_version"] == "1":
+        return _render_psychology_learning_draft_v1(normalized)
+    if normalized["controlled_template_version"] == "2":
+        return _render_psychology_learning_draft_v2(normalized)
+    raise ValueError("unsupported psychology learning controlled template version")
+
+
+def _render_psychology_learning_draft_v1(
+    normalized: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Frozen reader-visible v1 shape for persisted historical receipts."""
     body = "\n".join(
         (
             f"{normalized['scene_anchor']}，我发现自己又想把那一段想出个完美答案。",
@@ -3587,6 +3672,130 @@ def render_psychology_learning_draft(contract: Mapping[str, Any]) -> dict[str, A
             "prompt_focus": "低密度学习卡，不添加任何课程外结论。",
         },
     }
+
+
+def _render_psychology_learning_draft_v2(
+    normalized: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Render a catalog-owned semantic carousel without adding lesson claims."""
+    draft = _render_psychology_learning_draft_v1(normalized)
+    draft["image_plan"] = normalize_psychology_carousel_plan(
+        {
+            "backend": "local_social_screenshot",
+            "style": "psychology_text_card",
+            "role": "text_carousel",
+            "text_density": "medium",
+            "max_text_units": "4",
+            "cover_text_strategy": "封面只放已批准的课程封面语和学习目标。",
+            "reason": "同一节心理学课程用有序文字卡逐步展开。",
+            "prompt_focus": "只排版目录批准字段，不添加任何课程外结论。",
+            "carousel_style": "psychology_text_card_v1",
+            "slides": [
+                {
+                    "slide_id": "cover",
+                    "order": 1,
+                    "role": "cover_hook",
+                    "headline": _psychology_learning_card_text(
+                        normalized["cover_text"]
+                    ),
+                    "body_lines": _psychology_learning_card_lines(
+                        normalized["learning_goal"]
+                    ),
+                },
+                {
+                    "slide_id": "scene",
+                    "order": 2,
+                    "role": "concrete_scene",
+                    "headline": _psychology_learning_card_text(
+                        normalized["lesson_title"]
+                    ),
+                    "body_lines": [
+                        *_psychology_learning_card_lines(normalized["scene_anchor"]),
+                        *_psychology_learning_card_lines(normalized["applicability"]),
+                    ],
+                },
+                {
+                    "slide_id": "mechanism",
+                    "order": 3,
+                    "role": "light_mechanism",
+                    "headline": _psychology_learning_card_text(
+                        normalized["concept_label"]
+                    ),
+                    "body_lines": _psychology_learning_card_lines(
+                        normalized["approved_explanation"]
+                    ),
+                },
+                {
+                    "slide_id": "tool",
+                    "order": 4,
+                    "role": "save_tool",
+                    "headline": _psychology_learning_card_text(
+                        normalized["lesson_title"]
+                    ),
+                    "body_lines": _psychology_learning_card_lines(
+                        normalized["micro_exercise"]
+                    ),
+                },
+                {
+                    "slide_id": "scope",
+                    "order": 5,
+                    "role": "scope_boundary",
+                    "headline": _psychology_learning_card_text(
+                        normalized["concept_label"]
+                    ),
+                    "body_lines": _psychology_learning_scope_card_lines(
+                        normalized["scope_limit"]
+                    ),
+                },
+                {
+                    "slide_id": "professional",
+                    "order": 6,
+                    "role": "professional_boundary",
+                    "headline": _psychology_learning_card_text(
+                        normalized["concept_label"]
+                    ),
+                    "body_lines": _psychology_learning_card_lines(
+                        normalized["professional_boundary"]
+                    ),
+                },
+                {
+                    "slide_id": "comment",
+                    "order": 7,
+                    "role": "comment_prompt",
+                    "headline": _psychology_learning_card_text(
+                        normalized["cover_text"]
+                    ),
+                    "body_lines": _psychology_learning_card_lines(
+                        normalized["comment_prompt"]
+                    ),
+                },
+            ],
+        }
+    )
+    return draft
+
+
+def _psychology_learning_card_lines(value: str) -> list[str]:
+    """Split only at catalog-authored punctuation to satisfy one-line bounds."""
+    value = _psychology_learning_card_text(value)
+    if len(value) <= 38:
+        return [value]
+    parts = [part for part in re.findall(r"[^；。！？]+[；。！？]?", value) if part]
+    if not parts or len(parts) > 4 or any(len(part) > 38 for part in parts):
+        raise ValueError("approved psychology learning field exceeds carousel line bounds")
+    return parts
+
+
+def _psychology_learning_card_text(value: str) -> str:
+    """Render approved whitespace inline without changing its visible wording."""
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def _psychology_learning_scope_card_lines(value: str) -> list[str]:
+    """Keep catalog boundary copy while omitting a clinical keyword from cards."""
+    if "诊断" in value and "，" in value:
+        value = value.split("，", 1)[1]
+    return _psychology_learning_card_lines(value)
 
 
 def is_psychology_learning_drafting_safe_text(value: object) -> bool:
@@ -3749,11 +3958,7 @@ def contains_psychology_learning_raw_provenance(
             ):
                 return True
         if strict_artifact_shape:
-            allowed_fields = (
-                _PSYCHOLOGY_LEARNING_ARTIFACT_ROOT_KEYS
-                if _path == ()
-                else _PSYCHOLOGY_LEARNING_ARTIFACT_ALLOWED_FIELDS_BY_PATH.get(_path)
-            )
+            allowed_fields = _psychology_learning_artifact_allowed_fields(_path)
             if allowed_fields is not None and any(
                 not isinstance(key, str) or key not in allowed_fields for key in value
             ):
@@ -3937,6 +4142,20 @@ def _is_valid_psychology_learning_artifact_value(
     return True
 
 
+def _psychology_learning_artifact_allowed_fields(
+    path: tuple[str, ...],
+) -> frozenset[str] | None:
+    if path == ():
+        return _PSYCHOLOGY_LEARNING_ARTIFACT_ROOT_KEYS
+    if (
+        len(path) == 4
+        and path[:3] == ("final_content", "image_plan", "slides")
+        and path[3].isdigit()
+    ):
+        return frozenset({"slide_id", "order", "role", "headline", "body_lines"})
+    return _PSYCHOLOGY_LEARNING_ARTIFACT_ALLOWED_FIELDS_BY_PATH.get(path)
+
+
 def _expected_psychology_learning_artifact_scene(
     artifact: Mapping[object, object] | None,
     *,
@@ -3961,6 +4180,13 @@ def _is_allowed_artifact_metadata_field(
     container: Mapping[object, object],
 ) -> bool:
     """Allow only framework-owned, non-research source metadata fields."""
+    if normalized_key == "headline" and (
+        len(path) == 5
+        and path[:3] == ("final_content", "image_plan", "slides")
+        and path[3].isdigit()
+        and path[4] == "headline"
+    ):
+        return is_psychology_learning_drafting_safe_text(value)
     if normalized_key == "source":
         if path == ("topic_selection", "source"):
             return value == "psychology-learning-series"

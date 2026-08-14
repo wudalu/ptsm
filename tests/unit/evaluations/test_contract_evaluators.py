@@ -333,6 +333,22 @@ class TestPsychologyLearningReceipt:
         assert result.status == "passed"
         assert result.evaluator_id == "psychology.learning_receipt"
 
+    def test_rejects_a_tampered_catalog_owned_carousel_page(self):
+        receipt = _psychology_learning_receipt()
+        receipt["final_content"]["image_plan"]["slides"][2]["body_lines"][0] = (
+            "一条没有经过目录确认的新解释"
+        )
+
+        result = contract_psychology_learning_receipt(
+            _target(
+                playbook_id="modern_psychology_post",
+                output_ref=receipt,
+            )
+        )
+
+        assert result.status == "failed"
+        assert "visible content" in result.reason
+
     def test_accepts_confirmed_custom_catalog_receipt(
         self,
         monkeypatch: pytest.MonkeyPatch,

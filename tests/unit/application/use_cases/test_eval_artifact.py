@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+from copy import deepcopy
 import json
-import pytest
 import tempfile
 from pathlib import Path
+
+import pytest
+
+import ptsm.application.use_cases.psychology_learning_series as psychology_learning_series_use_case
 import ptsm.domain.psychology_learning as psychology_learning_domain
 from ptsm.application.use_cases.eval_artifact import (
     _gate_counts,
@@ -173,6 +177,62 @@ class TestRunEvalArtifact:
             evals_base_dir=tmp_path / "evals",
         )
 
+        assert result["status"] == "passed"
+
+    def test_historic_v1_catalog_artifact_still_passes_offline_receipt_eval(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        store = PsychologyLearningSeriesStore(trusted_provision=True)
+        proposal = plan_psychology_learning_series(
+            topic="下班后的脑内回放",
+            outline=(
+                {"id": "notice", "title": "先识别重复时刻"},
+                {"id": "practice", "title": "练习一个小步骤"},
+            ),
+        )
+        store.persist_proposal(proposal)
+
+        def build_v1(proposal_value, *, curriculum_version: str):
+            return psychology_learning_domain._build_confirmed_psychology_learning_catalog_for_template(
+                proposal_value,
+                curriculum_version=curriculum_version,
+                controlled_template_version="1",
+            )
+
+        monkeypatch.setattr(
+            psychology_learning_series_use_case,
+            "_build_confirmed_psychology_learning_catalog",
+            build_v1,
+        )
+        catalog = store.confirm(
+            proposal_id=proposal.proposal_id,
+            proposal_fingerprint=proposal.proposal_fingerprint,
+        )
+        bundle = resolve_psychology_learning_selection(
+            series_id=catalog.series_id,
+            lesson_id="notice",
+            curriculum_version=catalog.curriculum_version,
+        )
+        artifact = _learning_artifact(bundle=bundle)
+        artifact_path = tmp_path / "historic-v1-learning-artifact.json"
+        artifact_path.write_text(
+            json.dumps(artifact, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+        result = run_eval_artifact(
+            artifact_path=artifact_path,
+            evals_base_dir=tmp_path / "evals",
+        )
+
+        assert bundle.runtime_contract["controlled_template_version"] == "1"
+        assert "slides" not in artifact["final_content"]["image_plan"]
+        assert artifact["psychology_learning_catalog_receipt"][
+            "catalog_digest"
+        ] == catalog.catalog_digest
         assert result["status"] == "passed"
 
     def test_preflight_bundle_keeps_eval_off_the_mutable_catalog_path(
@@ -490,6 +550,26 @@ class TestRunEvalArtifact:
                 and row["status"] == "failed"
                 for row in rows
             )
+
+    def test_eval_artifact_rejects_tampered_learning_carousel_order(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        artifact = deepcopy(_learning_artifact())
+        artifact["final_content"]["image_plan"]["slides"][1]["order"] = 7
+        artifact_path = tmp_path / "tampered-learning-carousel.json"
+        artifact_path.write_text(
+            json.dumps(artifact, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+        result = run_eval_artifact(
+            artifact_path=artifact_path,
+            evals_base_dir=tmp_path / "evals",
+        )
+
+        assert result["status"] == "failed"
+        assert result["gate"]["required_failed"] > 0
 
     def test_eval_artifact_fails_deliberately_weak_content_quality_fixture(self):
         with tempfile.TemporaryDirectory() as tmp:
