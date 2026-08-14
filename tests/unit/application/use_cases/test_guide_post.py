@@ -146,6 +146,7 @@ def _assert_psychology_text_carousel(
     assert recommendation["recommended_backend"] == "local_social_screenshot"
     assert recommendation["local_style"] == "psychology_text_card_v1"
     assert recommendation["format_archetype"] == "text_carousel"
+    assert recommendation["carousel_style"] == "psychology_text_card_v1"
     assert recommendation["role"] == "text_carousel"
     assert recommendation["page_count"] == {"min": 4, "max": 7}
     assert recommendation["command_hint"] == "--auto-generate-image"
@@ -201,6 +202,7 @@ def test_psychology_guide_recommends_one_semantic_text_carousel() -> None:
     assert recommendation["format_archetype"] == "text_carousel"
     assert recommendation["recommended_backend"] == "local_social_screenshot"
     assert recommendation["local_style"] == "psychology_text_card_v1"
+    assert recommendation["carousel_style"] == "psychology_text_card_v1"
     assert recommendation["role"] == "text_carousel"
     assert recommendation["page_count"] == {"min": 4, "max": 7}
     assert recommendation["ordered_roles"] == [
@@ -988,9 +990,24 @@ def test_psychology_learning_series_guide_returns_only_catalog_lessons() -> None
     assert command[command.index("--psychology-series-id") + 1] == "after_work_rumination"
     assert command[command.index("--psychology-lesson-id") + 1] == "notice_the_loop"
     assert command[command.index("--psychology-curriculum-version") + 1] == "1"
-    assert result["topic_guidance"]["image_recommendation"]["command_hint"] == (
+    image_recommendation = result["topic_guidance"]["image_recommendation"]
+    assert image_recommendation["command_hint"] == (
         "无需传 --local-image-style；PTSM 会按已审核课程图片方案生成。"
     )
+    assert image_recommendation["format_archetype"] == "text_carousel"
+    assert image_recommendation["local_style"] == "psychology_text_card_v1"
+    assert image_recommendation["carousel_style"] == "psychology_text_card_v1"
+    assert image_recommendation["page_count"] == {"min": 7, "max": 7}
+    assert image_recommendation["ordered_roles"] == [
+        "cover_hook",
+        "concrete_scene",
+        "light_mechanism",
+        "save_tool",
+        "scope_boundary",
+        "professional_boundary",
+        "comment_prompt",
+    ]
+    assert "--auto-generate-image" in command
 
 
 def test_psychology_learning_series_guide_requires_an_explicit_lesson_selection() -> None:

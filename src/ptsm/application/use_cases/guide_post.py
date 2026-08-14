@@ -881,7 +881,7 @@ def _run_psychology_learning_series_guide_post(
     )
     contract = bundle.runtime_contract
     image_plan = render_psychology_learning_draft(contract)["image_plan"]
-    image_style = str(image_plan["style"])
+    image_style = str(image_plan.get("carousel_style") or image_plan["style"])
     image_recommendation = _build_psychology_learning_image_recommendation(
         image_plan=image_plan
     )
@@ -903,6 +903,18 @@ def _run_psychology_learning_series_guide_post(
             "role": image_plan["role"],
             "text_density": image_plan["text_density"],
             "max_text_units": int(image_plan["max_text_units"]),
+            **(
+                {
+                    "format_archetype": "text_carousel",
+                    "carousel_style": image_plan["carousel_style"],
+                    "page_count": {
+                        "min": len(image_plan["slides"]),
+                        "max": len(image_plan["slides"]),
+                    },
+                }
+                if isinstance(image_plan.get("slides"), list)
+                else {}
+            ),
         },
     }
     topic_guidance = {
@@ -1524,6 +1536,7 @@ def _format_image_recommendation(recommendation: Any) -> str:
         lines.extend(
             [
                 "- format_archetype: text_carousel",
+                f"- carousel_style: {recommendation['carousel_style']}",
                 f"- page_count: {page_count['min']}-{page_count['max']}",
                 f"- ordered_roles: {', '.join(recommendation['ordered_roles'])}",
             ]
@@ -1742,6 +1755,7 @@ def _psychology_text_carousel_recommendation() -> dict[str, Any]:
         "provider": "",
         "model": "",
         "format_archetype": "text_carousel",
+        "carousel_style": "psychology_text_card_v1",
         "role": "text_carousel",
         "text_density": "medium",
         "max_text_units": 4,
@@ -1954,11 +1968,11 @@ def _build_psychology_learning_image_recommendation(
     image_plan: dict[str, Any],
 ) -> dict[str, Any]:
     """Expose the approved image plan without offering an override flag."""
-    return {
+    recommendation = {
         "status": "available",
         "decision_stage": IMAGE_RECOMMENDATION_DECISION_STAGE,
         "recommended_backend": image_plan["backend"],
-        "local_style": image_plan["style"],
+        "local_style": image_plan.get("carousel_style") or image_plan["style"],
         "provider": "",
         "model": "",
         "role": image_plan["role"],
@@ -1968,6 +1982,17 @@ def _build_psychology_learning_image_recommendation(
         "command_hint": "无需传 --local-image-style；PTSM 会按已审核课程图片方案生成。",
         "fallback": "学习系列不接受手工图片样式或图片文件覆盖。",
     }
+    slides = image_plan.get("slides")
+    if isinstance(slides, list):
+        recommendation.update(
+            {
+                "format_archetype": "text_carousel",
+                "carousel_style": image_plan["carousel_style"],
+                "page_count": {"min": len(slides), "max": len(slides)},
+                "ordered_roles": [slide["role"] for slide in slides],
+            }
+        )
+    return recommendation
 
 
 def _psychology_learning_safety_notes() -> list[str]:
