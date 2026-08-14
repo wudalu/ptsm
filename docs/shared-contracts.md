@@ -2,7 +2,7 @@
 title: PTSM Shared Contracts
 status: active
 owner: ptsm
-last_verified: 2026-05-09
+last_verified: 2026-08-14
 source_of_truth: true
 related_paths:
   - shared_contracts/README.md
