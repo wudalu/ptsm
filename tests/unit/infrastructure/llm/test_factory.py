@@ -162,7 +162,7 @@ def test_deterministic_backend_keeps_explicit_playbook_when_shared_voice_names_o
     assert "工牌" in draft["body"] or "群聊" in draft["body"]
 
 
-def test_deterministic_backend_emits_low_density_save_tool_for_note_screenshot() -> None:
+def test_deterministic_backend_emits_bounded_psychology_text_carousel() -> None:
     draft = DeterministicDraftBackend().generate(
         scene="下班路上反复复盘会议上说错的那句话，想要一个5分钟心理练习",
         planner_prompt="# Modern Psychology Planner\n目标：输出可收藏的心理学小工具。",
@@ -176,14 +176,16 @@ def test_deterministic_backend_emits_low_density_save_tool_for_note_screenshot()
 
     image_plan = draft["image_plan"]
     assert image_plan["backend"] == "local_social_screenshot"
-    assert image_plan["style"] == "iphone_notes"
-    assert image_plan["role"] == "save_tool"
-    assert image_plan["text_density"] == "low"
-    assert image_plan["max_text_units"] == "3"
+    assert image_plan["style"] == "psychology_text_card"
+    assert image_plan["role"] == "text_carousel"
+    assert image_plan["text_density"] == "medium"
+    assert image_plan["max_text_units"] == "4"
     assert image_plan["cover_text_strategy"]
+    assert image_plan["carousel_style"] == "psychology_text_card_v1"
+    assert image_plan["slides"][0]["role"] == "cover_hook"
 
 
-def test_deterministic_image_plan_ignores_strategy_catalog_when_choosing_style() -> None:
+def test_deterministic_psychology_carousel_ignores_legacy_style_catalog() -> None:
     draft = DeterministicDraftBackend().generate(
         scene="下班路上反复复盘会议上说错的那句话",
         planner_prompt="# Modern Psychology Planner\n目标：输出可收藏的心理学小工具。",
@@ -198,9 +200,10 @@ def test_deterministic_image_plan_ignores_strategy_catalog_when_choosing_style()
     )
 
     image_plan = draft["image_plan"]
-    assert image_plan["style"] == "iphone_notes"
-    assert image_plan["role"] == "save_tool"
-    assert image_plan["text_density"] == "low"
+    assert image_plan["style"] == "psychology_text_card"
+    assert image_plan["role"] == "text_carousel"
+    assert image_plan["text_density"] == "medium"
+    assert image_plan["carousel_style"] == "psychology_text_card_v1"
 
 
 def test_deterministic_image_plan_does_not_treat_shared_forbidden_label_as_world_cup_context() -> None:
@@ -219,7 +222,7 @@ def test_deterministic_image_plan_does_not_treat_shared_forbidden_label_as_world
     assert "看球清单" not in image_plan["cover_text_strategy"]
 
 
-def test_deterministic_psychology_message_boundary_prefers_save_tool_notes() -> None:
+def test_deterministic_psychology_message_boundary_uses_text_carousel() -> None:
     draft = DeterministicDraftBackend().generate(
         scene="收到朋友消息就急着解释，想要一个边界句模板",
         planner_prompt="# Modern Psychology Planner\n目标：输出可收藏的心理学小工具。",
@@ -233,10 +236,130 @@ def test_deterministic_psychology_message_boundary_prefers_save_tool_notes() -> 
 
     image_plan = draft["image_plan"]
     assert image_plan["backend"] == "local_social_screenshot"
-    assert image_plan["style"] == "iphone_notes"
-    assert image_plan["role"] == "save_tool"
-    assert image_plan["text_density"] == "low"
-    assert image_plan["max_text_units"] == "3"
+    assert image_plan["style"] == "psychology_text_card"
+    assert image_plan["role"] == "text_carousel"
+    assert image_plan["text_density"] == "medium"
+    assert image_plan["max_text_units"] == "4"
+    assert image_plan["slides"][3]["role"] == "save_tool"
+
+
+@pytest.mark.parametrize(
+    ("scene", "expected_roles", "expected_text"),
+    (
+        (
+            "伴侣三小时没回消息，我已经脑补到分手",
+            ("cover_hook", "concrete_scene", "light_mechanism", "save_tool"),
+            "事实",
+        ),
+        (
+            "会议结束后还在反复回放自己说错的话",
+            ("cover_hook", "concrete_scene", "light_mechanism", "save_tool"),
+            "猜测",
+        ),
+        (
+            "下班后身体还在工位，需要5分钟睡眠恢复信号",
+            ("cover_hook", "concrete_scene", "light_mechanism", "save_tool"),
+            "5分钟",
+        ),
+        (
+            "同事临时请我帮忙，我需要一个三明治拒绝法边界句",
+            ("cover_hook", "concrete_scene", "light_mechanism", "save_tool"),
+            "边界",
+        ),
+    ),
+)
+def test_deterministic_modern_psychology_draft_builds_semantic_text_carousel(
+    scene: str,
+    expected_roles: tuple[str, ...],
+    expected_text: str,
+) -> None:
+    backend = DeterministicDraftBackend()
+
+    draft = backend.generate(
+        scene=scene,
+        planner_prompt="modern_psychology_post 现代心理困境观察",
+        skill_contents=[
+            "# Psychology Style\n#心理学，使用具体场景和低风险工具。",
+            "# XHS Image Strategy\n输出 image_plan。",
+        ],
+    )
+
+    plan = draft["image_plan"]
+    assert plan["carousel_style"] == "psychology_text_card_v1"
+    assert 4 <= len(plan["slides"]) <= 7
+    assert tuple(slide["role"] for slide in plan["slides"][:4]) == expected_roles
+    assert expected_text in "\n".join(
+        text
+        for slide in plan["slides"]
+        for text in (
+            str(slide["headline"]),
+            *[str(line) for line in slide["body_lines"]],
+        )
+    )
+
+
+def test_deterministic_non_psychology_image_plan_remains_a_single_image_plan() -> None:
+    backend = DeterministicDraftBackend()
+
+    draft = backend.generate(
+        scene="每日英语学习：会后礼貌跟进",
+        planner_prompt="daily_english_post",
+        skill_contents=["# XHS Image Strategy\n输出 image_plan。"],
+    )
+
+    assert "slides" not in draft["image_plan"]
+    assert draft["image_plan"]["style"] == "iphone_notes"
+
+
+@pytest.mark.parametrize(
+    ("scene", "required_terms", "forbidden_terms"),
+    (
+        ("忽冷忽热那几天，我想问又怕烦", ("忽冷忽热", "问清楚"), ("反复倒带",)),
+        ("睡前越刷短视频越空，信息过载停不下来", ("屏幕", "下线"), ("反复倒带",)),
+        ("约好的局突然不想去了，社交电量耗尽", ("社交", "取消"), ("反复倒带",)),
+        ("看见朋友圈聚会后觉得只有自己失败", ("比较", "高光"), ("反复倒带",)),
+        ("周日晚上已经开始预演周一消息", ("周一", "可控"), ("反复倒带",)),
+        ("18:57临时消息把身体拉回工位", ("消息", "下班"), ("反复倒带",)),
+    ),
+)
+def test_deterministic_psychology_carousel_keeps_each_supported_lane_on_topic(
+    scene: str,
+    required_terms: tuple[str, ...],
+    forbidden_terms: tuple[str, ...],
+) -> None:
+    draft = DeterministicDraftBackend().generate(
+        scene=scene,
+        planner_prompt="modern_psychology_post 现代心理困境观察",
+        skill_contents=[
+            "# Psychology Style\n#心理学，使用具体场景和低风险工具。",
+            "# XHS Image Strategy\n输出 image_plan。",
+        ],
+    )
+
+    slide_text = "\n".join(
+        text
+        for slide in draft["image_plan"]["slides"]
+        for text in (
+            str(slide["headline"]),
+            *[str(line) for line in slide["body_lines"]],
+        )
+    )
+    assert all(term in slide_text for term in required_terms)
+    assert all(term not in slide_text for term in forbidden_terms)
+
+    comment = draft["image_plan"]["slides"][-1]
+    expected_comment_terms = {
+        "忽冷忽热那几天，我想问又怕烦": ("问清楚", "先观察"),
+        "睡前越刷短视频越空，信息过载停不下来": ("短视频", "聊天记录"),
+        "约好的局突然不想去了，社交电量耗尽": ("硬着头皮", "取消"),
+        "看见朋友圈聚会后觉得只有自己失败": ("高光", "扣分"),
+        "周日晚上已经开始预演周一消息": ("开会", "消息"),
+        "18:57临时消息把身体拉回工位": ("秒回", "明早"),
+    }[scene]
+    assert all(
+        term in "\n".join([comment["headline"], *comment["body_lines"]])
+        for term in expected_comment_terms
+    )
 
 
 def test_deterministic_backend_prefers_provider_image_for_real_object_visuals() -> None:

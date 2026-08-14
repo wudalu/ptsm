@@ -7,6 +7,7 @@ from typing import Any, Mapping
 from pydantic import ValidationError
 
 from ptsm.domain.ai_tech_content import parse_ai_tech_runtime_contract
+from ptsm.domain.psychology_carousel import normalize_psychology_carousel_plan
 from ptsm.domain.psychology_learning import (
     parse_psychology_learning_runtime_contract,
     render_psychology_learning_draft,
@@ -390,6 +391,180 @@ def _build_reddit_curation_draft(
         "body": body,
         "hashtags": hashtags,
     }
+
+
+def _build_modern_psychology_carousel_plan(
+    *,
+    scene: str,
+    title: str,
+    image_text: str,
+) -> dict[str, Any]:
+    """Build semantic pages beside the deterministic draft, without another model call."""
+    if any(keyword in scene for keyword in ("忽冷忽热", "想问清楚", "要不要问", "暧昧")):
+        scene_headline = "忽冷忽热，最磨人的是悬着"
+        scene_lines = ["想问清楚，又怕自己显得太需要答案"]
+        mechanism_headline = "空白会被补成关系剧情"
+        mechanism_lines = ["关系不确定感让每个间隔都像信号"]
+        tool_headline = "先写事实、信号、需要"
+        tool_lines = ["事实：发生了什么", "信号：哪些变化让我在意", "需要：我要不要问清楚"]
+        comment_headline = "你会问清楚，还是先观察？"
+        comment_lines = ["A.低压问清楚", "B.先观察真实信号"]
+    elif any(keyword in scene for keyword in ("分手", "没回消息", "不回消息", "伴侣", "复合")):
+        scene_headline = "手机只是安静了一会儿"
+        scene_lines = ["脑子却开始替沉默写结局"]
+        mechanism_headline = "空白越多，剧情越满"
+        mechanism_lines = ["关系不确定感会让人先补最坏答案"]
+        tool_headline = "先写事实、脑补、需要"
+        tool_lines = ["事实：对方暂时没回", "脑补：我们要分开", "需要：一次清楚确认"]
+        comment_headline = "没回消息时，你是哪一派？"
+        comment_lines = ["A.立刻问答案", "B.忍住却反复想"]
+    elif any(keyword in scene for keyword in ("会议", "说错", "尴尬", "回放")):
+        scene_headline = "人走了，会议还没散"
+        scene_lines = ["一句话在脑子里反复加字幕"]
+        mechanism_headline = "回放不等于复盘"
+        mechanism_lines = ["反刍会重复检查，却不一定带来新信息"]
+        tool_headline = "先分三栏"
+        tool_lines = ["事实：对方原话", "猜测：我补出的评价", "下一步：是否需要确认"]
+        comment_headline = "会后回放时，你是哪一派？"
+        comment_lines = ["A.写完小作文删掉", "B.发完又重看十遍"]
+    elif any(keyword in scene for keyword in ("短视频", "刷手机", "信息过载", "越刷越空")):
+        scene_headline = "屏幕还亮着，人已经很累"
+        scene_lines = ["手指继续往下滑，感受却被往后推"]
+        mechanism_headline = "信息过载也会拖延感受"
+        mechanism_lines = ["刺激越密，大脑越难收到结束信号"]
+        tool_headline = "先做5分钟下线"
+        tool_lines = ["把屏幕扣下", "写下我在躲什么", "只做一个身体需要"]
+        comment_headline = "你睡前停在哪一种屏幕？"
+        comment_lines = ["A.短视频", "B.聊天记录"]
+    elif any(
+        keyword in scene
+        for keyword in ("社交电量", "社交耗竭", "约好的局", "不想去了", "不想去", "取消")
+    ):
+        scene_headline = "社交电量见底了"
+        scene_lines = ["怕的不是不去，是怕别人觉得我扫兴"]
+        mechanism_headline = "疲惫和边界压力叠在一起"
+        mechanism_lines = ["需要休息，也想把关系放稳"]
+        tool_headline = "先存取消局三句"
+        tool_lines = ["承认原来的约定", "说明今天的状态", "给一个下次选项"]
+        comment_headline = "社交没电时，你是哪一派？"
+        comment_lines = ["A.硬着头皮去", "B.愧疚地取消"]
+    elif any(keyword in scene for keyword in ("朋友圈", "孤独", "比较", "失败", "高光")):
+        scene_headline = "别人的高光，按下了扣分键"
+        scene_lines = ["看见一桌热闹，就觉得只有自己落单"]
+        mechanism_headline = "比较会把片段当成全貌"
+        mechanism_lines = ["朋友圈高光不等于别人的全部生活"]
+        tool_headline = "先把比较拉回今晚"
+        tool_lines = ["我看见了什么", "我给自己扣了什么分", "今晚给自己一个恢复动作"]
+        comment_headline = "哪种高光最容易让你扣分？"
+        comment_lines = ["A.聚会热闹", "B.工作进度"]
+    elif any(keyword in scene for keyword in ("周日", "周一", "预焦虑")):
+        scene_headline = "周一还没来，提醒声先来了"
+        scene_lines = ["未知任务越多，脑子越想提前排雷"]
+        mechanism_headline = "预演常跟低控制感有关"
+        mechanism_lines = ["多想不能把所有未知变成确定"]
+        tool_headline = "只留一个可控动作"
+        tool_lines = ["最担心的一件事", "现在可控的一小步", "暂时不用处理的一件事"]
+        comment_headline = "周日晚上，你先预演什么？"
+        comment_lines = ["A.开会", "B.消息"]
+    elif any(keyword in scene for keyword in ("临时消息", "拉回工位", "18:57", "下班身份")):
+        scene_headline = "一条消息，把身体拽回工位"
+        scene_lines = ["电脑还没开，心已经开始排优先级"]
+        mechanism_headline = "下班边界遇上低控制感"
+        mechanism_lines = ["不确定自己能否离线，身体就继续待命"]
+        tool_headline = "给消息一个下班后顺序"
+        tool_lines = ["先看是否真的紧急", "写清回复时间", "把手机放远一点"]
+        comment_headline = "下班消息来了，你会怎么回？"
+        comment_lines = ["A.立刻秒回", "B.写清明早回复"]
+    elif any(
+        keyword in scene
+        for keyword in ("睡眠恢复", "轻养生", "下班信号", "身体还在工位", "5分钟", "5 分钟")
+    ):
+        scene_headline = "人下班了，身体还在待命"
+        scene_lines = ["没有新消息，肩膀仍像坐在工位"]
+        mechanism_headline = "身体也需要收口信号"
+        mechanism_lines = ["先认出待命状态，不逼自己立刻放松"]
+        tool_headline = "留一个5分钟下班信号"
+        tool_lines = ["关掉一个信息入口", "慢慢松三次肩颈", "写下明天第一步"]
+        comment_headline = "你最想先关掉哪一种待命？"
+        comment_lines = ["A.手机通知", "B.脑内待办"]
+    elif "三明治拒绝法" in scene or any(
+        keyword in scene for keyword in ("拒绝", "边界句", "帮忙")
+    ):
+        scene_headline = "拒绝前，我先替关系道歉"
+        scene_lines = ["一句今晚不行，也像在关系里摔门"]
+        mechanism_headline = "卡住的是边界压力"
+        mechanism_lines = ["确认关系和说明限制可以分开"]
+        tool_headline = "把边界说成两部分"
+        tool_lines = ["我知道这件事很急", "但今晚我没法接手", "明早可以一起看优先级"]
+        comment_headline = "边界句写好后，你是哪一派？"
+        comment_lines = ["A.不敢发", "B.发了怕关系变冷"]
+    else:
+        scene_headline = "事情过去了，脑子还没下班"
+        scene_lines = ["同一个片段被反复倒带"]
+        mechanism_headline = "重复想不一定有新答案"
+        mechanism_lines = ["先把事实和补出的解释分开"]
+        tool_headline = "只留一个可控下一步"
+        tool_lines = ["写下事实", "写下猜测", "决定明天是否确认"]
+        comment_headline = "想太多时，你更像哪一派？"
+        comment_lines = ["A.马上找答案", "B.忍住却反复想"]
+
+    return normalize_psychology_carousel_plan(
+        {
+            "backend": "local_social_screenshot",
+            "style": "psychology_text_card",
+            "role": "text_carousel",
+            "text_density": "medium",
+            "max_text_units": "4",
+            "cover_text_strategy": "封面只放一个具体瞬间和一句短提示。",
+            "reason": "同一心理主题用有序文字卡逐步展开。",
+            "prompt_focus": "只排版给定文字，不添加新结论。",
+            "carousel_style": "psychology_text_card_v1",
+            "slides": [
+                {
+                    "slide_id": "cover",
+                    "order": 1,
+                    "role": "cover_hook",
+                    "headline": title,
+                    "body_lines": [image_text],
+                },
+                {
+                    "slide_id": "scene",
+                    "order": 2,
+                    "role": "concrete_scene",
+                    "headline": scene_headline,
+                    "body_lines": scene_lines,
+                },
+                {
+                    "slide_id": "mechanism",
+                    "order": 3,
+                    "role": "light_mechanism",
+                    "headline": mechanism_headline,
+                    "body_lines": mechanism_lines,
+                },
+                {
+                    "slide_id": "tool",
+                    "order": 4,
+                    "role": "save_tool",
+                    "headline": tool_headline,
+                    "body_lines": tool_lines,
+                },
+                {
+                    "slide_id": "boundary",
+                    "order": 5,
+                    "role": "professional_boundary",
+                    "headline": "一张卡有边界",
+                    "body_lines": ["持续影响生活时，请及时寻求专业帮助"],
+                },
+                {
+                    "slide_id": "comment",
+                    "order": 6,
+                    "role": "comment_prompt",
+                    "headline": comment_headline,
+                    "body_lines": comment_lines,
+                },
+            ],
+        }
+    )
 
 
 def _extract_selected_reddit_discussion(runtime_context: str) -> dict[str, str] | None:
@@ -946,12 +1121,18 @@ def _build_modern_psychology_draft(
     )
     if feedback != "无" and "专业帮助" not in body:
         body += "\n如果这些感受持续影响生活，请优先寻求专业帮助。"
-    return {
+    draft: dict[str, Any] = {
         "title": title,
         "image_text": image_text,
         "body": body,
         "hashtags": hashtags,
     }
+    draft["image_plan"] = _build_modern_psychology_carousel_plan(
+        scene=scene,
+        title=title,
+        image_text=image_text,
+    )
+    return draft
 
 
 def _avoid_recent_modern_psychology_memory(
