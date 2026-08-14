@@ -80,6 +80,102 @@ def test_run_playbook_cli_outputs_modern_psychology_publish_receipt(
     get_settings.cache_clear()
 
 
+def test_run_playbook_cli_generates_and_publishes_complete_psychology_carousel(
+    capsys, monkeypatch, tmp_path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("DEFAULT_LLM_PROVIDER", "deterministic")
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    get_settings.cache_clear()
+
+    exit_code = main(
+        [
+            "run-playbook",
+            "--scene",
+            "下班后还在反复复盘白天一句话",
+            "--account-id",
+            "acct-psychology-local",
+            "--playbook-id",
+            "modern_psychology_post",
+            "--publish-mode",
+            "dry-run",
+            "--auto-generate-image",
+            "--thread-id",
+            "thread-modern-psychology-carousel-cli",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    generation = payload["image_generation"]
+
+    assert exit_code == 0
+    assert payload["status"] == "completed"
+    assert generation["status"] == "committed"
+    assert generation["carousel_style"] == "psychology_text_card_v1"
+    assert 4 <= generation["image_count"] <= 7
+    assert [page["order"] for page in generation["pages"]] == list(
+        range(1, generation["image_count"] + 1)
+    )
+    assert payload["publish_result"]["platform_payload"]["images"] == generation[
+        "generated_image_paths"
+    ]
+    assert all(Path(path).is_file() for path in generation["generated_image_paths"])
+    assert Path(generation["manifest_path"]).is_file()
+    ledger_path = (
+        tmp_path
+        / "outputs"
+        / "artifacts"
+        / "generated-image-assets"
+        / "assets.jsonl"
+    )
+    ledger_rows = [json.loads(line) for line in ledger_path.read_text().splitlines()]
+    assert [row["page_order"] for row in ledger_rows] == list(
+        range(1, generation["image_count"] + 1)
+    )
+    assert not list((tmp_path / "outputs" / "generated_images").glob(".*-staging-*"))
+
+    get_settings.cache_clear()
+
+
+def test_run_playbook_cli_explicit_psychology_style_keeps_single_image_override(
+    capsys, monkeypatch, tmp_path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("DEFAULT_LLM_PROVIDER", "deterministic")
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    get_settings.cache_clear()
+
+    assert main(
+        [
+            "run-playbook",
+            "--scene",
+            "下班后还在反复复盘白天一句话",
+            "--account-id",
+            "acct-psychology-local",
+            "--playbook-id",
+            "modern_psychology_post",
+            "--publish-mode",
+            "dry-run",
+            "--auto-generate-image",
+            "--local-image-style",
+            "iphone_notes",
+        ]
+    ) == 0
+
+    payload = json.loads(capsys.readouterr().out)
+    generation = payload["image_generation"]
+    image_paths = generation["generated_image_paths"]
+
+    assert payload["status"] == "completed"
+    assert generation["status"] == "generated"
+    assert len(image_paths) == 1
+    assert "carousel_style" not in generation
+    assert "pages" not in generation
+    assert payload["publish_result"]["platform_payload"]["images"] == image_paths
+
+    get_settings.cache_clear()
+
+
 def test_run_playbook_cli_outputs_psychology_learning_series_lesson(
     capsys, monkeypatch, tmp_path
 ) -> None:
@@ -136,6 +232,71 @@ def test_run_playbook_cli_outputs_psychology_learning_series_lesson(
     ).exists()
     assert "source:" not in json.dumps(content, ensure_ascii=False)
     assert "https://" not in json.dumps(payload, ensure_ascii=False)
+
+    get_settings.cache_clear()
+
+
+def test_run_playbook_cli_generates_catalog_owned_learning_carousel(
+    capsys, monkeypatch, tmp_path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("DEFAULT_LLM_PROVIDER", "deterministic")
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    get_settings.cache_clear()
+
+    assert main(
+        [
+            "run-playbook",
+            "--account-id",
+            "acct-psychology-local",
+            "--playbook-id",
+            "modern_psychology_post",
+            "--psychology-content-mode",
+            "learning_series",
+            "--psychology-series-id",
+            "after_work_rumination",
+            "--psychology-lesson-id",
+            "notice_the_loop",
+            "--psychology-curriculum-version",
+            "1",
+            "--topic-direction-id",
+            "psychology_learning_after_work_rumination_notice_the_loop",
+            "--publish-mode",
+            "dry-run",
+            "--auto-generate-image",
+            "--thread-id",
+            "thread-modern-psychology-learning-carousel",
+        ]
+    ) == 0
+
+    payload = json.loads(capsys.readouterr().out)
+    image_receipt = payload["image_generation"]
+
+    assert payload["status"] == "completed"
+    assert image_receipt["status"] == "committed"
+    assert image_receipt["renderer"] == "ptsm_local_renderer"
+    assert image_receipt["carousel_style"] == "psychology_text_card_v1"
+    assert image_receipt["image_count"] == 7
+    assert len(image_receipt["manifest_sha256"]) == 64
+    assert set(image_receipt) == {
+        "status",
+        "renderer",
+        "carousel_style",
+        "image_count",
+        "manifest_sha256",
+    }
+    artifact = json.loads(Path(payload["artifact_path"]).read_text(encoding="utf-8"))
+    assert artifact["image_generation"] == image_receipt
+    ledger_path = (
+        tmp_path
+        / "outputs"
+        / "artifacts"
+        / "generated-image-assets"
+        / "assets.jsonl"
+    )
+    ledger_rows = [json.loads(line) for line in ledger_path.read_text().splitlines()]
+    assert [row["page_order"] for row in ledger_rows] == list(range(1, 8))
+    assert not list((tmp_path / "outputs" / "generated_images").glob(".*-staging-*"))
 
     get_settings.cache_clear()
 

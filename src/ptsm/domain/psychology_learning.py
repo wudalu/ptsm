@@ -44,6 +44,15 @@ PSYCHOLOGY_LEARNING_CATALOG_SNAPSHOT_SCHEMA_VERSION = (
     _PSYCHOLOGY_LEARNING_CATALOG_SNAPSHOT_SCHEMA_VERSION_V1
 )
 CURRENT_PSYCHOLOGY_LEARNING_CONTROLLED_TEMPLATE_VERSION = "2"
+PSYCHOLOGY_LEARNING_CAROUSEL_ORDERED_ROLES = (
+    "cover_hook",
+    "concrete_scene",
+    "light_mechanism",
+    "save_tool",
+    "scope_boundary",
+    "professional_boundary",
+    "comment_prompt",
+)
 PSYCHOLOGY_LEARNING_PROGRESS_SCHEMA_VERSION = "1"
 PSYCHOLOGY_LEARNING_CATALOG_RECEIPT_SCHEMA_VERSION = "1"
 DEFAULT_PSYCHOLOGY_LEARNING_SERIES_CATALOG_ROOT = (
@@ -405,6 +414,7 @@ _PSYCHOLOGY_LEARNING_ARTIFACT_ALLOWED_FIELDS_BY_PATH = {
             "carousel_style",
             "image_count",
             "manifest_sha256",
+            "reason",
         }
     ),
     ("post_publish_checks",): frozenset(
@@ -601,26 +611,54 @@ class PsychologyLearningLesson(_FrozenDomainModel):
 
     @property
     def public_direction(self) -> dict[str, Any]:
+        return self.public_direction_for_template(
+            CURRENT_PSYCHOLOGY_LEARNING_CONTROLLED_TEMPLATE_VERSION
+        )
+
+    def public_direction_for_template(
+        self,
+        controlled_template_version: str,
+    ) -> dict[str, Any]:
+        template_version = _require_controlled_catalog_template_version(
+            controlled_template_version
+        )
+        if template_version == "1":
+            viral_hook = "一个具体下班瞬间 + 一张可保存的小练习"
+            format_recommendation: dict[str, Any] = {
+                "format_archetype": "note_card",
+                "cover_role": "save_tool",
+                "body_shape": "micro scene / one approved concept / bounded micro-exercise / natural A-B handoff",
+                "visual_evidence_need": "low",
+                "avoid_format": ["dense_text_poster", "clinical_self_test"],
+            }
+        else:
+            viral_hook = "一个具体下班瞬间 + 一组按顺序展开的可保存文字卡"
+            format_recommendation = {
+                "format_archetype": "text_carousel",
+                "cover_role": "cover_hook",
+                "body_shape": "ordered scene / mechanism / saveable tool / bounded support / natural A-B handoff",
+                "visual_evidence_need": "low",
+                "avoid_format": ["dense_text_poster", "clinical_self_test"],
+                "carousel_style": "psychology_text_card_v1",
+                "page_count": {"min": 7, "max": 7},
+                "ordered_roles": list(
+                    PSYCHOLOGY_LEARNING_CAROUSEL_ORDERED_ROLES
+                ),
+            }
         return {
             "id": self.direction_id,
             "name": f"{self.series_badge}：{self.lesson_title}",
             "direction_type": "learning_series_lesson",
             "scene_fit": "catalog_lesson",
             "trend_signal": "心理学学习专题 / 生活化概念练习",
-            "viral_hook": "一个具体下班瞬间 + 一张可保存的小练习",
+            "viral_hook": viral_hook,
             "why_it_may_work": "课次固定，读者能从具体场景里学一个概念，也能收藏后续接着学。",
             "best_scenes": [self.scene_anchor],
             "content_angle": self.learning_goal,
             "saveable_tool": self.micro_exercise,
             "comment_prompt": self.comment_prompt,
             "avoid": self.scope_limit,
-            "format_recommendation": {
-                "format_archetype": "note_card",
-                "cover_role": "save_tool",
-                "body_shape": "micro scene / one approved concept / bounded micro-exercise / natural A-B handoff",
-                "visual_evidence_need": "low",
-                "avoid_format": ["dense_text_poster", "clinical_self_test"],
-            },
+            "format_recommendation": format_recommendation,
             "series_id": self.series_id,
             "curriculum_version": self.curriculum_version,
             "lesson_id": self.lesson_id,
@@ -837,7 +875,9 @@ class PsychologyLearningBundle(_FrozenDomainModel):
 
     @property
     def public_direction(self) -> dict[str, Any]:
-        return self.lesson.public_direction
+        return self.lesson.public_direction_for_template(
+            str(self.runtime_contract["controlled_template_version"])
+        )
 
     @property
     def roadmap(self) -> tuple[dict[str, Any], ...]:
@@ -3955,6 +3995,19 @@ def contains_psychology_learning_raw_provenance(
     cannot leave a raw URL, author, headline, or source reference in a field
     the reader-visible draft gate does not inspect.
     """
+    if (
+        not strict_artifact_shape
+        and _path
+        in {
+            ("content_review", "image_plan"),
+            ("step_outputs", "executor", "draft_content", "image_plan"),
+        }
+        and not _matches_final_psychology_learning_image_plan(
+            value,
+            artifact_root=_artifact_root,
+        )
+    ):
+        return True
     if isinstance(value, Mapping):
         if _path == ():
             _artifact_root = value
@@ -4031,6 +4084,7 @@ def contains_psychology_learning_raw_provenance(
                     normalized_key=normalized_key,
                     value=nested,
                     container=value,
+                    artifact_root=_artifact_root,
                 ):
                     return True
                 continue
@@ -4061,6 +4115,20 @@ def contains_psychology_learning_raw_provenance(
     )
 
 
+def _matches_final_psychology_learning_image_plan(
+    value: object,
+    *,
+    artifact_root: Mapping[object, object] | None,
+) -> bool:
+    if not isinstance(value, Mapping) or not isinstance(artifact_root, Mapping):
+        return False
+    final_content = artifact_root.get("final_content")
+    if not isinstance(final_content, Mapping):
+        return False
+    final_plan = final_content.get("image_plan")
+    return isinstance(final_plan, Mapping) and dict(value) == dict(final_plan)
+
+
 def _is_valid_psychology_learning_artifact_value(
     *,
     path: tuple[str, ...],
@@ -4075,6 +4143,14 @@ def _is_valid_psychology_learning_artifact_value(
     retained value is therefore either an application-derived constant, a
     finite status vocabulary, or a local opaque identifier with its own shape.
     """
+    image_template_version = (
+        _verified_psychology_learning_artifact_template_version(
+            artifact,
+            preflight_capability=preflight_capability,
+        )
+        if path and path[0] == "image_generation"
+        else None
+    )
     if path == ("playbook_id",):
         return value == "modern_psychology_post"
     if path == ("scene",):
@@ -4106,27 +4182,60 @@ def _is_valid_psychology_learning_artifact_value(
     if path == ("publish_result", "status"):
         return value in _PSYCHOLOGY_LEARNING_PUBLISH_STATUSES
     if path == ("image_generation",):
-        return value is None or (
-            isinstance(value, Mapping)
-            and set(value)
-            == {
+        if value is None:
+            return True
+        if not isinstance(value, Mapping):
+            return False
+        if image_template_version == "1":
+            return value == {
+                "status": "generated",
+                "renderer": "ptsm_local_renderer",
+            }
+        if image_template_version != "2":
+            return False
+        if value.get("status") == "committed":
+            return set(value) == {
                 "status",
                 "renderer",
                 "carousel_style",
                 "image_count",
                 "manifest_sha256",
             }
-        )
+        if value.get("status") == "failed":
+            return set(value) == {
+                "status",
+                "renderer",
+                "carousel_style",
+                "image_count",
+                "reason",
+            }
+        return False
     if path == ("image_generation", "status"):
-        return value == "committed"
+        if image_template_version == "1":
+            return value == "generated"
+        return image_template_version == "2" and value in {"committed", "failed"}
     if path == ("image_generation", "renderer"):
-        return value == "ptsm_local_renderer"
+        return image_template_version in {"1", "2"} and value == "ptsm_local_renderer"
     if path == ("image_generation", "carousel_style"):
-        return value == "psychology_text_card_v1"
+        return image_template_version == "2" and value == "psychology_text_card_v1"
     if path == ("image_generation", "image_count"):
-        return isinstance(value, int) and not isinstance(value, bool) and 4 <= value <= 7
+        return (
+            image_template_version == "2"
+            and isinstance(value, int)
+            and not isinstance(value, bool)
+            and 4 <= value <= 7
+        )
     if path == ("image_generation", "manifest_sha256"):
-        return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) is not None
+        return (
+            image_template_version == "2"
+            and isinstance(value, str)
+            and re.fullmatch(r"[0-9a-f]{64}", value) is not None
+        )
+    if path == ("image_generation", "reason"):
+        return (
+            image_template_version == "2"
+            and value == "psychology_carousel_generation_failed"
+        )
     if path == ("watermark_removal",):
         return value is None or (
             isinstance(value, Mapping) and set(value) == {"status"}
@@ -4166,6 +4275,23 @@ def _is_valid_psychology_learning_artifact_value(
     return True
 
 
+def _verified_psychology_learning_artifact_template_version(
+    artifact: Mapping[object, object] | None,
+    *,
+    preflight_capability: _PsychologyLearningPreflightCapability | None = None,
+) -> str | None:
+    if artifact is None:
+        return None
+    bundle = _verified_psychology_learning_artifact_bundle(
+        artifact,
+        preflight_capability=preflight_capability,
+    )
+    if bundle is None:
+        return None
+    value = bundle.runtime_contract.get("controlled_template_version")
+    return str(value) if value in {"1", "2"} else None
+
+
 def _psychology_learning_artifact_allowed_fields(
     path: tuple[str, ...],
 ) -> frozenset[str] | None:
@@ -4202,15 +4328,45 @@ def _is_allowed_artifact_metadata_field(
     normalized_key: str,
     value: object,
     container: Mapping[object, object],
+    artifact_root: Mapping[object, object] | None,
 ) -> bool:
     """Allow only framework-owned, non-research source metadata fields."""
-    if normalized_key == "headline" and (
-        len(path) == 5
-        and path[:3] == ("final_content", "image_plan", "slides")
-        and path[3].isdigit()
-        and path[4] == "headline"
-    ):
-        return is_psychology_learning_drafting_safe_text(value)
+    if normalized_key == "headline":
+        carousel_suffix = path[-4:]
+        allowed_prefixes = {
+            ("final_content",),
+            ("content_review",),
+            ("step_outputs", "executor", "draft_content"),
+        }
+        if (
+            len(path) >= 5
+            and path[:-4] in allowed_prefixes
+            and carousel_suffix[0:2] == ("image_plan", "slides")
+            and carousel_suffix[2].isdigit()
+            and carousel_suffix[3] == "headline"
+            and isinstance(artifact_root, Mapping)
+        ):
+            final_content = artifact_root.get("final_content")
+            if not isinstance(final_content, Mapping):
+                return False
+            final_plan = final_content.get("image_plan")
+            if not isinstance(final_plan, Mapping):
+                return False
+            final_slides = final_plan.get("slides")
+            if not isinstance(final_slides, (list, tuple)):
+                return False
+            slide_index = int(carousel_suffix[2])
+            if slide_index >= len(final_slides):
+                return False
+            expected = final_slides[slide_index]
+            if not isinstance(expected, Mapping):
+                return False
+            expected_headline = expected.get("headline")
+            return (
+                value == expected_headline
+                and is_psychology_learning_drafting_safe_text(value)
+            )
+        return False
     if normalized_key == "source":
         if path == ("topic_selection", "source"):
             return value == "psychology-learning-series"

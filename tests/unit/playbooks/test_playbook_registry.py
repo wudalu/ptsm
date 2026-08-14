@@ -72,6 +72,18 @@ def test_key_playbook_prompts_include_viral_hook_research_inputs() -> None:
             assert term in prompt_bundle
 
 
+def test_psychology_planner_has_one_unambiguous_default_carousel_strategy() -> None:
+    planner = (
+        Path("src/ptsm/playbooks/definitions")
+        / "modern_psychology_post"
+        / "planner.md"
+    ).read_text(encoding="utf-8")
+
+    assert "普通心理学自动图使用 `psychology_text_card_v1` 轮播" in planner
+    assert "显式单图 override" in planner
+    assert "三栏工具、5 分钟练习、边界句和消息草稿优先 `iphone_notes`" not in planner
+
+
 def test_playbook_registry_selects_fengkuang_daily_post() -> None:
     registry = PlaybookRegistry(
         playbook_root=Path("src/ptsm/playbooks/definitions"),

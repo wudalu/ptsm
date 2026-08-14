@@ -24,6 +24,7 @@ def test_xiaohongshu_adapter_builds_dry_run_receipt() -> None:
         },
         artifact_path="outputs/artifacts/demo.json",
         image_paths=[],
+        image_evidence=None,
         visibility="仅自己可见",
     )
 

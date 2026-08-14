@@ -3,14 +3,17 @@ from __future__ import annotations
 import asyncio
 from datetime import timedelta
 import json
-from pathlib import Path
 import re
-from typing import Any, Protocol, Sequence
+from typing import Any, Mapping, Protocol, Sequence
 
 import httpx
 from langchain_core.messages import ToolMessage
 
 from ptsm.accounts.registry import AccountProfile
+from ptsm.infrastructure.images.image_file_evidence import (
+    ImageFileEvidenceError,
+    verify_image_file_set,
+)
 
 
 class PublisherPreflightError(RuntimeError):
@@ -91,23 +94,26 @@ class XiaohongshuMcpPublisher:
         artifact_path: str,
         image_paths: Sequence[str],
         visibility: str | None,
+        image_evidence: Sequence[Mapping[str, object]] | None = None,
     ) -> dict[str, Any]:
         if account.platform != self.platform_name:
             raise ValueError(
                 f"Account {account.account_id} does not belong to platform {self.platform_name}"
             )
 
-        resolved_images = self._validate_images(image_paths)
-        publish_args = self._build_publish_args(
-            content=content,
-            image_paths=resolved_images,
-            visibility=visibility or self.default_visibility,
+        frozen_evidence = self._freeze_image_evidence(image_evidence)
+        resolved_images = self._validate_images(
+            image_paths,
+            image_evidence=frozen_evidence,
         )
         return asyncio.run(
             self._publish_async(
                 account=account,
                 artifact_path=artifact_path,
-                publish_args=publish_args,
+                content=content,
+                image_paths=resolved_images,
+                visibility=visibility or self.default_visibility,
+                image_evidence=frozen_evidence,
             )
         )
 
@@ -137,7 +143,10 @@ class XiaohongshuMcpPublisher:
         *,
         account: AccountProfile,
         artifact_path: str,
-        publish_args: dict[str, object],
+        content: dict[str, Any],
+        image_paths: list[str],
+        visibility: str,
+        image_evidence: tuple[dict[str, object], ...] | None,
     ) -> dict[str, Any]:
         preflight = await self._preflight_async(require_publish_tool=True)
         if preflight["status"] != "ready":
@@ -146,6 +155,15 @@ class XiaohongshuMcpPublisher:
                 preflight=preflight,
             )
 
+        resolved_images = self._validate_images(
+            image_paths,
+            image_evidence=image_evidence,
+        )
+        publish_args = self._build_publish_args(
+            content=content,
+            image_paths=resolved_images,
+            visibility=visibility,
+        )
         publish_response = await self._invoke_tool("publish_content", publish_args)
         publish_text = self._extract_text(publish_response)
         publish_metadata = self._extract_publish_metadata(publish_response)
@@ -287,31 +305,31 @@ class XiaohongshuMcpPublisher:
 
         return None
 
-    def _validate_images(self, image_paths: Sequence[str]) -> list[str]:
-        resolved = [str(Path(path)) for path in image_paths if str(path).strip()]
-        if not resolved:
-            raise ValueError("At least one image path is required for xiaohongshu mcp publish")
+    def _validate_images(
+        self,
+        image_paths: Sequence[str],
+        *,
+        image_evidence: Sequence[Mapping[str, object]] | None = None,
+    ) -> list[str]:
+        return verify_image_file_set(
+            image_paths=image_paths,
+            expected_pages=image_evidence,
+        )
 
-        canonical = [str(Path(path).resolve(strict=False)) for path in resolved]
-        if len(set(canonical)) != len(canonical):
-            raise ValueError("Image paths contain duplicate files")
-
-        missing = [path for path in resolved if not Path(path).exists()]
-        if missing:
-            raise ValueError(f"Image paths do not exist: {missing}")
-        non_regular = [path for path in resolved if not Path(path).is_file()]
-        if non_regular:
-            raise ValueError(f"Image paths must be regular files: {non_regular}")
-        unreadable: list[str] = []
-        for path in resolved:
-            try:
-                with Path(path).open("rb") as handle:
-                    handle.read(1)
-            except OSError:
-                unreadable.append(path)
-        if unreadable:
-            raise ValueError(f"Image paths must be readable: {unreadable}")
-        return resolved
+    def _freeze_image_evidence(
+        self,
+        image_evidence: Sequence[Mapping[str, object]] | None,
+    ) -> tuple[dict[str, object], ...] | None:
+        if image_evidence is None:
+            return None
+        if isinstance(image_evidence, (str, bytes)):
+            raise ImageFileEvidenceError("image_file_evidence_invalid")
+        frozen: list[dict[str, object]] = []
+        for page in image_evidence:
+            if not isinstance(page, Mapping):
+                raise ImageFileEvidenceError("image_file_evidence_invalid")
+            frozen.append(dict(page))
+        return tuple(frozen)
 
     async def _list_tool_names(self) -> list[str]:
         try:

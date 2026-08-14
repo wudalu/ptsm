@@ -8,9 +8,14 @@ from types import SimpleNamespace
 import pytest
 
 import ptsm.domain.psychology_learning as psychology_learning_domain
+import ptsm.application.use_cases.psychology_learning_series as psychology_learning_series_use_case
 import ptsm.evaluations.contracts_eval as contracts_eval
 from ptsm.accounts.registry import AccountProfile, AccountRegistry
 from ptsm.application.models import FengkuangRequest, PlaybookRequest
+from ptsm.application.services.image_carousel_transaction import (
+    ImageCarouselTransaction,
+    ImageCarouselTransactionError,
+)
 from ptsm.application.use_cases.psychology_learning_series import (
     PsychologyLearningSeriesStore,
     plan_psychology_learning_series,
@@ -37,6 +42,7 @@ from ptsm.domain.psychology_learning import (
     resolve_psychology_learning_selection,
 )
 from ptsm.infrastructure.artifacts.file_store import FileArtifactStore
+from ptsm.infrastructure.images.image_file_evidence import ImageFileEvidenceError
 from ptsm.infrastructure.memory.checkpoint import FileCheckpointSaver
 from ptsm.infrastructure.memory.store import FileExecutionMemory
 from ptsm.infrastructure.observability.run_store import RunStore
@@ -204,6 +210,95 @@ class ImagePlanWorkflow(FakeWorkflow):
         return result
 
 
+def _ordinary_psychology_carousel_content() -> dict[str, object]:
+    return {
+        "title": "下班后，脑子还在替会议加班",
+        "image_text": "人走了，会议还没散",
+        "body": (
+            "人已经离开会议室，脑子还在反复回放那句话。"
+            "可以先分开事实、猜测和下一步；如果持续影响生活，请寻求专业帮助。"
+        ),
+        "hashtags": ["#心理学", "#情绪管理", "#反刍思维"],
+        "image_plan": {
+            "backend": "local_social_screenshot",
+            "style": "psychology_text_card",
+            "role": "text_carousel",
+            "text_density": "medium",
+            "max_text_units": "4",
+            "cover_text_strategy": "封面只放一个生活化钩子",
+            "reason": "同一主题按场景、机制、工具和边界逐页展开",
+            "prompt_focus": "只排版已审核文字",
+            "carousel_style": "psychology_text_card_v1",
+            "slides": [
+                {
+                    "slide_id": "cover",
+                    "order": 1,
+                    "role": "cover_hook",
+                    "headline": "人走了，会议还没散",
+                    "body_lines": ["下班后脑子还在替那句话加班"],
+                },
+                {
+                    "slide_id": "scene",
+                    "order": 2,
+                    "role": "concrete_scene",
+                    "headline": "身体离开了会议室",
+                    "body_lines": ["脑子却在反复给那句话加字幕"],
+                },
+                {
+                    "slide_id": "mechanism",
+                    "order": 3,
+                    "role": "light_mechanism",
+                    "headline": "回放不等于复盘",
+                    "body_lines": ["反复检查，常是在找回一点控制感"],
+                },
+                {
+                    "slide_id": "tool",
+                    "order": 4,
+                    "role": "save_tool",
+                    "headline": "先写这三栏",
+                    "body_lines": ["事实：对方原话", "猜测：我补出的评价", "下一步：是否需要确认"],
+                },
+                {
+                    "slide_id": "boundary",
+                    "order": 5,
+                    "role": "professional_boundary",
+                    "headline": "一张卡片不是全部支持",
+                    "body_lines": ["如果持续影响生活，请寻求专业帮助"],
+                },
+                {
+                    "slide_id": "comment",
+                    "order": 6,
+                    "role": "comment_prompt",
+                    "headline": "会后回放时，你是哪一派？",
+                    "body_lines": ["A.写完又删", "B.发完重看"],
+                },
+            ],
+        },
+    }
+
+
+class PsychologyCarouselWorkflow:
+    def __init__(self, artifact_path: Path, final_content: dict[str, object]) -> None:
+        self.artifact_path = artifact_path
+        self.final_content = final_content
+
+    def invoke(
+        self,
+        payload: dict[str, object],
+        config: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        return {
+            "status": "completed",
+            "artifact_path": str(self.artifact_path),
+            "final_content": self.final_content,
+            "content_review": {"image_plan": self.final_content["image_plan"]},
+            "runtime_skill_contents": [],
+            "activated_skills": [],
+            "activated_skill_details": [],
+            "runtime_skill_details": [],
+        }
+
+
 class SuccessfulPublisher:
     def publish(self, **kwargs: object) -> dict[str, object]:
         return {
@@ -232,15 +327,38 @@ class CountingPublisher:
 class CapturingPublisher:
     def __init__(self) -> None:
         self.received_image_paths: list[str] = []
+        self.received_image_evidence: list[dict[str, object]] | None = None
 
     def publish(self, **kwargs: object) -> dict[str, object]:
         self.received_image_paths = list(kwargs["image_paths"])
+        raw_evidence = kwargs.get("image_evidence")
+        self.received_image_evidence = (
+            [dict(page) for page in raw_evidence]  # type: ignore[union-attr]
+            if raw_evidence is not None
+            else None
+        )
         return {
             "status": "published",
             "platform": "xiaohongshu",
             "provider": "xiaohongshu_mcp",
             "artifact_path": kwargs["artifact_path"],
         }
+
+
+class EvidenceRejectingPublisher:
+    def __init__(self) -> None:
+        self.calls = 0
+        self.received_image_evidence: list[dict[str, object]] | None = None
+
+    def publish(self, **kwargs: object) -> dict[str, object]:
+        self.calls += 1
+        raw_evidence = kwargs.get("image_evidence")
+        self.received_image_evidence = (
+            [dict(page) for page in raw_evidence]  # type: ignore[union-attr]
+            if raw_evidence is not None
+            else None
+        )
+        raise ImageFileEvidenceError("image_file_hash_mismatch")
 
 
 class CapturingImageBackend:
@@ -256,6 +374,7 @@ class CapturingImageBackend:
         output_stem: str,
     ) -> dict[str, object]:
         self.prompts.append(prompt)
+        self.generated_path.write_bytes(b"fake-provider-image")
         return {
             "provider": "bailian",
             "model": "wanx2.1-t2i-turbo",
@@ -1346,6 +1465,18 @@ def test_run_fengkuang_playbook_generates_image_for_real_publish_when_missing(
     )
     publisher = CapturingPublisher()
 
+    def generate_provider_image(self: object, **kwargs: object) -> dict[str, object]:
+        generated_path.write_bytes(b"fake-provider-image")
+        return {
+            "status": "generated",
+            "provider": "bailian",
+            "model": "qwen-image-2.0-pro",
+            "prompt": kwargs["prompt"],
+            "image_paths": [str(generated_path)],
+            "generated_image_paths": [str(generated_path)],
+            "source_url": "https://example.com/generated.png",
+        }
+
     monkeypatch.setattr(
         "ptsm.application.use_cases.run_playbook.build_fengkuang_workflow",
         lambda **_: FakeWorkflow(artifact_path),
@@ -1355,17 +1486,7 @@ def test_run_fengkuang_playbook_generates_image_for_real_publish_when_missing(
         lambda settings: type(
             "FakeImageBackend",
             (),
-            {
-                "generate": lambda self, **kwargs: {
-                    "status": "generated",
-                    "provider": "bailian",
-                    "model": "qwen-image-2.0-pro",
-                    "prompt": kwargs["prompt"],
-                    "image_paths": [str(generated_path)],
-                    "generated_image_paths": [str(generated_path)],
-                    "source_url": "https://example.com/generated.png",
-                }
-            },
+            {"generate": generate_provider_image},
         )(),
     )
     _patch_passthrough_watermark_remover(monkeypatch)
@@ -1789,6 +1910,189 @@ def test_run_fengkuang_playbook_uses_local_note_card_when_provider_missing(
     assert publisher.received_image_paths
     assert Path(publisher.received_image_paths[0]).exists()
     assert artifact["image_generation"]["provider"] == "local_note_card"
+
+
+def test_run_playbook_publishes_complete_psychology_carousel_in_manifest_order(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    final_content = _ordinary_psychology_carousel_content()
+    artifact_path = tmp_path / "outputs" / "artifacts" / "psychology-carousel.json"
+    artifact_path.parent.mkdir(parents=True)
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "modern_psychology_post",
+                "final_content": final_content,
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    publisher = CapturingPublisher()
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        lambda **_: PsychologyCarouselWorkflow(artifact_path, final_content),
+    )
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_image_backend",
+        lambda _settings: None,
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = run_playbook(
+        PlaybookRequest(
+            scene="下班后还在回放会议里的那句话",
+            account_id="acct-psychology-local",
+            playbook_id="modern_psychology_post",
+            auto_generate_images=True,
+        ),
+        publisher=publisher,
+        run_store=RunStore(base_dir=tmp_path / "runs"),
+    )
+
+    generation = result["image_generation"]
+    assert result["status"] == "completed"
+    assert generation["status"] == "committed"
+    assert generation["carousel_style"] == "psychology_text_card_v1"
+    assert generation["image_count"] == 6
+    assert [page["order"] for page in generation["pages"]] == [1, 2, 3, 4, 5, 6]
+    assert publisher.received_image_paths == generation["generated_image_paths"]
+    assert publisher.received_image_evidence == generation["pages"]
+    assert all(Path(path).is_file() for path in publisher.received_image_paths)
+    assert Path(generation["manifest_path"]).is_file()
+    assert result["watermark_removal"] == {
+        "status": "skipped",
+        "policy": "skipped_for_local_renderer",
+        "reason": "local_renderer_trusted_no_watermark",
+    }
+    assert generation["asset_ledger"]["entry_count"] == 6
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+    assert artifact["image_generation"]["manifest_sha256"] == generation[
+        "manifest_sha256"
+    ]
+
+
+def test_run_playbook_carousel_renderer_failure_finishes_without_publish_side_effects(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    final_content = _ordinary_psychology_carousel_content()
+    artifact_path = tmp_path / "outputs" / "artifacts" / "failed-carousel.json"
+    artifact_path.parent.mkdir(parents=True)
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "modern_psychology_post",
+                "final_content": final_content,
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    publisher = CountingPublisher()
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        lambda **_: PsychologyCarouselWorkflow(artifact_path, final_content),
+    )
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_image_backend",
+        lambda _settings: None,
+    )
+    monkeypatch.setattr(
+        ImageCarouselTransaction,
+        "generate",
+        lambda self, **kwargs: (_ for _ in ()).throw(
+            ImageCarouselTransactionError("renderer failed on page 3: private path")
+        ),
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = run_playbook(
+        PlaybookRequest(
+            scene="下班后还在回放会议里的那句话",
+            account_id="acct-psychology-local",
+            playbook_id="modern_psychology_post",
+            auto_generate_images=True,
+        ),
+        publisher=publisher,
+        run_store=RunStore(base_dir=tmp_path / "runs"),
+    )
+
+    assert result["status"] == "psychology_carousel_generation_failed"
+    assert result["image_generation"] == {
+        "status": "failed",
+        "renderer": "ptsm_local_renderer",
+        "carousel_style": "psychology_text_card_v1",
+        "image_count": 6,
+        "reason": "psychology_carousel_generation_failed",
+    }
+    assert result["watermark_removal"] is None
+    assert result["publish_result"] is None
+    assert result["run"]["status"] == "psychology_carousel_generation_failed"
+    assert publisher.calls == 0
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+    assert artifact["image_generation"] == result["image_generation"]
+    assert "private path" not in json.dumps(result, ensure_ascii=False)
+    assert not (
+        tmp_path / "outputs" / "artifacts" / "generated-image-assets" / "assets.jsonl"
+    ).exists()
+
+
+def test_run_playbook_carousel_ledger_failure_keeps_set_but_skips_publish(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    final_content = _ordinary_psychology_carousel_content()
+    artifact_path = tmp_path / "outputs" / "artifacts" / "ledger-failed-carousel.json"
+    artifact_path.parent.mkdir(parents=True)
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "modern_psychology_post",
+                "final_content": final_content,
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    publisher = CountingPublisher()
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        lambda **_: PsychologyCarouselWorkflow(artifact_path, final_content),
+    )
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_image_backend",
+        lambda _settings: None,
+    )
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.append_generated_image_assets",
+        lambda **_: (_ for _ in ()).throw(OSError("ledger contains private path")),
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = run_playbook(
+        PlaybookRequest(
+            scene="下班后还在回放会议里的那句话",
+            account_id="acct-psychology-local",
+            playbook_id="modern_psychology_post",
+            auto_generate_images=True,
+        ),
+        publisher=publisher,
+        run_store=RunStore(base_dir=tmp_path / "runs"),
+    )
+
+    assert result["status"] == "psychology_carousel_generation_failed"
+    assert result["image_generation"]["status"] == "committed"
+    assert result["image_generation"]["image_count"] == 6
+    assert all(
+        Path(path).is_file()
+        for path in result["image_generation"]["generated_image_paths"]
+    )
+    assert result["watermark_removal"] is None
+    assert result["publish_result"] is None
+    assert publisher.calls == 0
+    assert "ledger contains private path" not in json.dumps(result, ensure_ascii=False)
 
 
 def test_run_fengkuang_playbook_uses_requested_local_image_style_when_provider_missing(
@@ -3303,7 +3607,8 @@ def test_psychology_learning_carousel_receipt_keeps_only_safe_set_evidence() -> 
             "generated_image_paths": ["/private/generated/set/page-01.png"],
             "pages": [{"headline": "catalog-only text"}],
             "provenance": {"source": "ptsm_local_renderer"},
-        }
+        },
+        controlled_template_version="2",
     )
 
     assert receipt == {
@@ -3319,8 +3624,371 @@ def test_psychology_learning_carousel_receipt_keeps_only_safe_set_evidence() -> 
             "provider": "local_note_card",
             "provenance": {"source": "ptsm_local_renderer"},
             "manifest_sha256": "/tmp/not-a-hash",
-        }
+        },
+        controlled_template_version="2",
     ) is None
+    assert _sanitize_psychology_learning_image_generation(
+        {
+            "status": "failed",
+            "renderer": "ptsm_local_renderer",
+            "carousel_style": "psychology_text_card_v1",
+            "image_count": 7,
+            "reason": "psychology_carousel_generation_failed",
+            "private_error": "/tmp/page-03.png failed",
+        },
+        controlled_template_version="2",
+    ) == {
+        "status": "failed",
+        "renderer": "ptsm_local_renderer",
+        "carousel_style": "psychology_text_card_v1",
+        "image_count": 7,
+        "reason": "psychology_carousel_generation_failed",
+    }
+
+
+def _prepare_custom_learning_carousel_case(
+    tmp_path: Path,
+) -> tuple[PsychologyLearningSeriesStore, object, object, Path, dict[str, object]]:
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    store = PsychologyLearningSeriesStore(trusted_provision=True)
+    store.persist_proposal(proposal)
+    catalog = store.confirm(
+        proposal_id=proposal.proposal_id,
+        proposal_fingerprint=proposal.proposal_fingerprint,
+    )
+    bundle = resolve_psychology_learning_selection(
+        series_id=catalog.series_id,
+        lesson_id="notice",
+        curriculum_version=catalog.curriculum_version,
+    )
+    final_content = render_psychology_learning_draft(bundle.runtime_contract)
+    artifact_path = tmp_path / "outputs" / "artifacts" / "learning-carousel.json"
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "modern_psychology_post",
+                "final_content": final_content,
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    return store, catalog, bundle, artifact_path, final_content
+
+
+def test_learning_requested_carousel_advances_only_after_complete_set(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    store, catalog, bundle, artifact_path, final_content = (
+        _prepare_custom_learning_carousel_case(tmp_path)
+    )
+    publisher = CapturingPublisher()
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        lambda **_: PsychologyCarouselWorkflow(artifact_path, final_content),
+    )
+
+    result = run_playbook(
+        PlaybookRequest(
+            account_id="acct-psychology-local",
+            playbook_id="modern_psychology_post",
+            auto_generate_images=True,
+            psychology_content_mode="learning_series",
+            psychology_series_id=bundle.series_id,
+            psychology_lesson_id=bundle.lesson_id,
+            psychology_curriculum_version=catalog.curriculum_version,
+            topic_direction_id=bundle.direction_id,
+        ),
+        publisher=publisher,
+        run_store=RunStore(base_dir=tmp_path / "runs"),
+    )
+
+    assert result["status"] == "completed"
+    assert result["image_generation"] == {
+        "status": "committed",
+        "renderer": "ptsm_local_renderer",
+        "carousel_style": "psychology_text_card_v1",
+        "image_count": 7,
+        "manifest_sha256": result["image_generation"]["manifest_sha256"],
+    }
+    assert len(publisher.received_image_paths) == 7
+    assert publisher.received_image_evidence is not None
+    assert [page["order"] for page in publisher.received_image_evidence] == list(
+        range(1, 8)
+    )
+    assert all(Path(path).is_file() for path in publisher.received_image_paths)
+    assert store.read_production_progress(
+        series_id=catalog.series_id,
+        curriculum_version=catalog.curriculum_version,
+    ).completed_lesson_ids == (bundle.lesson_id,)
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+    assert artifact["image_generation"] == result["image_generation"]
+    assert "manifest_path" not in artifact["image_generation"]
+    assert "generated_image_paths" not in artifact["image_generation"]
+    assert "pages" not in artifact["image_generation"]
+    ledger_path = (
+        tmp_path
+        / "outputs"
+        / "artifacts"
+        / "generated-image-assets"
+        / "assets.jsonl"
+    )
+    ledger_rows = [
+        json.loads(line)
+        for line in ledger_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert [row["page_order"] for row in ledger_rows] == list(range(1, 8))
+    assert [row["image_path"] for row in ledger_rows] == publisher.received_image_paths
+
+
+def test_historic_v1_requested_image_keeps_single_card_receipt(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    store = PsychologyLearningSeriesStore(trusted_provision=True)
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    store.persist_proposal(proposal)
+
+    def build_v1(proposal_value, *, curriculum_version: str):
+        return psychology_learning_domain._build_confirmed_psychology_learning_catalog_for_template(
+            proposal_value,
+            curriculum_version=curriculum_version,
+            controlled_template_version="1",
+        )
+
+    monkeypatch.setattr(
+        psychology_learning_series_use_case,
+        "_build_confirmed_psychology_learning_catalog",
+        build_v1,
+    )
+    catalog = store.confirm(
+        proposal_id=proposal.proposal_id,
+        proposal_fingerprint=proposal.proposal_fingerprint,
+    )
+    bundle = resolve_psychology_learning_selection(
+        series_id=catalog.series_id,
+        lesson_id="notice",
+        curriculum_version=catalog.curriculum_version,
+    )
+    final_content = render_psychology_learning_draft(bundle.runtime_contract)
+    artifact_path = tmp_path / "outputs" / "artifacts" / "historic-v1-card.json"
+    artifact_path.parent.mkdir(parents=True, exist_ok=True)
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "modern_psychology_post",
+                "final_content": final_content,
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    publisher = CapturingPublisher()
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        lambda **_: PsychologyCarouselWorkflow(artifact_path, final_content),
+    )
+
+    result = run_playbook(
+        PlaybookRequest(
+            account_id="acct-psychology-local",
+            playbook_id="modern_psychology_post",
+            auto_generate_images=True,
+            psychology_content_mode="learning_series",
+            psychology_series_id=bundle.series_id,
+            psychology_lesson_id=bundle.lesson_id,
+            psychology_curriculum_version=catalog.curriculum_version,
+            topic_direction_id=bundle.direction_id,
+        ),
+        publisher=publisher,
+        run_store=RunStore(base_dir=tmp_path / "runs"),
+    )
+
+    assert bundle.runtime_contract["controlled_template_version"] == "1"
+    assert "slides" not in final_content["image_plan"]
+    assert result["status"] == "completed"
+    assert result["image_generation"] == {
+        "status": "generated",
+        "renderer": "ptsm_local_renderer",
+    }
+    assert len(publisher.received_image_paths) == 1
+    assert publisher.received_image_evidence is None
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+    assert artifact["image_generation"] == result["image_generation"]
+
+
+def test_learning_requested_carousel_failure_does_not_advance_progress(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    store, catalog, bundle, artifact_path, final_content = (
+        _prepare_custom_learning_carousel_case(tmp_path)
+    )
+    publisher = CountingPublisher()
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        lambda **_: PsychologyCarouselWorkflow(artifact_path, final_content),
+    )
+    monkeypatch.setattr(
+        ImageCarouselTransaction,
+        "generate",
+        lambda self, **kwargs: (_ for _ in ()).throw(
+            ImageCarouselTransactionError("page 3 failed at /private/catalog.png")
+        ),
+    )
+
+    result = run_playbook(
+        PlaybookRequest(
+            account_id="acct-psychology-local",
+            playbook_id="modern_psychology_post",
+            auto_generate_images=True,
+            psychology_content_mode="learning_series",
+            psychology_series_id=bundle.series_id,
+            psychology_lesson_id=bundle.lesson_id,
+            psychology_curriculum_version=catalog.curriculum_version,
+            topic_direction_id=bundle.direction_id,
+        ),
+        publisher=publisher,
+        run_store=RunStore(base_dir=tmp_path / "runs"),
+    )
+
+    assert result["status"] == "psychology_carousel_generation_failed"
+    assert result["image_generation"] == {
+        "status": "failed",
+        "renderer": "ptsm_local_renderer",
+        "carousel_style": "psychology_text_card_v1",
+        "image_count": 7,
+        "reason": "psychology_carousel_generation_failed",
+    }
+    assert publisher.calls == 0
+    assert store.read_production_progress(
+        series_id=catalog.series_id,
+        curriculum_version=catalog.curriculum_version,
+    ).completed_lesson_ids == ()
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+    assert artifact["image_generation"] == result["image_generation"]
+    assert "/private/catalog.png" not in json.dumps(result, ensure_ascii=False)
+
+
+def test_learning_requested_carousel_ledger_failure_does_not_advance_progress(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    store, catalog, bundle, artifact_path, final_content = (
+        _prepare_custom_learning_carousel_case(tmp_path)
+    )
+    publisher = CountingPublisher()
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        lambda **_: PsychologyCarouselWorkflow(artifact_path, final_content),
+    )
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.append_generated_image_assets",
+        lambda **_: (_ for _ in ()).throw(
+            OSError("ledger failed at /private/generated/assets.jsonl")
+        ),
+    )
+
+    result = run_playbook(
+        PlaybookRequest(
+            account_id="acct-psychology-local",
+            playbook_id="modern_psychology_post",
+            auto_generate_images=True,
+            psychology_content_mode="learning_series",
+            psychology_series_id=bundle.series_id,
+            psychology_lesson_id=bundle.lesson_id,
+            psychology_curriculum_version=catalog.curriculum_version,
+            topic_direction_id=bundle.direction_id,
+        ),
+        publisher=publisher,
+        run_store=RunStore(base_dir=tmp_path / "runs"),
+    )
+
+    assert result["status"] == "psychology_carousel_generation_failed"
+    assert result["image_generation"]["status"] == "committed"
+    assert set(result["image_generation"]) == {
+        "status",
+        "renderer",
+        "carousel_style",
+        "image_count",
+        "manifest_sha256",
+    }
+    assert publisher.calls == 0
+    assert store.read_production_progress(
+        series_id=catalog.series_id,
+        curriculum_version=catalog.curriculum_version,
+    ).completed_lesson_ids == ()
+    assert "/private/generated" not in json.dumps(result, ensure_ascii=False)
+
+
+def test_learning_requested_carousel_publish_evidence_failure_does_not_advance_progress(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    store, catalog, bundle, artifact_path, final_content = (
+        _prepare_custom_learning_carousel_case(tmp_path)
+    )
+    publisher = EvidenceRejectingPublisher()
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        lambda **_: PsychologyCarouselWorkflow(artifact_path, final_content),
+    )
+
+    result = run_playbook(
+        PlaybookRequest(
+            account_id="acct-psychology-local",
+            playbook_id="modern_psychology_post",
+            auto_generate_images=True,
+            psychology_content_mode="learning_series",
+            psychology_series_id=bundle.series_id,
+            psychology_lesson_id=bundle.lesson_id,
+            psychology_curriculum_version=catalog.curriculum_version,
+            topic_direction_id=bundle.direction_id,
+        ),
+        publisher=publisher,
+        run_store=RunStore(base_dir=tmp_path / "runs"),
+    )
+
+    assert result["status"] == "psychology_carousel_generation_failed"
+    assert result["publish_result"] is None
+    assert result["image_generation"]["status"] == "committed"
+    assert set(result["image_generation"]) == {
+        "status",
+        "renderer",
+        "carousel_style",
+        "image_count",
+        "manifest_sha256",
+    }
+    assert publisher.calls == 1
+    assert publisher.received_image_evidence is not None
+    assert [page["order"] for page in publisher.received_image_evidence] == list(
+        range(1, 8)
+    )
+    assert store.read_production_progress(
+        series_id=catalog.series_id,
+        curriculum_version=catalog.curriculum_version,
+    ).completed_lesson_ids == ()
+    assert result["run"]["status"] == "psychology_carousel_generation_failed"
+    assert "hash_mismatch" not in json.dumps(result, ensure_ascii=False)
 
 
 def test_run_playbook_requires_complete_psychology_learning_selection_before_run(

@@ -19,6 +19,11 @@ from ptsm.agent_runtime.runtime import (
     build_file_backed_runtime_state,
 )
 from ptsm.application.models import FengkuangRequest, PlaybookRequest
+from ptsm.application.services.image_carousel_transaction import (
+    ImageCarouselTransaction,
+    ImageCarouselTransactionError,
+    verify_committed_carousel_set,
+)
 from ptsm.application.services.side_effect_ledger import SideEffectLedger
 from ptsm.application.use_cases.guide_post import (
     SUPPORTED_PLAYBOOK_ID,
@@ -45,6 +50,7 @@ from ptsm.infrastructure.artifacts.file_store import (
 )
 from ptsm.infrastructure.memory.store import ExecutionMemoryStore
 from ptsm.infrastructure.images.asset_ledger import append_generated_image_assets
+from ptsm.infrastructure.images.image_file_evidence import ImageFileEvidenceError
 from ptsm.infrastructure.images.factory import build_image_backend
 from ptsm.infrastructure.images.note_card_backend import NoteCardImageBackend
 from ptsm.infrastructure.images.watermark_policy import generated_no_watermark_policy
@@ -60,6 +66,7 @@ from ptsm.domain.ai_tech_content import (
     parse_ai_tech_evidence_bundle,
     validate_ai_tech_draft,
 )
+from ptsm.domain.psychology_carousel import normalize_psychology_carousel_plan
 from ptsm.domain.psychology_learning import (
     DEFAULT_PSYCHOLOGY_LEARNING_SERIES_CATALOG_ROOT,
     PSYCHOLOGY_LEARNING_MODE,
@@ -612,6 +619,9 @@ def _build_psychology_learning_topic_selection(
 def _build_psychology_learning_topic_guidance(
     bundle: PsychologyLearningBundle,
 ) -> dict[str, Any]:
+    controlled_template_version = str(
+        bundle.runtime_contract["controlled_template_version"]
+    )
     return {
         "status": "available",
         "message": "请确认已审核专题中的具体课次；自由场景不能替换课程概念或练习。",
@@ -620,7 +630,10 @@ def _build_psychology_learning_topic_guidance(
         "open_direction_id": "",
         "open_direction_ids": [],
         "direction_type_counts": {"learning_series_lesson": len(bundle.roadmap)},
-        "directions": [lesson.public_direction for lesson in bundle.lessons],
+        "directions": [
+            lesson.public_direction_for_template(controlled_template_version)
+            for lesson in bundle.lessons
+        ],
     }
 
 
@@ -661,6 +674,7 @@ def _build_psychology_learning_artifact_update(
     publish_mode: str,
     publish_result: object,
     image_generation: object,
+    controlled_template_version: str,
     watermark_removal: object,
     run_id: str,
 ) -> dict[str, object]:
@@ -679,7 +693,10 @@ def _build_psychology_learning_artifact_update(
     publish_receipt = _sanitize_psychology_learning_publish_result(publish_result)
     if publish_receipt is not None:
         artifact_update["publish_result"] = publish_receipt
-    image_receipt = _sanitize_psychology_learning_image_generation(image_generation)
+    image_receipt = _sanitize_psychology_learning_image_generation(
+        image_generation,
+        controlled_template_version=controlled_template_version,
+    )
     if image_receipt is not None:
         artifact_update["image_generation"] = image_receipt
     watermark_receipt = _sanitize_psychology_learning_watermark_removal(
@@ -785,11 +802,41 @@ def _sanitize_psychology_learning_status_result(
 
 def _sanitize_psychology_learning_image_generation(
     value: object,
+    *,
+    controlled_template_version: object,
 ) -> dict[str, object] | None:
     if not isinstance(value, Mapping):
         return None
-    provenance = value.get("provenance")
+    if controlled_template_version == "1":
+        provenance = value.get("provenance")
+        if (
+            value.get("status") != "generated"
+            or value.get("provider") != "local_note_card"
+            or not isinstance(provenance, Mapping)
+            or provenance.get("source") != "ptsm_local_renderer"
+        ):
+            return None
+        return {"status": "generated", "renderer": "ptsm_local_renderer"}
+    if controlled_template_version != "2":
+        return None
     image_count = value.get("image_count")
+    if (
+        value.get("status") == "failed"
+        and value.get("renderer") == "ptsm_local_renderer"
+        and value.get("carousel_style") == "psychology_text_card_v1"
+        and isinstance(image_count, int)
+        and not isinstance(image_count, bool)
+        and 4 <= image_count <= 7
+        and value.get("reason") == "psychology_carousel_generation_failed"
+    ):
+        return {
+            "status": "failed",
+            "renderer": "ptsm_local_renderer",
+            "carousel_style": "psychology_text_card_v1",
+            "image_count": image_count,
+            "reason": "psychology_carousel_generation_failed",
+        }
+    provenance = value.get("provenance")
     manifest_sha256 = value.get("manifest_sha256")
     if (
         value.get("status") != "committed"
@@ -1823,11 +1870,19 @@ def run_playbook(
     if result["status"] == "completed":
         resolved_image_paths = list(request.publish_image_paths)
         artifact_path = Path(result["artifact_path"])
+        carousel_plan: dict[str, Any] | None = None
+        carousel_output_stem: str | None = None
+        carousel_commit_receipt: dict[str, Any] | None = None
         if not resolved_image_paths and _should_generate_images(
             publish_mode=publish_mode,
             auto_generate_images=request.auto_generate_images,
         ):
-            image_backend = build_image_backend(settings)
+            carousel_plan = _requested_psychology_carousel_plan(
+                request=request,
+                playbook_id=playbook.playbook_id,
+                final_content=result["final_content"],
+            )
+            image_backend = None if carousel_plan is not None else build_image_backend(settings)
             runtime_skill_contents = (
                 []
                 if ai_tech_evidence_bundle is not None or psychology_learning_bundle is not None
@@ -1841,7 +1896,62 @@ def run_playbook(
                 final_content=result["final_content"],
                 image_backend_available=image_backend is not None,
             )
-            if image_decision["route"] == "local":
+            if carousel_plan is not None:
+                carousel_output_stem = f"{artifact_path.stem}-carousel"
+                try:
+                    canonical_carousel_plan = normalize_psychology_carousel_plan(
+                        carousel_plan
+                    )
+                    raw_carousel_receipt = ImageCarouselTransaction(
+                        renderer=NoteCardImageBackend()
+                    ).generate(
+                        image_plan=canonical_carousel_plan,
+                        output_dir=Path.cwd() / DEFAULT_GENERATED_IMAGES_DIR,
+                        output_stem=carousel_output_stem,
+                    )
+                    carousel_commit_receipt = dict(
+                        verify_committed_carousel_set(
+                            image_plan=canonical_carousel_plan,
+                            receipt=raw_carousel_receipt,
+                            output_stem=carousel_output_stem,
+                        )
+                    )
+                    image_generation = dict(carousel_commit_receipt)
+                    image_generation["image_plan"] = canonical_carousel_plan
+                    image_generation["runtime_context_summary"] = runtime_context_summary
+                    resolved_image_paths = list(
+                        image_generation["generated_image_paths"]
+                    )
+                except (
+                    ImageCarouselTransactionError,
+                    ValidationError,
+                    ValueError,
+                    OSError,
+                ):
+                    result["status"] = "psychology_carousel_generation_failed"
+                    image_generation = _psychology_carousel_failure_receipt(
+                        carousel_plan
+                    )
+                    return _finish_psychology_carousel_failure(
+                        result=result,
+                        run=run,
+                        run_store=run_store,
+                        artifact_store=artifact_store,
+                        account=account,
+                        publish_mode=publish_mode,
+                        image_generation=image_generation,
+                        post_publish_checks=post_publish_checks,
+                        format_patterns_used=format_patterns_used,
+                        topic_selection_metadata=topic_selection_metadata,
+                        psychology_learning_bundle=psychology_learning_bundle,
+                        psychology_learning_artifact_scope=(
+                            psychology_learning_artifact_scope
+                        ),
+                        psychology_learning_preflight_capability=(
+                            psychology_learning_preflight_capability
+                        ),
+                    )
+            elif image_decision["route"] == "local":
                 image_generation = NoteCardImageBackend().generate(
                     prompt=_build_note_card_image_payload(
                         scene=effective_scene,
@@ -1895,14 +2005,48 @@ def run_playbook(
 
         if image_generation is not None:
             _ensure_generated_image_watermark_policy(image_generation)
-            if psychology_learning_bundle is None:
-                asset_ledger = append_generated_image_assets(
-                    base_dir=Path.cwd(),
-                    artifact_path=str(result["artifact_path"]),
-                    playbook_id=playbook.playbook_id,
-                    account_id=account.account_id,
-                    image_generation=image_generation,
-                )
+            if psychology_learning_bundle is None or carousel_plan is not None:
+                try:
+                    if (
+                        carousel_plan is not None
+                        and carousel_output_stem is not None
+                        and carousel_commit_receipt is not None
+                    ):
+                        verify_committed_carousel_set(
+                            image_plan=carousel_plan,
+                            receipt=carousel_commit_receipt,
+                            output_stem=carousel_output_stem,
+                        )
+                    asset_ledger = append_generated_image_assets(
+                        base_dir=Path.cwd(),
+                        artifact_path=str(result["artifact_path"]),
+                        playbook_id=playbook.playbook_id,
+                        account_id=account.account_id,
+                        image_generation=image_generation,
+                    )
+                except (ImageCarouselTransactionError, OSError, ValueError):
+                    if carousel_plan is None:
+                        raise
+                    result["status"] = "psychology_carousel_generation_failed"
+                    return _finish_psychology_carousel_failure(
+                        result=result,
+                        run=run,
+                        run_store=run_store,
+                        artifact_store=artifact_store,
+                        account=account,
+                        publish_mode=publish_mode,
+                        image_generation=image_generation,
+                        post_publish_checks=post_publish_checks,
+                        format_patterns_used=format_patterns_used,
+                        topic_selection_metadata=topic_selection_metadata,
+                        psychology_learning_bundle=psychology_learning_bundle,
+                        psychology_learning_artifact_scope=(
+                            psychology_learning_artifact_scope
+                        ),
+                        psychology_learning_preflight_capability=(
+                            psychology_learning_preflight_capability
+                        ),
+                    )
                 if asset_ledger is not None:
                     image_generation["asset_ledger"] = asset_ledger
 
@@ -1945,6 +2089,39 @@ def run_playbook(
             if cleaned_paths:
                 resolved_image_paths = cleaned_paths
 
+        if (
+            carousel_plan is not None
+            and carousel_output_stem is not None
+            and carousel_commit_receipt is not None
+        ):
+            try:
+                verify_committed_carousel_set(
+                    image_plan=carousel_plan,
+                    receipt=carousel_commit_receipt,
+                    output_stem=carousel_output_stem,
+                )
+            except (ImageCarouselTransactionError, ValidationError, ValueError, OSError):
+                result["status"] = "psychology_carousel_generation_failed"
+                return _finish_psychology_carousel_failure(
+                    result=result,
+                    run=run,
+                    run_store=run_store,
+                    artifact_store=artifact_store,
+                    account=account,
+                    publish_mode=publish_mode,
+                    image_generation=image_generation,
+                    post_publish_checks=post_publish_checks,
+                    format_patterns_used=format_patterns_used,
+                    topic_selection_metadata=topic_selection_metadata,
+                    psychology_learning_bundle=psychology_learning_bundle,
+                    psychology_learning_artifact_scope=(
+                        psychology_learning_artifact_scope
+                    ),
+                    psychology_learning_preflight_capability=(
+                        psychology_learning_preflight_capability
+                    ),
+                )
+
         publish_idempotency_key = _build_publish_idempotency_key(
             account_id=account.account_id,
             playbook_id=playbook.playbook_id,
@@ -1962,13 +2139,52 @@ def run_playbook(
             publish_result = cached_publish_result
         else:
             try:
+                publish_kwargs: dict[str, Any] = {
+                    "account": account,
+                    "content": result["final_content"],
+                    "artifact_path": result["artifact_path"],
+                    "image_paths": resolved_image_paths,
+                    "visibility": (
+                        request.publish_visibility or settings.xhs_default_visibility
+                    ),
+                }
+                if carousel_plan is not None and isinstance(image_generation, dict):
+                    publish_kwargs["image_evidence"] = image_generation.get("pages")
                 publish_result = publisher.publish(
-                    account=account,
-                    content=result["final_content"],
-                    artifact_path=result["artifact_path"],
-                    image_paths=resolved_image_paths,
-                    visibility=request.publish_visibility or settings.xhs_default_visibility,
+                    **publish_kwargs,
                 )
+            except ImageFileEvidenceError:
+                if carousel_plan is not None and image_generation is not None:
+                    return _finish_psychology_carousel_failure(
+                        result=result,
+                        run=run,
+                        run_store=run_store,
+                        artifact_store=artifact_store,
+                        account=account,
+                        publish_mode=publish_mode,
+                        image_generation=image_generation,
+                        post_publish_checks=post_publish_checks,
+                        format_patterns_used=format_patterns_used,
+                        topic_selection_metadata=topic_selection_metadata,
+                        psychology_learning_bundle=psychology_learning_bundle,
+                        psychology_learning_artifact_scope=(
+                            psychology_learning_artifact_scope
+                        ),
+                        psychology_learning_preflight_capability=(
+                            psychology_learning_preflight_capability
+                        ),
+                    )
+                publish_result = {
+                    "status": "error",
+                    "platform": account.platform,
+                    "provider": getattr(
+                        publisher, "provider_name", publisher.__class__.__name__
+                    ),
+                    "account_id": account.account_id,
+                    "account_nickname": account.nickname,
+                    "artifact_path": result["artifact_path"],
+                    "error": "image file validation failed",
+                }
             except PublisherPreflightError as exc:
                 preflight = materialize_xhs_login_qrcode(
                     exc.preflight,
@@ -2025,6 +2241,11 @@ def run_playbook(
                 publish_mode=publish_mode,
                 publish_result=publish_result,
                 image_generation=image_generation,
+                controlled_template_version=str(
+                    psychology_learning_bundle.runtime_contract[
+                        "controlled_template_version"
+                    ]
+                ),
                 watermark_removal=watermark_removal,
                 run_id=run.run_id,
             )
@@ -2400,7 +2621,14 @@ def run_playbook(
         else None
     )
     learning_image_receipt = (
-        _sanitize_psychology_learning_image_generation(image_generation)
+        _sanitize_psychology_learning_image_generation(
+            image_generation,
+            controlled_template_version=str(
+                psychology_learning_bundle.runtime_contract[
+                    "controlled_template_version"
+                ]
+            ),
+        )
         if psychology_learning_bundle is not None
         else None
     )
@@ -2790,6 +3018,186 @@ def _should_generate_images(
     if auto_generate_images is False:
         return False
     return publish_mode == "mcp-real"
+
+
+def _requested_psychology_carousel_plan(
+    *,
+    request: PlaybookRequest,
+    playbook_id: str,
+    final_content: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    """Select the automatic psychology carousel without changing legacy overrides."""
+    if (
+        playbook_id != MODERN_PSYCHOLOGY_PLAYBOOK_ID
+        or request.local_image_style
+    ):
+        return None
+    raw_plan = final_content.get("image_plan")
+    if not isinstance(raw_plan, Mapping):
+        return None
+    if not (
+        raw_plan.get("carousel_style") == "psychology_text_card_v1"
+        or raw_plan.get("role") == "text_carousel"
+        or "slides" in raw_plan
+    ):
+        return None
+    return dict(raw_plan)
+
+
+def _psychology_carousel_failure_receipt(
+    image_plan: Mapping[str, Any],
+) -> dict[str, object]:
+    slides = image_plan.get("slides")
+    image_count = (
+        len(slides)
+        if isinstance(slides, Sequence) and not isinstance(slides, (str, bytes))
+        else 0
+    )
+    return {
+        "status": "failed",
+        "renderer": "ptsm_local_renderer",
+        "carousel_style": "psychology_text_card_v1",
+        "image_count": image_count,
+        "reason": "psychology_carousel_generation_failed",
+    }
+
+
+def _finish_psychology_carousel_failure(
+    *,
+    result: dict[str, Any],
+    run: Any,
+    run_store: RunStore,
+    artifact_store: FileArtifactStore,
+    account: Any,
+    publish_mode: str,
+    image_generation: dict[str, Any],
+    post_publish_checks: dict[str, Any],
+    format_patterns_used: dict[str, Any],
+    topic_selection_metadata: dict[str, Any] | None,
+    psychology_learning_bundle: PsychologyLearningBundle | None,
+    psychology_learning_artifact_scope: _PsychologyLearningArtifactScope | None,
+    psychology_learning_preflight_capability: (
+        _PsychologyLearningPreflightCapability | None
+    ),
+) -> dict[str, Any]:
+    """Finish a failed carousel run before watermarking, publishing, or progress."""
+    result["status"] = "psychology_carousel_generation_failed"
+    artifact_path = result.get("artifact_path")
+    if isinstance(artifact_path, str) and artifact_path:
+        if psychology_learning_bundle is None:
+            try:
+                artifact_store.merge(
+                    artifact_path,
+                    {
+                        "publish_mode": publish_mode,
+                        "publish_result": None,
+                        "image_generation": image_generation,
+                        "watermark_removal": None,
+                    },
+                )
+            except (OSError, ValueError, json.JSONDecodeError):
+                pass
+        else:
+            safe_image_receipt = _sanitize_psychology_learning_image_generation(
+                image_generation,
+                controlled_template_version=str(
+                    psychology_learning_bundle.runtime_contract[
+                        "controlled_template_version"
+                    ]
+                ),
+            )
+            final_content = result.get("final_content")
+            if safe_image_receipt is not None and isinstance(final_content, dict):
+                _update_verified_psychology_learning_artifact(
+                    artifact_store=artifact_store,
+                    artifact_path=artifact_path,
+                    expected_final_content=final_content,
+                    update={"image_generation": safe_image_receipt},
+                    scope=psychology_learning_artifact_scope,
+                    psychology_learning_preflight_capability=(
+                        psychology_learning_preflight_capability
+                    ),
+                )
+
+    run_store.append_event(
+        run.run_id,
+        event="image_generation_failed",
+        step="image_generation",
+        status="psychology_carousel_generation_failed",
+        payload={
+            "image_status": image_generation.get("status"),
+            "image_count": image_generation.get("image_count"),
+        },
+    )
+    learning_image_receipt = (
+        _sanitize_psychology_learning_image_generation(
+            image_generation,
+            controlled_template_version=str(
+                psychology_learning_bundle.runtime_contract[
+                    "controlled_template_version"
+                ]
+            ),
+        )
+        if psychology_learning_bundle is not None
+        else None
+    )
+    learning_post_publish_receipt = (
+        _sanitize_psychology_learning_post_publish_checks(post_publish_checks)
+        if psychology_learning_bundle is not None
+        else None
+    )
+    run_summary = run_store.finish(
+        run.run_id,
+        status="psychology_carousel_generation_failed",
+        payload={
+            "artifact_path": artifact_path,
+            "publish_mode": publish_mode,
+            "publish_status": None,
+            "activated_skills": (
+                []
+                if psychology_learning_bundle is not None
+                else list(result.get("activated_skills") or [])
+            ),
+            "activated_skill_details": (
+                []
+                if psychology_learning_bundle is not None
+                else list(result.get("activated_skill_details") or [])
+            ),
+            "runtime_skill_details": (
+                []
+                if psychology_learning_bundle is not None
+                else list(result.get("runtime_skill_details") or [])
+            ),
+            "format_patterns_used": format_patterns_used,
+            "topic_selection": topic_selection_metadata,
+        },
+    )
+    response: dict[str, Any] = {
+        **result,
+        "account": (
+            _sanitize_psychology_learning_account(account)
+            if psychology_learning_bundle is not None
+            else account.to_dict()
+        ),
+        "publish_mode": publish_mode,
+        "publish_result": None,
+        "image_generation": (
+            learning_image_receipt
+            if psychology_learning_bundle is not None
+            else image_generation
+        ),
+        "watermark_removal": None,
+        "post_publish_checks": (
+            learning_post_publish_receipt
+            if psychology_learning_bundle is not None
+            else post_publish_checks
+        ),
+        "run": run_summary,
+        "eval": None,
+    }
+    if topic_selection_metadata is not None:
+        response["topic_selection"] = topic_selection_metadata
+    return response
 
 
 def _should_remove_watermark(

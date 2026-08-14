@@ -18,6 +18,7 @@ from ptsm.domain.topic_guidance import (
     select_topic_directions,
 )
 from ptsm.domain.psychology_learning import (
+    CURRENT_PSYCHOLOGY_LEARNING_CONTROLLED_TEMPLATE_VERSION,
     PSYCHOLOGY_LEARNING_MODE,
     STARTER_SERIES_ID,
     list_psychology_learning_series,
@@ -850,7 +851,15 @@ def _run_psychology_learning_series_guide_post(
         playbook_id=SUPPORTED_PLAYBOOK_ID,
         default_account_id=DEFAULT_ACCOUNT_ID,
     )
-    directions = [lesson.public_direction for lesson in lessons]
+    controlled_template_version = (
+        custom_catalog.controlled_template_version
+        if custom_catalog is not None
+        else CURRENT_PSYCHOLOGY_LEARNING_CONTROLLED_TEMPLATE_VERSION
+    )
+    directions = [
+        lesson.public_direction_for_template(controlled_template_version)
+        for lesson in lessons
+    ]
     if not lesson_id:
         return {
             "status": "selection_required",

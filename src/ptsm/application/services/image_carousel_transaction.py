@@ -6,7 +6,6 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import shutil
 import stat
 import tempfile
 from typing import Any, Mapping, Protocol, Sequence
@@ -804,18 +803,194 @@ def _fsync_directory(path: Path) -> None:
 
 
 def _cleanup_owned_directory(path: Path, identity: os.stat_result) -> None:
+    """Best-effort cleanup without authorizing deletion by a mutable pathname."""
     try:
         current = path.lstat()
     except FileNotFoundError:
         return
     except OSError:
         return
-    if (
-        stat.S_ISDIR(current.st_mode)
-        and not stat.S_ISLNK(current.st_mode)
-        and os.path.samestat(current, identity)
-    ):
-        shutil.rmtree(path)
+    if not _matching_directory_identity(current, identity):
+        return
+
+    parent_fd: int | None = None
+    try:
+        parent_fd = _open_directory_descriptor(path.parent)
+        _cleanup_named_owned_directory(
+            parent_fd=parent_fd,
+            entry_name=path.name,
+            expected_identity=identity,
+        )
+    except (OSError, NotImplementedError, TypeError):
+        # Cleanup must never broaden an already failing transaction into a
+        # pathname-based delete. An unprovable entry is deliberately retained.
+        return
+    finally:
+        if parent_fd is not None:
+            os.close(parent_fd)
+
+
+def _cleanup_named_owned_directory(
+    *,
+    parent_fd: int,
+    entry_name: str,
+    expected_identity: os.stat_result,
+) -> bool:
+    directory_fd = _open_matching_child_directory(
+        parent_fd=parent_fd,
+        entry_name=entry_name,
+        expected_identity=expected_identity,
+    )
+    if directory_fd is None:
+        return False
+    try:
+        _cleanup_directory_contents(directory_fd)
+        opened_identity = os.fstat(directory_fd)
+        if not _named_directory_matches(
+            parent_fd=parent_fd,
+            entry_name=entry_name,
+            expected_identity=opened_identity,
+        ):
+            return False
+        try:
+            os.rmdir(entry_name, dir_fd=parent_fd)
+        except FileNotFoundError:
+            return False
+        except OSError:
+            return False
+        return True
+    finally:
+        os.close(directory_fd)
+
+
+def _cleanup_directory_contents(directory_fd: int) -> None:
+    try:
+        entry_names = os.listdir(directory_fd)
+    except OSError:
+        return
+    for entry_name in entry_names:
+        try:
+            entry_identity = os.stat(
+                entry_name,
+                dir_fd=directory_fd,
+                follow_symlinks=False,
+            )
+        except FileNotFoundError:
+            continue
+        except OSError:
+            continue
+        if stat.S_ISDIR(entry_identity.st_mode) and not stat.S_ISLNK(
+            entry_identity.st_mode
+        ):
+            _cleanup_named_owned_directory(
+                parent_fd=directory_fd,
+                entry_name=entry_name,
+                expected_identity=entry_identity,
+            )
+            continue
+        try:
+            current_identity = os.stat(
+                entry_name,
+                dir_fd=directory_fd,
+                follow_symlinks=False,
+            )
+            if not os.path.samestat(entry_identity, current_identity):
+                continue
+            os.unlink(entry_name, dir_fd=directory_fd)
+        except FileNotFoundError:
+            continue
+        except OSError:
+            continue
+
+
+def _open_directory_descriptor(path: Path | str, *, dir_fd: int | None = None) -> int:
+    if not hasattr(os, "O_DIRECTORY") or not hasattr(os, "O_NOFOLLOW"):
+        raise OSError("safe directory cleanup is unsupported")
+    flags = (
+        os.O_RDONLY
+        | os.O_DIRECTORY
+        | os.O_NOFOLLOW
+        | getattr(os, "O_CLOEXEC", 0)
+    )
+    descriptor = os.open(path, flags, dir_fd=dir_fd)
+    try:
+        identity = os.fstat(descriptor)
+        if stat.S_ISLNK(identity.st_mode) or not stat.S_ISDIR(identity.st_mode):
+            raise OSError("safe directory cleanup target is invalid")
+        return descriptor
+    except BaseException:
+        os.close(descriptor)
+        raise
+
+
+def _open_matching_child_directory(
+    *,
+    parent_fd: int,
+    entry_name: str,
+    expected_identity: os.stat_result,
+) -> int | None:
+    try:
+        entry_before = os.stat(
+            entry_name,
+            dir_fd=parent_fd,
+            follow_symlinks=False,
+        )
+    except OSError:
+        return None
+    if not _matching_directory_identity(entry_before, expected_identity):
+        return None
+    try:
+        descriptor = _open_directory_descriptor(entry_name, dir_fd=parent_fd)
+    except OSError:
+        return None
+    try:
+        opened_identity = os.fstat(descriptor)
+        entry_after = os.stat(
+            entry_name,
+            dir_fd=parent_fd,
+            follow_symlinks=False,
+        )
+        if not (
+            _matching_directory_identity(entry_before, opened_identity)
+            and _matching_directory_identity(entry_after, opened_identity)
+            and _matching_directory_identity(expected_identity, opened_identity)
+        ):
+            os.close(descriptor)
+            return None
+        return descriptor
+    except OSError:
+        os.close(descriptor)
+        return None
+
+
+def _named_directory_matches(
+    *,
+    parent_fd: int,
+    entry_name: str,
+    expected_identity: os.stat_result,
+) -> bool:
+    try:
+        current_identity = os.stat(
+            entry_name,
+            dir_fd=parent_fd,
+            follow_symlinks=False,
+        )
+    except OSError:
+        return False
+    return _matching_directory_identity(current_identity, expected_identity)
+
+
+def _matching_directory_identity(
+    first: os.stat_result,
+    second: os.stat_result,
+) -> bool:
+    return (
+        stat.S_ISDIR(first.st_mode)
+        and not stat.S_ISLNK(first.st_mode)
+        and stat.S_ISDIR(second.st_mode)
+        and not stat.S_ISLNK(second.st_mode)
+        and os.path.samestat(first, second)
+    )
 
 
 def _canonical_json_bytes(

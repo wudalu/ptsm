@@ -343,6 +343,41 @@ def test_transaction_middle_page_failure_leaves_no_visible_set(tmp_path: Path) -
     assert not list(output_dir.glob(".*staging*"))
 
 
+def test_owned_directory_cleanup_does_not_delete_a_swapped_in_directory(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    output_dir = tmp_path / "images"
+    owned = output_dir / ".artifact-staging-owned"
+    displaced_owned = output_dir / ".artifact-staging-displaced"
+    victim = output_dir / "operator-owned"
+    owned.mkdir(parents=True)
+    (owned / "runtime-page.png").write_bytes(b"runtime-owned")
+    victim.mkdir()
+    sentinel = victim / "must-survive.txt"
+    sentinel.write_text("keep", encoding="utf-8")
+    owned_identity = owned.lstat()
+    original_lstat = Path.lstat
+    swapped = False
+
+    def swap_after_identity_check(path: Path) -> os.stat_result:
+        nonlocal swapped
+        identity = original_lstat(path)
+        if path == owned and not swapped:
+            owned.rename(displaced_owned)
+            victim.rename(owned)
+            swapped = True
+        return identity
+
+    monkeypatch.setattr(Path, "lstat", swap_after_identity_check)
+
+    transaction_module._cleanup_owned_directory(owned, owned_identity)
+
+    assert swapped
+    assert (owned / sentinel.name).read_text(encoding="utf-8") == "keep"
+    assert (displaced_owned / "runtime-page.png").read_bytes() == b"runtime-owned"
+
+
 @pytest.mark.parametrize("output_stem", ["../escape", "nested/name", ".", ""])
 def test_transaction_rejects_unsafe_output_stems_before_rendering(
     tmp_path: Path,
@@ -396,6 +431,35 @@ def test_transaction_idempotently_reuses_an_identical_committed_set(
     assert second == first
     assert len(transaction.renderer.calls) == 8
     assert len(_final_directories(output_dir)) == 1
+    assert not list(output_dir.glob(".*staging*"))
+
+
+def test_transaction_safely_rolls_back_its_committed_set_when_final_verify_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    output_dir = tmp_path / "images"
+
+    def fail_post_commit_verification(**_: object) -> dict[str, object]:
+        raise ImageCarouselTransactionError("injected post-commit verification failure")
+
+    monkeypatch.setattr(
+        transaction_module,
+        "_reuse_identical_set",
+        fail_post_commit_verification,
+    )
+
+    with pytest.raises(
+        ImageCarouselTransactionError,
+        match="post-commit verification failure",
+    ):
+        _transaction(_ScriptedRenderer()).generate(
+            image_plan=_carousel_plan(),
+            output_dir=output_dir,
+            output_stem="artifact",
+        )
+
+    assert _final_directories(output_dir) == []
     assert not list(output_dir.glob(".*staging*"))
 
 

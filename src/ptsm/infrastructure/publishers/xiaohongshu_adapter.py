@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
-from typing import Sequence
+from typing import Any, Mapping, Sequence
 
 from ptsm.accounts.registry import AccountProfile
 
@@ -21,7 +20,9 @@ class XiaohongshuAdapter:
         artifact_path: str,
         image_paths: Sequence[str],
         visibility: str | None,
+        image_evidence: Sequence[Mapping[str, object]] | None = None,
     ) -> dict[str, Any]:
+        _ = image_evidence
         if account.platform != self.platform_name:
             raise ValueError(
                 f"Account {account.account_id} does not belong to platform {self.platform_name}"

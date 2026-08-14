@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import os
 from pathlib import Path
 
 import httpx
@@ -7,6 +9,7 @@ import pytest
 from langchain_core.messages import ToolMessage
 
 from ptsm.accounts.registry import AccountProfile
+from ptsm.infrastructure.images.image_file_evidence import ImageFileEvidenceError
 from ptsm.infrastructure.publishers.xiaohongshu_mcp_publisher import (
     PublisherPreflightError,
     XiaohongshuMcpPublisher,
@@ -67,6 +70,23 @@ class QrcodeHttp500McpRunner:
                 )
             ],
         )
+
+
+class MutatingLoginMcpRunner(FakeMcpRunner):
+    def __init__(self, *, image_path: Path):
+        super().__init__(
+            {
+                "check_login_status": [{"type": "text", "text": "✅ 已登录"}],
+                "publish_content": [{"type": "text", "text": "不会执行"}],
+            }
+        )
+        self.image_path = image_path
+
+    async def invoke_tool(self, tool_name: str, payload: dict[str, object]) -> object:
+        response = await super().invoke_tool(tool_name, payload)
+        if tool_name == "check_login_status":
+            self.image_path.write_bytes(b"mutated-during-login")
+        return response
 
 
 def build_account() -> AccountProfile:
@@ -247,7 +267,10 @@ def test_xiaohongshu_mcp_publisher_requires_at_least_one_existing_image(tmp_path
         )
 
 
-@pytest.mark.parametrize("bad_kind", ["duplicate", "missing", "directory"])
+@pytest.mark.parametrize(
+    "bad_kind",
+    ["duplicate", "hardlink", "symlink", "missing", "directory"],
+)
 def test_xiaohongshu_mcp_publisher_rejects_invalid_image_sets_before_mcp(
     tmp_path: Path,
     bad_kind: str,
@@ -266,6 +289,14 @@ def test_xiaohongshu_mcp_publisher_rejects_invalid_image_sets_before_mcp(
     valid_path.write_bytes(b"png")
     if bad_kind == "duplicate":
         image_paths = [str(valid_path), str(valid_path)]
+    elif bad_kind == "hardlink":
+        hardlink = tmp_path / "hardlink.png"
+        os.link(valid_path, hardlink)
+        image_paths = [str(valid_path), str(hardlink)]
+    elif bad_kind == "symlink":
+        symlink = tmp_path / "symlink.png"
+        symlink.symlink_to(valid_path)
+        image_paths = [str(symlink)]
     elif bad_kind == "missing":
         image_paths = [str(tmp_path / "missing.png")]
     else:
@@ -289,6 +320,46 @@ def test_xiaohongshu_mcp_publisher_rejects_invalid_image_sets_before_mcp(
     assert runner.calls == []
 
 
+def test_xiaohongshu_mcp_publisher_rejects_hash_mismatch_before_mcp(
+    tmp_path: Path,
+) -> None:
+    runner = FakeMcpRunner(
+        {
+            "check_login_status": [{"type": "text", "text": "✅ 已登录"}],
+            "publish_content": [{"type": "text", "text": "不会执行"}],
+        }
+    )
+    publisher = XiaohongshuMcpPublisher(
+        server_url="http://localhost:18060/mcp",
+        tool_runner=runner,
+    )
+    image_path = tmp_path / "page.png"
+    image_path.write_bytes(b"png")
+
+    with pytest.raises(ImageFileEvidenceError) as exc_info:
+        publisher.publish(
+            account=build_account(),
+            content={
+                "title": "心理学多图验证",
+                "body": "正文",
+                "hashtags": ["#心理学"],
+            },
+            artifact_path="outputs/artifacts/demo.json",
+            image_paths=[str(image_path)],
+            image_evidence=[
+                {
+                    "order": 1,
+                    "path": str(image_path),
+                    "file_sha256": "0" * 64,
+                }
+            ],
+            visibility="仅自己可见",
+        )
+
+    assert exc_info.value.code == "image_file_hash_mismatch"
+    assert runner.calls == []
+
+
 def test_xiaohongshu_mcp_publisher_rejects_unreadable_image_before_mcp(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -305,14 +376,17 @@ def test_xiaohongshu_mcp_publisher_rejects_unreadable_image_before_mcp(
     )
     image_path = tmp_path / "page.png"
     image_path.write_bytes(b"png")
-    original_open = Path.open
+    original_open = os.open
 
-    def guarded_open(path: Path, *args: object, **kwargs: object):
-        if path == image_path:
+    def guarded_open(path: str, *args: object, **kwargs: object):
+        if path == str(image_path):
             raise OSError("permission denied")
         return original_open(path, *args, **kwargs)
 
-    monkeypatch.setattr(Path, "open", guarded_open)
+    monkeypatch.setattr(
+        "ptsm.infrastructure.images.image_file_evidence.os.open",
+        guarded_open,
+    )
 
     with pytest.raises(ValueError, match="readable"):
         publisher.publish(
@@ -328,6 +402,42 @@ def test_xiaohongshu_mcp_publisher_rejects_unreadable_image_before_mcp(
         )
 
     assert runner.calls == []
+
+
+def test_xiaohongshu_mcp_publisher_rechecks_hash_after_login_preflight(
+    tmp_path: Path,
+) -> None:
+    image_path = tmp_path / "page.png"
+    original = b"original-page"
+    image_path.write_bytes(original)
+    runner = MutatingLoginMcpRunner(image_path=image_path)
+    publisher = XiaohongshuMcpPublisher(
+        server_url="http://localhost:18060/mcp",
+        tool_runner=runner,
+    )
+
+    with pytest.raises(ImageFileEvidenceError) as exc_info:
+        publisher.publish(
+            account=build_account(),
+            content={
+                "title": "心理学多图验证",
+                "body": "正文",
+                "hashtags": ["#心理学"],
+            },
+            artifact_path="outputs/artifacts/demo.json",
+            image_paths=[str(image_path)],
+            image_evidence=[
+                {
+                    "order": 1,
+                    "path": str(image_path),
+                    "file_sha256": hashlib.sha256(original).hexdigest(),
+                }
+            ],
+            visibility="仅自己可见",
+        )
+
+    assert exc_info.value.code == "image_file_hash_mismatch"
+    assert runner.calls == [("check_login_status", {})]
 
 
 def test_xiaohongshu_mcp_publisher_extracts_publish_metadata_from_json_response(

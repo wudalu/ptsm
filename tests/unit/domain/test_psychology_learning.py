@@ -9,6 +9,7 @@ import shutil
 import pytest
 from pydantic import ValidationError
 
+import ptsm.application.use_cases.psychology_learning_series as psychology_learning_series_use_case
 import ptsm.domain.psychology_learning as psychology_learning
 from ptsm.application.use_cases.psychology_learning_series import (
     PsychologyLearningSeriesStore,
@@ -88,6 +89,45 @@ def _closed_learning_artifact(bundle) -> dict[str, object]:
     if catalog_receipt is not None:
         artifact["psychology_learning_catalog_receipt"] = catalog_receipt
     return artifact
+
+
+def _historic_v1_bundle(
+    *,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    monkeypatch.chdir(tmp_path)
+    store = PsychologyLearningSeriesStore(trusted_provision=True)
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    store.persist_proposal(proposal)
+
+    def build_v1(proposal_value, *, curriculum_version: str):
+        return psychology_learning._build_confirmed_psychology_learning_catalog_for_template(
+            proposal_value,
+            curriculum_version=curriculum_version,
+            controlled_template_version="1",
+        )
+
+    monkeypatch.setattr(
+        psychology_learning_series_use_case,
+        "_build_confirmed_psychology_learning_catalog",
+        build_v1,
+    )
+    catalog = store.confirm(
+        proposal_id=proposal.proposal_id,
+        proposal_fingerprint=proposal.proposal_fingerprint,
+    )
+    return resolve_psychology_learning_selection(
+        series_id=catalog.series_id,
+        lesson_id="notice",
+        curriculum_version=catalog.curriculum_version,
+    )
 
 
 def test_starter_catalog_resolves_a_closed_six_lesson_series() -> None:
@@ -323,6 +363,77 @@ def test_non_strict_artifact_scan_allows_only_empty_runtime_context_source_paths
     )
 
 
+def test_non_strict_artifact_scan_accepts_only_exact_runtime_carousel_copies() -> None:
+    draft = _valid_draft(_starter_bundle())
+    image_plan = draft["image_plan"]
+    artifact = {
+        "playbook_id": "modern_psychology_post",
+        "final_content": draft,
+        "step_outputs": {
+            "executor": {"draft_content": {"image_plan": image_plan}},
+        },
+        "content_review": {"image_plan": image_plan},
+    }
+
+    assert not contains_psychology_learning_raw_provenance(
+        artifact,
+        strict_artifact_shape=False,
+    )
+
+    artifact["content_review"] = {
+        "image_plan": {
+            **image_plan,
+            "slides": [
+                image_plan["slides"][0],
+                {
+                    **image_plan["slides"][1],
+                    "body_lines": ["目录之外但表面安全的内页文案"],
+                },
+                *image_plan["slides"][2:],
+            ],
+        }
+    }
+    assert contains_psychology_learning_raw_provenance(
+        artifact,
+        strict_artifact_shape=False,
+    )
+
+
+@pytest.mark.parametrize("replacement", [None, []])
+@pytest.mark.parametrize(
+    "container_path",
+    [
+        ("content_review",),
+        ("step_outputs", "executor", "draft_content"),
+    ],
+)
+def test_non_strict_artifact_scan_rejects_non_object_runtime_carousel_copies(
+    replacement: object,
+    container_path: tuple[str, ...],
+) -> None:
+    draft = _valid_draft(_starter_bundle())
+    image_plan = draft["image_plan"]
+    artifact: dict[str, object] = {
+        "playbook_id": "modern_psychology_post",
+        "final_content": draft,
+        "step_outputs": {
+            "executor": {"draft_content": {"image_plan": image_plan}},
+        },
+        "content_review": {"image_plan": image_plan},
+    }
+    container: object = artifact
+    for part in container_path:
+        assert isinstance(container, dict)
+        container = container[part]
+    assert isinstance(container, dict)
+    container["image_plan"] = replacement
+
+    assert contains_psychology_learning_raw_provenance(
+        artifact,
+        strict_artifact_shape=False,
+    )
+
+
 def test_non_strict_artifact_scan_preserves_custom_catalog_pre_envelope_receipts(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -432,6 +543,50 @@ def test_strict_artifact_scan_allows_only_safe_carousel_generation_evidence() ->
     artifact["image_generation"] = {
         **artifact["image_generation"],  # type: ignore[arg-type]
         "manifest_path": "/private/generated/set/manifest.json",
+    }
+    assert contains_psychology_learning_raw_provenance(artifact)
+
+
+def test_historic_v1_artifact_keeps_only_the_frozen_single_card_receipt(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    historic_artifact = _closed_learning_artifact(
+        _historic_v1_bundle(monkeypatch=monkeypatch, tmp_path=tmp_path)
+    )
+    historic_artifact["image_generation"] = {
+        "status": "generated",
+        "renderer": "ptsm_local_renderer",
+    }
+
+    assert not contains_psychology_learning_raw_provenance(historic_artifact)
+
+    current_artifact = _closed_learning_artifact(_starter_bundle())
+    current_artifact["image_generation"] = historic_artifact["image_generation"]
+    assert contains_psychology_learning_raw_provenance(current_artifact)
+
+    historic_artifact["image_generation"] = {
+        **historic_artifact["image_generation"],  # type: ignore[arg-type]
+        "generated_image_paths": ["/private/historic-card.png"],
+    }
+    assert contains_psychology_learning_raw_provenance(historic_artifact)
+
+
+def test_strict_artifact_scan_allows_only_bounded_carousel_failure_evidence() -> None:
+    artifact = _closed_learning_artifact(_starter_bundle())
+    artifact["image_generation"] = {
+        "status": "failed",
+        "renderer": "ptsm_local_renderer",
+        "carousel_style": "psychology_text_card_v1",
+        "image_count": 7,
+        "reason": "psychology_carousel_generation_failed",
+    }
+
+    assert not contains_psychology_learning_raw_provenance(artifact)
+
+    artifact["image_generation"] = {
+        **artifact["image_generation"],  # type: ignore[arg-type]
+        "renderer_error": "/private/generated/page-03.png",
     }
     assert contains_psychology_learning_raw_provenance(artifact)
 

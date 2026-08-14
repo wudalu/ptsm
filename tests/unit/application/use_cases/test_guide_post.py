@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+import ptsm.application.use_cases.psychology_learning_series as psychology_learning_series_use_case
 import ptsm.domain.psychology_learning as psychology_learning_domain
 from ptsm.application.use_cases.psychology_learning_series import (
     PsychologyLearningSeriesStore,
@@ -981,6 +982,21 @@ def test_psychology_learning_series_guide_returns_only_catalog_lessons() -> None
         direction["direction_type"] == "learning_series_lesson"
         for direction in guidance["directions"]
     )
+    for direction in guidance["directions"]:
+        recommendation = direction["format_recommendation"]
+        assert recommendation["format_archetype"] == "text_carousel"
+        assert recommendation["cover_role"] == "cover_hook"
+        assert recommendation["carousel_style"] == "psychology_text_card_v1"
+        assert recommendation["page_count"] == {"min": 7, "max": 7}
+        assert recommendation["ordered_roles"] == [
+            "cover_hook",
+            "concrete_scene",
+            "light_mechanism",
+            "save_tool",
+            "scope_boundary",
+            "professional_boundary",
+            "comment_prompt",
+        ]
     assert not guidance["open_direction_ids"]
     assert "source_refs" not in json.dumps(result, ensure_ascii=False)
     command = result["run_playbook_command"]
@@ -1138,6 +1154,61 @@ def _confirm_custom_psychology_series(
         proposal_id=proposal.proposal_id,
         proposal_fingerprint=proposal.proposal_fingerprint,
     )
+
+
+def test_historic_v1_learning_guide_keeps_note_card_directions(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    store_root = tmp_path / "series-store"
+    monkeypatch.setattr(
+        psychology_learning_domain,
+        "DEFAULT_PSYCHOLOGY_LEARNING_SERIES_CATALOG_ROOT",
+        store_root,
+    )
+    store = PsychologyLearningSeriesStore(trusted_provision=True)
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    store.persist_proposal(proposal)
+
+    def build_v1(proposal_value, *, curriculum_version: str):
+        return psychology_learning_domain._build_confirmed_psychology_learning_catalog_for_template(
+            proposal_value,
+            curriculum_version=curriculum_version,
+            controlled_template_version="1",
+        )
+
+    monkeypatch.setattr(
+        psychology_learning_series_use_case,
+        "_build_confirmed_psychology_learning_catalog",
+        build_v1,
+    )
+    catalog = store.confirm(
+        proposal_id=proposal.proposal_id,
+        proposal_fingerprint=proposal.proposal_fingerprint,
+    )
+
+    result = run_guide_post(
+        GuidePostRequest(
+            psychology_content_mode="learning_series",
+            psychology_series_id=catalog.series_id,
+            psychology_curriculum_version=catalog.curriculum_version,
+        )
+    )
+
+    assert catalog.controlled_template_version == "1"
+    for direction in result["topic_guidance"]["directions"]:
+        recommendation = direction["format_recommendation"]
+        assert recommendation["format_archetype"] == "note_card"
+        assert recommendation["cover_role"] == "save_tool"
+        assert "carousel_style" not in recommendation
+        assert "page_count" not in recommendation
+        assert "ordered_roles" not in recommendation
 
 
 def test_custom_learning_series_guide_recommends_publication_order_without_autoselecting(
