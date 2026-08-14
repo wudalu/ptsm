@@ -344,7 +344,7 @@ git commit -m "feat(psychology): guide and measure text carousels"
 
 **Step 1: Write failing docs and skill-contract tests**
 
-Require documentation of the exact parent/slide fields, 4–7 semantic roles, local-only renderer, set transaction, failure status, learning v1/v2 behavior, no-override rule, safe artifact evidence, guide flow, and `image_count`/`carousel_style` metrics. Require the wrapper to show only PTSM-returned learning pages and never author its own page copy.
+Require documentation of the exact parent/slide fields, 4–7 semantic roles, local-only renderer, set transaction, failure status, learning v1/v2 behavior, no-override rule, safe artifact evidence, guide flow, and `image_count`/`carousel_style` metrics. Require the wrapper to show only PTSM-returned `page_count` / `ordered_roles`, never claim that `guide-post` returned slides or page copy, and never author its own page copy.
 
 Before changing skill text, capture a baseline scenario demonstrating that the current image-strategy/psychology skills still insist on a single low-density cover. After the edit, forward-test with a fresh subagent using only the revised skill plus a representative psychology request.
 

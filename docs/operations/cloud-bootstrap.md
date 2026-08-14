@@ -2,13 +2,16 @@
 title: PTSM Cloud Bootstrap
 status: active
 owner: ptsm
-last_verified: 2026-05-25
+last_verified: 2026-08-14
 source_of_truth: true
 related_paths:
   - README.md
   - .env.example
   - src/ptsm/config/settings.py
   - src/ptsm/interfaces/cli/main.py
+  - src/ptsm/application/services/image_carousel_transaction.py
+  - src/ptsm/application/use_cases/run_playbook.py
+  - src/ptsm/domain/psychology_carousel.py
   - src/ptsm/accounts/definitions/acct-fk-local.yaml
   - docs/operations/local-runbook.md
   - docs/operations/task-completion-automation.md
@@ -89,7 +92,7 @@ PIC_MODEL_MODEL=qwen-image-2.0-pro
 PIC_MODEL_SIZE=1104*1472
 ```
 
-系统自动生成的图片会请求源头不加 provider 水印：即梦使用 `logo_info.add_logo=false`，百炼使用 `watermark=false` 并保留水印/logo negative prompt。发布 artifact 的 `image_generation.watermark_policy.requested` 应为 `no_provider_watermark`；真实发布仍会对最终图片执行 `watermark_removal` 作为防御性清理。
+系统自动生成的图片会请求源头不加 provider 水印：即梦使用 `logo_info.add_logo=false`，百炼使用 `watermark=false` 并保留水印/logo negative prompt。发布 artifact 的 `image_generation.watermark_policy.requested` 应为 `no_provider_watermark`；provider/manual 图片在真实发布时仍会执行 `watermark_removal`，PTSM 本地 renderer 图片则安全跳过。心理学 `psychology_text_card_v1` 是 local-only，不需要即梦或百炼凭证。
 
 完整字段定义见 [`src/ptsm/config/settings.py`](../../src/ptsm/config/settings.py)。
 
@@ -158,7 +161,31 @@ uv run python -m ptsm.bootstrap run-fengkuang \
 
 `wechat_chat` 会生成内容区聊天转录封面，而不是完整手机截图；它不绘制头部、输入栏或头像。需要复刻真实对话时，让正文或 `final_content.image_plan` 提供多行 speaker 文本、`theme`、`chat_title` 和 `chat_times` 等字段。
 
-真实发布模式下，如果未显式传 `--publish-image-path`，且没有传 `--no-auto-generate-image`，PTSM 默认会自动补图。operator 的 `--local-image-style` 优先；否则运行时可根据 `final_content.image_plan` 选择本地截图式封面或 provider image。即梦和百炼同时配置时优先使用即梦。
+真实发布模式下，如果未显式传 `--publish-image-path`，且没有传 `--no-auto-generate-image`，PTSM 默认会自动补图。普通帖的 operator `--local-image-style` 优先；否则运行时可根据 `final_content.image_plan` 选择本地截图式封面或 provider image。learning-series 不允许 image/style override。即梦和百炼同时配置时，普通 provider 路径优先使用即梦。
+
+现代心理学默认不是一张 provider cover，而是本地原子图片集：
+
+```bash
+uv run python -m ptsm.bootstrap run-playbook \
+  --scene "凌晨两点，我还在改白天会议那句话" \
+  --account-id acct-psychology-local \
+  --playbook-id modern_psychology_post \
+  --publish-mode dry-run \
+  --auto-generate-image
+```
+
+`guide-post` 会先给出 `text_carousel`、`psychology_text_card_v1`、4–7 页和 ordered roles；命令
+仍只使用 `--auto-generate-image`。系统在 `outputs/generated_images/` 下先写 staging，再把全部
+ordered PNG 与 `manifest.json` 原子 rename 为 content-addressed committed set。请把
+`outputs/generated_images/` 放在持久磁盘上，并确保 staging 与 final set 位于同一 filesystem；不要把
+它挂成每次任务结束即销毁的临时层。`outputs/artifacts/generated-image-assets/` 也应持久化，以保留
+ordinary 与 current v2 learning carousel 的 page-aware operational ledger；sealed learning artifact/response 不复制 ledger 或路径。容器/主机重启后，已提交 set 可用于发布失败重试。
+
+成功 ordinary artifact 可检查 `image_generation.status=committed`、`image_count`、`set_id`、
+`manifest_path`、`manifest_sha256` 和 ordered `pages`。learning-series artifact 为避免路径/课程内容
+泄漏，只保留 renderer/style/count/manifest hash 的安全 receipt；可信 operator 可从持久输出卷检查
+manifest。任一页、manifest 或 ledger 失败都会返回 `psychology_carousel_generation_failed`，不会把
+部分图片交给 XHS MCP。
 
 ## Step 6: Real Publish Prerequisites
 
@@ -263,5 +290,6 @@ uv run python -m ptsm.bootstrap run-plan \
 
 - 无 GUI 环境下，不要把 `xhs-open-browser` 当默认路径。
 - 小红书真实发布仍依赖 `xiaohongshu-mcp` 服务和有效登录态。
+- psychology carousel 本身不依赖图片 provider，但依赖 Pillow 字体/渲染环境和可持久、同 filesystem 的 `outputs/generated_images/`；部署时要备份 committed set manifest 与 page-aware asset ledger。
 - `仅自己可见` 的帖子在上游未返回 `post_id/post_url` 时，仍然不能完全自动核验。
 - 最稳定的云上用途仍然是：`dry-run + run-plan + diagnostics + harness-report`。

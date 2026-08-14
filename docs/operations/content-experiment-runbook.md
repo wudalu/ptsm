@@ -2,13 +2,14 @@
 title: XHS Content Experiment Runbook
 status: active
 owner: ptsm
-last_verified: 2026-07-23
+last_verified: 2026-08-14
 source_of_truth: true
 related_paths:
   - docs/research/2026-05-15-xhs-content-experiment-log.md
   - docs/plans/2026-05-15-xhs-content-quality-improvement.md
   - src/ptsm/application/use_cases/xhs_post_metrics.py
   - src/ptsm/domain/psychology_learning.py
+  - src/ptsm/domain/psychology_carousel.py
   - src/ptsm/playbooks/definitions
   - src/ptsm/skills/builtin
   - outputs/artifacts
@@ -33,7 +34,8 @@ Run each topic as one of three variants:
 3. Generate the draft with `--eval`.
 4. Confirm deterministic eval has `required_failed = 0`.
 5. Confirm the planned image format in `content_review.image_plan`, `content_review.image_form`, or `image_generation.image_plan` when the run generated an image.
-6. Record the planned variant and image format in `docs/research/2026-05-15-xhs-content-experiment-log.md`.
+6. For a psychology text carousel, require `image_generation.status=committed`, 4–7 ordered pages and a matching immutable `manifest.json`; never score or publish a partial set.
+7. Record the planned variant and image format in `docs/research/2026-05-15-xhs-content-experiment-log.md`.
 
 Variant labels are operator metadata. They can be written in the experiment log or used while planning, but final正文 must not contain `变体要求`, `comment_chain`, `save_tool`, or `identity_conflict`; the playbook eval contracts treat those as instruction leakage.
 
@@ -43,7 +45,11 @@ For XHS copy experiments, reject variants whose title is only a category label s
 
 For `modern_psychology_post`, do not reuse six near-identical "反复复盘一句话" scenes. The deterministic fallback now separates meeting replay, boundary pressure, Sunday work-message anxiety, after-work message pullback, brain-in-review-meeting, and ordinary-reply replay. A calibration batch should keep those scene mechanics distinct before publishing.
 
-For `modern_psychology_post --psychology-content-mode learning_series`, this rule is stricter: a variant is one confirmed catalog lesson, not a rewritten free scene or a made-up next lesson. Before the first custom topic, a trusted operator must run `provision-psychology-learning-storage --format json` while all writers are stopped and that operator exclusively controls the storage parent. It provisions the fixed private `proposals`、`confirmations`、`catalogs` and `progress` directories; plan and confirmation never provision missing directories during an experiment. This includes custom topics only after PTSM has created an immutable `user_confirmed` version from a reviewed proposal; never experiment with a manual catalog or an unconfirmed outline. The controlled renderer gives each selected lesson its own catalog-approved title and cover hook, then fixes its body, tags, and catalog-owned image plan; do not hand-edit them or add `--local-image-style` as an experiment. Compare lessons only after a reviewed catalog/version change, and keep the returned series/lesson identity fixed. For a custom guide response, `series.recommended_next_lesson` is a publication suggestion, not an automatic assignment; `series.production_progress.kind == operator_content_production` is version-bound production bookkeeping. It advances only after a safe completed artifact and strict `psychology_learning_catalog_receipt`; dry-run or content success followed by publish failure may count. Progress is at-least-once: once persistence reaches the rename boundary, a later storage/boundary error can be returned even though the completion marker is visible, so re-query the roadmap and retry the exact lesson idempotently rather than assuming no update occurred. It is not reader learning progress, does not mean the post was published, and never auto-publishes the next lesson. A rejected/raced artifact or sidecar is not removed or overwritten online; stop the affected run and use trusted offline maintenance for review/cleanup only after all writers stop. These transaction-time checks do not promise persistent tamper resistance against a continuing same-UID writer across independent operations. Builtin roadmaps omit these custom sequence/progress fields. Do not use hotspot text as lesson evidence.
+For `modern_psychology_post --psychology-content-mode learning_series`, this rule is stricter: a variant is one confirmed catalog lesson, not a rewritten free scene or a made-up next lesson. Before the first custom topic, a trusted operator must run `provision-psychology-learning-storage --format json` while all writers are stopped and that operator exclusively controls the storage parent. It provisions the fixed private `proposals`、`confirmations`、`catalogs` and `progress` directories; plan and confirmation never provision missing directories during an experiment. This includes custom topics only after PTSM has created an immutable `user_confirmed` version from a reviewed proposal; never experiment with a manual catalog or an unconfirmed outline. Historic controlled-template-v1 revisions remain immutable single-card baselines; builtin and newly confirmed revisions use template v2, whose 7 carousel pages are reconstructed only from catalog fields. The controlled renderer gives each selected lesson its own catalog-approved title, cover hook, body, tags and image plan; do not hand-edit pages or add `--local-image-style` / `--publish-image-path` as an experiment. Compare lessons only after a reviewed catalog/version change, and keep the returned series/lesson identity fixed. For a custom guide response, `series.recommended_next_lesson` is a publication suggestion, not an automatic assignment; `series.production_progress.kind == operator_content_production` is version-bound production bookkeeping. Without image generation it retains the existing safe content-artifact timing; when images are requested it advances only after a complete committed carousel and strict receipt. `psychology_carousel_generation_failed` never advances it. Progress is at-least-once: once persistence reaches the rename boundary, a later storage/boundary error can be returned even though the completion marker is visible, so re-query the roadmap and retry the exact lesson idempotently rather than assuming no update occurred. It is not reader learning progress, does not mean the post was published, and never auto-publishes the next lesson. A rejected/raced artifact or sidecar is not removed or overwritten online; stop the affected run and use trusted offline maintenance for review/cleanup only after all writers stop. These transaction-time checks do not promise persistent tamper resistance against a continuing same-UID writer across independent operations. Builtin roadmaps omit these custom sequence/progress fields. Do not use hotspot text as lesson evidence.
+
+For current v2 learning, “complete committed carousel” includes a successful page-aware operational
+asset-ledger batch. The sealed learning artifact/response still exposes only safe status/renderer/style/count/
+manifest-hash evidence; it never exposes the ledger rows, paths or page text.
 
 Example:
 
@@ -65,6 +71,7 @@ Record metrics at `2h`, `24h`, and `72h` after publish:
 - comments
 - shares
 - image format used, such as provider image, `note_card`, `iphone_notes`, or `wechat_chat`
+- `image_count` and `carousel_style` (`psychology_text_card_v1` for the automatic psychology carousel; historic/single covers normalize to count `1` and empty carousel style)
 - comment quality notes
 - next rewrite decision
 
@@ -106,6 +113,11 @@ uv run python -m ptsm.bootstrap xhs-metrics-report \
 uv run python -m ptsm.bootstrap xhs-metrics-report \
   --playbook-id modern_psychology_post \
   --checkpoint 24h \
+  --group-by carousel_style
+
+uv run python -m ptsm.bootstrap xhs-metrics-report \
+  --playbook-id modern_psychology_post \
+  --checkpoint 24h \
   --group-by psychology_learning_series_id
 
 uv run python -m ptsm.bootstrap xhs-metrics-report \
@@ -119,7 +131,7 @@ uv run python -m ptsm.bootstrap xhs-metrics-report \
   --group-by psychology_learning_lesson_id
 ```
 
-The metrics store is `outputs/artifacts/xhs-post-metrics/metrics.jsonl`. Learning rows carry `psychology_learning_series_id`, `psychology_learning_curriculum_version`, and `psychology_learning_lesson_id` only after the closed receipt is revalidated; custom rows additionally require a valid `psychology_learning_catalog_receipt`. Re-recording the same artifact/checkpoint replaces the old measurement, so a correction cannot inflate the cohort. Learning reports exclude ordinary psychology rows and mark any group with fewer than 3 posts as `needs_more_data`. Treat these as early signals, not proof that a direction, lesson or cover style wins.
+The metrics store is `outputs/artifacts/xhs-post-metrics/metrics.jsonl`. Every row includes normalized `image_count` and `carousel_style`, so carousel and single-cover cohorts remain distinguishable even when their parent image role is similar. Learning rows carry `psychology_learning_series_id`, `psychology_learning_curriculum_version`, and `psychology_learning_lesson_id` only after the closed receipt is revalidated; custom rows additionally require a valid `psychology_learning_catalog_receipt`. Re-recording the same artifact/checkpoint replaces the old measurement, so a correction cannot inflate the cohort. Learning reports exclude ordinary psychology rows and mark any group with fewer than 3 posts as `needs_more_data`. Treat these as early signals, not proof that a direction, lesson or image format wins.
 
 ## Readout Rules
 

@@ -2,12 +2,13 @@
 title: PTSM Architecture
 status: active
 owner: ptsm
-last_verified: 2026-07-24
+last_verified: 2026-08-14
 source_of_truth: true
 related_paths:
   - src/ptsm
   - src/ptsm/application
   - src/ptsm/application/services/account_publisher_context.py
+  - src/ptsm/application/services/image_carousel_transaction.py
   - src/ptsm/application/services/side_effect_ledger.py
   - src/ptsm/application/use_cases/harness_evals.py
   - src/ptsm/application/use_cases/guide_post.py
@@ -24,12 +25,16 @@ related_paths:
   - src/ptsm/domain
   - src/ptsm/domain/ai_tech_content.py
   - src/ptsm/domain/psychology_learning.py
+  - src/ptsm/domain/psychology_carousel.py
   - src/ptsm/domain/topic_guidance.py
   - src/ptsm/domain/hotspot_routing.py
   - src/ptsm/playbooks/registry.py
   - src/ptsm/playbooks/definitions/ai_tech_daily_post
   - src/ptsm/evaluations
   - src/ptsm/infrastructure
+  - src/ptsm/infrastructure/images/asset_ledger.py
+  - src/ptsm/infrastructure/images/note_card_backend.py
+  - src/ptsm/infrastructure/publishers/xiaohongshu_mcp_publisher.py
   - src/ptsm/infrastructure/evaluations
   - src/ptsm/infrastructure/reddit
   - src/ptsm/infrastructure/xhs_patterns
@@ -62,6 +67,12 @@ playbook、skill 与 eval contract，但每次生成必须先选择一种证据�
 scene/history。普通心理学场景帖仍沿用既有 lane/guide flow，不能被自动编号或转化为课程。路线图查询明确
 停在 `selection_required`；推荐顺序只是建议，用户明确选择一课后才会取得该课的 catalog-owned title、
 cover hook、image plan 和可运行方向。任何 topic、outline 或热点都不能直接进入 lesson run。
+
+心理学图片合同现在是同一 playbook 内的领域扩展，不是通用多图 schema：普通
+`modern_psychology_post` 可在同一次 drafting pass 产出一个主题的 4–7 张语义文字卡；
+learning-series 则由 frozen catalog 的 controlled template 重建固定页面。历史上已确认的
+controlled-template-v1 继续按原单卡字节与 receipt 验证，builtin 和新确认目录使用
+controlled-template-v2 的 catalog-owned carousel。两者都不能由第二次模型调用改写或按正文长度盲分段。
 
 运行期以 no-follow descriptor、目录/叶子 identity pin 和私有 regular-file 校验防御单次事务内的目录
 重绑、symlink、hardlink、临时源替换和 payload 竞态；遇到异常即 fail closed。它不会沿可变路径在线
@@ -103,7 +114,8 @@ such a same-UID writer can still modify an inode after a transaction's final che
 - composed operator snapshots such as `harness-report` 也留在 `application/use_cases`，只读复用现有 harness surfaces，而不是新增 orchestration service。
 - single-case diagnostics such as `diagnose-publish` 同样留在 `application/use_cases`，通过组合 `doctor`、logs 和 artifact readers 来输出归因，而不是把诊断逻辑塞进 publisher 或 CLI。
 - side-effect replay control 也放在 `application/services + application/use_cases`，避免让 `agent_runtime` 直接承担发布副作用策略。
-- provider-backed image generation、本地 social screenshot renderer 和 generated image asset ledger 都留在 `infrastructure`，由 `application/use_cases/run_playbook.py` 在发布前编排调用，避免把外部 API 协议、Pillow 绘制细节或 JSONL 资产记录塞进 runtime graph。image backend 负责声明生成图的 no-watermark provider controls，并把 `watermark_policy` / `provenance` 返回给应用层；`run_playbook()` 只做归一化、provenance-aware post-processing 和 artifact 持久化。`final_content.image_plan` 可以让 LLM 主动选择 `local_social_screenshot` 或 `provider_image`；`PlaybookRequest.local_image_style` 是显式本地 override，即使外部 provider 已配置也会走本地 renderer。
+- provider-backed image generation、本地 social screenshot renderer 和 generated image asset ledger 都留在 `infrastructure`，由 `application/use_cases/run_playbook.py` 在发布前编排调用，避免把外部 API 协议、Pillow 绘制细节或 JSONL 资产记录塞进 runtime graph。image backend 负责声明生成图的 no-watermark provider controls，并把 `watermark_policy` / `provenance` 返回给应用层；`run_playbook()` 只做归一化、provenance-aware post-processing 和 artifact 持久化。asset-ledger writer 会固定 caller 的 `base_dir` 目录句柄，再以 `dir_fd` + no-follow 逐级创建或打开固定的 `outputs/artifacts/generated-image-assets` 目录链，并在持锁后、replace 前和父目录 fsync 后重验每一级 name-to-descriptor identity；因此中间祖先被 symlink 或 rename/recreate 重绑时会 fail closed。`final_content.image_plan` 可以让 LLM 主动选择 `local_social_screenshot` 或 `provider_image`；普通帖的 `PlaybookRequest.local_image_style` 是显式本地 override，即使外部 provider 已配置也会走既有单图 renderer。
+- 心理学文字轮播的组编排位于 `application/services/image_carousel_transaction.py`，而不是扩张单图 backend protocol。严格的 parent plan 保留 `backend/style/role/text_density/max_text_units/cover_text_strategy/reason/prompt_focus`，并增加 `carousel_style=psychology_text_card_v1` 与 ordered `slides`；每个 slide 只有 `slide_id/order/role/headline/body_lines`。服务先验证全部 4–7 页，再让 `note_card_backend` 逐页本地渲染到 runtime-owned staging，写入带 set/page/file hashes 的 canonical manifest，最后在同一 destination filesystem 原子 rename 为 immutable committed set。只有该完整 set 的 ordered `generated_image_paths` 能进入 page-aware asset ledger 和 publisher；current v2 learning carousel 也记录该 operational ledger，但 sealed learning artifact/response 只复制 safe manifest-hash receipt，不暴露 ledger、路径或 page text。任一页、manifest 或 ledger 失败都以 `psychology_carousel_generation_failed` 在外部发布前停止。已提交 set 在后续发布失败时保留，供安全重试。
 - XHS format pattern library 分成三层：`topic_radar` 负责外部 MCP 采样，`ptsm.domain.xhs_patterns` 定义本地样本和 pattern 领域模型，`ptsm.infrastructure.xhs_patterns` 只做本地 JSON snapshot 存储，`application/use_cases/collect_xhs_patterns.py` / `analyze_xhs_patterns.py` 负责编排 CLI 用例。普通生成只读取本地 snapshot，不直接依赖 live MCP。
 - `topic_radar` 仍是独立的研究边界：它拥有八平台 collection、canonical source evidence、scan quality、event clustering、推荐多样性和历史 novelty；不依赖或 import `ptsm`。它的 public `topic_radar.cli.run_scan()` API 才是 PTSM 的唯一 fresh-research 接口，PTSM 不复制 collector、平台识别或事件聚类逻辑。默认平台集合为 `xiaohongshu,weibo,douyin,zhihu,bilibili,toutiao,douban,sspai`；XHS HTTP MCP 与 trends-hub stdio MCP 按 server 隔离加载，工具发现也有 bounded timeout，所以一个服务失败或卡住只产生对应平台的 partial diagnostics。XHS 以 feed ID 为权威，完整 title+author 只桥接一条缺 ID 观察到首个真实 ID；后续不同真实 ID 保持独立，多个真实 ID 后的缺 ID 观察保持 unresolved。feed 去重和平台内热度归一化都在该边界完成。
 - 跨领域发帖前选题引导同样保持分层：`ptsm.domain.topic_guidance` 定义本地 selector、open-scene composer、动态 diversity reranker 和公开 `format_recommendation`，`application/use_cases/topic_guidance_packs.py` 保存非心理学 topic packs，`guide_post.py` 只编排只读 CLI/OpenClaw 输出。八个非 AI-evidence playbook 从 curated 与 local `open_scene` 候选中返回 4 个场景相关方向；这个路径不属于 `agent_runtime`，不会创建 run 或发布。AI 科技是显式例外：selector 先接收 mode，只返回同 mode 的 authored direction，不产生 open-scene 或 scene-only fallback；prompt direction 也只能是 `hands_on` 测试复盘。所有方向仍可带 `format_recommendation` 与 `topic_guidance.image_recommendation`，但 wrapper 只展示，不自行扩写。
@@ -124,6 +136,7 @@ such a same-UID writer can still modify an inode after a transaction's final che
 - `modern_psychology_post` 的浏览/点赞优化仍放在既有心理学资产层：睡眠恢复、轻养生、办公室恢复被建模为现代心理学子线实验，由 `guide-post`、`psychology_style`、playbook prompt 和 deterministic dry-run helper 承接，不新增 domain/playbook/runtime 分支。2026-06-02 的 XHS domain opportunity live scan 因本地 MCP 缺少 `search_feeds` 没有采到样本，所以这条子线只按弱证据推进为本地可验证实验，不声称已完成趋势排名。
 - AI 科技证据边界属于领域与应用层，不是泛用 runtime 分支：`ptsm.domain.ai_tech_content` 严格解析 operator 提供的证据文件，分别产出无 provenance 的 drafting contract 与只含 opaque ID 的 manifest。`run_playbook()` 在创建 run、workflow、artifact、图片或 publisher 前 fail closed；runtime 只绑定该 safe contract，并在 LangGraph checkpoint 前重建 allowlisted input。来源 URL、作者、feed ID、原始标题及整份 evidence bundle 不进入 prompt、state、checkpoint、读者可见内容或 artifact。`finalize` 仅写 `ai_tech_content_mode`、`ai_tech_evidence_manifest` 与通过的 `ai_tech_evidence_gate` receipt；离线 evaluator 再审计该 receipt。Topic Radar 保持独立 discovery surface：它可以贡献 opaque `trend_support`，但不提供可发布事实或实测记录。
 - 心理学学习系列同样有两段边界：operator 可先提议 2–6 个安全 lesson outline，并在 review publication plan 与 exact proposal fingerprint 后确认 immutable `user_confirmed` revision；随后 runtime 只接受显式 frozen version、lesson 与 matching direction。确认后 revision 不能就地重排或改课，变更必须走新 proposal/version。Topic Radar 仍是 discovery-only，不能把热点标题、evidence 或路由结果变成课程事实、outline 或 lesson input。
+- 心理学 carousel 是领域级可选扩展，因此跨领域最小合同 `shared_contracts/evaluation/final_content.schema.yaml` 保持不变；严格 shape 与 exactness 由 psychology domain/runtime/artifact/eval 边界承担。Topic Radar discovery/routing 和 task-completion automation 的状态语义也不因图片集而改变。
 
 ## Current Design Pressure
 

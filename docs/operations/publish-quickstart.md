@@ -22,6 +22,12 @@
 
 真实发布如果没有 `--publish-image-path` 且没有 `--no-auto-generate-image`，默认会自动补图。图片路由由运行时决定：operator 的 `--local-image-style` 优先；正文里的 `final_content.image_plan` 可要求 `local_social_screenshot` 或 provider image；没有策略时再按已配置的图片 provider 或本地 renderer 选择。
 
+`modern_psychology_post` 的默认自动图片是例外：`guide-post` 会返回
+`format_archetype=text_carousel`、`local_style=psychology_text_card_v1`、4–7 页和 ordered semantic
+roles；执行时仍只加 `--auto-generate-image`，不手写页面参数。系统在本地生成并原子提交完整 set，
+`slides.order` 就是发布顺序。普通心理学若明确传 `--local-image-style`，才保留旧的单封面行为；
+learning-series 禁止 `--local-image-style` 和 `--publish-image-path`。
+
 系统生成图会请求源头不加 provider 水印，并在 artifact 的 `image_generation.watermark_policy.requested` 里记录 `no_provider_watermark`。PTSM 本地 renderer 图还会记录 `image_generation.provenance.source == "ptsm_local_renderer"`，不画水印，也不走去水印后处理；provider/LLM 图和手动图仍会在真实发布时防御性清理。
 
 `wechat_chat` 现在是内容区聊天转录封面，不是完整手机截图：不画头部、输入栏或头像。适合真实聊天、群聊、可复制回复和评论触发；检查 artifact 时看 `image_generation.image_plan` 里的 `theme`、`chat_title`、`chat_times` 等字段是否符合预期。
@@ -37,6 +43,7 @@
 - `image_generation`
 - `image_generation.image_plan`
 - `image_generation.watermark_policy`
+- psychology carousel 的 `image_generation.image_count`、`carousel_style`、`manifest_path` / `manifest_sha256` 和 ordered `pages`（sealed learning artifact 只保留安全 count/style/hash receipt）
 - `watermark_removal`
 - `publish_result`
 - `post_publish_checks`
@@ -52,6 +59,12 @@
 3. 明确是否使用 XHS MCP、是否自动生图、是否强制本地截图风格。
 4. 真实发布先用 `仅自己可见` 验货；确认无误后再公开发布。
 5. 真实发布有图片时不要跳过去水印检查，artifact 里必须有 `watermark_removal`。
+
+心理学 carousel 还要确认 `image_generation.status=committed`，并以 set 目录中的 `manifest.json` 为
+权威检查 4–7 张 PNG。出现 `psychology_carousel_generation_failed` 时不要手工拿残留页继续发布；
+该状态保证 publisher 尚未收到部分 set。若完整 set 已提交、仅外部 publish 失败，可保留 set 重试。
+current v2 learning carousel 还必须完成 page-aware operational asset ledger；sealed learning artifact/
+response 仍只保留安全的 status/renderer/style/count/manifest-hash receipt，不暴露 ledger、路径或 page text。
 
 示例一：只做内容和图片预览，不发布。
 
@@ -115,6 +128,16 @@ uv run python -m ptsm.bootstrap run-fengkuang \
   --account-id acct-fk-local \
   --auto-generate-image \
   --local-image-style wechat_chat
+```
+
+心理学默认多文字卡预览：
+
+```bash
+uv run python -m ptsm.bootstrap run-playbook \
+  --scene "凌晨两点，我还在改白天会议那句话" \
+  --account-id acct-psychology-local \
+  --playbook-id modern_psychology_post \
+  --auto-generate-image
 ```
 
 ## Private Real Publish

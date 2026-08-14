@@ -132,7 +132,7 @@ def test_openclaw_psychology_skill_documents_trusted_custom_series_provisioning(
     assert "path-based cleanup" in text
 
 
-def test_openclaw_psychology_skill_uses_only_ptsm_returned_carousel_pages() -> None:
+def test_openclaw_psychology_skill_uses_only_ptsm_returned_carousel_structure() -> None:
     text = SKILL_PATH.read_text(encoding="utf-8")
     normalized_text = " ".join(text.split())
 
@@ -149,7 +149,9 @@ def test_openclaw_psychology_skill_uses_only_ptsm_returned_carousel_pages() -> N
     assert "one topic" in normalized_text
     assert "--auto-generate-image" in text
     assert "--group-by carousel_style" in text
-    assert "Only show carousel pages returned by PTSM" in normalized_text
+    assert "Show only the PTSM-returned `page_count` and `ordered_roles`" in normalized_text
+    assert "Do not claim that `guide-post` returned `slides` or page copy" in normalized_text
+    assert "Only show carousel pages returned by PTSM" not in normalized_text
     assert "Never write, rewrite, split, reorder, or fill a carousel page" in normalized_text
     assert "historic controlled-template-v1" in normalized_text
     assert "builtin and newly confirmed v2" in normalized_text

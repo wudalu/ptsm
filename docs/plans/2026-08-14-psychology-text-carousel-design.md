@@ -99,9 +99,11 @@ For an ordinary psychology post:
 
 For a learning-series lesson, the existing plan/review/exact-confirmation and
 explicit lesson-selection flow is unchanged. The frozen catalog now owns the
-carousel plan as part of the controlled lesson template. `guide-post`, runtime,
-artifact receipt, and offline evaluation all reconstruct the same plan from the
-selected series/version/lesson.
+carousel plan as part of the controlled lesson template. `guide-post`
+reconstructs that contract only to expose `page_count` / `ordered_roles`;
+runtime, artifact receipt, and offline evaluation reconstruct the exact pages
+from the selected series/version/lesson. The guide response does not expose
+`slides` or page copy.
 
 ## Rendering and publication
 

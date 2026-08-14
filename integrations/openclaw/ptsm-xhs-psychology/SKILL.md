@@ -198,13 +198,16 @@ invent a seventh lesson or substitute a free scene. The roadmap is intentionally
 If the user chooses a lesson, call `guide-post` again with its returned
 `lesson_id` and returned curriculum version, then show the selected direction and
 image recommendation. Do not expose `source_refs`, raw research, URLs, or
-course-contract JSON. The selected response owns the catalog-owned image plan,
-approved title/cover hook, and every carousel page.
+course-contract JSON. PTSM owns the catalog-approved title/cover hook, image
+plan, and every carousel page; the guide response exposes only the bounded
+carousel structure needed before the run.
 
 historic controlled-template-v1 curricula keep their immutable single-card
 contract. builtin and newly confirmed v2 curricula return an exact
-`psychology_text_card_v1` carousel. Only show carousel pages returned by PTSM.
-Never write, rewrite, split, reorder, or fill a carousel page in OpenClaw.
+`psychology_text_card_v1` carousel. Show only the PTSM-returned `page_count` and
+`ordered_roles` before the run. Do not claim that `guide-post` returned `slides`
+or page copy. Never write, rewrite, split, reorder, or fill a carousel page in
+OpenClaw.
 
 If PTSM returns `topic_guidance_required`, display the returned catalog lesson
 directions and wait for the user's exact lesson confirmation before retrying
@@ -327,7 +330,7 @@ recommendation; do not claim a direction is proven until real metrics support it
 - Do not invent, expand, or replace PTSM-returned growth-oriented psychology direction(s), including `relationship_mixed_signal_camp_vote`, `social_battery_cancel_plan_boundary`, or `after_hours_message_body_alarm`; only display them when PTSM returns them.
 - Do not invent, expand, or replace PTSM-returned format recommendation; only display `format_recommendation` when PTSM returns it.
 - Do not invent, expand, or replace PTSM-returned image recommendation; only display `topic_guidance.image_recommendation` when PTSM returns it.
-- Only show carousel pages returned by PTSM. Never write, rewrite, split, reorder, or fill a carousel page; one carousel represents one topic.
+- Show only the PTSM-returned `page_count` and `ordered_roles`; do not claim that `guide-post` returned `slides` or page copy. Never write, rewrite, split, reorder, or fill a carousel page; one carousel represents one topic.
 - Do not invent views, likes, saves, comments, shares, interaction rates, or uplift claims. Use `xhs-record-metrics` / `xhs-metrics-report` only with real supplied metrics.
 - If `run-playbook --caller openclaw` returns `topic_guidance_required`, show the directions and call `run-playbook` again only after direction confirmation with `--guidance-ack`.
 - Keep psychology safety boundaries intact: no diagnosis, no treatment promises, no medication advice, and crisis or persistent impairment should be redirected to professional support.

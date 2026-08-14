@@ -65,7 +65,7 @@ This exercises:
 - **Executor**: DeepSeek LLM generates title, image_text, body, hashtags from scene + persona + planner + static skills + local pattern context + recent memory context. XHS prompts use `xhs_compact_native_v1`: a concrete human/scene entry, 2–4 short beats, one domain-usable detail, and a natural combined save/reply opening inside the playbook’s compact length band—not four fixed正文 moves.
 - **Reflector**: enforces required rules such as `#发疯文学`, configured deterministic quality rules such as rejecting generic titles, requiring a comment/copyable mechanic, keeping正文 inside the playbook length band, and blocking mental-health/medical jokes. Light positive closings like `也算` are recommended style, not a mandatory phrase gate. Passes to finalize, or retries up to max_attempts.
 
-Review `content_review`, `content_review.image_plan`, and the final正文. If content and image strategy look good, proceed to real publish. When the planned style is `wechat_chat`, check that the visible text is a short content-only transcript rather than a full phone screenshot.
+Review `content_review`, `content_review.image_plan`, and the final正文. If content and image strategy look good, proceed to real publish. When the planned style is `wechat_chat`, check that the visible text is a short content-only transcript rather than a full phone screenshot. For `modern_psychology_post`, a default `text_carousel` plan must contain 4–7 ordered semantic slides for one topic; the first cover remains low-density and inner pages contain bounded short lines.
 
 ### Step 3 — Real Publish
 
@@ -104,9 +104,9 @@ With `--wait-for-publish-status`, PTSM retries `search_feeds` title match for ~8
 
 #### What happens in both paths
 
-1. **Image generation**: Auto-triggered when `publish_mode=mcp-real`, no `--publish-image-path` is provided, and `--no-auto-generate-image` is not set. Operator `--local-image-style` can actively choose `note_card`, `iphone_notes`, or `wechat_chat`; otherwise `final_content.image_plan` from `xhs_image_strategy` can choose `local_social_screenshot` or provider image. If neither the operator nor the LLM chooses a route, PTSM uses the configured image provider when available, then the local renderer. The provider prompt incorporates scene, title, image_text, body summary, persona, and runtime trend context, but no hashtags or tag text are added to the image. Local renderer payloads additionally preserve local screenshot metadata from `final_content.image_plan`, such as `theme`, `chat_title`, and `chat_times`. Output lands in `outputs/generated_images/`.
+1. **Image generation**: Auto-triggered when `publish_mode=mcp-real`, no `--publish-image-path` is provided, and `--no-auto-generate-image` is not set. Ordinary single-image routes keep the existing operator/provider/local selection. A validated `modern_psychology_post` text carousel is different: it always uses local `psychology_text_card_v1`, renders every ordered slide under a runtime-owned staging directory, verifies all PNG/page hashes, writes `manifest.json`, and atomically promotes only the complete set under `outputs/generated_images/`. An explicit ordinary-post `--local-image-style note_card|iphone_notes|wechat_chat` intentionally bypasses the carousel and keeps the legacy single-cover path; learning-series overrides remain forbidden.
 
-2. **Watermark removal**: Real publish with any final image path always runs OpenCV Canny edge detection + TELEA inpainting to remove residual watermarks in image corners. Result written to `*-nowm.png` and recorded under `watermark_removal`. Dry-run image experiments only run this step when `WATERMARK_REMOVAL_ENABLED=true`.
+2. **Watermark removal**: PTSM local-renderer output has no provider watermark and records a group-level skip; this includes every page in a psychology carousel. Provider/LLM output and manual image paths still run OpenCV Canny edge detection + TELEA inpainting before real publish. Dry-run provider/manual experiments only run this step when `WATERMARK_REMOVAL_ENABLED=true`.
 
 3. **Publish**: XHS MCP `publish_content` is called with title, body, images, tags, and visibility. The side-effect ledger (`.ptsm/agent_runtime/side-effects.json`) records successful publishes keyed by `thread_id` — re-running with the same thread_id will skip duplicate publish.
 
@@ -139,7 +139,7 @@ uv run python -m ptsm.bootstrap xhs-open-browser \
 | `--auto-generate-image` | Force image generation even in dry-run |
 | `--no-auto-generate-image` | Disable automatic image generation, including real publish auto-fill |
 | `--publish-image-path <path>` | Use one or more existing local image files |
-| `--local-image-style note_card|iphone_notes|wechat_chat` | Actively choose the deterministic local cover style |
+| `--local-image-style note_card|iphone_notes|wechat_chat` | Actively choose the deterministic legacy single-cover style; ordinary psychology only, never learning-series |
 | `--publish-visibility "仅自己可见"` | Private post — safe for review before going public |
 | `--publish-visibility "公开"` | Public post — visible to all, supports auto-verification |
 | `--wait-for-publish-status` | Block until publish status is auto-verified or times out |
@@ -184,13 +184,31 @@ These local styles render iPhone Notes-like and WeChat chat transcript-like cove
 
 `wechat_chat` now renders a content-only chat transcript: 无头部、无底部、无头像, with speaker labels beside the bubbles. It is meant for scenes where the first-screen asset is the actual chat exchange, copyable reply, or comment prompt. The renderer reads explicit structured messages from `chat_messages` / `messages`, or speaker-prefixed body lines such as `同事：刚看见热搜` and `我：我现在啥事都发文字确认`; this prevents a chat cover from collapsing into one generic bubble. `theme=dark` switches the transcript to a dark background, `chat_times` inserts up to three timestamp labels, and `chat_title` / `conversation_title` can label incoming messages when the body uses generic speakers. `status_time`, `unread_count`, and `show_avatars` are preserved in the payload for audit compatibility, but the current content-only renderer does not draw phone chrome or avatar blocks.
 
+`psychology_text_card_v1` is not a `--local-image-style` choice. It is the local-only automatic
+carousel renderer selected by a validated psychology `image_plan`. The parent plan keeps
+`backend/style/role/text_density/max_text_units/cover_text_strategy/reason/prompt_focus` and adds
+`carousel_style` plus `slides`; each slide has exactly `slide_id`, one-based contiguous `order`,
+`role`, `headline`, and `body_lines`. A set contains 4–7 pages, starts with `cover_hook`, and uses
+semantic inner roles such as scene, light mechanism, save tool, boundary and comment prompt. It
+does not split the final body or invoke another model.
+
+Successful output is an immutable directory named from the output stem and content-addressed set id.
+Treat its `manifest.json` as authoritative: `pages.order` must match `generated_image_paths`, all files
+must be regular/readable PNGs, and manifest/page/file hashes must match before publish. If generation,
+manifest verification or asset-ledger projection fails, the run status is
+`psychology_carousel_generation_failed`; no partial page reaches watermark processing or XHS MCP.
+If only the later external publish fails, keep the committed set for retry.
+
 ### Watermark Removal
 
 ```env
 WATERMARK_REMOVAL_ENABLED=true
 ```
 
-Real publish with final images always runs this post-processing step before publishing, regardless of `WATERMARK_REMOVAL_ENABLED`. The env flag controls whether dry-run image experiments also preview the same cleanup.
+Real publish runs this post-processing step for provider/LLM and manual images regardless of
+`WATERMARK_REMOVAL_ENABLED`. PTSM local-renderer output, including every page of
+`psychology_text_card_v1`, records `skipped_for_local_renderer` and is passed through unchanged. The
+env flag controls whether dry-run provider/manual image experiments also preview cleanup.
 
 The remover uses OpenCV to detect text-like patterns in image corners (Canny edge detection → contour filling → mask dilation) and remove them via TELEA inpainting. Results are written to `*-nowm.png` and recorded in the artifact under `watermark_removal`.
 
@@ -284,7 +302,8 @@ uv run python -m ptsm.bootstrap guide-post \
 uv run python -m ptsm.bootstrap run-playbook \
   --scene "下班后还在反复复盘白天一句话" \
   --account-id acct-psychology-local \
-  --playbook-id modern_psychology_post
+  --playbook-id modern_psychology_post \
+  --auto-generate-image
 
 # Cross-domain topic guidance dry-runs
 # JSON directions include `selection_policy`, `open_direction_ids`, the compatible
@@ -375,6 +394,12 @@ uv run python -m ptsm.bootstrap run-playbook \
   --playbook-id reddit_curation_daily_post
 ```
 
+The ordinary psychology guide now returns `format_archetype=text_carousel`,
+`local_style=psychology_text_card_v1`, `page_count.min=4`, `page_count.max=7`, ordered semantic
+roles, and `command_hint=--auto-generate-image`. There is no page-copy or carousel-style CLI flag.
+Use an explicit `--local-image-style note_card|iphone_notes|wechat_chat` only when the ordinary post
+really needs one legacy cover instead of the default carousel.
+
 ### AI Tech Evidence Files
 
 AI 科技是唯一不能用 `--scene` 直接生成的 playbook。先选 mode，再在本地写 JSON
@@ -426,7 +451,10 @@ uv run python -m ptsm.bootstrap run-playbook \
 心理学学习系列不使用自由 `--scene`。builtin `after_work_rumination` 保持现有 catalog flow；用户
 自定义专题则必须先经过 PTSM plan → review → exact confirmation，不能把热点、operator idea、URL 或
 研究笔记直接传入课程 run。普通心理学场景帖仍走上面的通用 psychology guide flow。受控系列的标题、
-正文、封面和图片计划都不能手改或加 `--local-image-style` / `--publish-image-path`。
+正文、封面和图片计划都不能手改或加 `--local-image-style` / `--publish-image-path`。历史 confirmed
+controlled-template-v1 保持原单卡；builtin 与新确认 custom revision 使用 template v2 的 7 张 catalog-owned
+`psychology_text_card_v1` pages。guide 只返回 `page_count` / `ordered_roles` 结构；wrapper/operator
+不得声称拿到了 `slides` 或 page copy，也不能自行补写页面。
 
 #### Choose a publication mode first
 
@@ -481,7 +509,8 @@ catalog 或指定 catalog-root。proposal JSON 是 `series.lessons` plus top-lev
 `series.publication_plan`、`series.recommended_next_lesson` 和 `series.production_progress`；其 `kind` is `operator_content_production`。recommendation 是建议，不会自动选课或生成。用户明确选择 lesson（也可非推荐）
 时，第二次 `guide-post` 必须带 returned explicit frozen `--psychology-curriculum-version`，只使用该响应返回的
 matching direction id 进行 dry-run。progress 不是读者学习进度，也不代表自动发布；仅 safe completed
-artifact/receipt 后才更新。缺失或篡改 catalog/receipt 会 fail closed，可用 `eval-artifact --artifact <path>`
+artifact/receipt 后才更新；若请求图片，还必须先有完整 committed carousel。不请求图片时仍沿用既有
+safe content-artifact 时机。缺失或篡改 catalog/receipt 会 fail closed，可用 `eval-artifact --artifact <path>`
 复核。builtin roadmap 不含这些 custom `series.publication_plan`、`series.recommended_next_lesson` 或
 `series.production_progress` 字段。
 
@@ -514,8 +543,15 @@ uv run python -m ptsm.bootstrap run-playbook \
   --psychology-lesson-id "<chosen lesson_id>" \
   --psychology-curriculum-version "<returned curriculum_version>" \
   --topic-direction-id "<matching returned direction id>" \
-  --publish-mode dry-run --eval
+  --publish-mode dry-run --eval --auto-generate-image
 ```
+
+Current v2 learning carousel still records the page-aware operational asset ledger. Learning
+response/artifact deliberately keeps only safe carousel evidence:
+`status`, `renderer`, `carousel_style`, `image_count`, and `manifest_sha256` on success; it never
+stores ledger details, local paths or page text. A trusted local operator can inspect the committed set under
+`outputs/generated_images/`, follow its `manifest.json` order, and cross-check the local generated-image asset ledger. `psychology_carousel_generation_failed`
+means no page was published and no production progress was advanced.
 
 #### Custom storage failures and production progress
 
@@ -532,7 +568,9 @@ progress rename/durability barrier 报错并返回 `psychology_learning_progress
 #### Builtin catalog
 
 未选 lesson 的查询会返回 `selection_required`，不会默认第一课；课程目录拥有该课的
-catalog-owned image plan。
+catalog-owned image plan。`--psychology-curriculum-version 1` 选择的是 builtin frozen catalog；
+该 catalog 当前用的是 controlled template v2，因此会渲染 7 张 cards。不要把 curriculum version 与
+controlled template version 混为一谈。
 
 ```bash
 # 目录查询不会创建 run，也不会读取 live topic research；会返回 selection_required。
@@ -562,12 +600,13 @@ uv run python -m ptsm.bootstrap run-playbook \
   --psychology-lesson-id notice_the_loop \
   --psychology-curriculum-version 1 \
   --topic-direction-id psychology_learning_after_work_rumination_notice_the_loop \
-  --publish-mode dry-run --eval
+  --publish-mode dry-run --eval --auto-generate-image
 ```
 
 `psychology_learning_required`、`psychology_learning_invalid`、
 `psychology_learning_topic_direction_invalid`、`psychology_learning_draft_invalid` 或
-`psychology_learning_artifact_invalid` 都是安全停点；修正 catalog selection 后重新开始，
+`psychology_learning_artifact_invalid` 都是安全停点；图片 set 失败则返回
+`psychology_carousel_generation_failed`。修正 catalog selection 或本地 set 条件后重新开始，
 不要在同一请求中加自由场景绕过它。成功 artifact 只含 series/lesson receipt 和 opaque
 references，可用 `eval-artifact` 复核。
 
