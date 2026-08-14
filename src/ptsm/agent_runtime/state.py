@@ -39,3 +39,4 @@ class ExecutionState(TypedDict, total=False):
     content_review: dict[str, Any]
     ai_tech_executor_errors: list[str]
     psychology_learning_executor_errors: list[str]
+    psychology_carousel_executor_errors: list[str]

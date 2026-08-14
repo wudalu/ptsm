@@ -7,6 +7,7 @@ from ptsm.agent_runtime.state import ExecutionState
 ContentQualityJudge = Callable[[ExecutionState, dict[str, object]], dict[str, object]]
 AiTechDraftGate = Callable[[ExecutionState, dict[str, object]], list[str]]
 PsychologyLearningDraftGate = Callable[[ExecutionState, dict[str, object]], list[str]]
+PsychologyCarouselDraftGate = Callable[[ExecutionState, dict[str, object]], list[str]]
 
 
 def build_reflector_node(
@@ -15,6 +16,7 @@ def build_reflector_node(
     content_quality_judge: ContentQualityJudge | None = None,
     ai_tech_draft_gate: AiTechDraftGate | None = None,
     psychology_learning_draft_gate: PsychologyLearningDraftGate | None = None,
+    psychology_carousel_draft_gate: PsychologyCarouselDraftGate | None = None,
 ):
     def reflector(state: ExecutionState) -> ExecutionState:
         rules = state["reflection_rules"]
@@ -44,11 +46,26 @@ def build_reflector_node(
                 for error in psychology_executor_errors
                 if str(error).strip()
             )
+        psychology_carousel_executor_errors = state.get(
+            "psychology_carousel_executor_errors"
+        )
+        if isinstance(psychology_carousel_executor_errors, list):
+            missing.extend(
+                str(error).strip()
+                for error in psychology_carousel_executor_errors
+                if str(error).strip()
+            )
         quality_eval: dict[str, object] | None = None
         if not missing and ai_tech_draft_gate is not None:
             missing.extend(ai_tech_draft_gate(state, draft))
         if not missing and psychology_learning_draft_gate is not None:
             missing.extend(psychology_learning_draft_gate(state, draft))
+        if (
+            not missing
+            and psychology_carousel_draft_gate is not None
+            and psychology_learning_draft_gate is None
+        ):
+            missing.extend(psychology_carousel_draft_gate(state, draft))
         if (
             not missing
             and content_quality_judge is not None

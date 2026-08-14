@@ -4,7 +4,7 @@ import hashlib
 import os
 from pathlib import Path
 import re
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from langgraph.checkpoint.memory import InMemorySaver
 from pydantic import ValidationError
@@ -23,6 +23,7 @@ from ptsm.domain.ai_tech_content import (
     parse_ai_tech_runtime_contract,
     validate_ai_tech_draft_contract,
 )
+from ptsm.domain.psychology_carousel import normalize_psychology_carousel_plan
 from ptsm.domain.psychology_learning import (
     PSYCHOLOGY_LEARNING_MODE,
     PsychologyLearningEvidenceManifest,
@@ -59,6 +60,10 @@ AI_TECH_PLAYBOOK_ID = "ai_tech_daily_post"
 MODERN_PSYCHOLOGY_PLAYBOOK_ID = "modern_psychology_post"
 DEFAULT_RUNTIME_STATE_DIR = Path(".ptsm") / "agent_runtime"
 _SAFE_AI_RUNTIME_IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
+PsychologyCarouselDraftGate = Callable[
+    [ExecutionState, dict[str, object]],
+    list[str],
+]
 
 
 class _BoundAiTechWorkflow:
@@ -143,6 +148,33 @@ class _BoundPsychologyLearningWorkflow:
             ),
             **kwargs,
         )
+
+
+class _BoundOrdinaryPsychologyWorkflow:
+    """Drop caller-supplied graph internals before the initial checkpoint."""
+
+    def __init__(self, *, workflow: Any) -> None:
+        self._workflow = workflow
+
+    def invoke(
+        self,
+        input: Mapping[str, Any] | None,
+        config: Mapping[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        result = self._workflow.invoke(
+            _build_ordinary_psychology_workflow_input(input or {}),
+            config=config,
+            **kwargs,
+        )
+        return dict(result)
+
+    def get_state_history(
+        self,
+        config: Mapping[str, Any] | None,
+        **kwargs: Any,
+    ) -> Any:
+        return self._workflow.get_state_history(config, **kwargs)
 
 
 def build_playbook_workflow(
@@ -284,6 +316,12 @@ def build_playbook_workflow(
         if normalized_psychology_learning_contract is not None
         else None
     )
+    psychology_carousel_draft_gate = (
+        _build_psychology_carousel_draft_gate()
+        if playbook_id == MODERN_PSYCHOLOGY_PLAYBOOK_ID
+        and normalized_psychology_learning_contract is None
+        else None
+    )
     workflow = build_execution_graph(
         ingest=build_ingest_node(drafting_provider=drafting_provider),
         planner=build_planner_node(
@@ -316,12 +354,18 @@ def build_playbook_workflow(
                 if psychology_learning_draft_gate is not None
                 else None
             ),
+            psychology_carousel_draft_gate=(
+                (lambda draft: psychology_carousel_draft_gate({}, draft))
+                if psychology_carousel_draft_gate is not None
+                else None
+            ),
         ),
         reflector=build_reflector_node(
             max_attempts=max_attempts,
             content_quality_judge=content_quality_judge,
             ai_tech_draft_gate=ai_tech_draft_gate,
             psychology_learning_draft_gate=psychology_learning_draft_gate,
+            psychology_carousel_draft_gate=psychology_carousel_draft_gate,
         ),
         finalize=build_finalize_node(
             execution_memory=execution_memory,
@@ -334,6 +378,7 @@ def build_playbook_workflow(
             psychology_learning_preflight_capability=(
                 psychology_learning_preflight_capability
             ),
+            psychology_carousel_draft_gate=psychology_carousel_draft_gate,
             expected_artifact_root_identity=expected_artifact_root_identity,
         ),
         checkpointer=checkpointer or InMemorySaver(),
@@ -348,6 +393,8 @@ def build_playbook_workflow(
             workflow=workflow,
             contract=normalized_psychology_learning_contract,
         )
+    if playbook_id == MODERN_PSYCHOLOGY_PLAYBOOK_ID:
+        return _BoundOrdinaryPsychologyWorkflow(workflow=workflow)
     return workflow
 
 
@@ -404,6 +451,33 @@ def _build_psychology_learning_draft_gate(
         return validate_psychology_learning_draft_contract(contract, draft)
 
     return gate
+
+
+def _build_psychology_carousel_draft_gate() -> PsychologyCarouselDraftGate:
+    """Validate optional ordinary psychology slides without exposing bad text."""
+
+    def gate(_: ExecutionState, draft: dict[str, object]) -> list[str]:
+        raw_plan = draft.get("image_plan")
+        if not isinstance(raw_plan, Mapping) or not _is_psychology_carousel_plan(
+            raw_plan
+        ):
+            return []
+        try:
+            draft["image_plan"] = normalize_psychology_carousel_plan(raw_plan)
+        except (TypeError, ValueError):
+            return ["invalid psychology carousel plan"]
+        return []
+
+    return gate
+
+
+def _is_psychology_carousel_plan(raw_plan: Mapping[str, Any]) -> bool:
+    return (
+        "slides" in raw_plan
+        or "carousel_style" in raw_plan
+        or raw_plan.get("style") == "psychology_text_card"
+        or raw_plan.get("role") == "text_carousel"
+    )
 
 
 def _resolve_verified_psychology_learning_catalog_contract(
@@ -503,6 +577,21 @@ def _build_psychology_learning_workflow_input(
         "platform": "xiaohongshu",
         "account_id": account_id,
     }
+
+
+def _build_ordinary_psychology_workflow_input(
+    supplied: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Allow user inputs while excluding draft and control-state injection."""
+    safe_input = {
+        key: supplied[key]
+        for key in ("scene", "platform", "account_id")
+        if key in supplied
+    }
+    topic_selection = supplied.get("topic_selection")
+    if isinstance(topic_selection, dict):
+        safe_input["topic_selection"] = dict(topic_selection)
+    return safe_input
 
 
 def _build_psychology_learning_runtime_scene_from_contract(
@@ -621,6 +710,7 @@ def build_finalize_node(
     psychology_learning_manifest: Mapping[str, Any] | None = None,
     psychology_learning_catalog_receipt: Mapping[str, Any] | None = None,
     psychology_learning_preflight_capability: _PsychologyLearningPreflightCapability | None = None,
+    psychology_carousel_draft_gate: PsychologyCarouselDraftGate | None = None,
     expected_artifact_root_identity: os.stat_result | None = None,
 ):
     normalized_ai_tech_manifest = (
@@ -689,6 +779,14 @@ def build_finalize_node(
                     psychology_learning_preflight_capability
                 ),
             )
+        elif psychology_carousel_draft_gate is not None:
+            validation_errors = psychology_carousel_draft_gate({}, final_content)
+            if validation_errors:
+                return {
+                    "status": "psychology_carousel_draft_invalid",
+                    "reflection_decision": "fail",
+                    "reflection_feedback": "; ".join(validation_errors),
+                }
 
         content_review = _build_content_review(state)
         activated_skills = list(state.get("activated_skills", []))
@@ -820,7 +918,9 @@ def _build_psychology_learning_receipt(
             "series_id": normalized_contract["series_id"],
             "lesson_id": normalized_contract["lesson_id"],
             "validator": "psychology_learning_draft_contract",
-            "validator_version": "1",
+            "validator_version": normalized_contract[
+                "controlled_template_version"
+            ],
             "errors": [],
         },
     }
@@ -859,9 +959,11 @@ def _build_content_review(state: ExecutionState) -> dict[str, object]:
     title = str(final_content.get("title", "")).strip()
     image_text = str(final_content.get("image_text", "")).strip()
     body = str(final_content.get("body", "")).strip()
-    combined = f"{title}\n{image_text}\n{body}"
+    carousel_text = _collect_carousel_review_text(final_content)
+    combined = f"{title}\n{image_text}\n{body}\n{carousel_text}"
+    interaction_text = f"{body}\n{carousel_text}"
     comment_trigger = any(
-        term in body
+        term in interaction_text
         for term in (
             "评论区",
             "接一句",
@@ -996,6 +1098,8 @@ def _build_image_plan_review(final_content: dict[str, object]) -> dict[str, obje
     raw_plan = final_content.get("image_plan")
     if not isinstance(raw_plan, dict):
         return None
+    if _is_psychology_carousel_plan(raw_plan):
+        return normalize_psychology_carousel_plan(raw_plan)
     allowed_fields = (
         "backend",
         "style",
@@ -1012,6 +1116,30 @@ def _build_image_plan_review(final_content: dict[str, object]) -> dict[str, obje
         if raw_plan.get(field) is not None and str(raw_plan[field]).strip()
     }
     return image_plan or None
+
+
+def _collect_carousel_review_text(final_content: dict[str, object]) -> str:
+    raw_plan = final_content.get("image_plan")
+    if not isinstance(raw_plan, dict):
+        return ""
+    raw_slides = raw_plan.get("slides")
+    if not isinstance(raw_slides, (list, tuple)):
+        return ""
+    text_units: list[str] = []
+    for raw_slide in raw_slides:
+        if not isinstance(raw_slide, dict):
+            continue
+        headline = raw_slide.get("headline")
+        if isinstance(headline, str) and headline.strip():
+            text_units.append(headline.strip())
+        body_lines = raw_slide.get("body_lines")
+        if isinstance(body_lines, (list, tuple)):
+            text_units.extend(
+                line.strip()
+                for line in body_lines
+                if isinstance(line, str) and line.strip()
+            )
+    return "\n".join(text_units)
 
 
 def _build_image_form_review(state: ExecutionState) -> dict[str, object] | None:

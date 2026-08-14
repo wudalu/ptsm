@@ -7,6 +7,7 @@ from ptsm.domain.ai_tech_content import (
     parse_ai_tech_evidence_bundle,
     validate_ai_tech_draft_contract,
 )
+from ptsm.domain.psychology_carousel import normalize_psychology_carousel_plan
 from ptsm.domain.psychology_learning import (
     render_psychology_learning_draft,
     resolve_psychology_learning_selection,
@@ -15,6 +16,7 @@ from ptsm.domain.psychology_learning import (
 from ptsm.infrastructure.evaluations.content_quality_gate import (
     build_content_quality_judge_gate,
 )
+from ptsm.infrastructure.llm.factory import DeterministicDraftBackend
 
 
 class FakeJudgeBackend:
@@ -112,6 +114,31 @@ def _bound_psychology_learning_gate(contract: dict[str, object]):
     return lambda _state, draft: validate_psychology_learning_draft_contract(
         contract, draft
     )
+
+
+def _ordinary_psychology_carousel_draft() -> dict[str, object]:
+    return DeterministicDraftBackend().generate(
+        scene="下班后身体还在工位，需要5分钟恢复信号",
+        planner_prompt="modern_psychology_post 现代心理困境观察",
+        skill_contents=[
+            "# Psychology Style\n#心理学，使用具体场景和低风险工具。",
+            "# XHS Image Strategy\n输出 image_plan。",
+        ],
+    )
+
+
+def _ordinary_psychology_carousel_gate(
+    _state: dict[str, object],
+    draft: dict[str, object],
+) -> list[str]:
+    image_plan = draft.get("image_plan")
+    if not isinstance(image_plan, dict) or "slides" not in image_plan:
+        return []
+    try:
+        normalize_psychology_carousel_plan(image_plan)
+    except ValueError:
+        return ["invalid psychology carousel plan"]
+    return []
 
 
 def test_reflector_accepts_required_hashtag_without_optional_phrase() -> None:
@@ -430,3 +457,51 @@ def test_reflector_does_not_retry_a_catalog_lesson_on_open_post_judge_feedback()
 
     assert result["reflection_decision"] == "finalize"
     assert not judge_calls
+
+
+def test_reflector_preserves_a_valid_ordinary_psychology_carousel() -> None:
+    draft = _ordinary_psychology_carousel_draft()
+    node = build_reflector_node(
+        max_attempts=2,
+        psychology_carousel_draft_gate=_ordinary_psychology_carousel_gate,
+    )
+
+    result = node(
+        {
+            "attempt_count": 1,
+            "reflection_rules": {"required_hashtag": "#心理学"},
+            "draft_content": draft,
+        }
+    )
+
+    assert result["reflection_decision"] == "finalize"
+    assert result["final_content"] == draft
+
+
+def test_reflector_keeps_learning_exact_gate_authoritative_over_ordinary_gate() -> None:
+    contract = _psychology_learning_contract(lesson_id="facts_and_stories")
+    ordinary_gate_calls: list[dict[str, object]] = []
+
+    def reject_as_ordinary(
+        _state: dict[str, object],
+        draft: dict[str, object],
+    ) -> list[str]:
+        ordinary_gate_calls.append(draft)
+        return ["ordinary carousel policy must not replace catalog exactness"]
+
+    node = build_reflector_node(
+        max_attempts=2,
+        psychology_carousel_draft_gate=reject_as_ordinary,
+        psychology_learning_draft_gate=_bound_psychology_learning_gate(contract),
+    )
+
+    result = node(
+        {
+            "attempt_count": 1,
+            "reflection_rules": {},
+            "draft_content": render_psychology_learning_draft(contract),
+        }
+    )
+
+    assert result["reflection_decision"] == "finalize"
+    assert ordinary_gate_calls == []

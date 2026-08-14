@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -10,6 +11,7 @@ from ptsm.config.settings import Settings
 from ptsm.domain.ai_tech_content import parse_ai_tech_evidence_bundle, validate_ai_tech_draft
 from ptsm.domain.psychology_learning import (
     list_psychology_learning_series,
+    render_psychology_learning_draft,
     resolve_psychology_learning_selection,
     validate_psychology_learning_draft_contract,
 )
@@ -17,6 +19,7 @@ from ptsm.evaluations.contracts import EvalTarget
 from ptsm.evaluations.contracts_eval import contract_playbook_node_contract
 from ptsm.evaluations.playbook_contracts import load_playbook_eval_contract
 from ptsm.infrastructure.llm.factory import (
+    DeepSeekDraftBackend,
     DeterministicDraftBackend,
     _build_deepseek_hard_requirements,
     _parse_json_payload,
@@ -131,6 +134,52 @@ def test_parse_json_payload_preserves_image_role_and_density() -> None:
     assert image_plan["max_text_units"] == "3"
     assert image_plan["cover_text_strategy"] == "封面只放一个问题和三条短句"
     assert image_plan["prompt_focus"] == "会议复盘急救卡"
+
+
+def test_parse_json_payload_preserves_strict_psychology_carousel_slides() -> None:
+    draft = DeterministicDraftBackend().generate(
+        scene="下班后身体还在工位，需要5分钟恢复信号",
+        planner_prompt="modern_psychology_post 现代心理困境观察",
+        skill_contents=[
+            "# Psychology Style\n#心理学，使用具体场景和低风险工具。",
+            "# XHS Image Strategy\n输出 image_plan。",
+        ],
+    )
+
+    payload = _parse_json_payload(json.dumps(draft, ensure_ascii=False))
+
+    assert payload["image_plan"] == draft["image_plan"]
+    assert all(
+        set(slide) == {"slide_id", "order", "role", "headline", "body_lines"}
+        for slide in payload["image_plan"]["slides"]
+    )
+
+
+@pytest.mark.parametrize(
+    "tamper",
+    (
+        lambda plan: plan["slides"][1].update({"source_ref": "source:private"}),
+        lambda plan: plan["slides"][1].update({"order": 7}),
+        lambda plan: plan["slides"][1].update({"body_lines": "整段正文"}),
+        lambda plan: plan.pop("slides"),
+    ),
+)
+def test_parse_json_payload_rejects_malformed_psychology_carousel_slides(
+    tamper,
+) -> None:
+    draft = DeterministicDraftBackend().generate(
+        scene="下班后身体还在工位，需要5分钟恢复信号",
+        planner_prompt="modern_psychology_post 现代心理困境观察",
+        skill_contents=[
+            "# Psychology Style\n#心理学，使用具体场景和低风险工具。",
+            "# XHS Image Strategy\n输出 image_plan。",
+        ],
+    )
+    malformed = deepcopy(draft)
+    tamper(malformed["image_plan"])
+
+    with pytest.raises(ValueError):
+        _parse_json_payload(json.dumps(malformed, ensure_ascii=False))
 
 
 def test_deterministic_backend_emits_local_chat_image_plan_when_strategy_skill_loaded() -> None:
@@ -1323,6 +1372,45 @@ def test_factory_deepseek_prompt_hardens_required_hashtag_without_mandating_reco
     assert "hashtags 数组必须包含 '#发疯文学'" in user_prompt
 
 
+def test_deepseek_requests_semantic_carousel_only_for_ordinary_psychology() -> None:
+    psychology_requirements = _build_deepseek_hard_requirements(
+        scene="下班后身体还在工位",
+        extra_context=(
+            "modern_psychology_post\n# Psychology Style\n"
+            "# XHS Image Strategy\n输出 image_plan。"
+        ),
+        runtime_context="",
+    )
+    unrelated_requirements = _build_deepseek_hard_requirements(
+        scene="会后礼貌跟进",
+        extra_context=(
+            "daily_english_post\n# Daily English Style\n"
+            "# XHS Image Strategy\n输出 image_plan。"
+        ),
+        runtime_context="",
+    )
+
+    assert "psychology_text_card_v1" in psychology_requirements
+    assert "4-7 张" in psychology_requirements
+    assert "slide_id、order、role、headline、body_lines" in psychology_requirements
+    assert "psychology_text_card_v1" not in unrelated_requirements
+
+
+def test_deepseek_does_not_route_reddit_psychology_tags_to_psychology_carousel() -> None:
+    requirements = _build_deepseek_hard_requirements(
+        scene="英文讨论里的关系压力",
+        extra_context=(
+            "# Reddit英文讨论转译 Planner\n"
+            "心理相关内容不诊断；标签可用 #热点观察、#心理学、#情绪管理。\n"
+            "# XHS Image Strategy\n输出 image_plan。"
+        ),
+        runtime_context="",
+    )
+
+    assert "psychology_text_card_v1" not in requirements
+    assert "style 只能选 wechat_chat、iphone_notes 或 note_card" in requirements
+
+
 def test_factory_includes_persona_prompt_in_deepseek_context() -> None:
     settings = Settings.model_construct(
         default_model_provider="deepseek",
@@ -1745,6 +1833,29 @@ def test_deterministic_backend_builds_the_exact_bound_psychology_learning_lesson
     assert bundle.runtime_contract["approved_explanation"] in draft["body"]
     assert bundle.runtime_contract["micro_exercise"] in draft["body"]
     assert "source:" not in json.dumps(draft, ensure_ascii=False)
+
+
+def test_hosted_backend_returns_catalog_owned_learning_carousel_without_model_rewrite() -> None:
+    bundle = resolve_psychology_learning_selection(
+        series_id="after_work_rumination",
+        lesson_id="notice_the_loop",
+    )
+
+    class ModelMustNotRun:
+        def invoke(self, _messages):
+            pytest.fail("a bound learning carousel must not be rewritten by the model")
+
+    draft = DeepSeekDraftBackend(ModelMustNotRun()).generate(
+        scene="任意输入都不能替换目录页",
+        reflection_feedback="重写第二张卡片",
+        planner_prompt="# Modern Psychology Planner",
+        skill_contents=["# Psychology Style"],
+        runtime_skill_contents=[_psychology_learning_runtime_context()],
+    )
+
+    assert draft == render_psychology_learning_draft(bundle.runtime_contract)
+    assert draft["image_plan"]["carousel_style"] == "psychology_text_card_v1"
+    assert draft["image_plan"]["slides"]
 
 
 def test_deepseek_learning_requirements_preserve_only_bound_lesson_fields() -> None:

@@ -14,6 +14,7 @@ from langchain_core.utils.json import parse_and_check_json_markdown, parse_json_
 
 from ptsm.config.settings import Settings
 from ptsm.domain.ai_tech_content import parse_ai_tech_runtime_contract
+from ptsm.domain.psychology_carousel import normalize_psychology_carousel_plan
 from ptsm.domain.psychology_learning import (
     parse_psychology_learning_runtime_contract,
     render_psychology_learning_draft,
@@ -640,7 +641,17 @@ def _build_deepseek_hard_requirements(
             "必须包含一个具体职场物件或社交对象；必须包含评论区接龙/补充提示；"
             "必须包含可复制句或可保存模板；不得用心理疾病、治疗、医院、用药作为笑点。"
         )
-    if _has_xhs_image_strategy(extra_context):
+    if _is_ordinary_modern_psychology_context(extra_context):
+        requirements.append(
+            "必须额外输出一个心理学文字轮播 image_plan：backend 固定为 local_social_screenshot，"
+            "style 固定为 psychology_text_card，role 固定为 text_carousel，text_density 固定为 medium，"
+            "max_text_units 固定为字符串 4，carousel_style 固定为 psychology_text_card_v1；"
+            "同一主题按语义组织 4-7 张卡片，不得按正文字数机械切页，也不得引入第二次改写。"
+            "slides 必须按发布顺序给出，每页只能包含 slide_id、order、role、headline、body_lines；"
+            "order 从 1 连续递增，第一页必须是 cover_hook，后续从具体场景、轻量机制、可保存工具、"
+            "边界和评论入口中选择；图片文字不得含话题标签、URL、来源定位、诊断、治疗承诺、药物建议或提示词指令。"
+        )
+    elif _has_xhs_image_strategy(extra_context):
         requirements.append(
             "额外输出 image_plan 对象：backend 只能选 local_social_screenshot 或 "
             "provider_image；本地样式 style 只能选 wechat_chat、iphone_notes 或 note_card；"
@@ -915,6 +926,18 @@ def _looks_like_modern_psychology(text: str) -> bool:
     )
 
 
+def _is_ordinary_modern_psychology_context(text: str) -> bool:
+    """Identify the playbook, not a cross-domain psychology hashtag mention."""
+    return any(
+        marker in text
+        for marker in (
+            "modern_psychology_post",
+            "# Modern Psychology Planner",
+            "# 现代心理困境观察 Planner",
+        )
+    )
+
+
 def _looks_like_world_cup(text: str) -> bool:
     return any(
         cue in text
@@ -1002,7 +1025,9 @@ def _normalize_hashtags(raw_hashtags: object) -> list[str]:
     raise ValueError("hashtags must be a list or string")
 
 
-def _normalize_image_plan_payload(raw_plan: dict[str, Any]) -> dict[str, str]:
+def _normalize_image_plan_payload(raw_plan: dict[str, Any]) -> dict[str, Any]:
+    if _is_psychology_carousel_plan(raw_plan):
+        return normalize_psychology_carousel_plan(raw_plan)
     allowed_fields = (
         "backend",
         "style",
@@ -1018,3 +1043,12 @@ def _normalize_image_plan_payload(raw_plan: dict[str, Any]) -> dict[str, str]:
         for field in allowed_fields
         if raw_plan.get(field) is not None and str(raw_plan[field]).strip()
     }
+
+
+def _is_psychology_carousel_plan(raw_plan: Mapping[str, Any]) -> bool:
+    return (
+        "slides" in raw_plan
+        or "carousel_style" in raw_plan
+        or raw_plan.get("style") == "psychology_text_card"
+        or raw_plan.get("role") == "text_carousel"
+    )

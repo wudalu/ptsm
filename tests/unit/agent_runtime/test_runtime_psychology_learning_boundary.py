@@ -20,6 +20,7 @@ from ptsm.config.settings import Settings
 from ptsm.domain.psychology_learning import (
     PsychologyLearningBundle,
     _build_confirmed_psychology_learning_catalog,
+    _build_confirmed_psychology_learning_catalog_for_template,
     build_psychology_learning_catalog_receipt,
     list_psychology_learning_series,
     render_psychology_learning_draft,
@@ -28,6 +29,7 @@ from ptsm.domain.psychology_learning import (
     seal_psychology_learning_preflight_bundle,
 )
 from ptsm.infrastructure.artifacts.file_store import FileArtifactStore
+from ptsm.infrastructure.llm.factory import DeterministicDraftBackend
 from ptsm.infrastructure.memory.store import InMemoryExecutionMemory
 
 
@@ -41,6 +43,18 @@ class CapturingLearningDraftAgent:
     def generate(self, **kwargs: object) -> dict[str, object]:
         self.calls.append(kwargs)
         return dict(self._draft)
+
+
+class SequencedDraftAgent:
+    provider_name = "capturing"
+
+    def __init__(self, drafts: list[dict[str, object]]) -> None:
+        self._drafts = drafts
+        self.calls: list[dict[str, object]] = []
+
+    def generate(self, **kwargs: object) -> dict[str, object]:
+        self.calls.append(kwargs)
+        return deepcopy(self._drafts[min(len(self.calls) - 1, len(self._drafts) - 1)])
 
 
 def _settings() -> Settings:
@@ -65,6 +79,323 @@ def _bundle():
 
 def _valid_draft() -> dict[str, object]:
     return render_psychology_learning_draft(_bundle().runtime_contract)
+
+
+def _ordinary_carousel_draft() -> dict[str, object]:
+    return DeterministicDraftBackend().generate(
+        scene="下班后身体还在工位，需要5分钟恢复信号",
+        planner_prompt="modern_psychology_post 现代心理困境观察",
+        skill_contents=[
+            "# Psychology Style\n#心理学，使用具体场景和低风险工具。",
+            "# XHS Image Strategy\n输出 image_plan。",
+        ],
+    )
+
+
+def test_ordinary_psychology_rejects_unsafe_slides_before_checkpoint_or_artifact(
+    tmp_path: Path,
+) -> None:
+    unsafe_text = "source:https://private.example/claim"
+    draft = _ordinary_carousel_draft()
+    draft["image_plan"]["slides"][1]["body_lines"][0] = unsafe_text
+    checkpointer = InMemorySaver()
+    artifact_root = tmp_path / "artifacts"
+    workflow = build_playbook_workflow(
+        playbook_id="modern_psychology_post",
+        domain="现代心理困境观察",
+        settings=_settings(),
+        drafting_agent=CapturingLearningDraftAgent(draft),  # type: ignore[arg-type]
+        max_attempts=1,
+        artifact_store=FileArtifactStore(base_dir=artifact_root),
+        checkpointer=checkpointer,
+    )
+    config = {"configurable": {"thread_id": "unsafe-ordinary-carousel"}}
+
+    result = workflow.invoke(
+        {
+            "scene": "下班后身体还在工位",
+            "platform": "xiaohongshu",
+            "account_id": "acct-psychology-local",
+        },
+        config=config,
+    )
+
+    history = json.dumps(
+        [snapshot.values for snapshot in workflow.get_state_history(config)],
+        ensure_ascii=False,
+        default=str,
+    )
+    assert result["status"] == "failed"
+    assert unsafe_text not in history
+    assert not list(artifact_root.glob("*.json"))
+
+
+def test_ordinary_psychology_drops_injected_draft_before_initial_checkpoint(
+    tmp_path: Path,
+) -> None:
+    marker = "source:https://private.example/injected-checkpoint"
+    valid_draft = _ordinary_carousel_draft()
+    checkpointer = InMemorySaver()
+    workflow = build_playbook_workflow(
+        playbook_id="modern_psychology_post",
+        domain="现代心理困境观察",
+        settings=_settings(),
+        drafting_agent=CapturingLearningDraftAgent(valid_draft),  # type: ignore[arg-type]
+        max_attempts=1,
+        artifact_store=FileArtifactStore(base_dir=tmp_path / "artifacts"),
+        checkpointer=checkpointer,
+    )
+    config = {"configurable": {"thread_id": "injected-ordinary-draft"}}
+
+    result = workflow.invoke(
+        {
+            "scene": "下班后身体还在工位",
+            "platform": "xiaohongshu",
+            "account_id": "acct-psychology-local",
+            "draft_content": {
+                "title": marker,
+                "image_plan": {"slides": [{"headline": marker}]},
+            },
+            "final_content": {"body": marker},
+            "reflection_feedback": marker,
+        },
+        config=config,
+    )
+
+    history = json.dumps(
+        [snapshot.values for snapshot in workflow.get_state_history(config)],
+        ensure_ascii=False,
+        default=str,
+    )
+    artifact = json.loads(Path(result["artifact_path"]).read_text(encoding="utf-8"))
+    assert result["status"] == "completed"
+    assert marker not in history
+    assert marker not in json.dumps(artifact, ensure_ascii=False)
+
+
+def test_ordinary_psychology_carousel_survives_runtime_review_and_artifact(
+    tmp_path: Path,
+) -> None:
+    draft = _ordinary_carousel_draft()
+    workflow = build_playbook_workflow(
+        playbook_id="modern_psychology_post",
+        domain="现代心理困境观察",
+        settings=_settings(),
+        drafting_agent=CapturingLearningDraftAgent(draft),  # type: ignore[arg-type]
+        max_attempts=1,
+        artifact_store=FileArtifactStore(base_dir=tmp_path / "artifacts"),
+    )
+
+    result = workflow.invoke(
+        {
+            "scene": "下班后身体还在工位",
+            "platform": "xiaohongshu",
+            "account_id": "acct-psychology-local",
+        },
+        config={"configurable": {"thread_id": "valid-ordinary-carousel"}},
+    )
+
+    artifact = json.loads(Path(result["artifact_path"]).read_text(encoding="utf-8"))
+    assert result["status"] == "completed"
+    assert artifact["final_content"]["image_plan"] == draft["image_plan"]
+    assert artifact["content_review"]["image_plan"] == draft["image_plan"]
+
+
+def test_ordinary_psychology_canonicalizes_carousel_before_checkpoint(
+    tmp_path: Path,
+) -> None:
+    draft = _ordinary_carousel_draft()
+    draft["image_plan"]["slides"][0]["order"] = "1"
+    checkpointer = InMemorySaver()
+    workflow = build_playbook_workflow(
+        playbook_id="modern_psychology_post",
+        domain="现代心理困境观察",
+        settings=_settings(),
+        drafting_agent=CapturingLearningDraftAgent(draft),  # type: ignore[arg-type]
+        max_attempts=1,
+        artifact_store=FileArtifactStore(base_dir=tmp_path / "artifacts"),
+        checkpointer=checkpointer,
+    )
+    config = {"configurable": {"thread_id": "canonical-ordinary-carousel"}}
+
+    result = workflow.invoke(
+        {
+            "scene": "下班后身体还在工位",
+            "platform": "xiaohongshu",
+            "account_id": "acct-psychology-local",
+        },
+        config=config,
+    )
+
+    artifact = json.loads(Path(result["artifact_path"]).read_text(encoding="utf-8"))
+    history = json.dumps(
+        [snapshot.values for snapshot in workflow.get_state_history(config)],
+        ensure_ascii=False,
+        default=str,
+    )
+    final_plan = artifact["final_content"]["image_plan"]
+    assert final_plan == artifact["content_review"]["image_plan"]
+    assert final_plan["slides"][0]["order"] == 1
+    assert '"order": "1"' not in history
+
+
+def test_ordinary_psychology_keeps_legacy_single_image_plan_compatible(
+    tmp_path: Path,
+) -> None:
+    draft = _ordinary_carousel_draft()
+    draft["image_plan"] = {
+        "backend": "local_social_screenshot",
+        "style": "iphone_notes",
+        "role": "save_tool",
+        "text_density": "low",
+        "max_text_units": "3",
+        "cover_text_strategy": "只放三条短句",
+        "reason": "单张工具卡便于收藏",
+    }
+    workflow = build_playbook_workflow(
+        playbook_id="modern_psychology_post",
+        domain="现代心理困境观察",
+        settings=_settings(),
+        drafting_agent=CapturingLearningDraftAgent(draft),  # type: ignore[arg-type]
+        max_attempts=1,
+        artifact_store=FileArtifactStore(base_dir=tmp_path / "artifacts"),
+    )
+
+    result = workflow.invoke(
+        {
+            "scene": "下班后身体还在工位",
+            "platform": "xiaohongshu",
+            "account_id": "acct-psychology-local",
+        },
+        config={"configurable": {"thread_id": "legacy-ordinary-image"}},
+    )
+
+    artifact = json.loads(Path(result["artifact_path"]).read_text(encoding="utf-8"))
+    assert result["status"] == "completed"
+    assert "slides" not in artifact["final_content"]["image_plan"]
+
+
+def test_learning_retry_cannot_replace_catalog_owned_carousel_pages(
+    tmp_path: Path,
+) -> None:
+    bundle = _bundle()
+    exact_draft = render_psychology_learning_draft(bundle.runtime_contract)
+    tampered_draft = deepcopy(exact_draft)
+    tampered_marker = "被重写的课程卡片"
+    tampered_draft["image_plan"]["slides"][1]["body_lines"][0] = tampered_marker
+    drafting_agent = SequencedDraftAgent([tampered_draft, exact_draft])
+    checkpointer = InMemorySaver()
+    workflow = build_playbook_workflow(
+        playbook_id="modern_psychology_post",
+        domain="现代心理困境观察",
+        settings=_settings(),
+        drafting_agent=drafting_agent,  # type: ignore[arg-type]
+        max_attempts=3,
+        artifact_store=FileArtifactStore(base_dir=tmp_path / "artifacts"),
+        checkpointer=checkpointer,
+        psychology_learning_contract=bundle.runtime_contract,
+        psychology_learning_manifest=bundle.manifest,
+    )
+    config = {"configurable": {"thread_id": "learning-carousel-exactness"}}
+
+    result = workflow.invoke(
+        {
+            "scene": "ignored",
+            "platform": "xiaohongshu",
+            "account_id": "acct-psychology-local",
+        },
+        config=config,
+    )
+
+    artifact = json.loads(Path(result["artifact_path"]).read_text(encoding="utf-8"))
+    history = json.dumps(
+        [snapshot.values for snapshot in workflow.get_state_history(config)],
+        ensure_ascii=False,
+        default=str,
+    )
+    receipt_text = json.dumps(
+        {
+            "gate": artifact["psychology_learning_gate"],
+            "image_plan_review": artifact["content_review"]["image_plan"],
+        },
+        ensure_ascii=False,
+    )
+    assert result["status"] == "completed"
+    assert len(drafting_agent.calls) == 2
+    assert drafting_agent.calls[1]["reflection_feedback"]
+    assert artifact["final_content"] == exact_draft
+    assert artifact["psychology_learning_gate"]["validator_version"] == "2"
+    assert tampered_marker not in history
+    assert "source" not in receipt_text.lower()
+    assert "path" not in receipt_text.lower()
+    assert "http://" not in receipt_text
+    assert "https://" not in receipt_text
+
+
+def test_historic_v1_learning_receipt_keeps_validator_version_one(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    proposal = plan_psychology_learning_series(
+        topic="下班后的脑内回放",
+        outline=(
+            {"id": "notice", "title": "先识别重复时刻"},
+            {"id": "practice", "title": "练习一个小步骤"},
+        ),
+    )
+    store = PsychologyLearningSeriesStore(trusted_provision=True)
+    store.persist_proposal(proposal)
+
+    def build_v1_catalog(proposal_value, *, curriculum_version: str):
+        return _build_confirmed_psychology_learning_catalog_for_template(
+            proposal_value,
+            curriculum_version=curriculum_version,
+            controlled_template_version="1",
+        )
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.psychology_learning_series."
+        "_build_confirmed_psychology_learning_catalog",
+        build_v1_catalog,
+    )
+    catalog = store.confirm(
+        proposal_id=proposal.proposal_id,
+        proposal_fingerprint=proposal.proposal_fingerprint,
+    )
+    bundle = resolve_psychology_learning_selection(
+        series_id=catalog.series_id,
+        lesson_id=catalog.lessons[0].lesson_id,
+        curriculum_version=catalog.curriculum_version,
+    )
+    receipt = build_psychology_learning_catalog_receipt(bundle)
+    assert receipt is not None
+    workflow = build_playbook_workflow(
+        playbook_id="modern_psychology_post",
+        domain="现代心理困境观察",
+        settings=_settings(),
+        drafting_agent=CapturingLearningDraftAgent(
+            render_psychology_learning_draft(bundle.runtime_contract)
+        ),  # type: ignore[arg-type]
+        max_attempts=1,
+        artifact_store=FileArtifactStore(base_dir=tmp_path / "artifacts"),
+        psychology_learning_contract=bundle.runtime_contract,
+        psychology_learning_manifest=bundle.manifest,
+        psychology_learning_catalog_receipt=receipt,
+    )
+
+    result = workflow.invoke(
+        {
+            "scene": "ignored",
+            "platform": "xiaohongshu",
+            "account_id": "acct-psychology-local",
+        },
+        config={"configurable": {"thread_id": "historic-v1-validator"}},
+    )
+
+    artifact = json.loads(Path(result["artifact_path"]).read_text(encoding="utf-8"))
+    assert bundle.runtime_contract["controlled_template_version"] == "1"
+    assert artifact["psychology_learning_gate"]["validator_version"] == "1"
 
 
 def test_learning_workflow_requires_a_bound_catalog_contract() -> None:
