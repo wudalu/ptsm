@@ -586,7 +586,9 @@ def _validate_psychology_learning_gate(
                 "learning receipt gate did not use the required validator",
             )
         )
-    if gate.get("validator_version") != "1":
+    if gate.get("validator_version") != str(
+        bundle.runtime_contract["controlled_template_version"]
+    ):
         failures.append(
             _receipt_failure(
                 "psychology_learning_gate.validator_version",

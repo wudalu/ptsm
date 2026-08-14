@@ -398,7 +398,15 @@ _PSYCHOLOGY_LEARNING_ARTIFACT_ALLOWED_FIELDS_BY_PATH = {
         }
     ),
     ("format_patterns_used",): frozenset({"status"}),
-    ("image_generation",): frozenset({"status", "renderer"}),
+    ("image_generation",): frozenset(
+        {
+            "status",
+            "renderer",
+            "carousel_style",
+            "image_count",
+            "manifest_sha256",
+        }
+    ),
     ("post_publish_checks",): frozenset(
         {"requested", "browser_opened", "publish_status", "status_result"}
     ),
@@ -3925,7 +3933,9 @@ def _expected_psychology_learning_artifact_gate(
         "series_id": bundle.series_id,
         "lesson_id": bundle.lesson_id,
         "validator": "psychology_learning_draft_contract",
-        "validator_version": "1",
+        "validator_version": str(
+            bundle.runtime_contract["controlled_template_version"]
+        ),
         "errors": [],
     }
 
@@ -4097,12 +4107,26 @@ def _is_valid_psychology_learning_artifact_value(
         return value in _PSYCHOLOGY_LEARNING_PUBLISH_STATUSES
     if path == ("image_generation",):
         return value is None or (
-            isinstance(value, Mapping) and set(value) == {"status", "renderer"}
+            isinstance(value, Mapping)
+            and set(value)
+            == {
+                "status",
+                "renderer",
+                "carousel_style",
+                "image_count",
+                "manifest_sha256",
+            }
         )
     if path == ("image_generation", "status"):
-        return value == "generated"
+        return value == "committed"
     if path == ("image_generation", "renderer"):
         return value == "ptsm_local_renderer"
+    if path == ("image_generation", "carousel_style"):
+        return value == "psychology_text_card_v1"
+    if path == ("image_generation", "image_count"):
+        return isinstance(value, int) and not isinstance(value, bool) and 4 <= value <= 7
+    if path == ("image_generation", "manifest_sha256"):
+        return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) is not None
     if path == ("watermark_removal",):
         return value is None or (
             isinstance(value, Mapping) and set(value) == {"status"}

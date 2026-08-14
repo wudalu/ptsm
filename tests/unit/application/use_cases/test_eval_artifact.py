@@ -113,7 +113,7 @@ def _learning_artifact(lesson_id: str = "notice_the_loop", *, bundle=None) -> di
             "series_id": bundle.series_id,
             "lesson_id": bundle.lesson_id,
             "validator": "psychology_learning_draft_contract",
-            "validator_version": "1",
+            "validator_version": str(contract["controlled_template_version"]),
             "errors": [],
         },
     }

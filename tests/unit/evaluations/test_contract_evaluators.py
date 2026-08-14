@@ -310,7 +310,7 @@ def _psychology_learning_receipt(*, bundle=None) -> dict:
             "series_id": bundle.series_id,
             "lesson_id": bundle.lesson_id,
             "validator": "psychology_learning_draft_contract",
-            "validator_version": "1",
+            "validator_version": str(contract["controlled_template_version"]),
             "errors": [],
         },
         "final_content": render_psychology_learning_draft(contract),
@@ -451,8 +451,11 @@ class TestPsychologyLearningReceipt:
             },
         }
         receipt["image_generation"] = {
-            "status": "generated",
+            "status": "committed",
             "renderer": "ptsm_local_renderer",
+            "carousel_style": "psychology_text_card_v1",
+            "image_count": 7,
+            "manifest_sha256": "a" * 64,
         }
 
         result = contract_psychology_learning_receipt(

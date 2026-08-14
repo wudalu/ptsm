@@ -98,7 +98,7 @@ def _write_learning_artifact(
             "series_id": bundle.series_id,
             "lesson_id": bundle.lesson_id,
             "validator": "psychology_learning_draft_contract",
-            "validator_version": "1",
+            "validator_version": str(contract["controlled_template_version"]),
             "errors": [],
         },
     }

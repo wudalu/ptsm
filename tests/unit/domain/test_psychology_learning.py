@@ -78,7 +78,7 @@ def _closed_learning_artifact(bundle) -> dict[str, object]:
             "series_id": bundle.series_id,
             "lesson_id": bundle.lesson_id,
             "validator": "psychology_learning_draft_contract",
-            "validator_version": "1",
+            "validator_version": str(contract["controlled_template_version"]),
             "errors": [],
         },
     }
@@ -414,6 +414,25 @@ def test_strict_artifact_scan_rejects_forged_learning_receipt_fields(
             "lesson_fingerprint": "lesson:forged-manifest",
         }
 
+    assert contains_psychology_learning_raw_provenance(artifact)
+
+
+def test_strict_artifact_scan_allows_only_safe_carousel_generation_evidence() -> None:
+    artifact = _closed_learning_artifact(_starter_bundle())
+    artifact["image_generation"] = {
+        "status": "committed",
+        "renderer": "ptsm_local_renderer",
+        "carousel_style": "psychology_text_card_v1",
+        "image_count": 7,
+        "manifest_sha256": "a" * 64,
+    }
+
+    assert not contains_psychology_learning_raw_provenance(artifact)
+
+    artifact["image_generation"] = {
+        **artifact["image_generation"],  # type: ignore[arg-type]
+        "manifest_path": "/private/generated/set/manifest.json",
+    }
     assert contains_psychology_learning_raw_provenance(artifact)
 
 

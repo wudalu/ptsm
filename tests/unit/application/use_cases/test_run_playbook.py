@@ -23,6 +23,7 @@ from ptsm.application.use_cases.run_playbook import (
     _owned_psychology_learning_artifact_path,
     _remove_owned_unsafe_psychology_learning_artifact,
     _resolve_psychology_learning_preflight,
+    _sanitize_psychology_learning_image_generation,
     run_playbook,
     run_fengkuang_playbook,
 )
@@ -3287,6 +3288,39 @@ def _psychology_learning_bundle():
 
 def _valid_psychology_learning_draft() -> dict[str, object]:
     return render_psychology_learning_draft(_psychology_learning_bundle().runtime_contract)
+
+
+def test_psychology_learning_carousel_receipt_keeps_only_safe_set_evidence() -> None:
+    receipt = _sanitize_psychology_learning_image_generation(
+        {
+            "status": "committed",
+            "provider": "local_note_card",
+            "style": "psychology_text_card_v1",
+            "carousel_style": "psychology_text_card_v1",
+            "image_count": 7,
+            "manifest_sha256": "a" * 64,
+            "manifest_path": "/private/generated/set/manifest.json",
+            "generated_image_paths": ["/private/generated/set/page-01.png"],
+            "pages": [{"headline": "catalog-only text"}],
+            "provenance": {"source": "ptsm_local_renderer"},
+        }
+    )
+
+    assert receipt == {
+        "status": "committed",
+        "renderer": "ptsm_local_renderer",
+        "carousel_style": "psychology_text_card_v1",
+        "image_count": 7,
+        "manifest_sha256": "a" * 64,
+    }
+    assert _sanitize_psychology_learning_image_generation(
+        {
+            **receipt,
+            "provider": "local_note_card",
+            "provenance": {"source": "ptsm_local_renderer"},
+            "manifest_sha256": "/tmp/not-a-hash",
+        }
+    ) is None
 
 
 def test_run_playbook_requires_complete_psychology_learning_selection_before_run(

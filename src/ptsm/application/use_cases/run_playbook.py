@@ -643,7 +643,7 @@ def _build_psychology_learning_receipt(
             "series_id": bundle.series_id,
             "lesson_id": bundle.lesson_id,
             "validator": "psychology_learning_draft_contract",
-            "validator_version": "1",
+            "validator_version": str(contract["controlled_template_version"]),
             "errors": [],
         },
     }
@@ -789,14 +789,28 @@ def _sanitize_psychology_learning_image_generation(
     if not isinstance(value, Mapping):
         return None
     provenance = value.get("provenance")
+    image_count = value.get("image_count")
+    manifest_sha256 = value.get("manifest_sha256")
     if (
-        value.get("status") != "generated"
+        value.get("status") != "committed"
         or value.get("provider") != "local_note_card"
+        or value.get("carousel_style") != "psychology_text_card_v1"
+        or not isinstance(image_count, int)
+        or isinstance(image_count, bool)
+        or not 4 <= image_count <= 7
+        or not isinstance(manifest_sha256, str)
+        or re.fullmatch(r"[0-9a-f]{64}", manifest_sha256) is None
         or not isinstance(provenance, Mapping)
         or provenance.get("source") != "ptsm_local_renderer"
     ):
         return None
-    return {"status": "generated", "renderer": "ptsm_local_renderer"}
+    return {
+        "status": "committed",
+        "renderer": "ptsm_local_renderer",
+        "carousel_style": "psychology_text_card_v1",
+        "image_count": image_count,
+        "manifest_sha256": manifest_sha256,
+    }
 
 
 def _sanitize_psychology_learning_watermark_removal(
