@@ -247,6 +247,89 @@ def test_xiaohongshu_mcp_publisher_requires_at_least_one_existing_image(tmp_path
         )
 
 
+@pytest.mark.parametrize("bad_kind", ["duplicate", "missing", "directory"])
+def test_xiaohongshu_mcp_publisher_rejects_invalid_image_sets_before_mcp(
+    tmp_path: Path,
+    bad_kind: str,
+) -> None:
+    runner = FakeMcpRunner(
+        {
+            "check_login_status": [{"type": "text", "text": "✅ 已登录"}],
+            "publish_content": [{"type": "text", "text": "不会执行"}],
+        }
+    )
+    publisher = XiaohongshuMcpPublisher(
+        server_url="http://localhost:18060/mcp",
+        tool_runner=runner,
+    )
+    valid_path = tmp_path / "page.png"
+    valid_path.write_bytes(b"png")
+    if bad_kind == "duplicate":
+        image_paths = [str(valid_path), str(valid_path)]
+    elif bad_kind == "missing":
+        image_paths = [str(tmp_path / "missing.png")]
+    else:
+        directory = tmp_path / "page-dir"
+        directory.mkdir()
+        image_paths = [str(directory)]
+
+    with pytest.raises(ValueError, match="image path|Image path|duplicate|regular"):
+        publisher.publish(
+            account=build_account(),
+            content={
+                "title": "心理学多图验证",
+                "body": "正文",
+                "hashtags": ["#心理学"],
+            },
+            artifact_path="outputs/artifacts/demo.json",
+            image_paths=image_paths,
+            visibility="仅自己可见",
+        )
+
+    assert runner.calls == []
+
+
+def test_xiaohongshu_mcp_publisher_rejects_unreadable_image_before_mcp(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    runner = FakeMcpRunner(
+        {
+            "check_login_status": [{"type": "text", "text": "✅ 已登录"}],
+            "publish_content": [{"type": "text", "text": "不会执行"}],
+        }
+    )
+    publisher = XiaohongshuMcpPublisher(
+        server_url="http://localhost:18060/mcp",
+        tool_runner=runner,
+    )
+    image_path = tmp_path / "page.png"
+    image_path.write_bytes(b"png")
+    original_open = Path.open
+
+    def guarded_open(path: Path, *args: object, **kwargs: object):
+        if path == image_path:
+            raise OSError("permission denied")
+        return original_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", guarded_open)
+
+    with pytest.raises(ValueError, match="readable"):
+        publisher.publish(
+            account=build_account(),
+            content={
+                "title": "心理学多图验证",
+                "body": "正文",
+                "hashtags": ["#心理学"],
+            },
+            artifact_path="outputs/artifacts/demo.json",
+            image_paths=[str(image_path)],
+            visibility="仅自己可见",
+        )
+
+    assert runner.calls == []
+
+
 def test_xiaohongshu_mcp_publisher_extracts_publish_metadata_from_json_response(
     tmp_path: Path,
 ) -> None:

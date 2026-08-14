@@ -292,9 +292,25 @@ class XiaohongshuMcpPublisher:
         if not resolved:
             raise ValueError("At least one image path is required for xiaohongshu mcp publish")
 
+        canonical = [str(Path(path).resolve(strict=False)) for path in resolved]
+        if len(set(canonical)) != len(canonical):
+            raise ValueError("Image paths contain duplicate files")
+
         missing = [path for path in resolved if not Path(path).exists()]
         if missing:
             raise ValueError(f"Image paths do not exist: {missing}")
+        non_regular = [path for path in resolved if not Path(path).is_file()]
+        if non_regular:
+            raise ValueError(f"Image paths must be regular files: {non_regular}")
+        unreadable: list[str] = []
+        for path in resolved:
+            try:
+                with Path(path).open("rb") as handle:
+                    handle.read(1)
+            except OSError:
+                unreadable.append(path)
+        if unreadable:
+            raise ValueError(f"Image paths must be readable: {unreadable}")
         return resolved
 
     async def _list_tool_names(self) -> list[str]:
