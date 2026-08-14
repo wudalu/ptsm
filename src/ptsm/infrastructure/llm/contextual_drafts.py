@@ -400,7 +400,8 @@ def _build_modern_psychology_carousel_plan(
     image_text: str,
 ) -> dict[str, Any]:
     """Build semantic pages beside the deterministic draft, without another model call."""
-    if any(keyword in scene for keyword in ("忽冷忽热", "想问清楚", "要不要问", "暧昧")):
+    lane = _modern_psychology_lane(scene)
+    if lane == "relationship_uncertainty":
         scene_headline = "忽冷忽热，最磨人的是悬着"
         scene_lines = ["想问清楚，又怕自己显得太需要答案"]
         mechanism_headline = "空白会被补成关系剧情"
@@ -409,7 +410,7 @@ def _build_modern_psychology_carousel_plan(
         tool_lines = ["事实：发生了什么", "信号：哪些变化让我在意", "需要：我要不要问清楚"]
         comment_headline = "你会问清楚，还是先观察？"
         comment_lines = ["A.低压问清楚", "B.先观察真实信号"]
-    elif any(keyword in scene for keyword in ("分手", "没回消息", "不回消息", "伴侣", "复合")):
+    elif lane == "romantic_waiting":
         scene_headline = "手机只是安静了一会儿"
         scene_lines = ["脑子却开始替沉默写结局"]
         mechanism_headline = "空白越多，剧情越满"
@@ -418,7 +419,7 @@ def _build_modern_psychology_carousel_plan(
         tool_lines = ["事实：对方暂时没回", "脑补：我们要分开", "需要：一次清楚确认"]
         comment_headline = "没回消息时，你是哪一派？"
         comment_lines = ["A.立刻问答案", "B.忍住却反复想"]
-    elif any(keyword in scene for keyword in ("会议", "说错", "尴尬", "回放")):
+    elif lane == "meeting_replay":
         scene_headline = "人走了，会议还没散"
         scene_lines = ["一句话在脑子里反复加字幕"]
         mechanism_headline = "回放不等于复盘"
@@ -427,7 +428,7 @@ def _build_modern_psychology_carousel_plan(
         tool_lines = ["事实：对方原话", "猜测：我补出的评价", "下一步：是否需要确认"]
         comment_headline = "会后回放时，你是哪一派？"
         comment_lines = ["A.写完小作文删掉", "B.发完又重看十遍"]
-    elif any(keyword in scene for keyword in ("短视频", "刷手机", "信息过载", "越刷越空")):
+    elif lane == "digital_overload":
         scene_headline = "屏幕还亮着，人已经很累"
         scene_lines = ["手指继续往下滑，感受却被往后推"]
         mechanism_headline = "信息过载也会拖延感受"
@@ -436,10 +437,7 @@ def _build_modern_psychology_carousel_plan(
         tool_lines = ["把屏幕扣下", "写下我在躲什么", "只做一个身体需要"]
         comment_headline = "你睡前停在哪一种屏幕？"
         comment_lines = ["A.短视频", "B.聊天记录"]
-    elif any(
-        keyword in scene
-        for keyword in ("社交电量", "社交耗竭", "约好的局", "不想去了", "不想去", "取消")
-    ):
+    elif lane == "social_depletion":
         scene_headline = "社交电量见底了"
         scene_lines = ["怕的不是不去，是怕别人觉得我扫兴"]
         mechanism_headline = "疲惫和边界压力叠在一起"
@@ -448,7 +446,7 @@ def _build_modern_psychology_carousel_plan(
         tool_lines = ["承认原来的约定", "说明今天的状态", "给一个下次选项"]
         comment_headline = "社交没电时，你是哪一派？"
         comment_lines = ["A.硬着头皮去", "B.愧疚地取消"]
-    elif any(keyword in scene for keyword in ("朋友圈", "孤独", "比较", "失败", "高光")):
+    elif lane == "loneliness_comparison":
         scene_headline = "别人的高光，按下了扣分键"
         scene_lines = ["看见一桌热闹，就觉得只有自己落单"]
         mechanism_headline = "比较会把片段当成全貌"
@@ -457,7 +455,7 @@ def _build_modern_psychology_carousel_plan(
         tool_lines = ["我看见了什么", "我给自己扣了什么分", "今晚给自己一个恢复动作"]
         comment_headline = "哪种高光最容易让你扣分？"
         comment_lines = ["A.聚会热闹", "B.工作进度"]
-    elif any(keyword in scene for keyword in ("周日", "周一", "预焦虑")):
+    elif lane == "sunday_anticipation":
         scene_headline = "周一还没来，提醒声先来了"
         scene_lines = ["未知任务越多，脑子越想提前排雷"]
         mechanism_headline = "预演常跟低控制感有关"
@@ -466,7 +464,7 @@ def _build_modern_psychology_carousel_plan(
         tool_lines = ["最担心的一件事", "现在可控的一小步", "暂时不用处理的一件事"]
         comment_headline = "周日晚上，你先预演什么？"
         comment_lines = ["A.开会", "B.消息"]
-    elif any(keyword in scene for keyword in ("临时消息", "拉回工位", "18:57", "下班身份")):
+    elif lane == "after_hours_message":
         scene_headline = "一条消息，把身体拽回工位"
         scene_lines = ["电脑还没开，心已经开始排优先级"]
         mechanism_headline = "下班边界遇上低控制感"
@@ -475,10 +473,7 @@ def _build_modern_psychology_carousel_plan(
         tool_lines = ["先看是否真的紧急", "写清回复时间", "把手机放远一点"]
         comment_headline = "下班消息来了，你会怎么回？"
         comment_lines = ["A.立刻秒回", "B.写清明早回复"]
-    elif any(
-        keyword in scene
-        for keyword in ("睡眠恢复", "轻养生", "下班信号", "身体还在工位", "5分钟", "5 分钟")
-    ):
+    elif lane == "sleep_recovery":
         scene_headline = "人下班了，身体还在待命"
         scene_lines = ["没有新消息，肩膀仍像坐在工位"]
         mechanism_headline = "身体也需要收口信号"
@@ -487,9 +482,7 @@ def _build_modern_psychology_carousel_plan(
         tool_lines = ["关掉一个信息入口", "慢慢松三次肩颈", "写下明天第一步"]
         comment_headline = "你最想先关掉哪一种待命？"
         comment_lines = ["A.手机通知", "B.脑内待办"]
-    elif "三明治拒绝法" in scene or any(
-        keyword in scene for keyword in ("拒绝", "边界句", "帮忙")
-    ):
+    elif lane == "sandwich_boundary":
         scene_headline = "拒绝前，我先替关系道歉"
         scene_lines = ["一句今晚不行，也像在关系里摔门"]
         mechanism_headline = "卡住的是边界压力"
@@ -565,6 +558,72 @@ def _build_modern_psychology_carousel_plan(
             ],
         }
     )
+
+
+def _modern_psychology_lane(scene: str) -> str:
+    """Choose one lane in the same priority order used by body and image copy."""
+    if "三明治拒绝法" in scene:
+        return "sandwich_boundary"
+    if any(
+        keyword in scene
+        for keyword in (
+            "睡眠恢复",
+            "轻养生",
+            "办公室恢复",
+            "下班信号",
+            "5分钟",
+            "5 分钟",
+        )
+    ):
+        return "sleep_recovery"
+    if any(keyword in scene for keyword in ("短视频", "刷手机", "信息过载", "越刷越空")):
+        return "digital_overload"
+    if any(keyword in scene for keyword in ("忽冷忽热", "想问清楚", "要不要问", "暧昧")):
+        return "relationship_uncertainty"
+    if any(
+        keyword in scene
+        for keyword in (
+            "社交电量",
+            "社交耗竭",
+            "约好的局",
+            "不想去了",
+            "不想去",
+            "取消",
+            "扫兴",
+            "硬着头皮",
+        )
+    ):
+        return "social_depletion"
+    if any(keyword in scene for keyword in ("孤独", "聚会", "比较", "失败", "朋友圈")):
+        return "loneliness_comparison"
+    if any(
+        keyword in scene
+        for keyword in (
+            "分手",
+            "猫归谁",
+            "没回消息",
+            "不回消息",
+            "3小时",
+            "伴侣",
+            "挽留",
+            "复合",
+            "冷淡",
+        )
+    ):
+        return "romantic_waiting"
+    if any(keyword in scene for keyword in ("周日", "周一消息", "周一", "预焦虑")):
+        return "sunday_anticipation"
+    if any(keyword in scene for keyword in ("想太多", "睡不着", "边界")):
+        return "boundary_pressure"
+    if any(keyword in scene for keyword in ("临时消息", "拉回工位", "下班身份", "工位")):
+        return "after_hours_message"
+    if any(keyword in scene for keyword in ("会议", "尴尬")):
+        return "meeting_replay"
+    if any(keyword in scene for keyword in ("脑内", "白天的自己", "复盘会")):
+        return "brain_meeting"
+    if any(keyword in scene for keyword in ("普通回复", "收集大家", "常复盘")):
+        return "ordinary_reply"
+    return "rumination_default"
 
 
 def _extract_selected_reddit_discussion(runtime_context: str) -> dict[str, str] | None:
@@ -881,7 +940,8 @@ def _build_daily_english_draft(*, scene: str, feedback: str) -> dict[str, Any]:
 def _build_modern_psychology_draft(
     *, scene: str, feedback: str, runtime_context: str
 ) -> dict[str, Any]:
-    if "三明治拒绝法" in scene:
+    lane = _modern_psychology_lane(scene)
+    if lane == "sandwich_boundary":
         body = (
             f"{scene}，我最先冒出来的念头不是怎么安排时间，而是他会不会觉得我不够朋友。"
             "于是手机拿起来又放下，连“今晚不行”四个字都像在关系里摔门。\n"
@@ -894,17 +954,7 @@ def _build_modern_psychology_draft(
         title = "同事说帮个忙，我先把道歉打好了"
         image_text = "拒绝也可以有温度"
         hashtags = ["#心理学", "#情绪管理", "#关系边界", "#自我成长"]
-    elif any(
-        keyword in scene
-        for keyword in (
-            "睡眠恢复",
-            "轻养生",
-            "办公室恢复",
-            "下班信号",
-            "5分钟",
-            "5 分钟",
-        )
-    ):
+    elif lane == "sleep_recovery":
         body = (
             f"{scene}，我人已经离开工位，肩膀却还像卡在会议室门口。"
             "回家路上没有新消息，身体还是绷着，像随时要重新打开电脑。\n"
@@ -918,7 +968,7 @@ def _build_modern_psychology_draft(
         title = "下班后身体被拖回工位"
         image_text = "5分钟给身体下班信号"
         hashtags = ["#心理学", "#情绪管理", "#睡眠恢复", "#轻养生", "#自我成长"]
-    elif any(keyword in scene for keyword in ("短视频", "刷手机", "信息过载", "越刷越空")):
+    elif lane == "digital_overload":
         body = (
             f"{scene}，手指一直往下滑，身体已经很困了，脑子还在等一个更好笑、"
             "更刺激、或者刚好能把空掉的那块补上的视频。\n"
@@ -930,15 +980,7 @@ def _build_modern_psychology_draft(
         title = "睡前越刷越空，手还在自动下滑"
         image_text = "先把屏幕扣下5分钟"
         hashtags = ["#心理学", "#情绪管理", "#信息过载", "#睡眠恢复", "#自我成长"]
-    elif any(
-        keyword in scene
-        for keyword in (
-            "忽冷忽热",
-            "想问清楚",
-            "要不要问",
-            "暧昧",
-        )
-    ):
+    elif lane == "relationship_uncertainty":
         body = (
             f"{scene}，最磨人的不是对方冷了一下，而是脑子开始替每个表情、"
             "每次间隔和每句语气做判卷。想问清楚，又怕自己显得太需要答案；不问，"
@@ -953,19 +995,7 @@ def _build_modern_psychology_draft(
         title = "忽冷忽热那几天，我想问又怕烦"
         image_text = "先分清事实和信号"
         hashtags = ["#心理学", "#情绪管理", "#亲密关系", "#自我成长"]
-    elif any(
-        keyword in scene
-        for keyword in (
-            "社交电量",
-            "社交耗竭",
-            "约好的局",
-            "不想去了",
-            "不想去",
-            "取消",
-            "扫兴",
-            "硬着头皮",
-        )
-    ):
+    elif lane == "social_depletion":
         body = (
             f"{scene}，真正卡住的不是要不要出门，而是怕别人觉得我扫兴、临时变卦、"
             "不够珍惜关系。身体已经很累了，脑子还在替自己写道歉小作文。\n"
@@ -979,7 +1009,7 @@ def _build_modern_psychology_draft(
         title = "约好的局，我突然没电了"
         image_text = "取消局三句先存好"
         hashtags = ["#心理学", "#情绪管理", "#社交耗竭", "#关系边界"]
-    elif any(keyword in scene for keyword in ("孤独", "聚会", "比较", "失败", "朋友圈")):
+    elif lane == "loneliness_comparison":
         body = (
             f"{scene}，照片里每个人都在笑，我却盯着那一桌菜想：是不是只有我今天没有被任何人想起。\n"
             "这种刺痛常常不只来自热闹本身，也来自比较焦虑和孤独感一起按下了扣分键。"
@@ -991,20 +1021,7 @@ def _build_modern_psychology_draft(
         title = "看到别人周末很热闹，不代表你失败"
         image_text = "别拿高光片段扣自己的分"
         hashtags = ["#心理学", "#情绪管理", "#孤独感", "#比较焦虑", "#自我成长"]
-    elif any(
-        keyword in scene
-        for keyword in (
-            "分手",
-            "猫归谁",
-            "没回消息",
-            "不回消息",
-            "3小时",
-            "伴侣",
-            "挽留",
-            "复合",
-            "冷淡",
-        )
-    ):
+    elif lane == "romantic_waiting":
         body = (
             f"{scene}，手机其实只安静了三小时，我的脑子已经替我们办完分手手续："
             "猫跟谁、钥匙怎么还、朋友圈要不要删。"
@@ -1022,7 +1039,7 @@ def _build_modern_psychology_draft(
         title = "他3小时没回，我已经分好猫了"
         image_text = "先分清事实和脑补"
         hashtags = ["#心理学", "#情绪管理", "#亲密关系", "#自我成长"]
-    elif any(keyword in scene for keyword in ("周日", "周一消息", "周一", "预焦虑")):
+    elif lane == "sunday_anticipation":
         body = (
             f"{scene}，人还在周日晚上，脑子已经把明天的消息提示音预演了三遍。"
             "牙还没刷，会议、催办、未读红点已经排队进场。\n"
@@ -1035,7 +1052,7 @@ def _build_modern_psychology_draft(
         title = "周日晚上，我已经听见周一消息提示音"
         image_text = "脑子提前打卡上班"
         hashtags = ["#心理学", "#情绪管理", "#周一焦虑", "#低控制感", "#自我成长"]
-    elif any(keyword in scene for keyword in ("想太多", "睡不着", "边界")):
+    elif lane == "boundary_pressure":
         body = (
             f"{scene}，那句话表面很轻，脑子却像被按下了整晚重播。"
             "你一边告诉自己算了，一边又把对方的语气、表情和停顿翻出来检查。\n"
@@ -1048,7 +1065,7 @@ def _build_modern_psychology_draft(
         title = "被说想太多后，我把那句话听了一晚上"
         image_text = "边界句先替你站稳"
         hashtags = ["#心理学", "#情绪管理", "#关系边界", "#自我成长"]
-    elif any(keyword in scene for keyword in ("临时消息", "拉回工位", "下班身份", "工位")):
+    elif lane == "after_hours_message":
         body = (
             f"{scene}，鞋刚换好，外卖刚拆开，手机一亮，脑子就自动坐回工位。"
             "最累的是还没打开电脑，心已经开始排任务优先级。\n"
@@ -1061,7 +1078,7 @@ def _build_modern_psychology_draft(
         title = "人下班了，脑子又被消息拽回去"
         image_text = "脑子又被拉回工位"
         hashtags = ["#心理学", "#情绪管理", "#职场焦虑", "#关系边界", "#低控制感"]
-    elif any(keyword in scene for keyword in ("会议", "尴尬")):
+    elif lane == "meeting_replay":
         body = (
             f"{scene}，身体已经离开会议室，脑子还在给那句话反复加字幕。"
             "我甚至能想象所有人回家路上突然想起它，然后在心里给我扣一分。"
@@ -1074,7 +1091,7 @@ def _build_modern_psychology_draft(
         title = "会议那句话，我改到第七版"
         image_text = "把脑补写到猜测栏"
         hashtags = ["#心理学", "#情绪管理", "#职场焦虑", "#反刍思维"]
-    elif any(keyword in scene for keyword in ("脑内", "白天的自己", "复盘会")):
+    elif lane == "brain_meeting":
         body = (
             f"{scene}，像在脑子里给自己开一场没有主持人的会。"
             "每个人都在发言，只有你不能离席，连洗澡的时候都在补充议程。\n"
@@ -1086,7 +1103,7 @@ def _build_modern_psychology_draft(
         title = "下班后脑内复盘会，可以先散会"
         image_text = "脑内会议先暂停"
         hashtags = ["#心理学", "#情绪管理", "#自我成长", "#反刍思维"]
-    elif any(keyword in scene for keyword in ("普通回复", "收集大家", "常复盘")):
+    elif lane == "ordinary_reply":
         body = (
             f"{scene}，一条普通回复发出去，脑子开始自动检查标点、语气和对方会不会多想。"
             "明明只是“好的”，我已经在想是不是该加个表情。\n"

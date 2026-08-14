@@ -362,6 +362,26 @@ def test_deterministic_psychology_carousel_keeps_each_supported_lane_on_topic(
     )
 
 
+def test_deterministic_psychology_body_and_carousel_share_lane_priority() -> None:
+    draft = DeterministicDraftBackend().generate(
+        scene="18:57临时消息后身体还在工位，需要5分钟睡眠恢复信号",
+        planner_prompt="modern_psychology_post 现代心理困境观察",
+        skill_contents=[
+            "# Psychology Style\n#心理学，使用具体场景和低风险工具。",
+            "# XHS Image Strategy\n输出 image_plan。",
+        ],
+    )
+
+    assert "身体收口" in draft["body"]
+    slide_text = "\n".join(
+        text
+        for slide in draft["image_plan"]["slides"]
+        for text in (slide["headline"], *slide["body_lines"])
+    )
+    assert "5分钟下班信号" in slide_text
+    assert "写清回复时间" not in slide_text
+
+
 def test_deterministic_backend_prefers_provider_image_for_real_object_visuals() -> None:
     draft = DeterministicDraftBackend().generate(
         scene="把下班后的书桌从堆满快递盒改成一个十分钟手作角",
