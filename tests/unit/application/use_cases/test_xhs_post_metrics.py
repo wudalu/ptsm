@@ -187,6 +187,63 @@ def test_record_xhs_post_metrics_reads_local_style_image_plan(
     assert result["status"] == "recorded"
     [record] = _read_jsonl(metrics_path)
     assert record["image_style"] == "iphone_notes"
+    assert record["image_count"] == 1
+    assert record["carousel_style"] == ""
+
+
+def test_record_xhs_post_metrics_captures_psychology_carousel_shape(
+    tmp_path: Path,
+) -> None:
+    artifact_path = tmp_path / "artifact.json"
+    metrics_path = tmp_path / "metrics.jsonl"
+    payload = {
+        "playbook_id": "modern_psychology_post",
+        "account": {"account_id": "acct-psychology-local"},
+        "topic_selection": {"topic_direction_id": "sleep_recovery_shutdown_card"},
+        "final_content": {
+            "title": "下班后身体被拖回工位",
+            "image_plan": {
+                "style": "psychology_text_card",
+                "carousel_style": "psychology_text_card_v1",
+                "role": "text_carousel",
+                "slides": [
+                    {
+                        "slide_id": f"slide-{order}",
+                        "order": order,
+                        "role": role,
+                        "headline": f"第{order}页",
+                        "body_lines": ["同一个主题"],
+                    }
+                    for order, role in enumerate(
+                        (
+                            "cover_hook",
+                            "concrete_scene",
+                            "light_mechanism",
+                            "save_tool",
+                        ),
+                        start=1,
+                    )
+                ],
+            },
+        },
+    }
+    artifact_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+    result = record_xhs_post_metrics(
+        artifact_path=artifact_path,
+        checkpoint="24h",
+        views=100,
+        likes=10,
+        collects=5,
+        comments=1,
+        shares=0,
+        output_path=metrics_path,
+    )
+
+    assert result["status"] == "recorded"
+    assert result["record"]["image_style"] == "psychology_text_card"
+    assert result["record"]["image_count"] == 4
+    assert result["record"]["carousel_style"] == "psychology_text_card_v1"
 
 
 def test_record_xhs_post_metrics_captures_and_groups_learning_series_fields(
@@ -701,3 +758,61 @@ def test_summarize_xhs_post_metrics_can_group_by_image_style(
         "iphone_notes",
         "wechat_chat",
     ]
+
+
+def test_summarize_xhs_post_metrics_can_group_carousels_apart_from_single_covers(
+    tmp_path: Path,
+) -> None:
+    metrics_path = tmp_path / "metrics.jsonl"
+    records = [
+        {
+            "artifact_path": str(tmp_path / "carousel.json"),
+            "playbook_id": "modern_psychology_post",
+            "account_id": "acct-psychology-local",
+            "checkpoint": "24h",
+            "image_style": "psychology_text_card",
+            "image_count": 6,
+            "carousel_style": "psychology_text_card_v1",
+            "views": 1000,
+            "likes": 80,
+            "collects": 60,
+            "comments": 8,
+            "shares": 2,
+            "interaction_score": 244,
+            "interaction_rate": 0.244,
+            "like_rate": 0.08,
+        },
+        {
+            "artifact_path": str(tmp_path / "single.json"),
+            "playbook_id": "modern_psychology_post",
+            "account_id": "acct-psychology-local",
+            "checkpoint": "24h",
+            "image_style": "psychology_text_card",
+            "image_count": 1,
+            "carousel_style": "",
+            "views": 900,
+            "likes": 45,
+            "collects": 20,
+            "comments": 3,
+            "shares": 0,
+            "interaction_score": 97,
+            "interaction_rate": 0.1077777778,
+            "like_rate": 0.05,
+        },
+    ]
+    metrics_path.write_text(
+        "\n".join(json.dumps(record, ensure_ascii=False) for record in records) + "\n",
+        encoding="utf-8",
+    )
+
+    result = summarize_xhs_post_metrics(
+        input_path=metrics_path,
+        playbook_id="modern_psychology_post",
+        group_by="carousel_style",
+    )
+
+    assert result["status"] == "ok"
+    assert {group["group"] for group in result["groups"]} == {
+        "psychology_text_card_v1",
+        "unknown",
+    }

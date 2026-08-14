@@ -1110,11 +1110,12 @@ def _run_psychology_guide_post(request: GuidePostRequest) -> dict[str, Any]:
     scene = _clean_or_default(request.scene, lane.example_scene)
     mechanism = _clean_or_default(request.mechanism, lane.mechanism)
     save_tool = _clean_or_default(request.save_tool, lane.save_tool)
-    image_style = _clean_or_default(request.image_style, lane.image_style)
-    if image_style not in IMAGE_STYLE_CHOICES:
+    explicit_image_style = (request.image_style or "").strip()
+    if explicit_image_style and explicit_image_style not in IMAGE_STYLE_CHOICES:
         raise ValueError(
-            f"Unknown image style {image_style!r}. Available styles: {', '.join(IMAGE_STYLE_CHOICES)}"
+            f"Unknown image style {explicit_image_style!r}. Available styles: {', '.join(IMAGE_STYLE_CHOICES)}"
         )
+    image_style = explicit_image_style or "psychology_text_card_v1"
     comment_prompt = _clean_or_default(request.comment_prompt, lane.comment_prompt)
     safety_boundary = (
         "只做非诊断化心理教育：不下诊断、不承诺治疗效果、不提供药物建议；"
@@ -1128,13 +1129,26 @@ def _run_psychology_guide_post(request: GuidePostRequest) -> dict[str, Any]:
         "reframe": lane.reframe,
         "save_tool": save_tool,
         "image_style": image_style,
-        "image_form": {
-            "backend": "local_social_screenshot",
-            "style": image_style,
-            "role": "save_tool" if image_style == "iphone_notes" else "cover_hook",
-            "text_density": "low",
-            "max_text_units": 3,
-        },
+        "image_form": (
+            {
+                "backend": "local_social_screenshot",
+                "style": image_style,
+                "role": "save_tool" if image_style == "iphone_notes" else "cover_hook",
+                "text_density": "low",
+                "max_text_units": 3,
+            }
+            if explicit_image_style
+            else {
+                "backend": "local_social_screenshot",
+                "style": "psychology_text_card",
+                "role": "text_carousel",
+                "text_density": "medium",
+                "max_text_units": 4,
+                "format_archetype": "text_carousel",
+                "carousel_style": "psychology_text_card_v1",
+                "page_count": {"min": 4, "max": 7},
+            }
+        ),
         "comment_prompt": comment_prompt,
         "safety_boundary": safety_boundary,
     }
@@ -1159,7 +1173,8 @@ def _run_psychology_guide_post(request: GuidePostRequest) -> dict[str, Any]:
         scene=recommended_scene,
         image_style=(
             str(image_recommendation["local_style"])
-            if image_recommendation["recommended_backend"] == "local_social_screenshot"
+            if explicit_image_style
+            and image_recommendation["recommended_backend"] == "local_social_screenshot"
             else None
         ),
     )
@@ -1491,8 +1506,7 @@ def _markdown_inline(value: object) -> str:
 def _format_image_recommendation(recommendation: Any) -> str:
     if not isinstance(recommendation, dict):
         return "- status: unavailable"
-    return "\n".join(
-        [
+    lines = [
             f"- decision_stage: {recommendation['decision_stage']}",
             f"- recommended_backend: {recommendation['recommended_backend']}",
             f"- local_style: {recommendation['local_style']}",
@@ -1504,8 +1518,17 @@ def _format_image_recommendation(recommendation: Any) -> str:
             f"- reason: {recommendation['reason']}",
             f"- command_hint: `{recommendation['command_hint']}`",
             f"- fallback: {recommendation['fallback']}",
-        ]
-    )
+    ]
+    if recommendation.get("format_archetype") == "text_carousel":
+        page_count = recommendation["page_count"]
+        lines.extend(
+            [
+                "- format_archetype: text_carousel",
+                f"- page_count: {page_count['min']}-{page_count['max']}",
+                f"- ordered_roles: {', '.join(recommendation['ordered_roles'])}",
+            ]
+        )
+    return "\n".join(lines)
 
 
 def build_psychology_topic_guidance(
@@ -1586,6 +1609,14 @@ def _build_image_recommendation(
     lane_name: str,
     brief: dict[str, Any],
 ) -> dict[str, Any]:
+    image_form = brief.get("image_form")
+    if (
+        playbook_id == SUPPORTED_PLAYBOOK_ID
+        and isinstance(image_form, dict)
+        and image_form.get("format_archetype") == "text_carousel"
+    ):
+        return _psychology_text_carousel_recommendation()
+
     signal_text = " ".join(
         str(value)
         for value in (
@@ -1630,7 +1661,6 @@ def _build_image_recommendation(
             reason="这个方向适合把一句强判断或短重构放在封面上，用笔记卡保持低密度。",
         )
 
-    image_form = brief.get("image_form")
     style = _normalize_local_image_style(
         image_form.get("style") if isinstance(image_form, dict) else None,
         brief.get("image_style"),
@@ -1700,6 +1730,39 @@ def _local_image_recommendation(
         "reason": reason,
         "command_hint": f"--local-image-style {style}",
         "fallback": "如果选定方向最终改成空间、物件、材料、人物或过程证据，再改用 --auto-generate-image。",
+    }
+
+
+def _psychology_text_carousel_recommendation() -> dict[str, Any]:
+    return {
+        "status": "available",
+        "decision_stage": IMAGE_RECOMMENDATION_DECISION_STAGE,
+        "recommended_backend": "local_social_screenshot",
+        "local_style": "psychology_text_card_v1",
+        "provider": "",
+        "model": "",
+        "format_archetype": "text_carousel",
+        "role": "text_carousel",
+        "text_density": "medium",
+        "max_text_units": 4,
+        "page_count": {"min": 4, "max": 7},
+        "ordered_roles": [
+            "cover_hook",
+            "concrete_scene",
+            "light_mechanism",
+            "save_tool",
+            "scope_boundary",
+            "comment_prompt",
+        ],
+        "reason": (
+            "把一个主题依次讲成心理学封面、具体场景、轻机制、可保存工具、"
+            "边界和评论入口，适合用 4-7 张有序文字卡表达。"
+        ),
+        "command_hint": "--auto-generate-image",
+        "fallback": (
+            "如明确只需要一张普通封面，可直接运行时使用既有 --local-image-style 覆盖；"
+            "学习系列不接受该覆盖。"
+        ),
     }
 
 
@@ -2019,6 +2082,12 @@ def _image_recommendation_scene_summary(
         return (
             f"provider_image（{recommendation['provider']} / {recommendation['model']}），"
             f"{recommendation['role']}，低密度，最多 {recommendation['max_text_units']} 个短文字单元"
+        )
+    if recommendation.get("format_archetype") == "text_carousel":
+        page_count = recommendation["page_count"]
+        return (
+            f"{recommendation['local_style']}，{page_count['min']}-{page_count['max']} 张有序文字卡，"
+            "同一主题依次呈现场景、轻机制、工具、边界与评论入口"
         )
     return (
         f"{recommendation['local_style']}，{recommendation['role']}，"

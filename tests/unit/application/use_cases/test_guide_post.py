@@ -140,6 +140,17 @@ def _image_recommendation(result: dict[str, object]) -> dict[str, object]:
     return recommendation
 
 
+def _assert_psychology_text_carousel(
+    recommendation: dict[str, object],
+) -> None:
+    assert recommendation["recommended_backend"] == "local_social_screenshot"
+    assert recommendation["local_style"] == "psychology_text_card_v1"
+    assert recommendation["format_archetype"] == "text_carousel"
+    assert recommendation["role"] == "text_carousel"
+    assert recommendation["page_count"] == {"min": 4, "max": 7}
+    assert recommendation["command_hint"] == "--auto-generate-image"
+
+
 def _format_recommendation(direction: dict[str, object]) -> dict[str, object]:
     recommendation = direction["format_recommendation"]
     assert isinstance(recommendation, dict)
@@ -165,7 +176,7 @@ def test_run_guide_post_builds_psychology_brief_with_scene_defaults() -> None:
     brief = result["brief"]
     assert brief["lane"] == "数字生活 / 信息过载"
     assert brief["mechanism"] == "信息过载"
-    assert brief["image_style"] == "iphone_notes"
+    assert brief["image_style"] == "psychology_text_card_v1"
     assert "睡前刷短视频" in brief["scene"]
     assert "诊断" in brief["safety_boundary"]
 
@@ -173,12 +184,37 @@ def test_run_guide_post_builds_psychology_brief_with_scene_defaults() -> None:
     assert result["run_playbook_command"][:4] == ["uv", "run", "python", "-m"]
     assert "--publish-mode" in result["run_playbook_command"]
     assert "--auto-generate-image" in result["run_playbook_command"]
-    assert "--local-image-style" in result["run_playbook_command"]
+    assert "--local-image-style" not in result["run_playbook_command"]
     assert "run-playbook --scene" in result["run_playbook_command_text"]
     assert any(item["item"] == "第一人称微场景" for item in result["quality_checklist"])
     assert any(item["item"] == "角色认领评论" for item in result["quality_checklist"])
     assert not any(item["item"] == "例子型评论" for item in result["quality_checklist"])
     assert any("危机" in note for note in result["safety_notes"])
+
+
+def test_psychology_guide_recommends_one_semantic_text_carousel() -> None:
+    result = run_guide_post(
+        GuidePostRequest(scene="下班后还在反复复盘白天会议里说错的一句话")
+    )
+
+    recommendation = _image_recommendation(result)
+    assert recommendation["format_archetype"] == "text_carousel"
+    assert recommendation["recommended_backend"] == "local_social_screenshot"
+    assert recommendation["local_style"] == "psychology_text_card_v1"
+    assert recommendation["role"] == "text_carousel"
+    assert recommendation["page_count"] == {"min": 4, "max": 7}
+    assert recommendation["ordered_roles"] == [
+        "cover_hook",
+        "concrete_scene",
+        "light_mechanism",
+        "save_tool",
+        "scope_boundary",
+        "comment_prompt",
+    ]
+    command = result["run_playbook_command"]
+    assert "--auto-generate-image" in command
+    assert "--local-image-style" not in command
+    assert "一个主题" in recommendation["reason"]
 
 
 def test_run_guide_post_returns_productized_topic_directions_without_internal_sources() -> None:
@@ -267,23 +303,20 @@ def test_ai_tech_topic_guidance_routes_prompt_test_replay_with_explicit_mode() -
     _assert_no_internal_source_leakage(result)
 
 
-def test_psychology_topic_guidance_recommends_wechat_for_message_reply_assets() -> None:
+def test_psychology_topic_guidance_keeps_message_reply_assets_in_one_carousel() -> None:
     result = run_guide_post(
         GuidePostRequest(scene="朋友半夜发来一大段消息，我想写一版不被掏空的回复")
     )
 
     recommendation = _image_recommendation(result)
 
-    assert recommendation["recommended_backend"] == "local_social_screenshot"
-    assert recommendation["local_style"] == "wechat_chat"
+    _assert_psychology_text_carousel(recommendation)
     assert recommendation["provider"] == ""
     assert recommendation["model"] == ""
-    assert recommendation["role"] == "comment_prompt"
-    assert recommendation["text_density"] == "low"
-    assert recommendation["max_text_units"] == 2
-    assert recommendation["command_hint"] == "--local-image-style wechat_chat"
-    assert "消息" in recommendation["reason"] or "回复" in recommendation["reason"]
-    assert "wechat_chat" in result["recommended_scene"]
+    assert recommendation["text_density"] == "medium"
+    assert recommendation["max_text_units"] == 4
+    assert "一个主题" in recommendation["reason"]
+    assert "psychology_text_card_v1" in result["recommended_scene"]
     _assert_no_internal_source_leakage(result)
 
 
@@ -308,10 +341,7 @@ def test_psychology_topic_guidance_routes_romantic_waiting_to_uncertainty() -> N
     assert "职场" in guidance["directions"][0]["avoid"]
 
     recommendation = _image_recommendation(result)
-    assert recommendation["recommended_backend"] == "local_social_screenshot"
-    assert recommendation["local_style"] == "iphone_notes"
-    assert recommendation["role"] == "save_tool"
-    assert recommendation["command_hint"] == "--local-image-style iphone_notes"
+    _assert_psychology_text_carousel(recommendation)
 
     assert "事实 / 脑补 / 我需要什么" in result["recommended_scene"]
     assert not any(
@@ -345,9 +375,7 @@ def test_psychology_topic_guidance_routes_sleep_recovery_growth_sublane() -> Non
     assert sleep_format["visual_evidence_need"] == "low"
 
     recommendation = _image_recommendation(result)
-    assert recommendation["recommended_backend"] == "local_social_screenshot"
-    assert recommendation["local_style"] == "iphone_notes"
-    assert recommendation["role"] == "save_tool"
+    _assert_psychology_text_carousel(recommendation)
 
     _assert_no_internal_source_leakage(result)
 
@@ -368,9 +396,7 @@ def test_psychology_topic_guidance_routes_relationship_mixed_signal_camp_vote() 
     assert first_direction["scene_fit"]
 
     recommendation = _image_recommendation(result)
-    assert recommendation["recommended_backend"] == "local_social_screenshot"
-    assert recommendation["local_style"] == "iphone_notes"
-    assert recommendation["role"] == "save_tool"
+    _assert_psychology_text_carousel(recommendation)
     _assert_no_internal_source_leakage(result)
 
 
@@ -392,9 +418,7 @@ def test_psychology_topic_guidance_routes_social_battery_cancel_plan_boundary() 
     assert "社交" in first_direction["trend_signal"]
 
     recommendation = _image_recommendation(result)
-    assert recommendation["recommended_backend"] == "local_social_screenshot"
-    assert recommendation["local_style"] == "iphone_notes"
-    assert recommendation["role"] == "save_tool"
+    _assert_psychology_text_carousel(recommendation)
     _assert_no_internal_source_leakage(result)
 
 
@@ -414,29 +438,39 @@ def test_psychology_topic_guidance_routes_after_hours_message_body_alarm() -> No
     assert "身体" in first_direction["trend_signal"]
 
     recommendation = _image_recommendation(result)
-    assert recommendation["recommended_backend"] == "local_social_screenshot"
-    assert recommendation["local_style"] in {"iphone_notes", "wechat_chat"}
-    assert recommendation["role"] in {"save_tool", "comment_prompt"}
+    _assert_psychology_text_carousel(recommendation)
     _assert_no_internal_source_leakage(result)
 
 
-def test_psychology_topic_guidance_recommends_notes_for_boundary_tools() -> None:
+def test_psychology_topic_guidance_keeps_boundary_tool_as_one_carousel_page() -> None:
     result = run_guide_post(
         GuidePostRequest(scene="同事临时加需求，想练一版边界句")
     )
 
     recommendation = _image_recommendation(result)
 
-    assert recommendation["recommended_backend"] == "local_social_screenshot"
-    assert recommendation["local_style"] == "iphone_notes"
+    _assert_psychology_text_carousel(recommendation)
     assert recommendation["provider"] == ""
     assert recommendation["model"] == ""
-    assert recommendation["role"] == "save_tool"
-    assert recommendation["max_text_units"] == 3
-    assert recommendation["command_hint"] == "--local-image-style iphone_notes"
-    assert "边界句" in recommendation["reason"] or "工具卡" in recommendation["reason"]
-    assert "iphone_notes" in result["recommended_scene"]
+    assert "工具" in recommendation["reason"]
+    assert "psychology_text_card_v1" in result["recommended_scene"]
     _assert_no_internal_source_leakage(result)
+
+
+def test_psychology_guide_preserves_explicit_single_image_style_override() -> None:
+    result = run_guide_post(
+        GuidePostRequest(
+            scene="同事临时加需求，想练一版边界句",
+            image_style="iphone_notes",
+        )
+    )
+
+    recommendation = _image_recommendation(result)
+    assert recommendation["local_style"] == "iphone_notes"
+    assert recommendation["role"] == "save_tool"
+    assert recommendation["command_hint"] == "--local-image-style iphone_notes"
+    assert "format_archetype" not in recommendation
+    assert "--local-image-style" in result["run_playbook_command"]
 
 
 def test_generic_topic_guidance_recommends_provider_for_visual_evidence_domains() -> None:

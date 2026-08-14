@@ -641,6 +641,28 @@ def test_xhs_metrics_report_cli_passes_filters(
     assert captured["group_by"] == "topic_direction_id"
 
 
+def test_xhs_metrics_report_cli_accepts_carousel_style_grouping(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_summarize_xhs_post_metrics(**kwargs: object) -> dict[str, object]:
+        captured.update(kwargs)
+        return {"status": "ok", "groups": []}
+
+    monkeypatch.setattr(
+        "ptsm.interfaces.cli.main.summarize_xhs_post_metrics",
+        fake_summarize_xhs_post_metrics,
+    )
+
+    exit_code = main(["xhs-metrics-report", "--group-by", "carousel_style"])
+
+    assert exit_code == 0
+    assert json.loads(capsys.readouterr().out)["status"] == "ok"
+    assert captured["group_by"] == "carousel_style"
+
+
 def test_run_playbook_cli_passes_local_image_style(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],

@@ -19,6 +19,7 @@ VALID_CHECKPOINTS = {"2h", "24h", "72h"}
 VALID_GROUP_BY = {
     "topic_direction_id",
     "image_style",
+    "carousel_style",
     "checkpoint",
     "account_id",
     "playbook_id",
@@ -230,6 +231,7 @@ def _record_from_artifact(
         else {}
     )
     image_plan = _extract_image_plan(payload)
+    image_count, carousel_style = _extract_image_shape(payload, image_plan=image_plan)
     return {
         "artifact_path": str(artifact_path),
         "playbook_id": str(payload.get("playbook_id") or ""),
@@ -270,6 +272,8 @@ def _record_from_artifact(
             or ""
         ),
         "image_role": str(image_plan.get("role") or ""),
+        "image_count": image_count,
+        "carousel_style": carousel_style,
         "publish_mode": str(payload.get("publish_mode") or ""),
         "publish_status": str(publish_result.get("status") or ""),
         "post_id": str(publish_result.get("post_id") or ""),
@@ -379,6 +383,39 @@ def _extract_image_plan(payload: dict[str, Any]) -> dict[str, Any]:
     )
     image_plan = final_content.get("image_plan")
     return image_plan if isinstance(image_plan, dict) else {}
+
+
+def _extract_image_shape(
+    payload: dict[str, Any],
+    *,
+    image_plan: Mapping[str, Any],
+) -> tuple[int, str]:
+    """Normalize historic single covers and current carousel evidence."""
+    carousel_style = str(image_plan.get("carousel_style") or "").strip()
+    slides = image_plan.get("slides")
+    if isinstance(slides, list) and slides:
+        return len(slides), carousel_style
+
+    image_generation = (
+        payload.get("image_generation")
+        if isinstance(payload.get("image_generation"), dict)
+        else {}
+    )
+    if not carousel_style:
+        carousel_style = str(image_generation.get("carousel_style") or "").strip()
+
+    raw_count = image_generation.get("image_count")
+    if isinstance(raw_count, int) and not isinstance(raw_count, bool) and raw_count > 0:
+        return raw_count, carousel_style
+
+    generated_paths = (
+        image_generation.get("generated_image_paths")
+        or image_generation.get("image_paths")
+    )
+    if isinstance(generated_paths, list) and generated_paths:
+        return len(generated_paths), carousel_style
+
+    return 1, carousel_style
 
 
 def _rate(numerator: int, denominator: int) -> float:
