@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 import cv2
-from PIL import ImageDraw
+from PIL import Image, ImageChops, ImageDraw
 
 from ptsm.infrastructure.images.note_card_backend import (
     NoteCardImageBackend,
@@ -678,3 +678,123 @@ def test_note_card_backend_unknown_style_falls_back_to_note_card(tmp_path: Path)
     )
 
     assert result["style"] == "xhs_note_card_v1"
+
+
+def test_psychology_text_card_renders_role_aware_1080x1440_variants(
+    tmp_path: Path,
+) -> None:
+    backend = NoteCardImageBackend()
+    common = {
+        "style": "psychology_text_card_v1",
+        "headline": "消息没回，不等于关系结束",
+        "body_lines": ["先分开事实、猜测和需要"],
+        "page_count": 6,
+    }
+
+    cover_result = backend.generate(
+        prompt=json.dumps(
+            {**common, "slide_id": "cover", "order": 1, "role": "cover_hook"},
+            ensure_ascii=False,
+        ),
+        output_dir=tmp_path,
+        output_stem="cover",
+    )
+    tool_result = backend.generate(
+        prompt=json.dumps(
+            {**common, "slide_id": "tool", "order": 4, "role": "save_tool"},
+            ensure_ascii=False,
+        ),
+        output_dir=tmp_path,
+        output_stem="tool",
+    )
+
+    cover = Image.open(Path(cover_result["generated_image_paths"][0])).convert("RGB")
+    tool = Image.open(Path(tool_result["generated_image_paths"][0])).convert("RGB")
+    assert cover_result["style"] == "psychology_text_card_v1"
+    assert tool_result["style"] == "psychology_text_card_v1"
+    assert cover.size == (1080, 1440)
+    assert tool.size == (1080, 1440)
+    assert cover.getextrema() != ((255, 255), (255, 255), (255, 255))
+    assert tool.getextrema() != ((255, 255), (255, 255), (255, 255))
+    assert ImageChops.difference(cover, tool).getbbox() is not None
+
+
+def test_psychology_text_card_wraps_maximum_legal_copy_without_drawing_post_fields(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    drawn: list[tuple[tuple[float, float], str, object]] = []
+    original_text = ImageDraw.ImageDraw.text
+
+    def capture_text(self, xy, text, *args, **kwargs):
+        drawn.append((xy, str(text), kwargs.get("font")))
+        return original_text(self, xy, text, *args, **kwargs)
+
+    monkeypatch.setattr(ImageDraw.ImageDraw, "text", capture_text)
+    headline = "关系里的不确定感先放回事实这一边看看再慢慢决定下一步再看"
+    body_lines = [
+        "事实是消息暂时没有回复并不等于关系已经结束先停一下再看眼前能确认的部分再看看",
+        "猜测是我把沉默自动翻译成对方准备离开先把这个故事放在纸上而不是当成答案再看看",
+        "需要是我想确认彼此现在如何理解这段关系也想知道自己真正需要怎样的回应再慢慢看",
+        "先写下事实猜测需要再决定要不要发出询问给身体一点时间从警报里慢慢回来再慢慢看",
+    ]
+    assert len(headline) == 28
+    assert all(len(line) == 38 for line in body_lines)
+
+    result = NoteCardImageBackend().generate(
+        prompt=json.dumps(
+            {
+                "style": "psychology_text_card_v1",
+                "slide_id": "tool",
+                "order": 4,
+                "role": "save_tool",
+                "headline": headline,
+                "body_lines": body_lines,
+                "page_count": 6,
+                "title": "绝不能进入图片的帖子标题",
+                "image_text": "绝不能进入图片的旧封面字",
+                "body": "绝不能进入图片的整段正文",
+                "hashtags": ["#心理学", "#关系边界"],
+            },
+            ensure_ascii=False,
+        ),
+        output_dir=tmp_path,
+        output_stem="bounded",
+    )
+
+    rendered_text = "".join(text for _, text, _ in drawn)
+    assert headline in rendered_text
+    assert all(line in rendered_text for line in body_lines)
+    assert "小工具" in rendered_text
+    assert "04 / 06" in rendered_text
+    assert "绝不能进入图片" not in rendered_text
+    assert "#" not in rendered_text
+    for (x, y), text, font in drawn:
+        assert x >= 0
+        assert y >= 0
+        bbox = ImageDraw.Draw(Image.new("RGB", (1080, 1440))).textbbox(
+            (x, y), text, font=font
+        )
+        assert bbox[2] <= 1010
+        assert bbox[3] <= 1360
+
+
+def test_psychology_text_card_alias_selects_dedicated_style(tmp_path: Path) -> None:
+    result = NoteCardImageBackend(width=540, height=720).generate(
+        prompt=json.dumps(
+            {
+                "style": "psychology_text_card",
+                "slide_id": "cover",
+                "order": 1,
+                "role": "cover_hook",
+                "headline": "先别急着给沉默下结论",
+                "body_lines": ["从事实开始看"],
+                "page_count": 4,
+            },
+            ensure_ascii=False,
+        ),
+        output_dir=tmp_path,
+        output_stem="alias",
+    )
+
+    assert result["style"] == "psychology_text_card_v1"

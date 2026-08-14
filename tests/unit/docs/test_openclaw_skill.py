@@ -130,3 +130,27 @@ def test_openclaw_psychology_skill_documents_trusted_custom_series_provisioning(
     )
     assert "trusted offline maintenance" in normalized_text
     assert "path-based cleanup" in text
+
+
+def test_openclaw_psychology_skill_uses_only_ptsm_returned_carousel_pages() -> None:
+    text = SKILL_PATH.read_text(encoding="utf-8")
+    normalized_text = " ".join(text.split())
+
+    for field in (
+        "format_archetype",
+        "carousel_style",
+        "page_count",
+        "ordered_roles",
+        "image_count",
+    ):
+        assert field in text
+    assert "psychology_text_card_v1" in text
+    assert "4–7" in text
+    assert "one topic" in normalized_text
+    assert "--auto-generate-image" in text
+    assert "--group-by carousel_style" in text
+    assert "Only show carousel pages returned by PTSM" in normalized_text
+    assert "Never write, rewrite, split, reorder, or fill a carousel page" in normalized_text
+    assert "historic controlled-template-v1" in normalized_text
+    assert "builtin and newly confirmed v2" in normalized_text
+    assert "psychology_carousel_generation_failed" in text

@@ -49,11 +49,133 @@ class NoteCardImageBackend:
         }
 
     def _render(self, payload: dict[str, Any], *, style: str) -> Image.Image:
+        if style == "psychology_text_card_v1":
+            return self._render_psychology_text_card(payload)
         if style == "iphone_notes_v1":
             return self._render_iphone_notes(payload)
         if style == "wechat_chat_v1":
             return self._render_wechat_chat(payload)
         return self._render_note_card(payload)
+
+    def _render_psychology_text_card(self, payload: dict[str, Any]) -> Image.Image:
+        role = str(payload.get("role") or "").strip().lower()
+        theme = _psychology_text_card_theme(role)
+        image = Image.new("RGB", (self.width, self.height), theme["background"])
+        draw = ImageDraw.Draw(image)
+        scale = self.width / 1080
+
+        margin = int(84 * scale)
+        content_width = self.width - (2 * margin)
+        accent_width = max(1, int(12 * scale))
+        draw.rounded_rectangle(
+            (
+                margin,
+                int(72 * scale),
+                margin + accent_width,
+                self.height - int(72 * scale),
+            ),
+            radius=max(1, int(6 * scale)),
+            fill=theme["accent"],
+        )
+        draw.ellipse(
+            (
+                self.width - int(330 * scale),
+                -int(130 * scale),
+                self.width + int(90 * scale),
+                int(290 * scale),
+            ),
+            fill=theme["decoration"],
+        )
+
+        label_font = _load_font(int(28 * scale), bold=True)
+        counter_font = _load_font(int(27 * scale), bold=False)
+        role_label = theme["label"]
+        label_x = margin + int(42 * scale)
+        label_y = int(92 * scale)
+        label_bbox = draw.textbbox((0, 0), role_label, font=label_font)
+        label_width = label_bbox[2] - label_bbox[0]
+        label_height = label_bbox[3] - label_bbox[1]
+        label_padding_x = int(20 * scale)
+        label_padding_y = int(12 * scale)
+        draw.rounded_rectangle(
+            (
+                label_x - label_padding_x,
+                label_y - label_padding_y,
+                label_x + label_width + label_padding_x,
+                label_y + label_height + label_padding_y,
+            ),
+            radius=int(18 * scale),
+            fill=theme["label_background"],
+        )
+        draw.text((label_x, label_y), role_label, fill=theme["accent"], font=label_font)
+
+        order = _bounded_positive_int(payload.get("order"), default=1, maximum=99)
+        page_count = _bounded_positive_int(
+            payload.get("page_count"), default=order, maximum=99
+        )
+        page_count = max(order, page_count)
+        counter = f"{order:02d} / {page_count:02d}"
+        counter_bbox = draw.textbbox((0, 0), counter, font=counter_font)
+        counter_width = counter_bbox[2] - counter_bbox[0]
+        draw.text(
+            (self.width - margin - counter_width, label_y),
+            counter,
+            fill=theme["muted"],
+            font=counter_font,
+        )
+
+        headline = str(payload.get("headline") or "").strip()
+        raw_body_lines = payload.get("body_lines")
+        body_lines = (
+            [str(line).strip() for line in raw_body_lines if str(line).strip()]
+            if isinstance(raw_body_lines, (list, tuple))
+            else []
+        )
+        is_cover = role == "cover_hook"
+        headline_font = _load_font(int((78 if is_cover else 62) * scale), bold=True)
+        body_font = _load_font(int((42 if is_cover else 38) * scale), bold=False)
+        headline_y = int((300 if is_cover else 246) * scale)
+        text_x = margin + int(42 * scale)
+        text_width = content_width - int(72 * scale)
+        y = _draw_wrapped(
+            draw,
+            text=headline,
+            xy=(text_x, headline_y),
+            font=headline_font,
+            fill=theme["primary"],
+            max_width=text_width,
+            line_spacing=int(24 * scale),
+            max_lines=3,
+        )
+        y += int((86 if is_cover else 68) * scale)
+
+        for line in body_lines:
+            if not is_cover:
+                dot_radius = max(2, int(6 * scale))
+                dot_center_y = y + int(22 * scale)
+                draw.ellipse(
+                    (
+                        text_x,
+                        dot_center_y - dot_radius,
+                        text_x + (2 * dot_radius),
+                        dot_center_y + dot_radius,
+                    ),
+                    fill=theme["accent"],
+                )
+            line_x = text_x if is_cover else text_x + int(34 * scale)
+            y = _draw_wrapped(
+                draw,
+                text=line,
+                xy=(line_x, y),
+                font=body_font,
+                fill=theme["secondary"],
+                max_width=text_width - (line_x - text_x),
+                line_spacing=int(15 * scale),
+                max_lines=3,
+            )
+            y += int((42 if is_cover else 32) * scale)
+
+        return image
 
     def _render_note_card(self, payload: dict[str, Any]) -> Image.Image:
         image = Image.new("RGB", (self.width, self.height), (250, 248, 240))
@@ -473,8 +595,104 @@ def _normalize_style(value: object) -> str:
         "iphone_notes_v1": "iphone_notes_v1",
         "wechat_chat": "wechat_chat_v1",
         "wechat_chat_v1": "wechat_chat_v1",
+        "psychology_text_card": "psychology_text_card_v1",
+        "psychology_text_card_v1": "psychology_text_card_v1",
     }
     return aliases.get(style, NoteCardImageBackend.style)
+
+
+_PSYCHOLOGY_TEXT_CARD_THEMES: dict[
+    str,
+    dict[str, str | tuple[int, int, int]],
+] = {
+    "cover_hook": {
+        "label": "先看这里",
+        "background": (250, 244, 237),
+        "decoration": (242, 225, 215),
+        "label_background": (247, 229, 219),
+        "accent": (174, 91, 79),
+        "primary": (52, 43, 40),
+        "secondary": (91, 73, 67),
+        "muted": (137, 116, 107),
+    },
+    "concrete_scene": {
+        "label": "此刻场景",
+        "background": (245, 247, 242),
+        "decoration": (224, 234, 221),
+        "label_background": (225, 236, 223),
+        "accent": (75, 124, 88),
+        "primary": (39, 51, 42),
+        "secondary": (70, 84, 73),
+        "muted": (111, 125, 114),
+    },
+    "light_mechanism": {
+        "label": "轻轻解释",
+        "background": (244, 246, 250),
+        "decoration": (220, 229, 241),
+        "label_background": (222, 232, 244),
+        "accent": (73, 104, 151),
+        "primary": (39, 47, 62),
+        "secondary": (67, 77, 96),
+        "muted": (107, 118, 137),
+    },
+    "save_tool": {
+        "label": "小工具",
+        "background": (249, 247, 237),
+        "decoration": (240, 230, 195),
+        "label_background": (244, 234, 198),
+        "accent": (151, 111, 39),
+        "primary": (51, 47, 35),
+        "secondary": (84, 77, 57),
+        "muted": (127, 118, 91),
+    },
+    "scope_boundary": {
+        "label": "适用边界",
+        "background": (248, 243, 247),
+        "decoration": (235, 219, 232),
+        "label_background": (238, 223, 235),
+        "accent": (132, 77, 122),
+        "primary": (54, 42, 53),
+        "secondary": (87, 68, 84),
+        "muted": (128, 105, 124),
+    },
+    "professional_boundary": {
+        "label": "需要支持时",
+        "background": (245, 246, 248),
+        "decoration": (223, 228, 234),
+        "label_background": (226, 231, 237),
+        "accent": (78, 96, 118),
+        "primary": (41, 47, 55),
+        "secondary": (70, 78, 88),
+        "muted": (109, 118, 128),
+    },
+    "comment_prompt": {
+        "label": "留一句话",
+        "background": (247, 244, 239),
+        "decoration": (235, 224, 211),
+        "label_background": (239, 228, 215),
+        "accent": (139, 91, 54),
+        "primary": (52, 44, 38),
+        "secondary": (83, 71, 62),
+        "muted": (125, 110, 99),
+    },
+}
+
+
+def _psychology_text_card_theme(
+    role: str,
+) -> dict[str, str | tuple[int, int, int]]:
+    return _PSYCHOLOGY_TEXT_CARD_THEMES.get(
+        role,
+        _PSYCHOLOGY_TEXT_CARD_THEMES["light_mechanism"],
+    )
+
+
+def _bounded_positive_int(value: object, *, default: int, maximum: int) -> int:
+    try:
+        normalized = int(str(value).strip())
+    except (TypeError, ValueError):
+        normalized = default
+    return max(1, min(normalized, maximum))
 
 
 _LOW_DENSITY_IMAGE_ROLES = {

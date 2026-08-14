@@ -140,8 +140,10 @@ uv run python -m ptsm.bootstrap guide-post \
 matching returned direction id; omit `--scene`, never add
 `--fresh-topic-research`, and do not append `--local-image-style` or
 `--publish-image-path`. A safe completed artifact with strict receipt may update
-operator content-production progress (dry-run or content success followed by
-publish failure can count); preflight/workflow/eval/final-artifact failure cannot.
+operator content-production progress. If `--auto-generate-image` is requested,
+only a complete committed carousel can advance that progress; without image
+generation, the existing safe content-artifact timing remains unchanged.
+Preflight/workflow/image/eval/final-artifact failure cannot advance it.
 PTSM never auto-publishes.
 
 ```bash
@@ -155,6 +157,7 @@ uv run python -m ptsm.bootstrap run-playbook \
   --psychology-lesson-id "<chosen lesson_id>" \
   --psychology-curriculum-version "<returned curriculum_version>" \
   --topic-direction-id "<matching returned direction id>" \
+  --auto-generate-image \
   --publish-mode dry-run
 ```
 
@@ -195,8 +198,13 @@ invent a seventh lesson or substitute a free scene. The roadmap is intentionally
 If the user chooses a lesson, call `guide-post` again with its returned
 `lesson_id` and returned curriculum version, then show the selected direction and
 image recommendation. Do not expose `source_refs`, raw research, URLs, or
-course-contract JSON. The selected response owns the catalog-owned image plan
-and approved title/cover hook.
+course-contract JSON. The selected response owns the catalog-owned image plan,
+approved title/cover hook, and every carousel page.
+
+historic controlled-template-v1 curricula keep their immutable single-card
+contract. builtin and newly confirmed v2 curricula return an exact
+`psychology_text_card_v1` carousel. Only show carousel pages returned by PTSM.
+Never write, rewrite, split, reorder, or fill a carousel page in OpenClaw.
 
 If PTSM returns `topic_guidance_required`, display the returned catalog lesson
 directions and wait for the user's exact lesson confirmation before retrying
@@ -225,9 +233,14 @@ If the user changes the scene, call `guide-post` again with the new scene. Do no
 
 4. After the topic direction is chosen or confirmed, show only that direction's returned `format_recommendation`: `format_archetype`, `cover_role`, `body_shape`, `visual_evidence_need`, and `avoid_format`. Treat it as the body/cover/comment structure constraint for generation; do not add extra format archetypes, wellness advice, or replace it with generic dense text poster guidance.
 
-5. Then show only the returned `topic_guidance.image_recommendation`: `recommended_backend`, `local_style`, `provider`, `model`, `role`, `text_density`, `max_text_units`, `reason`, `command_hint`, and `fallback`.
+5. Then show only the returned `topic_guidance.image_recommendation`: `recommended_backend`, `local_style`, `provider`, `model`, `format_archetype`, `carousel_style`, `role`, `text_density`, `max_text_units`, `page_count`, `ordered_roles`, `reason`, `command_hint`, and `fallback`.
 
 If `recommended_backend` is `provider_image`, describe it as an LLM/provider image recommendation and use the returned `provider` and `model`. If `recommended_backend` is `local_social_screenshot`, describe the returned local style such as `wechat_chat`, `iphone_notes`, or `note_card`. Do not add extra image styles, providers, or model names.
+
+For `format_archetype=text_carousel`, explain that PTSM will locally render one
+topic across the returned 4–7 ordered roles with `psychology_text_card_v1`.
+The cover remains low density and inner pages remain bounded text cards. Do not
+author `slides`; the run must use the exact PTSM-reviewed plan.
 
 6. Generate through PTSM only after the direction is chosen or confirmed. Pass the chosen direction's id as `--topic-direction-id`.
 
@@ -239,8 +252,13 @@ uv run python -m ptsm.bootstrap run-playbook \
   --account-id acct-psychology-local \
   --playbook-id modern_psychology_post \
   --topic-direction-id "<chosen direction id>" \
+  --auto-generate-image \
   --publish-mode dry-run
 ```
+
+Treat `psychology_carousel_generation_failed` as a whole-set failure: do not
+publish a subset, do not claim the lesson advanced, and retry through PTSM after
+the underlying local generation or asset-ledger issue is fixed.
 
 7. Real publishing requires the user's explicit publish intent and the normal PTSM publish flags. Prefer dry-run first.
 
@@ -269,6 +287,11 @@ uv run python -m ptsm.bootstrap xhs-metrics-report \
 uv run python -m ptsm.bootstrap xhs-metrics-report \
   --playbook-id modern_psychology_post \
   --checkpoint 24h \
+  --group-by carousel_style
+
+uv run python -m ptsm.bootstrap xhs-metrics-report \
+  --playbook-id modern_psychology_post \
+  --checkpoint 24h \
   --group-by psychology_learning_series_id
 
 uv run python -m ptsm.bootstrap xhs-metrics-report \
@@ -285,6 +308,8 @@ uv run python -m ptsm.bootstrap xhs-metrics-report \
 Treat groups with fewer than 3 posts as early signals. A learning row is accepted
 only from a receipt-verified catalog artifact; recording the same artifact and
 checkpoint updates that measurement rather than creating a second observation.
+Use returned `image_count` and `carousel_style` to distinguish a 4–7 page text
+carousel from a historic/single cover.
 Use the report to choose the next PTSM-returned psychology direction or image
 recommendation; do not claim a direction is proven until real metrics support it.
 
@@ -302,6 +327,7 @@ recommendation; do not claim a direction is proven until real metrics support it
 - Do not invent, expand, or replace PTSM-returned growth-oriented psychology direction(s), including `relationship_mixed_signal_camp_vote`, `social_battery_cancel_plan_boundary`, or `after_hours_message_body_alarm`; only display them when PTSM returns them.
 - Do not invent, expand, or replace PTSM-returned format recommendation; only display `format_recommendation` when PTSM returns it.
 - Do not invent, expand, or replace PTSM-returned image recommendation; only display `topic_guidance.image_recommendation` when PTSM returns it.
+- Only show carousel pages returned by PTSM. Never write, rewrite, split, reorder, or fill a carousel page; one carousel represents one topic.
 - Do not invent views, likes, saves, comments, shares, interaction rates, or uplift claims. Use `xhs-record-metrics` / `xhs-metrics-report` only with real supplied metrics.
 - If `run-playbook --caller openclaw` returns `topic_guidance_required`, show the directions and call `run-playbook` again only after direction confirmation with `--guidance-ack`.
 - Keep psychology safety boundaries intact: no diagnosis, no treatment promises, no medication advice, and crisis or persistent impairment should be redirected to professional support.

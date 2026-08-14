@@ -68,3 +68,21 @@ def test_key_xhs_style_skills_reference_viral_hook_mechanics() -> None:
     assert "古诗词" in classic_poetry
     assert "金句" in classic_poetry
     assert "老款人格" in wuxia
+
+
+def test_psychology_skills_define_the_local_text_carousel_boundary() -> None:
+    registry = SkillRegistry(skill_root=Path("src/ptsm/skills/builtin"))
+    loader = SkillLoader(registry)
+
+    psychology = loader.load("psychology_style").content
+    image_strategy = loader.load("xhs_image_strategy").content
+
+    for skill_text in (psychology, image_strategy):
+        assert "psychology_text_card_v1" in skill_text
+        assert "4-7" in skill_text or "4–7" in skill_text
+        assert "一个主题" in skill_text
+        assert "slides" in skill_text
+    assert "本地" in image_strategy
+    assert "封面" in image_strategy and "内页" in image_strategy
+    assert "学习系列" in psychology
+    assert "不能自行" in psychology or "不得自行" in psychology
