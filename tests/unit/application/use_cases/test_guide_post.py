@@ -16,6 +16,7 @@ from ptsm.application.use_cases.topic_guidance_packs import TOPIC_GUIDANCE_PACKS
 from ptsm.application.use_cases.guide_post import (
     GuidePostRequest,
     PSYCHOLOGY_TOPIC_DIRECTIONS,
+    build_psychology_topic_guidance,
     format_guide_post_markdown,
     run_guide_post,
 )
@@ -220,6 +221,64 @@ def test_psychology_guide_recommends_one_semantic_text_carousel() -> None:
     assert "一个主题" in recommendation["reason"]
 
 
+def test_psychology_default_guidance_aligns_every_direction_with_text_carousel() -> None:
+    guidance = build_psychology_topic_guidance(
+        scene="下班后脑子停不下来，想做成多张文字卡",
+        lane_name="职场复盘 / 低控制感",
+    )
+
+    _assert_psychology_text_carousel(guidance["image_recommendation"])
+    assert len(guidance["directions"]) == 4
+    for direction in guidance["directions"]:
+        recommendation = _format_recommendation(direction)
+        assert recommendation["format_archetype"] == "text_carousel"
+        assert recommendation["cover_role"] == "cover_hook"
+        assert recommendation["visual_evidence_need"] == "low"
+        assert "scene" in recommendation["body_shape"]
+        assert "boundary" in recommendation["body_shape"]
+
+
+def test_psychology_open_scene_directions_do_not_leak_cross_domain_mechanisms() -> None:
+    result = run_guide_post(
+        GuidePostRequest(scene="下班后脑子停不下来，想做成多张文字卡")
+    )
+
+    open_directions = _open_directions(result)
+    assert open_directions
+    assert all(
+        not direction["id"].startswith(
+            ("open_scene_watch_checklist_", "open_scene_tool_handoff_")
+        )
+        for direction in open_directions
+    )
+    serialized = json.dumps(open_directions, ensure_ascii=False)
+    for forbidden in (
+        "看球搭子",
+        "普通球迷",
+        "赛前赛后",
+        "赌球",
+        "盘口",
+        "AI 工具生活化",
+        "工作流边界",
+    ):
+        assert forbidden not in serialized
+
+
+def test_world_cup_guidance_keeps_its_watch_checklist_open_mechanism() -> None:
+    result = run_guide_post(
+        GuidePostRequest(
+            playbook_id="world_cup_daily_post",
+            account_id="acct-world-cup-local",
+            scene="阿根廷和法国决赛前，想写普通球迷看球清单",
+        )
+    )
+
+    assert any(
+        direction["id"].startswith("open_scene_watch_checklist_")
+        for direction in _open_directions(result)
+    )
+
+
 def test_run_guide_post_returns_productized_topic_directions_without_internal_sources() -> None:
     result = run_guide_post(
         GuidePostRequest(
@@ -249,8 +308,8 @@ def test_run_guide_post_returns_productized_topic_directions_without_internal_so
     assert "万能" in boundary["avoid"]
     assert boundary["scene_fit"]
     boundary_format = _format_recommendation(boundary)
-    assert boundary_format["format_archetype"] == "note_card"
-    assert boundary_format["cover_role"] == "save_tool"
+    assert boundary_format["format_archetype"] == "text_carousel"
+    assert boundary_format["cover_role"] == "cover_hook"
     assert boundary_format["visual_evidence_need"] == "low"
 
     serialized = json.dumps(result, ensure_ascii=False)
@@ -373,8 +432,8 @@ def test_psychology_topic_guidance_routes_sleep_recovery_growth_sublane() -> Non
         for marker in ("A.", "B.", "____")
     )
     sleep_format = _format_recommendation(first_direction)
-    assert sleep_format["format_archetype"] == "note_card"
-    assert sleep_format["cover_role"] == "save_tool"
+    assert sleep_format["format_archetype"] == "text_carousel"
+    assert sleep_format["cover_role"] == "cover_hook"
     assert sleep_format["visual_evidence_need"] == "low"
 
     recommendation = _image_recommendation(result)
@@ -473,7 +532,39 @@ def test_psychology_guide_preserves_explicit_single_image_style_override() -> No
     assert recommendation["role"] == "save_tool"
     assert recommendation["command_hint"] == "--local-image-style iphone_notes"
     assert "format_archetype" not in recommendation
+    assert all(
+        direction["format_recommendation"]["format_archetype"]
+        != "text_carousel"
+        for direction in result["topic_guidance"]["directions"]
+    )
     assert "--local-image-style" in result["run_playbook_command"]
+
+
+@pytest.mark.parametrize(
+    ("scene", "image_style", "expected_role"),
+    (
+        ("朋友半夜发来一大段消息，我不知道怎么回", "note_card", "cover_hook"),
+        ("他3小时没回消息，我已经想好分手后猫归谁了", "wechat_chat", "comment_prompt"),
+        ("书桌角落让我一坐下就想起工作", "iphone_notes", "save_tool"),
+    ),
+)
+def test_psychology_guide_honors_explicit_style_before_scene_heuristics(
+    scene: str,
+    image_style: str,
+    expected_role: str,
+) -> None:
+    result = run_guide_post(
+        GuidePostRequest(scene=scene, image_style=image_style)
+    )
+
+    recommendation = _image_recommendation(result)
+    assert recommendation["recommended_backend"] == "local_social_screenshot"
+    assert recommendation["local_style"] == image_style
+    assert recommendation["role"] == expected_role
+    assert recommendation["command_hint"] == f"--local-image-style {image_style}"
+    command = result["run_playbook_command"]
+    assert command[command.index("--local-image-style") + 1] == image_style
+    assert "--auto-generate-image" in command
 
 
 def test_generic_topic_guidance_recommends_provider_for_visual_evidence_domains() -> None:

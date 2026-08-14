@@ -135,6 +135,22 @@ VISUAL_EVIDENCE_PLAYBOOK_IDS = (
     "human_enrichment_daily_post",
     "wuxia_character_post",
 )
+PSYCHOLOGY_OPEN_SCENE_MECHANISMS = (
+    "copyable_line",
+    "micro_task",
+    "comment_pattern",
+    "save_card",
+)
+PSYCHOLOGY_TEXT_CAROUSEL_DIRECTION_FORMAT: dict[str, Any] = {
+    "format_archetype": "text_carousel",
+    "cover_role": "cover_hook",
+    "body_shape": (
+        "cover hook / concrete scene / light mechanism / save tool / "
+        "scope boundary / comment handoff"
+    ),
+    "visual_evidence_need": "low",
+    "avoid_format": ["dense_text_poster"],
+}
 
 
 @dataclass(frozen=True)
@@ -1565,7 +1581,19 @@ def build_psychology_topic_guidance(
         lane_name=lane_name,
         include_open_slot=True,
         dynamic_breadth=True,
+        allowed_open_scene_mechanisms=PSYCHOLOGY_OPEN_SCENE_MECHANISMS,
     )
+    explicit_single_image_style = _explicit_psychology_single_image_style(brief)
+    image_recommendation = (
+        _psychology_single_image_recommendation(explicit_single_image_style)
+        if explicit_single_image_style
+        else _psychology_text_carousel_recommendation()
+    )
+    if image_recommendation.get("format_archetype") == "text_carousel":
+        directions = [
+            _with_psychology_text_carousel_format(direction)
+            for direction in directions
+        ]
     return {
         "status": "available",
         "message": "这条心理学内容建议先从下面选一个方向，再进入生成。",
@@ -1577,12 +1605,74 @@ def build_psychology_topic_guidance(
                 lane_name=lane_name,
             ),
         ),
-        "image_recommendation": _build_image_recommendation(
-            playbook_id=SUPPORTED_PLAYBOOK_ID,
-            scene=scene,
-            lane_name=lane_name,
-            brief=brief or {},
-        ),
+        "image_recommendation": image_recommendation,
+    }
+
+
+def _explicit_psychology_single_image_style(
+    brief: dict[str, Any] | None,
+) -> str:
+    image_form = brief.get("image_form") if isinstance(brief, dict) else None
+    if not isinstance(image_form, dict):
+        return ""
+    style = image_form.get("style")
+    if (
+        image_form.get("format_archetype") != "text_carousel"
+        and isinstance(style, str)
+        and style in IMAGE_STYLE_CHOICES
+    ):
+        return style
+    return ""
+
+
+def _psychology_single_image_recommendation(style: str) -> dict[str, Any]:
+    if style == "wechat_chat":
+        return _local_image_recommendation(
+            style=style,
+            role="comment_prompt",
+            max_text_units=2,
+            reason="按 operator 的显式单图选择，使用微信聊天截图承接少量对话或评论入口。",
+        )
+    if style == "iphone_notes":
+        return _local_image_recommendation(
+            style=style,
+            role="save_tool",
+            max_text_units=3,
+            reason="按 operator 的显式单图选择，使用 iPhone 备忘录承接可保存工具。",
+        )
+    return _local_image_recommendation(
+        style="note_card",
+        role="cover_hook",
+        max_text_units=2,
+        reason="按 operator 的显式单图选择，使用低密度笔记卡承接封面钩子。",
+    )
+
+
+def _with_psychology_text_carousel_format(
+    direction: dict[str, Any],
+) -> dict[str, Any]:
+    existing = direction.get("format_recommendation")
+    existing_avoid = (
+        existing.get("avoid_format", []) if isinstance(existing, dict) else []
+    )
+    avoid_format = list(
+        dict.fromkeys(
+            [
+                *PSYCHOLOGY_TEXT_CAROUSEL_DIRECTION_FORMAT["avoid_format"],
+                *(
+                    item
+                    for item in existing_avoid
+                    if isinstance(item, str) and item
+                ),
+            ]
+        )
+    )
+    return {
+        **direction,
+        "format_recommendation": {
+            **PSYCHOLOGY_TEXT_CAROUSEL_DIRECTION_FORMAT,
+            "avoid_format": avoid_format,
+        },
     }
 
 

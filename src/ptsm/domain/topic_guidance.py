@@ -127,6 +127,7 @@ def select_topic_directions(
     include_open_slot: bool = False,
     dynamic_breadth: bool = False,
     open_candidate_count: int = 3,
+    allowed_open_scene_mechanisms: Iterable[str] | None = None,
     content_mode: str | None = None,
 ) -> list[dict[str, Any]]:
     if limit <= 0:
@@ -174,6 +175,7 @@ def select_topic_directions(
             scene=scene,
             lane_name=lane_name,
             count=max(open_candidate_count, limit - 1),
+            allowed_mechanisms=allowed_open_scene_mechanisms,
         )
         open_scored: list[_ScoredTopicDirection] = []
         for offset, (open_direction, open_facets) in enumerate(open_candidates):
@@ -226,16 +228,20 @@ def select_topic_directions(
         for item in selected
     ]
     if include_open_slot:
-        open_direction, open_facets = build_open_scene_topic_direction(
+        open_candidates = build_open_scene_topic_directions(
             scene=scene,
             lane_name=lane_name,
+            count=1,
+            allowed_mechanisms=allowed_open_scene_mechanisms,
         )
-        result.append(
-            public_topic_direction(
-                open_direction,
-                scene_fit=_build_open_scene_fit(open_facets),
+        if open_candidates:
+            open_direction, open_facets = open_candidates[0]
+            result.append(
+                public_topic_direction(
+                    open_direction,
+                    scene_fit=_build_open_scene_fit(open_facets),
+                )
             )
-        )
     return result[:limit]
 
 
@@ -244,12 +250,17 @@ def build_open_scene_topic_directions(
     scene: str,
     lane_name: str,
     count: int = 3,
+    allowed_mechanisms: Iterable[str] | None = None,
 ) -> tuple[tuple[TopicDirection, tuple[str, ...]], ...]:
     if count <= 0:
         return ()
 
     facets = _extract_scene_facets(scene=scene, lane_name=lane_name)
-    mechanisms = _rank_open_scene_mechanisms(scene=scene, lane_name=lane_name)
+    mechanisms = _rank_open_scene_mechanisms(
+        scene=scene,
+        lane_name=lane_name,
+        allowed_mechanisms=allowed_mechanisms,
+    )
     return tuple(
         _build_open_scene_topic_direction_for_mechanism(
             scene=scene,
@@ -656,8 +667,14 @@ def _choose_open_scene_mechanism(*, scene: str, lane_name: str) -> str:
     return _rank_open_scene_mechanisms(scene=scene, lane_name=lane_name)[0]
 
 
-def _rank_open_scene_mechanisms(*, scene: str, lane_name: str) -> tuple[str, ...]:
+def _rank_open_scene_mechanisms(
+    *,
+    scene: str,
+    lane_name: str,
+    allowed_mechanisms: Iterable[str] | None = None,
+) -> tuple[str, ...]:
     text = f"{scene} {lane_name}".lower()
+    mechanism_pool = _validated_open_scene_mechanisms(allowed_mechanisms)
     scores = {mechanism: 0 for mechanism in _OPEN_SCENE_MECHANISMS}
     if _contains_any(text, ("世界杯", "看球", "比赛", "赛前", "赛后", "决赛")):
         scores["watch_checklist"] += 50
@@ -744,7 +761,7 @@ def _rank_open_scene_mechanisms(*, scene: str, lane_name: str) -> tuple[str, ...
     scores["save_card"] += 4
     return tuple(
         sorted(
-            _OPEN_SCENE_MECHANISMS,
+            mechanism_pool,
             key=lambda mechanism: (
                 -scores[mechanism],
                 _stable_topic_rotation(
@@ -754,6 +771,36 @@ def _rank_open_scene_mechanisms(*, scene: str, lane_name: str) -> tuple[str, ...
                 ),
             ),
         )
+    )
+
+
+def _validated_open_scene_mechanisms(
+    allowed_mechanisms: Iterable[str] | None,
+) -> tuple[str, ...]:
+    if allowed_mechanisms is None:
+        return _OPEN_SCENE_MECHANISMS
+    if isinstance(allowed_mechanisms, (str, bytes)):
+        raise ValueError(
+            "allowed_mechanisms must be a non-empty iterable of mechanism names"
+        )
+
+    requested = tuple(dict.fromkeys(allowed_mechanisms))
+    unknown = tuple(
+        mechanism
+        for mechanism in requested
+        if mechanism not in _OPEN_SCENE_MECHANISMS
+    )
+    if not requested or unknown:
+        detail = f"; unknown: {', '.join(unknown)}" if unknown else ""
+        raise ValueError(
+            "allowed_mechanisms must contain only known open-scene mechanisms"
+            f"{detail}"
+        )
+    requested_set = set(requested)
+    return tuple(
+        mechanism
+        for mechanism in _OPEN_SCENE_MECHANISMS
+        if mechanism in requested_set
     )
 
 

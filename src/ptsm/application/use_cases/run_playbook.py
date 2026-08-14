@@ -304,6 +304,7 @@ def _topic_selection_metadata(
     *,
     playbook_id: str,
     scene: str,
+    local_image_style: str | None = None,
 ) -> dict[str, Any] | None:
     if topic_selection is None and not topic_direction_id:
         return None
@@ -316,6 +317,7 @@ def _topic_selection_metadata(
             playbook_id=playbook_id,
             scene=scene,
             topic_direction_id=topic_direction_id,
+            local_image_style=local_image_style,
         )
         if direction is not None:
             metadata["direction"] = direction
@@ -327,12 +329,14 @@ def _resolve_topic_direction_payload(
     playbook_id: str,
     scene: str,
     topic_direction_id: str,
+    local_image_style: str | None = None,
 ) -> dict[str, Any] | None:
     if playbook_id == SUPPORTED_PLAYBOOK_ID:
         lane = resolve_psychology_lane(scene=scene)
         guidance = build_psychology_topic_guidance(
             scene=scene,
             lane_name=lane.name,
+            brief=_psychology_guidance_brief(local_image_style),
         )
     else:
         pack = TOPIC_GUIDANCE_PACKS.get(playbook_id)
@@ -352,6 +356,14 @@ def _resolve_topic_direction_payload(
         if isinstance(direction, dict) and direction.get("id") == topic_direction_id:
             return direction
     return None
+
+
+def _psychology_guidance_brief(
+    local_image_style: str | None,
+) -> dict[str, Any] | None:
+    if not local_image_style:
+        return None
+    return {"image_form": {"style": local_image_style}}
 
 
 def _resolve_ai_tech_evidence_preflight(
@@ -1503,6 +1515,7 @@ def run_playbook(
             "topic_guidance": build_psychology_topic_guidance(
                 scene=request.scene,
                 lane_name=lane.name,
+                brief=_psychology_guidance_brief(request.local_image_style),
             ),
             "next_step": (
                 "Show topic_guidance.directions to the user, ask them to choose "
@@ -1572,6 +1585,7 @@ def run_playbook(
                 request.topic_direction_id,
                 playbook_id=playbook.playbook_id,
                 scene=effective_scene,
+                local_image_style=request.local_image_style,
             )
         )
     )

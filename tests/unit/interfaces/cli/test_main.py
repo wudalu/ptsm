@@ -923,6 +923,7 @@ def test_guide_post_cli_outputs_non_interactive_psychology_brief(
         assert direction["format_recommendation"]["format_archetype"] in {
             "note_card",
             "carousel",
+            "text_carousel",
             "chat_screenshot",
             "provider_scene",
         }

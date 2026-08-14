@@ -616,6 +616,48 @@ def test_run_playbook_injects_selected_topic_direction_into_workflow_and_artifac
     assert artifact["topic_selection"] == workflow_selection
 
 
+def test_run_playbook_keeps_explicit_psychology_single_image_direction_format(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    artifact_path = tmp_path / "psychology-single-image-artifact.json"
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "modern_psychology_post",
+                "final_content": {"title": "旧标题"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    workflow = CapturingWorkflow(artifact_path)
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        lambda **_: workflow,
+    )
+    monkeypatch.chdir(tmp_path)
+
+    run_playbook(
+        PlaybookRequest(
+            scene="同事临时加需求，想练一版边界句",
+            account_id="acct-psychology-local",
+            playbook_id="modern_psychology_post",
+            topic_direction_id="boundary_sandwich_refusal",
+            local_image_style="iphone_notes",
+            auto_generate_images=False,
+        ),
+        publisher=SuccessfulPublisher(),
+    )
+
+    assert workflow.payload is not None
+    selection = workflow.payload["topic_selection"]
+    assert isinstance(selection, dict)
+    recommendation = selection["direction"]["format_recommendation"]
+    assert recommendation["format_archetype"] == "note_card"
+    assert recommendation["cover_role"] == "save_tool"
+
+
 def test_fresh_run_playbook_uses_public_full_scan_and_keeps_raw_provenance_out_of_scene(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -1029,14 +1071,64 @@ def test_run_playbook_requires_topic_guidance_for_openclaw_psychology(
     assert result["status"] == "topic_guidance_required"
     assert result["playbook_id"] == "modern_psychology_post"
     assert result["caller"] == "openclaw"
+    guidance = result["topic_guidance"]
+    assert guidance["image_recommendation"]["format_archetype"] == "text_carousel"
+    assert guidance["image_recommendation"]["role"] == "text_carousel"
+    assert all(
+        direction["format_recommendation"]["format_archetype"]
+        == "text_carousel"
+        for direction in guidance["directions"]
+    )
     direction_ids = {
-        direction["id"] for direction in result["topic_guidance"]["directions"]
+        direction["id"] for direction in guidance["directions"]
     }
     assert "boundary_sandwich_refusal" in direction_ids
     serialized = json.dumps(result, ensure_ascii=False)
+    assert "open_scene_watch_checklist_" not in serialized
+    assert "open_scene_tool_handoff_" not in serialized
+    assert "看球搭子" not in serialized
+    assert "AI 工具生活化" not in serialized
     assert "docs/research" not in serialized
     assert "2026-05-23-xhs-viral-meme-product-hooks.md" not in serialized
     assert '"source"' not in serialized
+    assert not (tmp_path / "runs").exists()
+
+
+def test_openclaw_psychology_preflight_preserves_explicit_single_image_style(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    def fail_if_workflow_starts(**_: object) -> FakeWorkflow:
+        raise AssertionError("workflow should not start before OpenClaw guidance ack")
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        fail_if_workflow_starts,
+        raising=False,
+    )
+
+    result = run_playbook(
+        PlaybookRequest(
+            scene="同事临时加需求，想练一版边界句",
+            account_id="acct-psychology-local",
+            playbook_id="modern_psychology_post",
+            caller="openclaw",
+            local_image_style="iphone_notes",
+        ),
+        publisher=SuccessfulPublisher(),
+    )
+
+    assert result["status"] == "topic_guidance_required"
+    guidance = result["topic_guidance"]
+    assert guidance["image_recommendation"]["local_style"] == "iphone_notes"
+    assert "format_archetype" not in guidance["image_recommendation"]
+    assert all(
+        direction["format_recommendation"]["format_archetype"]
+        != "text_carousel"
+        for direction in guidance["directions"]
+    )
     assert not (tmp_path / "runs").exists()
 
 

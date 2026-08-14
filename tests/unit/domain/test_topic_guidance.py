@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from ptsm.domain.topic_guidance import (
     TopicDirection,
     TopicLane,
+    build_open_scene_topic_directions,
     resolve_topic_lane,
     select_topic_directions,
 )
@@ -364,6 +367,53 @@ def test_select_topic_directions_dynamic_breadth_does_not_reserve_curated_slots(
     assert len(curated_slots) <= 3
     assert len({item["id"] for item in open_slots}) == len(open_slots)
     assert len({item["name"] for item in open_slots}) == len(open_slots)
+
+
+def test_open_scene_mechanism_allowlist_preserves_domain_specific_semantics() -> None:
+    scene = "阿根廷和法国决赛前，想写普通球迷看球清单"
+    lane_name = "世界杯看球 / 普通球迷"
+
+    default_directions = build_open_scene_topic_directions(
+        scene=scene,
+        lane_name=lane_name,
+        count=1,
+    )
+    restricted_directions = build_open_scene_topic_directions(
+        scene=scene,
+        lane_name=lane_name,
+        count=4,
+        allowed_mechanisms=(
+            "copyable_line",
+            "micro_task",
+            "comment_pattern",
+            "save_card",
+        ),
+    )
+
+    assert default_directions[0][0].id.startswith("open_scene_watch_checklist_")
+    assert len(restricted_directions) == 4
+    assert all(
+        not direction.id.startswith(
+            ("open_scene_watch_checklist_", "open_scene_tool_handoff_")
+        )
+        for direction, _ in restricted_directions
+    )
+
+
+@pytest.mark.parametrize(
+    "allowed_mechanisms",
+    ((), ("save_card", "not_a_real_mechanism")),
+)
+def test_open_scene_mechanism_allowlist_rejects_empty_or_unknown_values(
+    allowed_mechanisms: tuple[str, ...],
+) -> None:
+    with pytest.raises(ValueError, match="allowed_mechanisms"):
+        build_open_scene_topic_directions(
+            scene="任意场景",
+            lane_name="任意 lane",
+            count=1,
+            allowed_mechanisms=allowed_mechanisms,
+        )
 
 
 def test_open_scene_slot_is_stable_for_same_scene_and_changes_by_scene() -> None:
