@@ -464,11 +464,32 @@ def _build_psychology_carousel_draft_gate() -> PsychologyCarouselDraftGate:
             return []
         try:
             draft["image_plan"] = normalize_psychology_carousel_plan(raw_plan)
-        except (TypeError, ValueError):
-            return ["invalid psychology carousel plan"]
+        except (TypeError, ValueError) as exc:
+            return [f"invalid psychology carousel plan: {_validation_error_detail(exc)}"]
         return []
 
     return gate
+
+
+def _validation_error_detail(exc: Exception) -> str:
+    errors = getattr(exc, "errors", None)
+    if callable(errors):
+        try:
+            details = errors()
+        except Exception:
+            details = None
+        if isinstance(details, list) and details:
+            parts = []
+            for error in details:
+                if not isinstance(error, dict):
+                    continue
+                location = ".".join(str(part) for part in error.get("loc", ()))
+                message = str(error.get("msg", "")).strip()
+                if location and message:
+                    parts.append(f"{location}: {message}")
+            if parts:
+                return "; ".join(parts)
+    return str(exc)
 
 
 def _is_psychology_carousel_plan(raw_plan: Mapping[str, Any]) -> bool:

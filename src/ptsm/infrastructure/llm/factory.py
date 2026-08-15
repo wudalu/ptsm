@@ -1027,7 +1027,12 @@ def _normalize_hashtags(raw_hashtags: object) -> list[str]:
 
 def _normalize_image_plan_payload(raw_plan: dict[str, Any]) -> dict[str, Any]:
     if _is_psychology_carousel_plan(raw_plan):
-        return normalize_psychology_carousel_plan(raw_plan)
+        try:
+            return normalize_psychology_carousel_plan(raw_plan)
+        except (TypeError, ValueError):
+            # The runtime carousel gate owns validation and reflector retries;
+            # a slipped schema must not hard-crash the draft pass here.
+            return raw_plan
     allowed_fields = (
         "backend",
         "style",

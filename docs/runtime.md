@@ -2,7 +2,7 @@
 title: PTSM Runtime
 status: active
 owner: ptsm
-last_verified: 2026-08-14
+last_verified: 2026-08-15
 source_of_truth: true
 related_paths:
   - src/ptsm/agent_runtime/runtime.py
@@ -164,6 +164,7 @@ renderer/style/count 与稳定 `reason`，绝不写本地路径、页文案或 c
 ## Current Runtime Facts
 
 - 当前通用运行时入口是 `build_playbook_workflow()`，`build_fengkuang_workflow()` 只是兼容 wrapper。
+- 心理学轮播计划的 schema 校验由 runtime carousel draft gate 拥有：drafting backend 的 JSON 解析层（`factory.py`）对滑出枚举或漏填必填字段的轮播 `image_plan` 不再直接抛异常，而是原样传给 gate；gate 归一化失败时返回带 pydantic 字段级详情的 `invalid psychology carousel plan: <detail>`，executor 把该详情带进 `psychology_carousel_executor_errors`，reflector 再写入 `reflection_feedback` 触发重试。最终进入状态和 artifact 的成稿仍以 `normalize_psychology_carousel_plan` 的严格归一化结果为准，解析层只负责不短路重试闭环。
 - 运行结果会落到 artifact，并写入本地 run store。
 - `run_playbook()` 默认会在 `.ptsm/agent_runtime/` 下创建持久 execution memory 和 checkpoint。
 - PTSM 有两个显式 live research application surface：`hotspot-discovery` 是 playbook 前的开放发现（不启动 workflow/run/publish），`--fresh-topic-research` 是非 AI-evidence playbook 的兼容路径。后者调用 public `topic_radar.cli.run_scan()`，不传 `platforms`，因此由 Topic Radar 统一控制当前八平台默认集合、canonical evidence、事件簇、history novelty 与 quality 状态；普通 `run-playbook`、deterministic provider、`guide-post` 和本地 topic pack 路径都不触发该 scan，也不会回读当天或其他运行遗留的 `topic-scan-*.json`。`ai_tech_daily_post` 使用 `--fresh-topic-research` 时返回 `ai_tech_fresh_research_separate`，避免把 scan 结果误当成可发表 evidence。

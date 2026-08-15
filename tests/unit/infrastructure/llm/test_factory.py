@@ -155,6 +155,15 @@ def test_parse_json_payload_preserves_strict_psychology_carousel_slides() -> Non
     )
 
 
+def _model_slipped_carousel_plan(plan: dict[str, object]) -> None:
+    plan["slides"][1]["role"] = "scene"
+    plan["slides"][2]["role"] = "mechanism"
+    plan["slides"][3]["role"] = "boundary"
+    plan.pop("cover_text_strategy")
+    plan.pop("reason")
+    plan.pop("prompt_focus")
+
+
 @pytest.mark.parametrize(
     "tamper",
     (
@@ -162,9 +171,10 @@ def test_parse_json_payload_preserves_strict_psychology_carousel_slides() -> Non
         lambda plan: plan["slides"][1].update({"order": 7}),
         lambda plan: plan["slides"][1].update({"body_lines": "整段正文"}),
         lambda plan: plan.pop("slides"),
+        _model_slipped_carousel_plan,
     ),
 )
-def test_parse_json_payload_rejects_malformed_psychology_carousel_slides(
+def test_parse_json_payload_passes_invalid_psychology_carousel_plan_through_to_runtime_gate(
     tamper,
 ) -> None:
     draft = DeterministicDraftBackend().generate(
@@ -178,8 +188,11 @@ def test_parse_json_payload_rejects_malformed_psychology_carousel_slides(
     malformed = deepcopy(draft)
     tamper(malformed["image_plan"])
 
-    with pytest.raises(ValueError):
-        _parse_json_payload(json.dumps(malformed, ensure_ascii=False))
+    payload = _parse_json_payload(json.dumps(malformed, ensure_ascii=False))
+
+    # The runtime carousel gate owns validation and the reflector retry loop;
+    # the parse layer must not hard-crash the draft pass on a slipped schema.
+    assert payload["image_plan"] == malformed["image_plan"]
 
 
 def test_deterministic_backend_emits_local_chat_image_plan_when_strategy_skill_loaded() -> None:

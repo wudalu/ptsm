@@ -2,7 +2,7 @@
 title: PTSM Skills
 status: active
 owner: ptsm
-last_verified: 2026-08-14
+last_verified: 2026-08-15
 source_of_truth: true
 related_paths:
   - src/ptsm/skills/contracts.py
@@ -58,7 +58,7 @@ Skill 层负责让运行时按请求范围暴露合适的 builtin skills，而�
 当前真实例子：
 
 - `xhs_trend_scan` 服务当前所有 `xiaohongshu` playbook，负责把本地 XHS pattern library snapshot 的格式/内容机制带进 drafting；普通生成只消费 snapshot 或静态 guidance，不从该 skill 发起实时 MCP 搜索。显式 fresh research 的 live collection 统一交给 public Topic Radar scan，选定后不再由该 skill 触发第二次搜索。
-- `xhs_image_strategy` 服务当前所有 `xiaohongshu` playbook，负责让 drafting backend 输出可选 `final_content.image_plan`：先声明图片 `role`、`text_density`、`max_text_units` 和 `cover_text_strategy`，再在微信聊天记录、iPhone 记事本或笔记卡这类文字原生首屏适合时选择 `local_social_screenshot`，在真实物件、空间、材料、手作过程和生活氛围图更重要时选择 `provider_image`。它还允许给本地截图补充 `golden_line`、结构化 `chat_messages`、`chat_times` 和 `status_time`，让图片有真实昵称、时间变化和可保存短句；provider 图则用 `prompt_focus` 描述真实物件/空间/过程。`modern_psychology_post` 是唯一自动多图例外：普通心理学默认把一个主题在同一次 drafting pass 写成 4–7 张 semantic pages，以 `role=text_carousel`、`carousel_style=psychology_text_card_v1` 和 ordered `slides` 交给本地 renderer；cover 保持低密度，inner text cards 才使用有界短行。skill 只做策略/结构决策，不直接生成图片，也不对其他领域启用自动 carousel。
+- `xhs_image_strategy` 服务当前所有 `xiaohongshu` playbook，负责让 drafting backend 输出可选 `final_content.image_plan`：先声明图片 `role`、`text_density`、`max_text_units` 和 `cover_text_strategy`，再在微信聊天记录、iPhone 记事本或笔记卡这类文字原生首屏适合时选择 `local_social_screenshot`，在真实物件、空间、材料、手作过程和生活氛围图更重要时选择 `provider_image`。它还允许给本地截图补充 `golden_line`、结构化 `chat_messages`、`chat_times` 和 `status_time`，让图片有真实昵称、时间变化和可保存短句；provider 图则用 `prompt_focus` 描述真实物件/空间/过程。`modern_psychology_post` 是唯一自动多图例外：普通心理学默认把一个主题在同一次 drafting pass 写成 4–7 张 semantic pages，以 `role=text_carousel`、`carousel_style=psychology_text_card_v1` 和 ordered `slides` 交给本地 renderer；cover 保持低密度，inner text cards 才使用有界短行。skill 现在把每页 `role` 的精确枚举值和必填字段写进 prompt 约束：封面页 `cover_hook`、具体场景页 `concrete_scene`、轻机制页 `light_mechanism`、可保存工具页 `save_tool`、范围边界页 `scope_boundary`、专业边界页 `professional_boundary`、评论入口页 `comment_prompt`，禁止 `scene`/`mechanism`/`boundary` 这类自然语言值；轮播计划还必须填写 `cover_text_strategy`、`reason`、`prompt_focus` 三个必填字段。skill 只做策略/结构决策，不直接生成图片，也不对其他领域启用自动 carousel。
 - `xhs_human_voice` 服务当前所有 `xiaohongshu` playbook，是共享 persona 与结构约束。默认 `xhs_compact_native_v1` 要求内容先像真人账号，再像内容账号：标题优先 12-18 字、最多 22 字，以领域适配的具体场景、物件、关系或一句原话进入，避免 `日常`、`实录`、`干货分享` 这类泛标题；不再把同一套冲突/张力关键词强压给英语、诗词、世界杯等不同领域。正文用 2–4 short beats 完成现场/真人锚点、一个领域可用细节和自然的保存或回复入口，保存与评论可以合成一句，不强制四个独立 section。正文仍要少总述、少解释多交付，像朋友安利刚发现或刚试出来的东西；避免公文、讲义、通稿、AI 总结和 `首先`/`其次`/`综上` 这类格式化标记，也不能把 `可复制疯话`、`可收藏小结`、`可保存单元`、`评论交接` 等内部功能标签直接露给读者。
 - `fengkuang_style` / `positive_reframe` / `xhs_hashtagging` 只服务 `fengkuang_daily_post`。这些 skills 现在把“具体职场物件或社交对象 + 可复制疯话/模板 + 评论区接龙 + 非医疗化安全边界”作为生成要求，并可借 2026-05-23 研究里的高雅外壳/狼狈内核、丝瓜汤式沟通和物件发疯机制；`也算`、`至少`、`还能` 只作为轻量缓冲词库，不再是固定结尾。
 - `classic_poetry_style` / `xhs_classic_poetry_hashtagging` 只服务 `classic_poetry_quote_post`，现在要求“生活瞬间 -> 一句经典古诗词金句 -> 可保存的这一句读法 -> 评论区共读”，并可借李白长风破浪、李清照清醒感、王维山水松弛、杜甫现实感、月亮乡愁、节气四季和明确苏轼定风波场景做当代入口。它要求默认包含 `#古诗词`，避免只回到苏轼/怀民，也避免讲义腔、百科腔和伪造作者篇名。

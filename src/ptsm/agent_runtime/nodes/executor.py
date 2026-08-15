@@ -65,7 +65,10 @@ def build_executor_node(
                     else []
                 ),
                 "psychology_carousel_executor_errors": (
-                    ["psychology carousel draft rejected before runtime state"]
+                    [
+                        "psychology carousel draft rejected before runtime state"
+                        f": {'; '.join(psychology_carousel_errors)}"
+                    ]
                     if psychology_carousel_errors
                     else []
                 ),

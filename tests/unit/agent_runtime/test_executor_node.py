@@ -114,7 +114,8 @@ def test_executor_rejects_an_unsafe_carousel_before_draft_state() -> None:
         "hashtags": [],
     }
     assert result["psychology_carousel_executor_errors"] == [
-        "psychology carousel draft rejected before runtime state"
+        "psychology carousel draft rejected before runtime state: "
+        "invalid psychology carousel plan"
     ]
     assert unsafe_text not in repr(result)
 
@@ -150,5 +151,26 @@ def test_executor_rejects_a_partial_psychology_carousel_without_slides() -> None
     result = executor({"scene": "下班后身体还在工位"})
 
     assert result["psychology_carousel_executor_errors"] == [
-        "psychology carousel draft rejected before runtime state"
+        "psychology carousel draft rejected before runtime state: "
+        "invalid psychology carousel plan"
+    ]
+
+
+def test_executor_keeps_gate_error_detail_for_retry_feedback() -> None:
+    draft = _psychology_carousel_draft()
+    draft["image_plan"]["slides"][1]["role"] = "scene"
+    executor = build_executor_node(
+        drafting_agent=StaticDraftingAgent(draft),
+        psychology_carousel_draft_gate=lambda value: [
+            "invalid psychology carousel plan: slides.1.role: "
+            "Input should be 'concrete_scene'"
+        ],
+    )
+
+    result = executor({"scene": "下班后身体还在工位"})
+
+    assert result["psychology_carousel_executor_errors"] == [
+        "psychology carousel draft rejected before runtime state: "
+        "invalid psychology carousel plan: slides.1.role: "
+        "Input should be 'concrete_scene'"
     ]

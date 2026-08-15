@@ -3,7 +3,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ptsm.agent_runtime.runtime import build_finalize_node
+from ptsm.agent_runtime.runtime import (
+    _build_psychology_carousel_draft_gate,
+    build_finalize_node,
+)
 from ptsm.domain.ai_tech_content import parse_ai_tech_evidence_bundle
 from ptsm.domain.psychology_carousel import normalize_psychology_carousel_plan
 from ptsm.infrastructure.artifacts.file_store import FileArtifactStore
@@ -51,6 +54,27 @@ def _ordinary_psychology_carousel_gate(
     except ValueError:
         return ["invalid psychology carousel plan"]
     return []
+
+
+def test_psychology_carousel_draft_gate_reports_schema_error_detail() -> None:
+    gate = _build_psychology_carousel_draft_gate()
+    draft = DeterministicDraftBackend().generate(
+        scene="下班后身体还在工位，需要5分钟恢复信号",
+        planner_prompt="modern_psychology_post 现代心理困境观察",
+        skill_contents=[
+            "# Psychology Style\n#心理学，使用具体场景和低风险工具。",
+            "# XHS Image Strategy\n输出 image_plan。",
+        ],
+    )
+    draft["image_plan"]["slides"][1]["role"] = "scene"
+    draft["image_plan"].pop("prompt_focus")
+
+    errors = gate({}, draft)
+
+    assert len(errors) == 1
+    assert errors[0].startswith("invalid psychology carousel plan: ")
+    assert "concrete_scene" in errors[0]
+    assert "prompt_focus" in errors[0]
 
 
 def test_finalize_blocks_invalid_ai_draft_before_artifact_or_memory(tmp_path: Path) -> None:

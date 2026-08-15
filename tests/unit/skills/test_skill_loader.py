@@ -86,3 +86,24 @@ def test_psychology_skills_define_the_local_text_carousel_boundary() -> None:
     assert "封面" in image_strategy and "内页" in image_strategy
     assert "学习系列" in psychology
     assert "不能自行" in psychology or "不得自行" in psychology
+
+
+def test_image_strategy_skill_names_exact_carousel_role_enum_values() -> None:
+    registry = SkillRegistry(skill_root=Path("src/ptsm/skills/builtin"))
+    loader = SkillLoader(registry)
+
+    image_strategy = loader.load("xhs_image_strategy").content
+
+    for role in (
+        "cover_hook",
+        "concrete_scene",
+        "light_mechanism",
+        "save_tool",
+        "scope_boundary",
+        "professional_boundary",
+        "comment_prompt",
+    ):
+        assert role in image_strategy
+    for required_field in ("cover_text_strategy", "reason", "prompt_focus"):
+        assert f"`{required_field}`" in image_strategy
+        assert "必填" in image_strategy
