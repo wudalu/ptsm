@@ -58,7 +58,7 @@ reflection:
     - 灾难化思维
     - 心理机制
 max_attempts: 3
-drafting_model: deepseek-v4-pro
+drafting_model: deepseek-reasoner
 trend_keywords:
   - 职场焦虑
   - 情绪内耗

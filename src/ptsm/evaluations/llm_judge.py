@@ -1,9 +1,79 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Protocol
 
 from ptsm.evaluations.contracts import EvalResult, EvalTarget
+
+
+def _parse_json_object(raw: str) -> dict | None:
+    """Parse a strict-JSON judge response, tolerating common model drift.
+
+    Handles Markdown code fences, surrounding prose, and trailing commas so a
+    slightly non-conforming LLM output does not fail a required gate.
+    """
+    if raw is None:
+        return None
+    text = raw.strip()
+    if not text:
+        return None
+
+    candidates: list[str] = []
+
+    # 1) Strip Markdown code fences if present.
+    fence = re.search(r"```(?:json)?\s*(.*?)```", text, flags=re.DOTALL | re.IGNORECASE)
+    if fence:
+        candidates.append(fence.group(1).strip())
+
+    # 2) Whole raw text.
+    candidates.append(text)
+
+    # 3) First balanced {...} span, tolerant of nested braces.
+    start = text.find("{")
+    while start != -1:
+        depth = 0
+        in_string = False
+        escape = False
+        for i in range(start, len(text)):
+            ch = text[i]
+            if in_string:
+                if escape:
+                    escape = False
+                elif ch == "\\":
+                    escape = True
+                elif ch == '"':
+                    in_string = False
+                continue
+            if ch == '"':
+                in_string = True
+            elif ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    candidates.append(text[start : i + 1])
+                    break
+        break
+
+    for candidate in candidates:
+        candidate = candidate.strip()
+        if not candidate:
+            continue
+        # Tolerate trailing commas inside objects/arrays.
+        cleaned = re.sub(r",\s*([}\]])$", r"\1", candidate)
+        cleaned = re.sub(r",\s*([}\]])$", r"\1", cleaned)
+        try:
+            payload = json.loads(cleaned)
+        except (json.JSONDecodeError, TypeError):
+            # Retry without any cleanup.
+            try:
+                payload = json.loads(candidate)
+            except (json.JSONDecodeError, TypeError):
+                continue
+        if isinstance(payload, dict):
+            return payload
+    return None
 
 
 class LLMJudgeBackend(Protocol):
@@ -43,21 +113,12 @@ def run_content_quality_judge(
 ) -> EvalResult:
     prompt = _build_prompt(target=target, rubric=CONTENT_QUALITY_RUBRIC)
     raw_response = backend.judge(prompt=prompt)
-    try:
-        payload = json.loads(raw_response)
-    except json.JSONDecodeError as exc:
+    payload = _parse_json_object(raw_response)
+    if payload is None:
         return _warning_error_result(
             target=target,
             evaluator_id=evaluator_id,
-            reason=f"invalid JSON from content quality judge: {exc.msg}",
-            gate_level=gate_level,
-        )
-
-    if not isinstance(payload, dict):
-        return _warning_error_result(
-            target=target,
-            evaluator_id=evaluator_id,
-            reason="invalid JSON from content quality judge: expected object",
+            reason="invalid JSON from content quality judge: unable to parse response",
             gate_level=gate_level,
         )
 
@@ -104,9 +165,8 @@ def run_llm_judge(
 ) -> EvalResult:
     prompt = _build_prompt(target=target, rubric=rubric)
     raw_response = backend.judge(prompt=prompt)
-    try:
-        payload = json.loads(raw_response)
-    except json.JSONDecodeError as exc:
+    payload = _parse_json_object(raw_response)
+    if payload is None:
         return EvalResult(
             eval_result_id=f"{target.target_id}:{evaluator_id}",
             eval_run_id="",
@@ -114,19 +174,7 @@ def run_llm_judge(
             evaluator_id=evaluator_id,
             evaluator_version="1",
             status="error",
-            reason=f"invalid JSON from LLM judge: {exc.msg}",
-            gate_level="warning",
-        )
-
-    if not isinstance(payload, dict):
-        return EvalResult(
-            eval_result_id=f"{target.target_id}:{evaluator_id}",
-            eval_run_id="",
-            target_id=target.target_id,
-            evaluator_id=evaluator_id,
-            evaluator_version="1",
-            status="error",
-            reason="invalid JSON from LLM judge: expected object",
+            reason="invalid JSON from LLM judge: unable to parse response",
             gate_level="warning",
         )
 
@@ -158,12 +206,14 @@ def _build_prompt(*, target: EvalTarget, rubric: str) -> str:
     output = target.output_ref if target.output_ref is not None else {}
     output_json = json.dumps(output, ensure_ascii=False, sort_keys=True)
     return (
-        "You are a PTSM evaluation judge. Return strict JSON only with keys "
-        "score, label, reason, evidence, confidence.\n"
+        "You are a PTSM evaluation judge. Evaluate the content below against the "
+        "rubric and return strict JSON exactly as the rubric specifies (the rubric "
+        "defines the required keys). Do not echo or restate the input content; "
+        "only output your evaluation JSON.\n"
         f"Playbook: {target.playbook_id}\n"
         f"Phase: {target.phase}\n"
         f"Rubric: {rubric}\n"
-        f"Output JSON: {output_json}"
+        f"Content to evaluate (JSON): {output_json}"
     )
 
 

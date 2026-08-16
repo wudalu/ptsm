@@ -38,7 +38,7 @@ reflection:
     - save_tool
     - identity_conflict
 max_attempts: 3
-drafting_model: deepseek-v4-pro
+drafting_model: deepseek-reasoner
 trend_keywords:
   - 世界杯
   - 世界杯决赛

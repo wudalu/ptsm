@@ -54,6 +54,7 @@ _OBFUSCATED_DOT_DOMAIN_PATTERN = re.compile(
     rf"(?![a-z0-9_\-\u3400-\u9fff])",
     flags=re.IGNORECASE,
 )
+# Markers that are never acceptable on any carousel page (promise/claim wording).
 _UNSAFE_HAN_MARKERS = (
     "抑郁症",
     "抑鬱症",
@@ -66,22 +67,31 @@ _UNSAFE_HAN_MARKERS = (
     "雙相",
     "人格障碍",
     "人格障礙",
-    "诊断",
-    "診斷",
     "确诊",
     "確診",
     "治愈",
     "治癒",
     "治好",
     "根治",
-    "治疗",
-    "治療",
-    "疗法",
-    "療法",
     "疗效",
     "療效",
     "保证",
     "保證",
+    "自测",
+    "自測",
+    "量表",
+)
+
+# Disclaimer-adjacent words that are only allowed on the dedicated boundary pages
+# (scope_boundary / professional_boundary), where the copy's whole job is to
+# state that the post does NOT diagnose, treat, or medicate.
+_BOUNDARY_ONLY_HAN_MARKERS = (
+    "诊断",
+    "診斷",
+    "治疗",
+    "治療",
+    "疗法",
+    "療法",
     "药物",
     "藥物",
     "用药",
@@ -96,9 +106,6 @@ _UNSAFE_HAN_MARKERS = (
     "藥量",
     "处方",
     "處方",
-    "自测",
-    "自測",
-    "量表",
 )
 _UNSAFE_ASCII_MARKERS = (
     "adhd",
@@ -264,6 +271,23 @@ class PsychologyCarouselSlide(_FrozenClosedModel):
             raise ValueError("inner carousel slides require at least one body line")
         if len(self.headline) + sum(len(line) for line in self.body_lines) > 132:
             raise ValueError("carousel slide exceeds its visible text budget")
+
+        allow_boundary_disclaimer = self.role in (
+            "scope_boundary",
+            "professional_boundary",
+        )
+        for field_name, value in (
+            ("headline", self.headline),
+            *(("body_lines", line) for line in self.body_lines),
+        ):
+            security_text = _security_text(value, field_name=field_name)
+            if _contains_unsafe_psychology_marker(
+                security_text,
+                allow_boundary_disclaimer=allow_boundary_disclaimer,
+            ):
+                raise ValueError(
+                    f"{field_name} contains an unsafe psychology claim"
+                )
         return self
 
 
@@ -274,7 +298,16 @@ class PsychologyCarouselPlan(_FrozenClosedModel):
     style: Literal["psychology_text_card"]
     role: Literal["text_carousel"]
     text_density: Literal["medium"]
-    max_text_units: Literal["4"]
+    max_text_units: Literal[4, "4"]
+
+    @field_validator("max_text_units", mode="before")
+    @classmethod
+    def _normalize_max_text_units(cls, value: object) -> object:
+        # Models occasionally emit the integer 4 instead of the documented
+        # string "4". Accept both and normalize to the canonical string.
+        if value == 4 or value == "4":
+            return "4"
+        return value
     cover_text_strategy: str = Field(min_length=1, max_length=80)
     reason: str = Field(min_length=1, max_length=100)
     prompt_focus: str = Field(min_length=1, max_length=100)
@@ -371,8 +404,6 @@ def _require_safe_visible_text(
         raise ValueError(f"{field_name} must not contain hashtags")
     if _contains_locator(security_text):
         raise ValueError(f"{field_name} must not contain a source locator")
-    if _contains_unsafe_psychology_marker(security_text):
-        raise ValueError(f"{field_name} contains an unsafe psychology claim")
     if _contains_instruction_leakage(security_text):
         raise ValueError(f"{field_name} contains instruction leakage")
     return text
@@ -425,11 +456,21 @@ def _contains_locator(security_text: str) -> bool:
     )
 
 
-def _contains_unsafe_psychology_marker(security_text: str) -> bool:
+def _contains_unsafe_psychology_marker(
+    security_text: str,
+    *,
+    allow_boundary_disclaimer: bool = False,
+) -> bool:
     han_text, ascii_text = _marker_skeletons(security_text)
-    return any(marker in han_text for marker in _UNSAFE_HAN_MARKERS) or any(
-        marker in ascii_text for marker in _UNSAFE_ASCII_MARKERS
-    )
+    if any(marker in ascii_text for marker in _UNSAFE_ASCII_MARKERS):
+        return True
+    if any(marker in han_text for marker in _UNSAFE_HAN_MARKERS):
+        return True
+    if not allow_boundary_disclaimer and any(
+        marker in han_text for marker in _BOUNDARY_ONLY_HAN_MARKERS
+    ):
+        return True
+    return False
 
 
 def _contains_instruction_leakage(security_text: str) -> bool:

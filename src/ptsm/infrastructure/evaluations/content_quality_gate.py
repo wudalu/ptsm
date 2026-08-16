@@ -23,6 +23,11 @@ def _build_target(*, state: Mapping[str, object], draft: dict[str, object]) -> E
     attempt_count = int(state.get("attempt_count", 0))
     playbook_id = str(state.get("playbook_id", ""))
     account_id = str(state.get("account_id", ""))
+    # Content quality judges only the visible text. The image_plan (including
+    # the psychology text-carousel slides) is structural and is validated by the
+    # dedicated carousel gate; including it here bloats the judge prompt and can
+    # drive the model to echo the input instead of scoring content.
+    judge_view = {k: v for k, v in draft.items() if k != "image_plan"}
     return EvalTarget(
         target_id=f"{account_id}:{playbook_id}:executor:attempt-{attempt_count}",
         run_id=str(state.get("thread_id", "")),
@@ -31,5 +36,5 @@ def _build_target(*, state: Mapping[str, object], draft: dict[str, object]) -> E
         platform=str(state.get("platform", "")),
         phase="executor",
         target_type="artifact_slice",
-        output_ref={"final_content": draft},
+        output_ref={"final_content": judge_view},
     )

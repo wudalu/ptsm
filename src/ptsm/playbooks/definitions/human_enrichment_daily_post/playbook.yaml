@@ -39,7 +39,7 @@ reflection:
     - save_tool
     - image_brief
 max_attempts: 3
-drafting_model: deepseek-v4-pro
+drafting_model: deepseek-reasoner
 trend_keywords:
   - 人类丰容
   - 家的丰容计划

@@ -290,7 +290,7 @@ def build_llm_judge_backend(
         api_key=settings.deepseek_api_key,
         api_base=settings.deepseek_base_url,
         temperature=0.1,
-        max_tokens=min(settings.deepseek_max_tokens, 1024),
+        max_tokens=min(settings.deepseek_max_tokens, 2048),
     )
     return DeepSeekJudgeBackend(llm)
 
