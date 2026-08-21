@@ -14,6 +14,26 @@ from ptsm.infrastructure.memory.store import (
 )
 
 
+def _carousel_receipt_intent(fingerprint: str) -> dict[str, object]:
+    return {
+        "account_id": "acct-psychology-local",
+        "playbook_id": "modern_psychology_post",
+        "artifact_path": "outputs/artifacts/carousel.json",
+        "carousel_plan_fingerprint": fingerprint,
+        "set_id": "1" * 64,
+        "manifest_sha256": "2" * 64,
+        "pages": [
+            {
+                "order": 1,
+                "slide_id": "cover",
+                "path": "outputs/generated_images/carousel-01-cover.png",
+                "page_sha256": "3" * 64,
+                "file_sha256": "4" * 64,
+            }
+        ],
+    }
+
+
 def test_file_execution_memory_persists_records_across_instances(
     tmp_path: Path,
 ) -> None:
@@ -72,25 +92,22 @@ def test_psychology_inner_fingerprint_reservation_allows_one_interleaved_writer(
     assert len(winners) == 1
     reservation_id = winners[0]
     # An active render lease cannot turn into recent-history memory directly:
-    # the post-ledger marker is the required durable state transition.
-    assert not stores[0].commit_psychology_carousel_inner_fingerprint(
+    # a durable receipt intent is the required pre-ledger state transition.
+    receipt_intent = _carousel_receipt_intent(fingerprint)
+    assert stores[0].persist_psychology_carousel_inner_fingerprint_receipt_intent(
         namespace=namespace,
         fingerprint=fingerprint,
         reservation_id=reservation_id,
         item=lesson,
+        receipt_intent=receipt_intent,
     )
     assert stores[0].search(namespace=namespace) == []
-    assert stores[0].mark_psychology_carousel_inner_fingerprint_commit_pending(
+    assert stores[0].commit_psychology_carousel_inner_fingerprint_receipt_intent(
         namespace=namespace,
         fingerprint=fingerprint,
         reservation_id=reservation_id,
         item=lesson,
-    )
-    assert stores[0].commit_psychology_carousel_inner_fingerprint(
-        namespace=namespace,
-        fingerprint=fingerprint,
-        reservation_id=reservation_id,
-        item=lesson,
+        receipt_intent=receipt_intent,
     )
     assert (
         stores[1].reserve_psychology_carousel_inner_fingerprint(
@@ -256,12 +273,6 @@ def test_expired_psychology_carousel_reservation_is_recovered_for_retry(
 
     assert first_reservation_id is not None
     now[0] += 60 * 60
-    assert not store.commit_psychology_carousel_inner_fingerprint(
-        namespace=namespace,
-        fingerprint=fingerprint,
-        reservation_id=first_reservation_id,
-        item=lesson,
-    )
     retry_reservation_id = store.reserve_psychology_carousel_inner_fingerprint(
         namespace=namespace,
         fingerprint=fingerprint,
@@ -338,7 +349,7 @@ def test_psychology_carousel_reservation_renewal_is_owner_fenced_and_settlement_
 
 
 @pytest.mark.parametrize("store_kind", ("in_memory", "file"))
-def test_commit_pending_carousel_reservation_reconciles_before_a_retry_can_render(
+def test_expired_receipt_intent_fails_closed_without_an_injected_ledger_verifier(
     store_kind: str,
     tmp_path: Path,
 ) -> None:
@@ -367,13 +378,16 @@ def test_commit_pending_carousel_reservation_reconciles_before_a_retry_can_rende
     )
 
     assert reservation_id is not None
-    assert store.mark_psychology_carousel_inner_fingerprint_commit_pending(
+    intent = _carousel_receipt_intent(fingerprint)
+    assert store.persist_psychology_carousel_inner_fingerprint_receipt_intent(
         namespace=namespace,
         fingerprint=fingerprint,
         reservation_id=reservation_id,
         item=lesson,
+        receipt_intent=intent,
     )
-    # A late cleanup must never delete the durable post-ledger marker.
+    # A late cleanup must never delete a durable intent without consulting the
+    # injected ledger verifier.
     store.release_psychology_carousel_inner_fingerprint(
         namespace=namespace,
         fingerprint=fingerprint,
@@ -385,8 +399,8 @@ def test_commit_pending_carousel_reservation_reconciles_before_a_retry_can_rende
         # the memory promotion.
         store = FileExecutionMemory(path=memory_path, clock=lambda: now[0])
 
-    # Reserving a retry first promotes the pending marker, then rejects the
-    # duplicate before a second renderer invocation can start.
+    # A direct workflow has no durable ledger verifier, so it fails closed
+    # rather than deleting/promoting the expired intent on its own.
     assert (
         store.reserve_psychology_carousel_inner_fingerprint(
             namespace=namespace,
@@ -395,7 +409,231 @@ def test_commit_pending_carousel_reservation_reconciles_before_a_retry_can_rende
         )
         is None
     )
+    assert store.search(namespace=namespace) == []
+    assert store.reconcile_psychology_carousel_inner_fingerprint_receipt_intents(
+        namespace=namespace,
+        receipt_intent_verifier=lambda candidate: candidate == intent,
+    ) == 1
     assert store.search(namespace=namespace) == [lesson]
+
+
+@pytest.mark.parametrize("store_kind", ("in_memory", "file"))
+def test_live_receipt_intent_cannot_be_reconciled_before_its_owner_commits(
+    store_kind: str,
+    tmp_path: Path,
+) -> None:
+    """A second reserve cannot promote an active owner's durable intent."""
+    namespace = ("accounts", "acct-psychology-local", "lessons")
+    fingerprint = "e" * 64
+    memory_path = tmp_path / "execution-memory.json"
+    store = (
+        InMemoryExecutionMemory()
+        if store_kind == "in_memory"
+        else FileExecutionMemory(path=memory_path)
+    )
+    other_store = (
+        store
+        if store_kind == "in_memory"
+        else FileExecutionMemory(path=memory_path)
+    )
+    lesson = {
+        "playbook_id": "modern_psychology_post",
+        "psychology_carousel_inner_fingerprint": fingerprint,
+        ORDINARY_PSYCHOLOGY_CAROUSEL_MEMORY_MARKER: True,
+    }
+    reservation_id = store.reserve_psychology_carousel_inner_fingerprint(
+        namespace=namespace,
+        fingerprint=fingerprint,
+        item=lesson,
+    )
+
+    assert reservation_id is not None
+    assert store.persist_psychology_carousel_inner_fingerprint_receipt_intent(
+        namespace=namespace,
+        fingerprint=fingerprint,
+        reservation_id=reservation_id,
+        item=lesson,
+        receipt_intent=_carousel_receipt_intent(fingerprint),
+    )
+    assert (
+        other_store.reserve_psychology_carousel_inner_fingerprint(
+            namespace=namespace,
+            fingerprint=fingerprint,
+            item=lesson,
+        )
+        is None
+    )
+    assert store.search(namespace=namespace) == []
+    assert store.commit_psychology_carousel_inner_fingerprint_receipt_intent(
+        namespace=namespace,
+        fingerprint=fingerprint,
+        reservation_id=reservation_id,
+        item=lesson,
+        receipt_intent=_carousel_receipt_intent(fingerprint),
+    )
+    assert store.search(namespace=namespace) == [lesson]
+
+
+@pytest.mark.parametrize("store_kind", ("in_memory", "file"))
+def test_expired_receipt_intent_is_reconciled_only_by_a_complete_ledger_verifier(
+    store_kind: str,
+    tmp_path: Path,
+) -> None:
+    """Crash recovery promotes only a full durable receipt projection."""
+    namespace = ("accounts", "acct-psychology-local", "lessons")
+    fingerprint = "f" * 64
+    now = [1_000.0]
+    memory_path = tmp_path / "execution-memory.json"
+    store = (
+        InMemoryExecutionMemory(clock=lambda: now[0])
+        if store_kind == "in_memory"
+        else FileExecutionMemory(path=memory_path, clock=lambda: now[0])
+    )
+    lesson = {
+        "playbook_id": "modern_psychology_post",
+        "psychology_carousel_inner_fingerprint": fingerprint,
+        ORDINARY_PSYCHOLOGY_CAROUSEL_MEMORY_MARKER: True,
+    }
+    intent = _carousel_receipt_intent(fingerprint)
+    reservation_id = store.reserve_psychology_carousel_inner_fingerprint(
+        namespace=namespace,
+        fingerprint=fingerprint,
+        item=lesson,
+    )
+
+    assert reservation_id is not None
+    assert store.persist_psychology_carousel_inner_fingerprint_receipt_intent(
+        namespace=namespace,
+        fingerprint=fingerprint,
+        reservation_id=reservation_id,
+        item=lesson,
+        receipt_intent=intent,
+    )
+    now[0] += memory_store._PSYCHOLOGY_CAROUSEL_RESERVATION_LEASE_SECONDS + 1
+    if store_kind == "file":
+        # Recovery runs in a separate process after the original owner crashed.
+        store = FileExecutionMemory(path=memory_path, clock=lambda: now[0])
+
+    assert store.reconcile_psychology_carousel_inner_fingerprint_receipt_intents(
+        namespace=namespace,
+        receipt_intent_verifier=lambda candidate: candidate == intent,
+    ) == 1
+    assert store.search(namespace=namespace) == [lesson]
+    assert (
+        store.reserve_psychology_carousel_inner_fingerprint(
+            namespace=namespace,
+            fingerprint=fingerprint,
+            item=lesson,
+        )
+        is None
+    )
+
+
+@pytest.mark.parametrize("store_kind", ("in_memory", "file"))
+def test_expired_receipt_intent_with_missing_or_mismatched_ledger_is_aborted(
+    store_kind: str,
+    tmp_path: Path,
+) -> None:
+    """Pre-ledger crashes and partial ledgers never become ordinary history."""
+    namespace = ("accounts", "acct-psychology-local", "lessons")
+    fingerprint = "9" * 64
+    now = [1_000.0]
+    memory_path = tmp_path / "execution-memory.json"
+    store = (
+        InMemoryExecutionMemory(clock=lambda: now[0])
+        if store_kind == "in_memory"
+        else FileExecutionMemory(path=memory_path, clock=lambda: now[0])
+    )
+    lesson = {
+        "playbook_id": "modern_psychology_post",
+        "psychology_carousel_inner_fingerprint": fingerprint,
+        ORDINARY_PSYCHOLOGY_CAROUSEL_MEMORY_MARKER: True,
+    }
+    reservation_id = store.reserve_psychology_carousel_inner_fingerprint(
+        namespace=namespace,
+        fingerprint=fingerprint,
+        item=lesson,
+    )
+
+    assert reservation_id is not None
+    assert store.persist_psychology_carousel_inner_fingerprint_receipt_intent(
+        namespace=namespace,
+        fingerprint=fingerprint,
+        reservation_id=reservation_id,
+        item=lesson,
+        receipt_intent=_carousel_receipt_intent(fingerprint),
+    )
+    now[0] += memory_store._PSYCHOLOGY_CAROUSEL_RESERVATION_LEASE_SECONDS + 1
+    if store_kind == "file":
+        store = FileExecutionMemory(path=memory_path, clock=lambda: now[0])
+
+    assert store.reconcile_psychology_carousel_inner_fingerprint_receipt_intents(
+        namespace=namespace,
+        receipt_intent_verifier=lambda _: False,
+    ) == 0
+    assert store.search(namespace=namespace) == []
+    assert (
+        store.reserve_psychology_carousel_inner_fingerprint(
+            namespace=namespace,
+            fingerprint=fingerprint,
+            item=lesson,
+        )
+        is not None
+    )
+
+
+@pytest.mark.parametrize("store_kind", ("in_memory", "file"))
+def test_expired_receipt_intent_retains_the_lease_when_ledger_verifier_is_unavailable(
+    store_kind: str,
+    tmp_path: Path,
+) -> None:
+    namespace = ("accounts", "acct-psychology-local", "lessons")
+    fingerprint = "8" * 64
+    now = [1_000.0]
+    memory_path = tmp_path / "execution-memory.json"
+    store = (
+        InMemoryExecutionMemory(clock=lambda: now[0])
+        if store_kind == "in_memory"
+        else FileExecutionMemory(path=memory_path, clock=lambda: now[0])
+    )
+    lesson = {
+        "playbook_id": "modern_psychology_post",
+        "psychology_carousel_inner_fingerprint": fingerprint,
+        ORDINARY_PSYCHOLOGY_CAROUSEL_MEMORY_MARKER: True,
+    }
+    reservation_id = store.reserve_psychology_carousel_inner_fingerprint(
+        namespace=namespace,
+        fingerprint=fingerprint,
+        item=lesson,
+    )
+    assert reservation_id is not None
+    assert store.persist_psychology_carousel_inner_fingerprint_receipt_intent(
+        namespace=namespace,
+        fingerprint=fingerprint,
+        reservation_id=reservation_id,
+        item=lesson,
+        receipt_intent=_carousel_receipt_intent(fingerprint),
+    )
+    now[0] += memory_store._PSYCHOLOGY_CAROUSEL_RESERVATION_LEASE_SECONDS + 1
+    if store_kind == "file":
+        store = FileExecutionMemory(path=memory_path, clock=lambda: now[0])
+
+    def unavailable_verifier(_: dict[str, object]) -> bool:
+        raise OSError("ledger storage unavailable")
+
+    assert store.reconcile_psychology_carousel_inner_fingerprint_receipt_intents(
+        namespace=namespace,
+        receipt_intent_verifier=unavailable_verifier,
+    ) == 0
+    assert store.search(namespace=namespace) == []
+    assert (
+        store.reserve_psychology_carousel_inner_fingerprint(
+            namespace=namespace,
+            fingerprint=fingerprint,
+            item=lesson,
+        )
+        is None
+    )
 
 
 def test_file_execution_memory_recovers_legacy_reservation_without_lease(
@@ -438,6 +676,55 @@ def test_file_execution_memory_recovers_legacy_reservation_without_lease(
         )
         is not None
     )
+
+
+@pytest.mark.parametrize("store_kind", ("in_memory", "file"))
+def test_legacy_commit_pending_reservation_fails_closed_after_lease_expiry(
+    store_kind: str,
+    tmp_path: Path,
+) -> None:
+    """Never discard an old post-ledger marker that lacks receipt identity."""
+    namespace = ("accounts", "acct-psychology-local", "lessons")
+    fingerprint = "c" * 64
+    lesson = {
+        "playbook_id": "modern_psychology_post",
+        "psychology_carousel_inner_fingerprint": fingerprint,
+        ORDINARY_PSYCHOLOGY_CAROUSEL_MEMORY_MARKER: True,
+    }
+    reservation_namespace = (
+        *namespace,
+        "__psychology_carousel_inner_fingerprint_reservations",
+    )
+    legacy_pending = {
+        **lesson,
+        "reservation_id": "legacy-commit-pending",
+        "state": "commit_pending",
+        "pending_item": lesson,
+        "lease_expires_at": 1.0,
+    }
+    if store_kind == "in_memory":
+        store = InMemoryExecutionMemory(clock=lambda: 1_000.0)
+        store._storage[reservation_namespace].append(legacy_pending)
+    else:
+        memory_path = tmp_path / "execution-memory.json"
+        memory_path.write_text(
+            json.dumps(
+                {json.dumps(list(reservation_namespace)): [legacy_pending]},
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        store = FileExecutionMemory(path=memory_path, clock=lambda: 1_000.0)
+
+    assert (
+        store.reserve_psychology_carousel_inner_fingerprint(
+            namespace=namespace,
+            fingerprint=fingerprint,
+            item=lesson,
+        )
+        is None
+    )
+    assert store.search(namespace=namespace) == []
 
 
 def test_file_execution_memory_fails_closed_without_cross_process_lock(

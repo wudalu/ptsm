@@ -52,7 +52,10 @@ from ptsm.infrastructure.artifacts.file_store import (
     FileArtifactStore,
 )
 from ptsm.infrastructure.memory.store import ExecutionMemoryStore
-from ptsm.infrastructure.images.asset_ledger import append_generated_image_assets
+from ptsm.infrastructure.images.asset_ledger import (
+    append_generated_image_assets,
+    verify_generated_image_asset_receipt_intent,
+)
 from ptsm.infrastructure.images.image_file_evidence import ImageFileEvidenceError
 from ptsm.infrastructure.images.factory import build_image_backend
 from ptsm.infrastructure.images.note_card_backend import NoteCardImageBackend
@@ -69,7 +72,10 @@ from ptsm.domain.ai_tech_content import (
     parse_ai_tech_evidence_bundle,
     validate_ai_tech_draft,
 )
-from ptsm.domain.psychology_carousel import normalize_psychology_carousel_plan
+from ptsm.domain.psychology_carousel import (
+    normalize_psychology_carousel_plan,
+    psychology_carousel_inner_pages_fingerprint,
+)
 from ptsm.domain.psychology_learning import (
     DEFAULT_PSYCHOLOGY_LEARNING_SERIES_CATALOG_ROOT,
     PSYCHOLOGY_LEARNING_MODE,
@@ -1714,6 +1720,16 @@ def run_playbook(
             raise RuntimeError("ordinary psychology workflow returned multiple carousel reservations")
         deferred_carousel_reservations.append(reservation)
 
+    if (
+        playbook.playbook_id == MODERN_PSYCHOLOGY_PLAYBOOK_ID
+        and psychology_learning_bundle is None
+    ):
+        _reconcile_ordinary_psychology_carousel_receipt_intents(
+            memory=memory,
+            account_id=account.account_id,
+            base_dir=Path.cwd(),
+        )
+
     workflow = _build_workflow_for_playbook(
         domain=playbook.domain,
         playbook_id=playbook.playbook_id,
@@ -1778,9 +1794,32 @@ def run_playbook(
             # builders must remain local-only for this workflow invocation so
             # they cannot run another scan or add a competing live context.
             workflow_payload["fresh_topic_research"] = False
+    workflow_artifact_writes = None
+    is_ordinary_psychology_workflow = (
+        playbook.playbook_id == MODERN_PSYCHOLOGY_PLAYBOOK_ID
+        and psychology_learning_bundle is None
+    )
     try:
-        result = workflow.invoke(workflow_payload, config=config)
+        with artifact_store.track_workflow_writes() as tracked_writes:
+            workflow_artifact_writes = tracked_writes
+            result = workflow.invoke(workflow_payload, config=config)
     except BaseException:
+        if (
+            playbook.playbook_id == MODERN_PSYCHOLOGY_PLAYBOOK_ID
+            and psychology_learning_bundle is None
+        ):
+            for artifact_path in artifact_store.tracked_workflow_artifact_paths(
+                workflow_artifact_writes
+            ):
+                try:
+                    artifact_store.clear_untrusted_carousel_delivery(
+                        artifact_path,
+                        tracker=workflow_artifact_writes,
+                    )
+                except (OSError, ValueError, json.JSONDecodeError):
+                    # Preserve the workflow error. The tracked store boundary
+                    # never scans or follows a foreign artifact path.
+                    pass
         for reservation in deferred_carousel_reservations:
             try:
                 reservation.release()
@@ -1789,6 +1828,21 @@ def run_playbook(
                 # release failure until recovery.
                 pass
         raise
+    ordinary_artifact_scrub_failed = False
+    if (
+        playbook.playbook_id == MODERN_PSYCHOLOGY_PLAYBOOK_ID
+        and psychology_learning_bundle is None
+    ):
+        for artifact_path in artifact_store.tracked_workflow_artifact_paths(
+            workflow_artifact_writes
+        ):
+            try:
+                artifact_store.clear_untrusted_carousel_delivery(
+                    artifact_path,
+                    tracker=workflow_artifact_writes,
+                )
+            except (OSError, ValueError, json.JSONDecodeError):
+                ordinary_artifact_scrub_failed = True
     deferred_carousel_reservation = (
         deferred_carousel_reservations.pop()
         if deferred_carousel_reservations
@@ -1807,6 +1861,33 @@ def run_playbook(
     # legitimate receipt is assembled locally after the canonical set, ledger,
     # and ordinary-memory lifecycle all succeed below.
     result.pop("carousel_delivery", None)
+    if (
+        is_ordinary_psychology_workflow
+        and result.get("status") == "completed"
+        and (
+            not isinstance(result.get("artifact_path"), str)
+            or not artifact_store.is_tracked_workflow_artifact(
+                result["artifact_path"],
+                tracker=workflow_artifact_writes,
+            )
+            or not artifact_store.tracked_workflow_artifact_is_current(
+                result["artifact_path"],
+                tracker=workflow_artifact_writes,
+            )
+        )
+    ):
+        # A custom ordinary-psychology workflow may not point this invocation
+        # at an older artifact.  We did not create it, cannot safely revoke an
+        # arbitrary ready field from it, and must never merge or publish it.
+        result["status"] = "ordinary_psychology_artifact_invalid"
+        result["ordinary_psychology_artifact_validation"] = {
+            "error": "completed ordinary psychology workflow must create its artifact in this invocation"
+        }
+    if ordinary_artifact_scrub_failed:
+        result["status"] = "ordinary_psychology_artifact_invalid"
+        result["ordinary_psychology_artifact_validation"] = {
+            "error": "workflow artifact handoff could not be safely scrubbed"
+        }
     # Evidence is a workflow-construction capability, never a graph/input
     # state field.  The artifact receipt retains only the opaque manifest.
     if ai_tech_evidence_bundle is not None and result.get("status") == "completed":
@@ -1966,6 +2047,9 @@ def run_playbook(
         carousel_plan: dict[str, Any] | None = None
         carousel_output_stem: str | None = None
         carousel_commit_receipt: dict[str, Any] | None = None
+        carousel_receipt_intent: dict[str, object] | None = None
+        carousel_receipt_intent_persisted = False
+        carousel_ledger_append_attempted = False
         if not resolved_image_paths and _should_generate_images(
             publish_mode=publish_mode,
             auto_generate_images=request.auto_generate_images,
@@ -2004,6 +2088,7 @@ def run_playbook(
                     canonical_carousel_plan = normalize_psychology_carousel_plan(
                         carousel_plan
                     )
+                    carousel_plan = canonical_carousel_plan
                     raw_carousel_receipt = ImageCarouselTransaction(
                         renderer=NoteCardImageBackend()
                     ).generate(
@@ -2028,6 +2113,11 @@ def run_playbook(
                         )
                     image_generation = dict(carousel_commit_receipt)
                     image_generation["image_plan"] = canonical_carousel_plan
+                    image_generation["carousel_plan_fingerprint"] = (
+                        psychology_carousel_inner_pages_fingerprint(
+                            canonical_carousel_plan
+                        )
+                    )
                     image_generation["runtime_context_summary"] = runtime_context_summary
                     resolved_image_paths = list(
                         image_generation["generated_image_paths"]
@@ -2062,6 +2152,9 @@ def run_playbook(
                         ),
                         ordinary_psychology_carousel_reservation=(
                             deferred_carousel_reservation
+                        ),
+                        ordinary_psychology_workflow_artifact_writes=(
+                            workflow_artifact_writes
                         ),
                     )
             elif image_decision["route"] == "local":
@@ -2136,11 +2229,46 @@ def run_playbook(
                         and carousel_output_stem is not None
                         and carousel_commit_receipt is not None
                     ):
-                        verify_committed_carousel_set(
+                        verified_pre_ledger_receipt = verify_committed_carousel_set(
                             image_plan=carousel_plan,
                             receipt=carousel_commit_receipt,
                             output_stem=carousel_output_stem,
                         )
+                        if psychology_learning_bundle is None:
+                            reservation = deferred_carousel_reservation
+                            if (
+                                reservation is None
+                                or not reservation.heartbeat_is_healthy()
+                            ):
+                                raise ImageCarouselTransactionError(
+                                    "ordinary psychology carousel reservation lease is unavailable"
+                                )
+                            carousel_receipt_intent = (
+                                _build_psychology_carousel_receipt_intent(
+                                    account_id=account.account_id,
+                                    playbook_id=playbook.playbook_id,
+                                    artifact_path=str(result["artifact_path"]),
+                                    image_plan=carousel_plan,
+                                    receipt=verified_pre_ledger_receipt,
+                                )
+                            )
+                            if not reservation.persist_receipt_intent(
+                                carousel_receipt_intent
+                            ):
+                                raise ImageCarouselTransactionError(
+                                    "ordinary psychology carousel receipt intent could not persist"
+                                )
+                            carousel_receipt_intent_persisted = True
+                    if (
+                        carousel_plan is not None
+                        and psychology_learning_bundle is None
+                    ):
+                        # The append implementation may durably publish its
+                        # JSONL replacement and only then fail an fsync or
+                        # identity check.  From this point the owner must keep
+                        # the intent for expiry-time ledger reconciliation;
+                        # aborting it could permit a duplicate render.
+                        carousel_ledger_append_attempted = True
                     asset_ledger = append_generated_image_assets(
                         base_dir=Path.cwd(),
                         artifact_path=str(result["artifact_path"]),
@@ -2178,11 +2306,20 @@ def run_playbook(
                                 raise ImageCarouselTransactionError(
                                     "ordinary psychology carousel reservation lease renewal failed"
                                 )
-                            if not reservation.mark_commit_pending():
+                            if carousel_receipt_intent is None:
                                 raise ImageCarouselTransactionError(
-                                    "ordinary psychology carousel commit recovery marker could not persist"
+                                    "ordinary psychology carousel receipt intent is unavailable"
                                 )
-                            if not reservation.commit():
+                            if not verify_generated_image_asset_receipt_intent(
+                                base_dir=Path.cwd(),
+                                receipt_intent=carousel_receipt_intent,
+                            ):
+                                raise ImageCarouselTransactionError(
+                                    "ordinary psychology carousel asset ledger projection is incomplete"
+                                )
+                            if not reservation.commit_receipt_intent(
+                                carousel_receipt_intent
+                            ):
                                 raise ImageCarouselTransactionError(
                                     "ordinary psychology carousel reservation could not commit"
                                 )
@@ -2198,6 +2335,18 @@ def run_playbook(
                 ):
                     if carousel_plan is None:
                         raise
+                    if (
+                        psychology_learning_bundle is None
+                        and carousel_receipt_intent_persisted
+                        and not carousel_ledger_append_attempted
+                        and deferred_carousel_reservation is not None
+                    ):
+                        try:
+                            deferred_carousel_reservation.abort_receipt_intent()
+                        except Exception:
+                            # An unknown abort outcome retains the intent via
+                            # the guarded reservation cleanup and fails closed.
+                            pass
                     result["status"] = "psychology_carousel_generation_failed"
                     return _finish_psychology_carousel_failure(
                         result=result,
@@ -2219,6 +2368,9 @@ def run_playbook(
                         ),
                         ordinary_psychology_carousel_reservation=(
                             deferred_carousel_reservation
+                        ),
+                        ordinary_psychology_workflow_artifact_writes=(
+                            workflow_artifact_writes
                         ),
                     )
         watermark_removal = None
@@ -2273,7 +2425,23 @@ def run_playbook(
             step="publish",
             idempotency_key=publish_idempotency_key,
         )
-        if cached_publish_result is not None:
+        if (
+            is_ordinary_psychology_workflow
+            and not artifact_store.tracked_workflow_artifact_is_current(
+                result["artifact_path"],
+                tracker=workflow_artifact_writes,
+            )
+        ):
+            # Do this immediately before consuming a cached side effect or
+            # calling the publisher.  A replacement after scrub is not this
+            # invocation's artifact and cannot be relayed or published.
+            result["status"] = "ordinary_psychology_artifact_invalid"
+            result["ordinary_psychology_artifact_validation"] = {
+                "error": "workflow artifact changed before publish"
+            }
+            carousel_delivery = None
+            publish_result = None
+        elif cached_publish_result is not None:
             publish_result = cached_publish_result
         else:
             try:
@@ -2313,6 +2481,9 @@ def run_playbook(
                         ),
                         ordinary_psychology_carousel_reservation=(
                             deferred_carousel_reservation
+                        ),
+                        ordinary_psychology_workflow_artifact_writes=(
+                            workflow_artifact_writes
                         ),
                     )
                 publish_result = {
@@ -2428,48 +2599,74 @@ def run_playbook(
                     scope=psychology_learning_artifact_scope,
                 )
         else:
-            artifact_store.merge(result["artifact_path"], artifact_update)
+            if is_ordinary_psychology_workflow:
+                if not _merge_tracked_ordinary_psychology_artifact(
+                    artifact_store=artifact_store,
+                    artifact_path=result["artifact_path"],
+                    update=artifact_update,
+                    workflow_artifact_writes=workflow_artifact_writes,
+                ):
+                    result["status"] = "ordinary_psychology_artifact_invalid"
+                    result["ordinary_psychology_artifact_validation"] = {
+                        "error": "workflow artifact changed before local receipt could persist"
+                    }
+                    carousel_delivery = None
+            else:
+                artifact_store.merge(result["artifact_path"], artifact_update)
 
     if result["status"] == "completed" and result.get("artifact_path"):
         artifact_path = Path(result["artifact_path"])
         if request.wait_for_publish_status:
-            status_result = check_xhs_publish_status(
-                artifact_path=artifact_path,
-                settings=settings,
-                publisher=None,
-                search_retry_attempts=WAIT_FOR_PUBLISH_STATUS_SEARCH_RETRY_ATTEMPTS,
-                search_retry_interval_seconds=WAIT_FOR_PUBLISH_STATUS_SEARCH_RETRY_INTERVAL_SECONDS,
-                publish_result=(
-                    (
-                        publish_result
-                        if isinstance(publish_result, Mapping)
-                        else {}
-                    )
-                    if psychology_learning_bundle is not None
-                    else None
-                ),
-                fallback_title=(
-                    str(result["final_content"].get("title") or "")
-                    if psychology_learning_bundle is not None
-                    and isinstance(result.get("final_content"), Mapping)
-                    else None
-                ),
-                fallback_body=(
-                    str(result["final_content"].get("body") or "")
-                    if psychology_learning_bundle is not None
-                    and isinstance(result.get("final_content"), Mapping)
-                    else None
-                ),
-                fallback_visibility=(
-                    request.publish_visibility or settings.xhs_default_visibility
-                    if psychology_learning_bundle is not None
-                    else None
-                ),
-            )
-            post_publish_checks["status_result"] = status_result
-            post_publish_checks["publish_status"] = str(
-                status_result.get("status", "unknown")
-            )
+            if (
+                is_ordinary_psychology_workflow
+                and not artifact_store.tracked_workflow_artifact_is_current(
+                    artifact_path,
+                    tracker=workflow_artifact_writes,
+                )
+            ):
+                result["status"] = "ordinary_psychology_artifact_invalid"
+                result["ordinary_psychology_artifact_validation"] = {
+                    "error": "workflow artifact changed before publish-status check"
+                }
+                carousel_delivery = None
+            else:
+                status_result = check_xhs_publish_status(
+                    artifact_path=artifact_path,
+                    settings=settings,
+                    publisher=None,
+                    search_retry_attempts=WAIT_FOR_PUBLISH_STATUS_SEARCH_RETRY_ATTEMPTS,
+                    search_retry_interval_seconds=WAIT_FOR_PUBLISH_STATUS_SEARCH_RETRY_INTERVAL_SECONDS,
+                    publish_result=(
+                        (
+                            publish_result
+                            if isinstance(publish_result, Mapping)
+                            else {}
+                        )
+                        if psychology_learning_bundle is not None
+                        else None
+                    ),
+                    fallback_title=(
+                        str(result["final_content"].get("title") or "")
+                        if psychology_learning_bundle is not None
+                        and isinstance(result.get("final_content"), Mapping)
+                        else None
+                    ),
+                    fallback_body=(
+                        str(result["final_content"].get("body") or "")
+                        if psychology_learning_bundle is not None
+                        and isinstance(result.get("final_content"), Mapping)
+                        else None
+                    ),
+                    fallback_visibility=(
+                        request.publish_visibility or settings.xhs_default_visibility
+                        if psychology_learning_bundle is not None
+                        else None
+                    ),
+                )
+                post_publish_checks["status_result"] = status_result
+                post_publish_checks["publish_status"] = str(
+                    status_result.get("status", "unknown")
+                )
 
         should_open_browser = False
         if request.open_browser_if_needed:
@@ -2481,22 +2678,37 @@ def run_playbook(
                 }
 
         if should_open_browser:
-            if psychology_learning_bundle is not None:
-                # Learning artifacts are a sealed, mutable filesystem boundary.
-                # Browser assistance must not reopen them merely to discover a
-                # provider URL; the controlled creator surface is sufficient.
-                browser_result = open_xhs_browser(
-                    target="creator",
-                    qrcode_output_path=qrcode_output_path,
+            if (
+                is_ordinary_psychology_workflow
+                and not artifact_store.tracked_workflow_artifact_is_current(
+                    artifact_path,
+                    tracker=workflow_artifact_writes,
                 )
+            ):
+                result["status"] = "ordinary_psychology_artifact_invalid"
+                result["ordinary_psychology_artifact_validation"] = {
+                    "error": "workflow artifact changed before browser handoff"
+                }
+                carousel_delivery = None
             else:
-                browser_result = open_xhs_browser(
-                    target="artifact",
-                    artifact_path=artifact_path,
-                    qrcode_output_path=qrcode_output_path,
+                if psychology_learning_bundle is not None:
+                    # Learning artifacts are a sealed, mutable filesystem boundary.
+                    # Browser assistance must not reopen them merely to discover a
+                    # provider URL; the controlled creator surface is sufficient.
+                    browser_result = open_xhs_browser(
+                        target="creator",
+                        qrcode_output_path=qrcode_output_path,
+                    )
+                else:
+                    browser_result = open_xhs_browser(
+                        target="artifact",
+                        artifact_path=artifact_path,
+                        qrcode_output_path=qrcode_output_path,
+                    )
+                post_publish_checks["browser_opened"] = (
+                    browser_result.get("status") == "opened"
                 )
-            post_publish_checks["browser_opened"] = browser_result.get("status") == "opened"
-            post_publish_checks["browser_result"] = browser_result
+                post_publish_checks["browser_result"] = browser_result
 
         post_publish_update = {
             "post_publish_checks": (
@@ -2527,7 +2739,20 @@ def run_playbook(
                     scope=psychology_learning_artifact_scope,
                 )
         else:
-            artifact_store.merge(artifact_path, post_publish_update)
+            if is_ordinary_psychology_workflow and result["status"] == "completed":
+                if not _merge_tracked_ordinary_psychology_artifact(
+                    artifact_store=artifact_store,
+                    artifact_path=artifact_path,
+                    update=post_publish_update,
+                    workflow_artifact_writes=workflow_artifact_writes,
+                ):
+                    result["status"] = "ordinary_psychology_artifact_invalid"
+                    result["ordinary_psychology_artifact_validation"] = {
+                        "error": "workflow artifact changed before post-publish receipt could persist"
+                    }
+                    carousel_delivery = None
+            elif not is_ordinary_psychology_workflow:
+                artifact_store.merge(artifact_path, post_publish_update)
 
     if (
         psychology_learning_bundle is not None
@@ -3227,6 +3452,111 @@ def _is_complete_carousel_asset_ledger(
     )
 
 
+def _build_psychology_carousel_receipt_intent(
+    *,
+    account_id: str,
+    playbook_id: str,
+    artifact_path: str,
+    image_plan: Mapping[str, Any],
+    receipt: Mapping[str, Any],
+) -> dict[str, object]:
+    """Freeze the exact pre-ledger identity needed for crash recovery."""
+    if (
+        playbook_id != MODERN_PSYCHOLOGY_PLAYBOOK_ID
+        or not isinstance(account_id, str)
+        or not account_id
+        or not isinstance(artifact_path, str)
+        or not artifact_path
+    ):
+        raise ImageCarouselTransactionError("carousel receipt intent is invalid")
+    plan = normalize_psychology_carousel_plan(image_plan)
+    slides = plan["slides"]
+    paths = receipt.get("generated_image_paths")
+    pages = receipt.get("pages")
+    if (
+        not isinstance(paths, list)
+        or not isinstance(pages, list)
+        or len(paths) != len(slides)
+        or len(pages) != len(slides)
+    ):
+        raise ImageCarouselTransactionError("carousel receipt intent is incomplete")
+    expected_pages: list[dict[str, object]] = []
+    for expected_order, (slide, page, path) in enumerate(
+        zip(slides, pages, paths, strict=True),
+        start=1,
+    ):
+        if (
+            not isinstance(slide, Mapping)
+            or not isinstance(page, Mapping)
+            or not isinstance(path, str)
+            or not path
+            or slide.get("order") != expected_order
+            or page.get("order") != expected_order
+            or page.get("slide_id") != slide.get("slide_id")
+            or page.get("path") != path
+            or not _is_lower_sha256(page.get("page_sha256"))
+            or not _is_lower_sha256(page.get("file_sha256"))
+        ):
+            raise ImageCarouselTransactionError("carousel receipt intent is not canonical")
+        expected_pages.append(
+            {
+                "order": expected_order,
+                "slide_id": str(page["slide_id"]),
+                "path": path,
+                "page_sha256": str(page["page_sha256"]),
+                "file_sha256": str(page["file_sha256"]),
+            }
+        )
+    set_id = receipt.get("set_id")
+    manifest_sha256 = receipt.get("manifest_sha256")
+    if not _is_lower_sha256(set_id) or not _is_lower_sha256(manifest_sha256):
+        raise ImageCarouselTransactionError("carousel receipt intent is incomplete")
+    return {
+        "account_id": account_id,
+        "playbook_id": playbook_id,
+        "artifact_path": artifact_path,
+        "carousel_plan_fingerprint": psychology_carousel_inner_pages_fingerprint(plan),
+        "set_id": set_id,
+        "manifest_sha256": manifest_sha256,
+        "pages": expected_pages,
+    }
+
+
+def _reconcile_ordinary_psychology_carousel_receipt_intents(
+    *,
+    memory: ExecutionMemoryStore,
+    account_id: str,
+    base_dir: Path,
+) -> None:
+    """Recover expired ordinary-carousel intents before the graph reads memory.
+
+    The verifier lives only in this application boundary: it reads the durable
+    asset ledger and never enters graph state, checkpoints, or workflow input.
+    """
+    reconcile = getattr(
+        memory,
+        "reconcile_psychology_carousel_inner_fingerprint_receipt_intents",
+        None,
+    )
+    if not callable(reconcile):
+        return
+    try:
+        reconcile(
+            namespace=("accounts", account_id, "lessons"),
+            receipt_intent_verifier=lambda receipt_intent: (
+                verify_generated_image_asset_receipt_intent(
+                    base_dir=base_dir,
+                    receipt_intent=receipt_intent,
+                )
+            ),
+        )
+    except (OSError, RuntimeError, ValueError, json.JSONDecodeError):
+        # An unavailable verifier is not proof that no ledger exists. The
+        # memory store retains the intent and the finalizer subsequently fails
+        # closed instead of starting a duplicate render.
+        return
+
+
 def _build_carousel_delivery_receipt(
     *,
     image_plan: Mapping[str, Any],
@@ -3318,6 +3648,27 @@ def _is_lower_sha256(value: object) -> bool:
     )
 
 
+def _merge_tracked_ordinary_psychology_artifact(
+    *,
+    artifact_store: FileArtifactStore,
+    artifact_path: str | Path,
+    update: dict[str, object],
+    workflow_artifact_writes: object | None,
+) -> bool:
+    """Apply a local update without reopening a workflow-owned artifact race."""
+    if workflow_artifact_writes is None:
+        return False
+    try:
+        artifact_store.merge_tracked_workflow_artifact(
+            artifact_path,
+            update,
+            tracker=workflow_artifact_writes,
+        )
+    except (OSError, ValueError, json.JSONDecodeError):
+        return False
+    return True
+
+
 def _finish_psychology_carousel_failure(
     *,
     result: dict[str, Any],
@@ -3338,6 +3689,7 @@ def _finish_psychology_carousel_failure(
     ordinary_psychology_carousel_reservation: (
         OrdinaryPsychologyCarouselMemoryReservation | None
     ) = None,
+    ordinary_psychology_workflow_artifact_writes: object | None = None,
 ) -> dict[str, Any]:
     """Finish a failed carousel run before watermarking, publishing, or progress."""
     result["status"] = "psychology_carousel_generation_failed"
@@ -3353,18 +3705,23 @@ def _finish_psychology_carousel_failure(
     artifact_path = result.get("artifact_path")
     if isinstance(artifact_path, str) and artifact_path:
         if psychology_learning_bundle is None:
-            try:
-                artifact_store.merge(
-                    artifact_path,
-                    {
-                        "publish_mode": publish_mode,
-                        "publish_result": None,
-                        "image_generation": image_generation,
-                        "watermark_removal": None,
-                    },
-                )
-            except (OSError, ValueError, json.JSONDecodeError):
-                pass
+            if not _merge_tracked_ordinary_psychology_artifact(
+                artifact_store=artifact_store,
+                artifact_path=artifact_path,
+                update={
+                    "publish_mode": publish_mode,
+                    "publish_result": None,
+                    "image_generation": image_generation,
+                    "watermark_removal": None,
+                },
+                workflow_artifact_writes=(
+                    ordinary_psychology_workflow_artifact_writes
+                ),
+            ):
+                result["status"] = "ordinary_psychology_artifact_invalid"
+                result["ordinary_psychology_artifact_validation"] = {
+                    "error": "workflow artifact changed before failure receipt could persist"
+                }
         else:
             safe_image_receipt = _sanitize_psychology_learning_image_generation(
                 image_generation,
@@ -3391,7 +3748,7 @@ def _finish_psychology_carousel_failure(
         run.run_id,
         event="image_generation_failed",
         step="image_generation",
-        status="psychology_carousel_generation_failed",
+        status=str(result["status"]),
         payload={
             "image_status": image_generation.get("status"),
             "image_count": image_generation.get("image_count"),
@@ -3416,7 +3773,7 @@ def _finish_psychology_carousel_failure(
     )
     run_summary = run_store.finish(
         run.run_id,
-        status="psychology_carousel_generation_failed",
+        status=str(result["status"]),
         payload={
             "artifact_path": artifact_path,
             "publish_mode": publish_mode,

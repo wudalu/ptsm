@@ -29,8 +29,10 @@ _PSYCHOLOGY_CAROUSEL_RESERVATION_LEASE_SECONDS = 20 * 60
 _RESERVATION_LEASE_EXPIRES_AT_FIELD = "lease_expires_at"
 _RESERVATION_STATE_FIELD = "state"
 _RESERVATION_STATE_ACTIVE = "active"
-_RESERVATION_STATE_COMMIT_PENDING = "commit_pending"
+_RESERVATION_STATE_RECEIPT_INTENT = "receipt_intent"
+_RESERVATION_STATE_LEGACY_COMMIT_PENDING = "commit_pending"
 _RESERVATION_PENDING_ITEM_FIELD = "pending_item"
+_RESERVATION_RECEIPT_INTENT_FIELD = "receipt_intent"
 ORDINARY_PSYCHOLOGY_CAROUSEL_MEMORY_MARKER = (
     "_ptsm_ordinary_psychology_carousel_v1"
 )
@@ -41,6 +43,7 @@ _StorageKey = tuple[str, ...] | str
 _Storage = dict[_StorageKey, list[dict[str, object]]]
 _NamespaceKey = Callable[[tuple[str, ...]], _StorageKey]
 _Clock = Callable[[], float]
+_ReceiptIntentVerifier = Callable[[dict[str, object]], bool]
 
 
 def ordinary_psychology_carousel_memory_fingerprint(
@@ -79,23 +82,40 @@ class ExecutionMemoryStore(Protocol):
         reservation_id: str,
     ) -> bool: ...
 
-    def mark_psychology_carousel_inner_fingerprint_commit_pending(
+    def persist_psychology_carousel_inner_fingerprint_receipt_intent(
         self,
         *,
         namespace: tuple[str, ...],
         fingerprint: str,
         reservation_id: str,
         item: dict[str, object],
+        receipt_intent: dict[str, object],
     ) -> bool: ...
 
-    def commit_psychology_carousel_inner_fingerprint(
+    def commit_psychology_carousel_inner_fingerprint_receipt_intent(
         self,
         *,
         namespace: tuple[str, ...],
         fingerprint: str,
         reservation_id: str,
         item: dict[str, object],
+        receipt_intent: dict[str, object],
     ) -> bool: ...
+
+    def abort_psychology_carousel_inner_fingerprint_receipt_intent(
+        self,
+        *,
+        namespace: tuple[str, ...],
+        fingerprint: str,
+        reservation_id: str,
+    ) -> bool: ...
+
+    def reconcile_psychology_carousel_inner_fingerprint_receipt_intents(
+        self,
+        *,
+        namespace: tuple[str, ...],
+        receipt_intent_verifier: _ReceiptIntentVerifier,
+    ) -> int: ...
 
     def release_psychology_carousel_inner_fingerprint(
         self,
@@ -159,48 +179,96 @@ class InMemoryExecutionMemory:
                 now=_reservation_now(self._clock),
             )
 
-    def mark_psychology_carousel_inner_fingerprint_commit_pending(
+    def persist_psychology_carousel_inner_fingerprint_receipt_intent(
         self,
         *,
         namespace: tuple[str, ...],
         fingerprint: str,
         reservation_id: str,
         item: dict[str, object],
+        receipt_intent: dict[str, object],
     ) -> bool:
         fingerprint = _require_inner_carousel_fingerprint(fingerprint)
         _require_reservation_id(reservation_id)
         _require_ordinary_carousel_memory_item(item=item, fingerprint=fingerprint)
+        receipt_intent = _require_carousel_receipt_intent(
+            receipt_intent=receipt_intent,
+            fingerprint=fingerprint,
+        )
         with self._lock:
-            return _mark_inner_carousel_fingerprint_commit_pending(
+            return _persist_inner_carousel_fingerprint_receipt_intent(
                 storage=self._storage,
                 namespace=namespace,
                 fingerprint=fingerprint,
                 reservation_id=reservation_id,
                 item=item,
+                receipt_intent=receipt_intent,
                 namespace_key=_identity_namespace,
                 now=_reservation_now(self._clock),
             )
 
-    def commit_psychology_carousel_inner_fingerprint(
+    def commit_psychology_carousel_inner_fingerprint_receipt_intent(
         self,
         *,
         namespace: tuple[str, ...],
         fingerprint: str,
         reservation_id: str,
         item: dict[str, object],
+        receipt_intent: dict[str, object],
     ) -> bool:
         fingerprint = _require_inner_carousel_fingerprint(fingerprint)
         _require_reservation_id(reservation_id)
         _require_ordinary_carousel_memory_item(item=item, fingerprint=fingerprint)
+        receipt_intent = _require_carousel_receipt_intent(
+            receipt_intent=receipt_intent,
+            fingerprint=fingerprint,
+        )
         with self._lock:
-            return _commit_inner_carousel_fingerprint(
+            return _commit_inner_carousel_fingerprint_receipt_intent(
                 storage=self._storage,
                 namespace=namespace,
                 fingerprint=fingerprint,
                 reservation_id=reservation_id,
                 item=item,
+                receipt_intent=receipt_intent,
                 namespace_key=_identity_namespace,
                 now=_reservation_now(self._clock),
+            )
+
+    def abort_psychology_carousel_inner_fingerprint_receipt_intent(
+        self,
+        *,
+        namespace: tuple[str, ...],
+        fingerprint: str,
+        reservation_id: str,
+    ) -> bool:
+        fingerprint = _require_inner_carousel_fingerprint(fingerprint)
+        _require_reservation_id(reservation_id)
+        with self._lock:
+            return _abort_inner_carousel_fingerprint_receipt_intent(
+                storage=self._storage,
+                namespace=namespace,
+                fingerprint=fingerprint,
+                reservation_id=reservation_id,
+                namespace_key=_identity_namespace,
+                now=_reservation_now(self._clock),
+            )
+
+    def reconcile_psychology_carousel_inner_fingerprint_receipt_intents(
+        self,
+        *,
+        namespace: tuple[str, ...],
+        receipt_intent_verifier: _ReceiptIntentVerifier,
+    ) -> int:
+        if not callable(receipt_intent_verifier):
+            raise ValueError("psychology carousel receipt intent verifier is required")
+        with self._lock:
+            return _reconcile_expired_inner_carousel_receipt_intents(
+                storage=self._storage,
+                namespace=namespace,
+                namespace_key=_identity_namespace,
+                now=_reservation_now(self._clock),
+                receipt_intent_verifier=receipt_intent_verifier,
             )
 
     def release_psychology_carousel_inner_fingerprint(
@@ -260,29 +328,33 @@ class FileExecutionMemory:
             self._save(storage)
             return reservation_id
 
-    def commit_psychology_carousel_inner_fingerprint(
+    def commit_psychology_carousel_inner_fingerprint_receipt_intent(
         self,
         *,
         namespace: tuple[str, ...],
         fingerprint: str,
         reservation_id: str,
         item: dict[str, object],
+        receipt_intent: dict[str, object],
     ) -> bool:
         fingerprint = _require_inner_carousel_fingerprint(fingerprint)
         _require_reservation_id(reservation_id)
         _require_ordinary_carousel_memory_item(item=item, fingerprint=fingerprint)
+        receipt_intent = _require_carousel_receipt_intent(
+            receipt_intent=receipt_intent,
+            fingerprint=fingerprint,
+        )
         with self._locked_storage() as storage:
-            committed = _commit_inner_carousel_fingerprint(
+            committed = _commit_inner_carousel_fingerprint_receipt_intent(
                 storage=storage,
                 namespace=namespace,
                 fingerprint=fingerprint,
                 reservation_id=reservation_id,
                 item=item,
+                receipt_intent=receipt_intent,
                 namespace_key=self._encode_namespace,
                 now=_reservation_now(self._clock),
             )
-            # A failed commit can still remove a stale reservation after
-            # detecting an independently committed fingerprint.
             self._save(storage)
             return committed
 
@@ -307,29 +379,75 @@ class FileExecutionMemory:
             self._save(storage)
             return renewed
 
-    def mark_psychology_carousel_inner_fingerprint_commit_pending(
+    def persist_psychology_carousel_inner_fingerprint_receipt_intent(
         self,
         *,
         namespace: tuple[str, ...],
         fingerprint: str,
         reservation_id: str,
         item: dict[str, object],
+        receipt_intent: dict[str, object],
     ) -> bool:
         fingerprint = _require_inner_carousel_fingerprint(fingerprint)
         _require_reservation_id(reservation_id)
         _require_ordinary_carousel_memory_item(item=item, fingerprint=fingerprint)
+        receipt_intent = _require_carousel_receipt_intent(
+            receipt_intent=receipt_intent,
+            fingerprint=fingerprint,
+        )
         with self._locked_storage() as storage:
-            marked = _mark_inner_carousel_fingerprint_commit_pending(
+            persisted = _persist_inner_carousel_fingerprint_receipt_intent(
                 storage=storage,
                 namespace=namespace,
                 fingerprint=fingerprint,
                 reservation_id=reservation_id,
                 item=item,
+                receipt_intent=receipt_intent,
                 namespace_key=self._encode_namespace,
                 now=_reservation_now(self._clock),
             )
             self._save(storage)
-            return marked
+            return persisted
+
+    def abort_psychology_carousel_inner_fingerprint_receipt_intent(
+        self,
+        *,
+        namespace: tuple[str, ...],
+        fingerprint: str,
+        reservation_id: str,
+    ) -> bool:
+        fingerprint = _require_inner_carousel_fingerprint(fingerprint)
+        _require_reservation_id(reservation_id)
+        with self._locked_storage() as storage:
+            aborted = _abort_inner_carousel_fingerprint_receipt_intent(
+                storage=storage,
+                namespace=namespace,
+                fingerprint=fingerprint,
+                reservation_id=reservation_id,
+                namespace_key=self._encode_namespace,
+                now=_reservation_now(self._clock),
+            )
+            self._save(storage)
+            return aborted
+
+    def reconcile_psychology_carousel_inner_fingerprint_receipt_intents(
+        self,
+        *,
+        namespace: tuple[str, ...],
+        receipt_intent_verifier: _ReceiptIntentVerifier,
+    ) -> int:
+        if not callable(receipt_intent_verifier):
+            raise ValueError("psychology carousel receipt intent verifier is required")
+        with self._locked_storage() as storage:
+            reconciled = _reconcile_expired_inner_carousel_receipt_intents(
+                storage=storage,
+                namespace=namespace,
+                namespace_key=self._encode_namespace,
+                now=_reservation_now(self._clock),
+                receipt_intent_verifier=receipt_intent_verifier,
+            )
+            self._save(storage)
+            return reconciled
 
     def release_psychology_carousel_inner_fingerprint(
         self,
@@ -446,6 +564,84 @@ def _require_ordinary_carousel_memory_item(
         raise ValueError("ordinary psychology carousel memory item is required")
 
 
+def _require_carousel_receipt_intent(
+    *,
+    receipt_intent: Mapping[str, object],
+    fingerprint: str,
+) -> dict[str, object]:
+    """Validate the immutable ledger projection used for crash recovery."""
+    required_fields = {
+        "account_id",
+        "playbook_id",
+        "artifact_path",
+        "carousel_plan_fingerprint",
+        "set_id",
+        "manifest_sha256",
+        "pages",
+    }
+    if not isinstance(receipt_intent, Mapping) or set(receipt_intent) != required_fields:
+        raise ValueError("psychology carousel receipt intent has an invalid shape")
+    account_id = receipt_intent.get("account_id")
+    artifact_path = receipt_intent.get("artifact_path")
+    if (
+        not isinstance(account_id, str)
+        or not account_id
+        or receipt_intent.get("playbook_id") != _MODERN_PSYCHOLOGY_PLAYBOOK_ID
+        or not isinstance(artifact_path, str)
+        or not artifact_path
+        or receipt_intent.get("carousel_plan_fingerprint") != fingerprint
+        or not _is_lower_sha256(receipt_intent.get("set_id"))
+        or not _is_lower_sha256(receipt_intent.get("manifest_sha256"))
+    ):
+        raise ValueError("psychology carousel receipt intent is invalid")
+    raw_pages = receipt_intent.get("pages")
+    if not isinstance(raw_pages, list) or not raw_pages:
+        raise ValueError("psychology carousel receipt intent pages are required")
+    pages: list[dict[str, object]] = []
+    for expected_order, raw_page in enumerate(raw_pages, start=1):
+        required_page_fields = {
+            "order",
+            "slide_id",
+            "path",
+            "page_sha256",
+            "file_sha256",
+        }
+        if not isinstance(raw_page, Mapping) or set(raw_page) != required_page_fields:
+            raise ValueError("psychology carousel receipt intent page is invalid")
+        order = raw_page.get("order")
+        slide_id = raw_page.get("slide_id")
+        path = raw_page.get("path")
+        if (
+            not isinstance(order, int)
+            or isinstance(order, bool)
+            or order != expected_order
+            or not isinstance(slide_id, str)
+            or not slide_id
+            or not isinstance(path, str)
+            or not path
+            or not _is_lower_sha256(raw_page.get("page_sha256"))
+            or not _is_lower_sha256(raw_page.get("file_sha256"))
+        ):
+            raise ValueError("psychology carousel receipt intent page is invalid")
+        pages.append(dict(raw_page))
+    return {
+        "account_id": account_id,
+        "playbook_id": _MODERN_PSYCHOLOGY_PLAYBOOK_ID,
+        "artifact_path": artifact_path,
+        "carousel_plan_fingerprint": fingerprint,
+        "set_id": receipt_intent["set_id"],
+        "manifest_sha256": receipt_intent["manifest_sha256"],
+        "pages": pages,
+    }
+
+
+def _is_lower_sha256(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and _INNER_CAROUSEL_FINGERPRINT_PATTERN.fullmatch(value) is not None
+    )
+
+
 def _reservation_now(clock: _Clock) -> float:
     value = float(clock())
     if not math.isfinite(value):
@@ -463,11 +659,6 @@ def _reserve_inner_carousel_fingerprint(
 ) -> str | None:
     final_key = namespace_key(namespace)
     reservation_key = namespace_key(_reservation_namespace(namespace))
-    _reconcile_commit_pending_inner_carousel_reservations(
-        storage=storage,
-        final_key=final_key,
-        reservation_key=reservation_key,
-    )
     _recover_expired_reservations(
         storage=storage,
         reservation_key=reservation_key,
@@ -518,6 +709,7 @@ def _renew_inner_carousel_fingerprint_reservation(
         fingerprint=fingerprint,
         reservation_id=reservation_id,
         now=now,
+        allow_receipt_intent=True,
     )
     if reservation_index is None:
         return False
@@ -527,13 +719,14 @@ def _renew_inner_carousel_fingerprint_reservation(
     return True
 
 
-def _mark_inner_carousel_fingerprint_commit_pending(
+def _persist_inner_carousel_fingerprint_receipt_intent(
     *,
     storage: _Storage,
     namespace: tuple[str, ...],
     fingerprint: str,
     reservation_id: str,
     item: dict[str, object],
+    receipt_intent: dict[str, object],
     namespace_key: _NamespaceKey,
     now: float,
 ) -> bool:
@@ -560,20 +753,22 @@ def _mark_inner_carousel_fingerprint_commit_pending(
         return False
     reservations[reservation_index].update(
         {
-            _RESERVATION_STATE_FIELD: _RESERVATION_STATE_COMMIT_PENDING,
+            _RESERVATION_STATE_FIELD: _RESERVATION_STATE_RECEIPT_INTENT,
             _RESERVATION_PENDING_ITEM_FIELD: dict(item),
+            _RESERVATION_RECEIPT_INTENT_FIELD: dict(receipt_intent),
         }
     )
     return True
 
 
-def _commit_inner_carousel_fingerprint(
+def _commit_inner_carousel_fingerprint_receipt_intent(
     *,
     storage: _Storage,
     namespace: tuple[str, ...],
     fingerprint: str,
     reservation_id: str,
     item: dict[str, object],
+    receipt_intent: dict[str, object],
     namespace_key: _NamespaceKey,
     now: float,
 ) -> bool:
@@ -590,15 +785,21 @@ def _commit_inner_carousel_fingerprint(
         fingerprint=fingerprint,
         reservation_id=reservation_id,
         now=now,
-        allow_commit_pending=True,
+        allow_receipt_intent=True,
     )
     if reservation_index is None:
         return False
     reservation = reservations[reservation_index]
-    if not _reservation_is_commit_pending(reservation):
+    if not _reservation_is_receipt_intent(reservation):
         return False
     pending_item = reservation.get(_RESERVATION_PENDING_ITEM_FIELD)
-    if not isinstance(pending_item, dict) or pending_item != item:
+    persisted_intent = reservation.get(_RESERVATION_RECEIPT_INTENT_FIELD)
+    if (
+        not isinstance(pending_item, dict)
+        or pending_item != item
+        or not isinstance(persisted_intent, dict)
+        or persisted_intent != receipt_intent
+    ):
         return False
     if _contains_recent_inner_carousel_fingerprint(
         storage.get(final_key, []),
@@ -612,6 +813,43 @@ def _commit_inner_carousel_fingerprint(
         )
         return False
     storage.setdefault(final_key, []).append(item)
+    _drop_reservation(
+        storage=storage,
+        reservation_key=reservation_key,
+        reservations=reservations,
+        reservation_index=reservation_index,
+    )
+    return True
+
+
+def _abort_inner_carousel_fingerprint_receipt_intent(
+    *,
+    storage: _Storage,
+    namespace: tuple[str, ...],
+    fingerprint: str,
+    reservation_id: str,
+    namespace_key: _NamespaceKey,
+    now: float,
+) -> bool:
+    reservation_key = namespace_key(_reservation_namespace(namespace))
+    _recover_expired_reservations(
+        storage=storage,
+        reservation_key=reservation_key,
+        now=now,
+    )
+    reservations = storage.get(reservation_key, [])
+    reservation_index = _reservation_index(
+        reservations,
+        fingerprint=fingerprint,
+        reservation_id=reservation_id,
+        now=now,
+        allow_receipt_intent=True,
+        allow_expired_receipt_intent=True,
+    )
+    if reservation_index is None or not _reservation_is_receipt_intent(
+        reservations[reservation_index]
+    ):
+        return False
     _drop_reservation(
         storage=storage,
         reservation_key=reservation_key,
@@ -676,7 +914,11 @@ def _contains_reservation(
     now: float,
 ) -> bool:
     return any(
-        _live_reservation_fingerprint(reservation, now=now) == fingerprint
+        _reservation_blocks_fingerprint(
+            reservation,
+            fingerprint=fingerprint,
+            now=now,
+        )
         for reservation in reservations
     )
 
@@ -687,7 +929,8 @@ def _reservation_index(
     fingerprint: str,
     reservation_id: str,
     now: float,
-    allow_commit_pending: bool = False,
+    allow_receipt_intent: bool = False,
+    allow_expired_receipt_intent: bool = False,
 ) -> int | None:
     for index, reservation in enumerate(reservations):
         if not isinstance(reservation, Mapping):
@@ -697,8 +940,11 @@ def _reservation_index(
             or reservation.get("reservation_id") != reservation_id
         ):
             continue
-        if _reservation_is_commit_pending(reservation):
-            if allow_commit_pending:
+        if _reservation_is_receipt_intent(reservation):
+            if allow_receipt_intent and (
+                allow_expired_receipt_intent
+                or _live_reservation_fingerprint(reservation, now=now) == fingerprint
+            ):
                 return index
             continue
         if _live_reservation_fingerprint(reservation, now=now) == fingerprint:
@@ -706,43 +952,88 @@ def _reservation_index(
     return None
 
 
-def _reconcile_commit_pending_inner_carousel_reservations(
+def _reservation_blocks_fingerprint(
+    reservation: object,
+    *,
+    fingerprint: str,
+    now: float,
+) -> bool:
+    if ordinary_psychology_carousel_memory_fingerprint(reservation) != fingerprint:
+        return False
+    # Receipt intents deliberately block even after lease expiry until the
+    # application injects a verifier for the durable ledger projection.
+    if (
+        _reservation_is_receipt_intent(reservation)
+        or _reservation_is_legacy_commit_pending(reservation)
+    ):
+        return True
+    return _live_reservation_fingerprint(reservation, now=now) == fingerprint
+
+
+def _reconcile_expired_inner_carousel_receipt_intents(
     *,
     storage: _Storage,
-    final_key: _StorageKey,
-    reservation_key: _StorageKey,
-) -> None:
-    """Promote durable post-ledger markers before any retry can reserve work."""
+    namespace: tuple[str, ...],
+    namespace_key: _NamespaceKey,
+    now: float,
+    receipt_intent_verifier: _ReceiptIntentVerifier,
+) -> int:
+    """Recover only expired intents whose complete ledger projection verifies."""
+    final_key = namespace_key(namespace)
+    reservation_key = namespace_key(_reservation_namespace(namespace))
+    _recover_expired_reservations(
+        storage=storage,
+        reservation_key=reservation_key,
+        now=now,
+    )
     reservations = storage.get(reservation_key)
     if reservations is None:
-        return
-    pending: list[tuple[str, dict[str, object]]] = []
+        return 0
     retained: list[dict[str, object]] = []
+    promoted = 0
     for reservation in reservations:
-        if not _reservation_is_commit_pending(reservation):
+        if not _reservation_is_receipt_intent(reservation):
             retained.append(reservation)
             continue
         fingerprint = ordinary_psychology_carousel_memory_fingerprint(reservation)
         item = reservation.get(_RESERVATION_PENDING_ITEM_FIELD)
+        receipt_intent = reservation.get(_RESERVATION_RECEIPT_INTENT_FIELD)
+        if _live_reservation_fingerprint(reservation, now=now) is not None:
+            retained.append(reservation)
+            continue
         if (
             fingerprint is None
             or not isinstance(item, dict)
             or ordinary_psychology_carousel_memory_fingerprint(item) != fingerprint
+            or not isinstance(receipt_intent, dict)
         ):
-            raise RuntimeError(
-                "psychology carousel commit-pending reservation is invalid"
+            # Corrupt expired intents are not proof of a durable set, so they
+            # cannot be promoted or block future work forever.
+            continue
+        try:
+            valid_intent = _require_carousel_receipt_intent(
+                receipt_intent=receipt_intent,
+                fingerprint=fingerprint,
             )
-        pending.append((fingerprint, dict(item)))
-
-    for fingerprint, item in pending:
-        if not _contains_recent_inner_carousel_fingerprint(
+        except ValueError:
+            continue
+        try:
+            ledger_matches = receipt_intent_verifier(dict(valid_intent)) is True
+        except Exception:
+            # A verifier outage is not evidence that the ledger is absent.
+            # Retain this expired intent and fail closed until a later retry.
+            retained.append(reservation)
+            continue
+        if ledger_matches and not _contains_recent_inner_carousel_fingerprint(
             storage.get(final_key, []), fingerprint
         ):
-            storage.setdefault(final_key, []).append(item)
+            storage.setdefault(final_key, []).append(dict(item))
+            promoted += 1
     if retained:
         storage[reservation_key] = retained
     else:
         storage.pop(reservation_key, None)
+    return promoted
 
 
 def _recover_expired_reservations(
@@ -757,7 +1048,15 @@ def _recover_expired_reservations(
     live_reservations = [
         reservation
         for reservation in reservations
-        if _reservation_is_commit_pending(reservation)
+        if (
+            _reservation_is_receipt_intent(reservation)
+            # Older releases could persist a pending item after ledger append
+            # without the immutable receipt identity needed to verify it.  It
+            # is unsafe to guess whether that set was durable, so retain the
+            # legacy marker and block reuse until trusted maintenance resolves
+            # it rather than silently opening a duplicate-render window.
+            or _reservation_is_legacy_commit_pending(reservation)
+        )
         or _live_reservation_fingerprint(reservation, now=now) is not None
     ]
     if len(live_reservations) == len(reservations):
@@ -775,7 +1074,10 @@ def _live_reservation_fingerprint(
 ) -> str | None:
     if not isinstance(reservation, Mapping):
         return None
-    if _reservation_state(reservation) != _RESERVATION_STATE_ACTIVE:
+    if _reservation_state(reservation) not in {
+        _RESERVATION_STATE_ACTIVE,
+        _RESERVATION_STATE_RECEIPT_INTENT,
+    }:
         return None
     fingerprint = ordinary_psychology_carousel_memory_fingerprint(reservation)
     expires_at = reservation.get(_RESERVATION_LEASE_EXPIRES_AT_FIELD)
@@ -796,9 +1098,15 @@ def _reservation_state(reservation: Mapping[str, object]) -> str:
     return _RESERVATION_STATE_ACTIVE if raw_state is None else str(raw_state)
 
 
-def _reservation_is_commit_pending(reservation: object) -> bool:
+def _reservation_is_receipt_intent(reservation: object) -> bool:
     return isinstance(reservation, Mapping) and (
-        _reservation_state(reservation) == _RESERVATION_STATE_COMMIT_PENDING
+        _reservation_state(reservation) == _RESERVATION_STATE_RECEIPT_INTENT
+    )
+
+
+def _reservation_is_legacy_commit_pending(reservation: object) -> bool:
+    return isinstance(reservation, Mapping) and (
+        _reservation_state(reservation) == _RESERVATION_STATE_LEGACY_COMMIT_PENDING
     )
 
 

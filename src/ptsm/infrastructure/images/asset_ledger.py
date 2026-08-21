@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 import secrets
 import stat
-from typing import Any
+from typing import Any, Mapping
 
 from ptsm.infrastructure.images.image_file_evidence import verify_image_file_set
 
@@ -93,6 +93,65 @@ def append_generated_image_assets(
     }
 
 
+def verify_generated_image_asset_receipt_intent(
+    *,
+    base_dir: Path,
+    receipt_intent: Mapping[str, object],
+) -> bool:
+    """Verify one full, immutable carousel batch against the durable ledger.
+
+    A receipt intent is recovered only when every expected page appears once
+    in the same ledger projection.  A matching individual JSONL line is never
+    enough to promote carousel memory after a crash.
+    """
+    expected_projection = _receipt_intent_ledger_projection(receipt_intent)
+    if expected_projection is None:
+        return False
+    ledger_path = base_dir / DEFAULT_GENERATED_IMAGE_ASSET_LEDGER
+    if not ledger_path.exists():
+        return False
+    pinned_directory = _open_or_create_ledger_directory(base_dir=base_dir)
+    try:
+        _assert_pinned_ledger_directory(pinned_directory)
+        ledger_name = ledger_path.name
+        lock_name = f".{ledger_name}.lock"
+        lock_fd = _open_or_create_ledger_lock(
+            parent_fd=pinned_directory.parent_fd,
+            lock_name=lock_name,
+        )
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_SH)
+            try:
+                _assert_valid_ledger_lock(
+                    parent_fd=pinned_directory.parent_fd,
+                    lock_name=lock_name,
+                    lock_fd=lock_fd,
+                )
+                _assert_pinned_ledger_directory(pinned_directory)
+                raw_ledger, _ = _read_existing_ledger(
+                    parent_fd=pinned_directory.parent_fd,
+                    ledger_name=ledger_name,
+                )
+                _assert_pinned_ledger_directory(pinned_directory)
+            finally:
+                fcntl.flock(lock_fd, fcntl.LOCK_UN)
+        finally:
+            os.close(lock_fd)
+    finally:
+        _close_pinned_ledger_directory(pinned_directory)
+
+    entries = _parse_ledger_entries(raw_ledger)
+    actual_projection = [
+        _ledger_entry_projection(entry)
+        for entry in entries
+        if _ledger_entry_matches_receipt_scope(
+            entry,
+            expected_projection=expected_projection,
+        )
+    ]
+    return actual_projection == expected_projection["pages"]
+
+
 def _build_asset_entry(
     *,
     image_path: str,
@@ -125,6 +184,9 @@ def _build_asset_entry(
     if page is not None:
         entry.update(
             {
+                "carousel_plan_fingerprint": str(
+                    image_generation.get("carousel_plan_fingerprint") or ""
+                ),
                 "set_id": str(image_generation.get("set_id") or ""),
                 "manifest_sha256": str(
                     image_generation.get("manifest_sha256") or ""
@@ -133,10 +195,130 @@ def _build_asset_entry(
                 "page_order": int(page["order"]),
                 "page_role": str(page.get("role") or ""),
                 "page_style": str(page.get("style") or ""),
+                "page_sha256": str(page.get("page_sha256") or ""),
                 "page_file_sha256": str(page.get("file_sha256") or ""),
             }
         )
     return entry
+
+
+def _receipt_intent_ledger_projection(
+    receipt_intent: Mapping[str, object],
+) -> dict[str, object] | None:
+    required_fields = {
+        "account_id",
+        "playbook_id",
+        "artifact_path",
+        "carousel_plan_fingerprint",
+        "set_id",
+        "manifest_sha256",
+        "pages",
+    }
+    if set(receipt_intent) != required_fields:
+        return None
+    static_fields = {
+        key: receipt_intent.get(key)
+        for key in required_fields - {"pages"}
+    }
+    if (
+        not all(isinstance(value, str) and value for value in static_fields.values())
+        or not _is_lower_sha256(static_fields["carousel_plan_fingerprint"])
+        or not _is_lower_sha256(static_fields["set_id"])
+        or not _is_lower_sha256(static_fields["manifest_sha256"])
+    ):
+        return None
+    raw_pages = receipt_intent.get("pages")
+    if not isinstance(raw_pages, list) or not raw_pages:
+        return None
+    expected_pages: list[dict[str, object]] = []
+    for expected_order, raw_page in enumerate(raw_pages, start=1):
+        required_page_fields = {
+            "order",
+            "slide_id",
+            "path",
+            "page_sha256",
+            "file_sha256",
+        }
+        if not isinstance(raw_page, Mapping) or set(raw_page) != required_page_fields:
+            return None
+        order = raw_page.get("order")
+        slide_id = raw_page.get("slide_id")
+        path = raw_page.get("path")
+        page_sha256 = raw_page.get("page_sha256")
+        file_sha256 = raw_page.get("file_sha256")
+        if (
+            not isinstance(order, int)
+            or isinstance(order, bool)
+            or order != expected_order
+            or not isinstance(slide_id, str)
+            or not slide_id
+            or not isinstance(path, str)
+            or not path
+            or not _is_lower_sha256(page_sha256)
+            or not _is_lower_sha256(file_sha256)
+        ):
+            return None
+        expected_pages.append(
+            {
+                "order": order,
+                "slide_id": slide_id,
+                "path": path,
+                "page_sha256": page_sha256,
+                "file_sha256": file_sha256,
+            }
+        )
+    return {**static_fields, "pages": expected_pages}
+
+
+def _parse_ledger_entries(raw_ledger: bytes) -> list[dict[str, object]]:
+    decoded = raw_ledger.decode("utf-8")
+    if not decoded:
+        return []
+    entries: list[dict[str, object]] = []
+    for line in decoded.splitlines():
+        if not line:
+            raise ValueError("generated image asset ledger contains a blank entry")
+        entry = json.loads(line)
+        if not isinstance(entry, dict):
+            raise ValueError("generated image asset ledger entry must be an object")
+        entries.append(entry)
+    return entries
+
+
+def _ledger_entry_matches_receipt_scope(
+    entry: Mapping[str, object],
+    *,
+    expected_projection: Mapping[str, object],
+) -> bool:
+    return all(
+        entry.get(key) == expected_projection.get(key)
+        for key in (
+            "account_id",
+            "playbook_id",
+            "artifact_path",
+            "carousel_plan_fingerprint",
+            "set_id",
+            "manifest_sha256",
+        )
+    )
+
+
+def _ledger_entry_projection(entry: Mapping[str, object]) -> dict[str, object]:
+    return {
+        "order": entry.get("page_order"),
+        "slide_id": entry.get("slide_id"),
+        "path": entry.get("image_path"),
+        "page_sha256": entry.get("page_sha256"),
+        "file_sha256": entry.get("page_file_sha256"),
+    }
+
+
+def _is_lower_sha256(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
 
 
 def _ordered_page_evidence(

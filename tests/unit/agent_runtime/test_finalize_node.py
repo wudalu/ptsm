@@ -68,6 +68,26 @@ def _ordinary_psychology_carousel_gate(
     return []
 
 
+def _carousel_receipt_intent(fingerprint: str) -> dict[str, object]:
+    return {
+        "account_id": "acct-psychology-local",
+        "playbook_id": "modern_psychology_post",
+        "artifact_path": "outputs/artifacts/carousel.json",
+        "carousel_plan_fingerprint": fingerprint,
+        "set_id": "1" * 64,
+        "manifest_sha256": "2" * 64,
+        "pages": [
+            {
+                "order": 1,
+                "slide_id": "cover",
+                "path": "outputs/generated_images/carousel-01-cover.png",
+                "page_sha256": "3" * 64,
+                "file_sha256": "4" * 64,
+            }
+        ],
+    }
+
+
 def test_psychology_carousel_draft_gate_reports_schema_error_detail() -> None:
     gate = _build_psychology_carousel_draft_gate()
     draft = DeterministicDraftBackend().generate(
@@ -401,7 +421,7 @@ def test_finalize_releases_carousel_reservation_when_artifact_write_fails(
     assert reservation_id is not None
 
 
-def test_finalize_handoff_reservation_requires_commit_pending_before_memory_promotion(
+def test_finalize_handoff_reservation_requires_receipt_intent_before_memory_promotion(
     tmp_path: Path,
 ) -> None:
     final_content = DeterministicDraftBackend().generate(
@@ -413,7 +433,7 @@ def test_finalize_handoff_reservation_requires_commit_pending_before_memory_prom
         ],
     )
     memory = InMemoryExecutionMemory()
-    handed_off: list[object] = []
+    handed_off: list[OrdinaryPsychologyCarouselMemoryReservation] = []
     finalize = build_finalize_node(
         execution_memory=memory,
         artifact_store=FileArtifactStore(base_dir=tmp_path / "artifacts"),
@@ -438,12 +458,16 @@ def test_finalize_handoff_reservation_requires_commit_pending_before_memory_prom
     assert memory.search(namespace=namespace) == []
     assert len(handed_off) == 1
     reservation = handed_off.pop()
-    # An artifact handoff is not enough to mark a carousel as recent.  The
-    # renderer/ledger lifecycle must first persist the commit-pending state.
-    assert not reservation.commit()
+    # An artifact handoff is not enough to mark a carousel as recent. The
+    # renderer/ledger lifecycle must first persist its immutable receipt intent.
+    fingerprint = psychology_carousel.psychology_carousel_inner_pages_fingerprint(
+        final_content["image_plan"]
+    )
+    intent = _carousel_receipt_intent(fingerprint)
+    assert not reservation.commit_receipt_intent(intent)
     assert memory.search(namespace=namespace) == []
-    assert reservation.mark_commit_pending()
-    assert reservation.commit()
+    assert reservation.persist_receipt_intent(intent)
+    assert reservation.commit_receipt_intent(intent)
     lessons = memory.search(namespace=namespace)
     assert len(lessons) == 1
     serialized_result = json.dumps(result, ensure_ascii=False)

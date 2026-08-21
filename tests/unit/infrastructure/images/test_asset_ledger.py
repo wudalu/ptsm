@@ -11,7 +11,10 @@ import threading
 import pytest
 
 import ptsm.infrastructure.images.asset_ledger as asset_ledger_module
-from ptsm.infrastructure.images.asset_ledger import append_generated_image_assets
+from ptsm.infrastructure.images.asset_ledger import (
+    append_generated_image_assets,
+    verify_generated_image_asset_receipt_intent,
+)
 
 
 def test_append_generated_image_assets_writes_jsonl_entries(tmp_path: Path) -> None:
@@ -132,6 +135,81 @@ def test_append_generated_image_assets_records_carousel_pages_in_manifest_order(
     assert [entry["page_file_sha256"] for entry in entries] == [
         hashlib.sha256(path.read_bytes()).hexdigest() for path in image_paths
     ]
+
+
+def test_asset_ledger_verifies_the_complete_receipt_intent_projection(
+    tmp_path: Path,
+) -> None:
+    image_path = tmp_path / "outputs" / "generated_images" / "carousel-01-cover.png"
+    image_path.parent.mkdir(parents=True)
+    image_path.write_bytes(b"carousel page")
+    fingerprint = "a" * 64
+    page_sha256 = "b" * 64
+    file_sha256 = hashlib.sha256(image_path.read_bytes()).hexdigest()
+    intent = {
+        "account_id": "acct-psychology-local",
+        "playbook_id": "modern_psychology_post",
+        "artifact_path": "outputs/artifacts/carousel.json",
+        "carousel_plan_fingerprint": fingerprint,
+        "set_id": "c" * 64,
+        "manifest_sha256": "d" * 64,
+        "pages": [
+            {
+                "order": 1,
+                "slide_id": "cover",
+                "path": str(image_path),
+                "page_sha256": page_sha256,
+                "file_sha256": file_sha256,
+            }
+        ],
+    }
+
+    result = append_generated_image_assets(
+        base_dir=tmp_path,
+        artifact_path=intent["artifact_path"],
+        playbook_id=intent["playbook_id"],
+        account_id=intent["account_id"],
+        image_generation={
+            "provider": "local_note_card",
+            "style": "psychology_text_card_v1",
+            "carousel_style": "psychology_text_card_v1",
+            "carousel_plan_fingerprint": fingerprint,
+            "image_count": 1,
+            "set_id": intent["set_id"],
+            "manifest_sha256": intent["manifest_sha256"],
+            "generated_image_paths": [str(image_path)],
+            "pages": [
+                {
+                    "slide_id": "cover",
+                    "order": 1,
+                    "role": "cover_hook",
+                    "style": "psychology_text_card_v1",
+                    "path": str(image_path),
+                    "file_sha256": file_sha256,
+                    "page_sha256": page_sha256,
+                }
+            ],
+        },
+    )
+
+    assert result is not None
+    assert verify_generated_image_asset_receipt_intent(
+        base_dir=tmp_path,
+        receipt_intent=intent,
+    )
+
+    ledger_path = Path(result["ledger_path"])
+    entries = _read_jsonl(ledger_path)
+    entries[0]["page_sha256"] = "0" * 64
+    ledger_path.write_text(
+        "".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries),
+        encoding="utf-8",
+    )
+
+    assert not verify_generated_image_asset_receipt_intent(
+        base_dir=tmp_path,
+        receipt_intent=intent,
+    )
 
 
 def test_append_generated_image_assets_hash_mismatch_leaves_no_ledger(

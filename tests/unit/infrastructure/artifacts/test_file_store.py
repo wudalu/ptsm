@@ -50,6 +50,41 @@ def test_file_artifact_store_preserves_existing_run_key_writes(tmp_path: Path) -
     assert json.loads(second_path.read_text(encoding="utf-8"))["title"] == "second"
 
 
+def test_workflow_write_tracker_owns_only_new_artifacts_and_fences_cleanup(
+    tmp_path: Path,
+) -> None:
+    store = FileArtifactStore(base_dir=tmp_path / "artifacts")
+    foreign_path = store.write(
+        {
+            "title": "settled foreign artifact",
+            "carousel_delivery": {"status": "ready", "set_id": "foreign"},
+        },
+        run_key="foreign",
+    )
+
+    with store.track_workflow_writes() as tracker:
+        # Updating an older artifact during this invocation must not make it a
+        # cleanup target. Only write() establishes run ownership.
+        store.merge(foreign_path, {"unrelated_workflow_touch": True})
+        owned_path = store.write({"title": "new artifact"}, run_key="owned")
+        store.merge(
+            owned_path,
+            {"carousel_delivery": {"status": "ready", "set_id": "forged"}},
+        )
+
+    assert not store.is_tracked_workflow_artifact(
+        foreign_path,
+        tracker=tracker,
+    )
+    assert store.is_tracked_workflow_artifact(owned_path, tracker=tracker)
+    assert store.clear_untrusted_carousel_delivery(owned_path, tracker=tracker)
+    assert "carousel_delivery" not in store.read(owned_path)
+    assert store.read(foreign_path)["carousel_delivery"] == {
+        "status": "ready",
+        "set_id": "foreign",
+    }
+
+
 @pytest.mark.parametrize("run_key", ("../escaped", "/tmp/escaped"))
 def test_file_artifact_store_write_rejects_run_keys_that_escape_the_base_directory(
     tmp_path: Path,

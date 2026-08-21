@@ -10,6 +10,7 @@ import pytest
 import ptsm.domain.psychology_learning as psychology_learning_domain
 import ptsm.application.use_cases.psychology_learning_series as psychology_learning_series_use_case
 import ptsm.evaluations.contracts_eval as contracts_eval
+import ptsm.infrastructure.images.asset_ledger as asset_ledger_module
 from ptsm.accounts.registry import AccountProfile, AccountRegistry
 from ptsm.application.models import FengkuangRequest, PlaybookRequest
 from ptsm.application.services.image_carousel_transaction import (
@@ -127,6 +128,33 @@ class FakeWorkflow:
                 }
             ],
         }
+
+
+class StoreWritingFakeWorkflow(FakeWorkflow):
+    """Minimal generic workflow fixture that creates its artifact in invoke."""
+
+    def __init__(
+        self,
+        artifact_path: Path,
+        *,
+        artifact_store: FileArtifactStore,
+    ) -> None:
+        super().__init__(artifact_path)
+        self._artifact_store = artifact_store
+        self._created = False
+
+    def invoke(
+        self,
+        payload: dict[str, object],
+        config: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        if not self._created:
+            self.artifact_path = self._artifact_store.write(
+                {"playbook_id": "modern_psychology_post"},
+                run_key=self.artifact_path.stem,
+            )
+            self._created = True
+        return super().invoke(payload, config)
 
 
 class PatternWorkflow(FakeWorkflow):
@@ -283,15 +311,36 @@ def _ordinary_psychology_carousel_content() -> dict[str, object]:
 
 
 class PsychologyCarouselWorkflow:
-    def __init__(self, artifact_path: Path, final_content: dict[str, object]) -> None:
+    def __init__(
+        self,
+        artifact_path: Path,
+        final_content: dict[str, object],
+        *,
+        artifact_store: FileArtifactStore | None = None,
+    ) -> None:
         self.artifact_path = artifact_path
         self.final_content = final_content
+        self._artifact_store = artifact_store
+        self._artifact_created = False
+
+    def _create_artifact_if_configured(self) -> None:
+        if self._artifact_store is None or self._artifact_created:
+            return
+        self.artifact_path = self._artifact_store.write(
+            {
+                "playbook_id": "modern_psychology_post",
+                "final_content": self.final_content,
+            },
+            run_key=self.artifact_path.stem,
+        )
+        self._artifact_created = True
 
     def invoke(
         self,
         payload: dict[str, object],
         config: dict[str, object] | None = None,
     ) -> dict[str, object]:
+        self._create_artifact_if_configured()
         return {
             "status": "completed",
             "artifact_path": str(self.artifact_path),
@@ -324,7 +373,7 @@ class StoreBackedCarouselReservation:
         self.lesson = lesson
         self.events = events
         self._settled = False
-        self._commit_pending = False
+        self._receipt_intent: dict[str, object] | None = None
 
     def start_heartbeat(self) -> bool:
         return True
@@ -332,42 +381,63 @@ class StoreBackedCarouselReservation:
     def heartbeat_is_healthy(self) -> bool:
         return True
 
-    def mark_commit_pending(self) -> bool:
-        if self._settled:
+    def persist_receipt_intent(self, receipt_intent: dict[str, object]) -> bool:
+        if self._settled or self._receipt_intent is not None:
             return False
-        self.events.append("commit_pending")
-        pending = self.memory.mark_psychology_carousel_inner_fingerprint_commit_pending(
+        self.events.append("intent")
+        persisted = self.memory.persist_psychology_carousel_inner_fingerprint_receipt_intent(
             namespace=self.namespace,
             fingerprint=self.fingerprint,
             reservation_id=self.reservation_id,
             item=self.lesson,
+            receipt_intent=receipt_intent,
         )
-        self._commit_pending = pending
-        return pending
+        if persisted:
+            self._receipt_intent = dict(receipt_intent)
+        return persisted
 
-    def commit(self) -> bool:
-        if self._settled:
+    def commit_receipt_intent(self, receipt_intent: dict[str, object]) -> bool:
+        if self._settled or self._receipt_intent != receipt_intent:
             return False
         self.events.append("commit")
-        committed = self.memory.commit_psychology_carousel_inner_fingerprint(
+        committed = self.memory.commit_psychology_carousel_inner_fingerprint_receipt_intent(
             namespace=self.namespace,
             fingerprint=self.fingerprint,
             reservation_id=self.reservation_id,
             item=self.lesson,
+            receipt_intent=receipt_intent,
         )
-        self._settled = True
+        if committed:
+            self._settled = True
         return committed
+
+    def abort_receipt_intent(self) -> bool:
+        if self._settled or self._receipt_intent is None:
+            return False
+        self.events.append("abort")
+        aborted = self.memory.abort_psychology_carousel_inner_fingerprint_receipt_intent(
+            namespace=self.namespace,
+            fingerprint=self.fingerprint,
+            reservation_id=self.reservation_id,
+        )
+        if aborted:
+            self._settled = True
+        return aborted
 
     def release(self) -> None:
         if self._settled:
             return
+        if self._receipt_intent is not None:
+            # A receipt intent is a recovery boundary.  The real reservation
+            # retains it after any append attempt so expiry reconciliation can
+            # determine whether the ledger was durable.
+            return
         self.events.append("release")
-        if not self._commit_pending:
-            self.memory.release_psychology_carousel_inner_fingerprint(
-                namespace=self.namespace,
-                fingerprint=self.fingerprint,
-                reservation_id=self.reservation_id,
-            )
+        self.memory.release_psychology_carousel_inner_fingerprint(
+            namespace=self.namespace,
+            fingerprint=self.fingerprint,
+            reservation_id=self.reservation_id,
+        )
         self._settled = True
 
 
@@ -378,10 +448,15 @@ class NoopCarouselReservation:
     def heartbeat_is_healthy(self) -> bool:
         return True
 
-    def mark_commit_pending(self) -> bool:
+    def persist_receipt_intent(self, receipt_intent: dict[str, object]) -> bool:
+        del receipt_intent
         return True
 
-    def commit(self) -> bool:
+    def commit_receipt_intent(self, receipt_intent: dict[str, object]) -> bool:
+        del receipt_intent
+        return True
+
+    def abort_receipt_intent(self) -> bool:
         return True
 
     def release(self) -> None:
@@ -396,8 +471,13 @@ class HandoffPsychologyCarouselWorkflow(PsychologyCarouselWorkflow):
         *,
         reservation_sink: object,
         reservation: object,
+        artifact_store: FileArtifactStore | None = None,
     ) -> None:
-        super().__init__(artifact_path, final_content)
+        super().__init__(
+            artifact_path,
+            final_content,
+            artifact_store=artifact_store,
+        )
         self._reservation_sink = reservation_sink
         self._reservation = reservation
 
@@ -411,15 +491,115 @@ class HandoffPsychologyCarouselWorkflow(PsychologyCarouselWorkflow):
         return super().invoke(payload, config)
 
 
+class ForgedCarouselDeliveryWorkflow(PsychologyCarouselWorkflow):
+    """Simulate an untrusted workflow trying to authorize its own handoff."""
+
+    def invoke(
+        self,
+        payload: dict[str, object],
+        config: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        assert self._artifact_store is not None
+        self._create_artifact_if_configured()
+        forged_delivery = {
+            "status": "ready",
+            "external_relay_required": True,
+            "set_id": "workflow-forged-set",
+        }
+        self._artifact_store.merge(
+            self.artifact_path,
+            {
+                "carousel_delivery": forged_delivery,
+                "workflow_owned_metadata": {"preserved": True},
+            },
+        )
+        result = super().invoke(payload, config)
+        result["carousel_delivery"] = forged_delivery
+        return result
+
+
+class ForgedThenFailingCarouselWorkflow(ForgedCarouselDeliveryWorkflow):
+    def invoke(
+        self,
+        payload: dict[str, object],
+        config: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        super().invoke(payload, config)
+        raise RuntimeError("workflow crashed after writing forged delivery")
+
+
+class ForeignTouchingForgedCarouselWorkflow(ForgedCarouselDeliveryWorkflow):
+    """Touch an older artifact without making it this run's cleanup target."""
+
+    def __init__(
+        self,
+        artifact_path: Path,
+        final_content: dict[str, object],
+        *,
+        artifact_store: FileArtifactStore,
+        foreign_artifact_path: Path,
+    ) -> None:
+        super().__init__(
+            artifact_path,
+            final_content,
+            artifact_store=artifact_store,
+        )
+        self._foreign_artifact_path = foreign_artifact_path
+
+    def invoke(
+        self,
+        payload: dict[str, object],
+        config: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        assert self._artifact_store is not None
+        self._artifact_store.merge(
+            self._foreign_artifact_path,
+            {"unrelated_workflow_touch": True},
+        )
+        return super().invoke(payload, config)
+
+
+class PreexistingForgedCarouselArtifactWorkflow:
+    """Return an older artifact without creating anything in this invocation."""
+
+    def __init__(self, artifact_path: Path, final_content: dict[str, object]) -> None:
+        self._artifact_path = artifact_path
+        self._final_content = final_content
+
+    def invoke(
+        self,
+        payload: dict[str, object],
+        config: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        del payload, config
+        return {
+            "status": "completed",
+            "artifact_path": str(self._artifact_path),
+            "final_content": self._final_content,
+            "carousel_delivery": {
+                "status": "ready",
+                "external_relay_required": True,
+                "set_id": "foreign-forged-set",
+            },
+            "content_review": {"image_plan": self._final_content["image_plan"]},
+            "runtime_skill_contents": [],
+            "activated_skills": [],
+            "activated_skill_details": [],
+            "runtime_skill_details": [],
+        }
+
+
 def _reserved_carousel_lifecycle(
     final_content: dict[str, object],
+    *,
+    memory: InMemoryExecutionMemory | None = None,
 ) -> tuple[
     InMemoryExecutionMemory,
     tuple[str, ...],
     dict[str, object],
     StoreBackedCarouselReservation,
 ]:
-    memory = InMemoryExecutionMemory()
+    memory = memory or InMemoryExecutionMemory()
     namespace = ("accounts", "acct-psychology-local", "lessons")
     fingerprint = psychology_carousel_inner_pages_fingerprint(final_content["image_plan"])
     lesson = {
@@ -1281,21 +1461,14 @@ def test_run_playbook_allows_openclaw_psychology_after_guidance_ack(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    artifact_path = tmp_path / "artifact.json"
-    artifact_path.write_text(
-        json.dumps(
-            {
-                "playbook_id": "modern_psychology_post",
-                "final_content": {"title": "旧标题"},
-            },
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
-    )
+    artifact_path = tmp_path / "outputs" / "artifacts" / "openclaw-guidance.json"
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(
         "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
-        lambda **_: FakeWorkflow(artifact_path),
+        lambda **kwargs: StoreWritingFakeWorkflow(
+            artifact_path,
+            artifact_store=kwargs["artifact_store"],
+        ),
         raising=False,
     )
 
@@ -2155,17 +2328,6 @@ def test_run_playbook_publishes_complete_psychology_carousel_in_manifest_order(
 ) -> None:
     final_content = _ordinary_psychology_carousel_content()
     artifact_path = tmp_path / "outputs" / "artifacts" / "psychology-carousel.json"
-    artifact_path.parent.mkdir(parents=True)
-    artifact_path.write_text(
-        json.dumps(
-            {
-                "playbook_id": "modern_psychology_post",
-                "final_content": final_content,
-            },
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
-    )
     publisher = CapturingPublisher()
 
     def build_workflow(**kwargs: object) -> HandoffPsychologyCarouselWorkflow:
@@ -2174,6 +2336,7 @@ def test_run_playbook_publishes_complete_psychology_carousel_in_manifest_order(
             final_content,
             reservation_sink=kwargs["ordinary_psychology_carousel_reservation_sink"],
             reservation=NoopCarouselReservation(),
+            artifact_store=kwargs["artifact_store"],
         )
 
     monkeypatch.setattr(
@@ -2241,23 +2404,381 @@ def test_run_playbook_publishes_complete_psychology_carousel_in_manifest_order(
     ]
 
 
+def test_run_playbook_removes_workflow_forged_delivery_without_local_carousel(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A workflow cannot leave a ready handoff when rendering was skipped."""
+    final_content = _ordinary_psychology_carousel_content()
+    artifact_path = tmp_path / "outputs" / "artifacts" / "forged-unrendered.json"
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        lambda **kwargs: ForgedCarouselDeliveryWorkflow(
+            artifact_path,
+            final_content,
+            artifact_store=kwargs["artifact_store"],
+        ),
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = run_playbook(
+        PlaybookRequest(
+            scene="下班后还在回放会议里的那句话",
+            account_id="acct-psychology-local",
+            playbook_id="modern_psychology_post",
+            auto_generate_images=False,
+        ),
+        publisher=CountingPublisher(),
+        run_store=RunStore(base_dir=tmp_path / "runs"),
+    )
+
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+    assert result["status"] == "completed"
+    assert "carousel_delivery" not in result
+    assert "carousel_delivery" not in artifact
+    assert artifact["workflow_owned_metadata"] == {"preserved": True}
+
+
+def test_run_playbook_never_scrubs_a_foreign_ready_artifact_touched_by_workflow(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Exact write tracking prevents one invocation from revoking another's receipt."""
+    final_content = _ordinary_psychology_carousel_content()
+    artifact_path = tmp_path / "outputs" / "artifacts" / "forged-owned.json"
+    foreign_artifact_path = tmp_path / "outputs" / "artifacts" / "foreign-ready.json"
+    foreign_artifact_path.parent.mkdir(parents=True)
+    foreign_delivery = {
+        "status": "ready",
+        "external_relay_required": True,
+        "set_id": "settled-foreign-set",
+    }
+    foreign_artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "modern_psychology_post",
+                "final_content": {"title": "parallel settled artifact"},
+                "carousel_delivery": foreign_delivery,
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    def build_workflow(**kwargs: object) -> ForeignTouchingForgedCarouselWorkflow:
+        return ForeignTouchingForgedCarouselWorkflow(
+            artifact_path,
+            final_content,
+            artifact_store=kwargs["artifact_store"],
+            foreign_artifact_path=foreign_artifact_path,
+        )
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        build_workflow,
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = run_playbook(
+        PlaybookRequest(
+            scene="下班后还在回放会议里的那句话",
+            account_id="acct-psychology-local",
+            playbook_id="modern_psychology_post",
+            auto_generate_images=False,
+        ),
+        publisher=CountingPublisher(),
+        run_store=RunStore(base_dir=tmp_path / "runs"),
+    )
+
+    owned_artifact = json.loads(
+        Path(result["artifact_path"]).read_text(encoding="utf-8")
+    )
+    foreign_artifact = json.loads(foreign_artifact_path.read_text(encoding="utf-8"))
+    assert result["status"] == "completed"
+    assert "carousel_delivery" not in owned_artifact
+    assert foreign_artifact["carousel_delivery"] == foreign_delivery
+    assert foreign_artifact["unrelated_workflow_touch"] is True
+
+
+def test_run_playbook_rejects_preexisting_forged_ordinary_artifact_without_merging(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A custom workflow cannot route this run through an older ready artifact."""
+    final_content = _ordinary_psychology_carousel_content()
+    foreign_artifact_path = tmp_path / "outputs" / "artifacts" / "foreign-forged.json"
+    foreign_artifact_path.parent.mkdir(parents=True)
+    forged_delivery = {
+        "status": "ready",
+        "external_relay_required": True,
+        "set_id": "foreign-forged-set",
+    }
+    foreign_payload = {
+        "playbook_id": "modern_psychology_post",
+        "final_content": final_content,
+        "carousel_delivery": forged_delivery,
+    }
+    foreign_artifact_path.write_text(
+        json.dumps(foreign_payload, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    publisher = CountingPublisher()
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        lambda **_: PreexistingForgedCarouselArtifactWorkflow(
+            foreign_artifact_path,
+            final_content,
+        ),
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = run_playbook(
+        PlaybookRequest(
+            scene="下班后还在回放会议里的那句话",
+            account_id="acct-psychology-local",
+            playbook_id="modern_psychology_post",
+            auto_generate_images=False,
+        ),
+        publisher=publisher,
+        run_store=RunStore(base_dir=tmp_path / "runs"),
+    )
+
+    assert result["status"] == "ordinary_psychology_artifact_invalid"
+    assert "carousel_delivery" not in result
+    assert publisher.calls == 0
+    assert json.loads(foreign_artifact_path.read_text(encoding="utf-8")) == foreign_payload
+
+
+def test_run_playbook_skips_publish_when_tracked_artifact_changes_after_scrub(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """The pre-publish fence closes the scrub-to-publish replacement window."""
+    final_content = _ordinary_psychology_carousel_content()
+    artifact_path = tmp_path / "outputs" / "artifacts" / "swapped-before-publish.json"
+    publisher = CountingPublisher()
+
+    def build_workflow(**kwargs: object) -> ForgedCarouselDeliveryWorkflow:
+        return ForgedCarouselDeliveryWorkflow(
+            artifact_path,
+            final_content,
+            artifact_store=kwargs["artifact_store"],
+        )
+
+    def replace_artifact_before_publish(**kwargs: object) -> str:
+        target = Path(str(kwargs["artifact_path"]))
+        target.write_text(
+            json.dumps(
+                {
+                    "playbook_id": "modern_psychology_post",
+                    "final_content": final_content,
+                    "carousel_delivery": {
+                        "status": "ready",
+                        "external_relay_required": True,
+                        "set_id": "swapped-forged-set",
+                    },
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        return "swapped-before-publish"
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        build_workflow,
+    )
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook._build_publish_idempotency_key",
+        replace_artifact_before_publish,
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = run_playbook(
+        PlaybookRequest(
+            scene="下班后还在回放会议里的那句话",
+            account_id="acct-psychology-local",
+            playbook_id="modern_psychology_post",
+            auto_generate_images=False,
+        ),
+        publisher=publisher,
+        run_store=RunStore(base_dir=tmp_path / "runs"),
+    )
+
+    assert result["status"] == "ordinary_psychology_artifact_invalid"
+    assert "carousel_delivery" not in result
+    assert result["publish_result"] is None
+    assert publisher.calls == 0
+    assert json.loads(artifact_path.read_text(encoding="utf-8"))["carousel_delivery"][
+        "set_id"
+    ] == "swapped-forged-set"
+
+
+@pytest.mark.parametrize("wait_for_publish_status", (False, True))
+def test_run_playbook_skips_browser_handoff_when_artifact_changes_after_publish_receipt(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    wait_for_publish_status: bool,
+) -> None:
+    """A late swap fails closed without calling browser/status helpers."""
+    final_content = _ordinary_psychology_carousel_content()
+    artifact_path = tmp_path / "outputs" / "artifacts" / "swapped-before-browser.json"
+
+    def build_workflow(**kwargs: object) -> PsychologyCarouselWorkflow:
+        return PsychologyCarouselWorkflow(
+            artifact_path,
+            final_content,
+            artifact_store=kwargs["artifact_store"],
+        )
+
+    original_merge = FileArtifactStore.merge_tracked_workflow_artifact
+
+    def merge_then_swap(
+        self: FileArtifactStore,
+        path: Path | str,
+        payload: dict[str, object],
+        *,
+        tracker: object,
+    ) -> Path:
+        updated_path = original_merge(self, path, payload, tracker=tracker)  # type: ignore[arg-type]
+        Path(path).write_text(
+            json.dumps(
+                {
+                    "playbook_id": "modern_psychology_post",
+                    "final_content": final_content,
+                    "carousel_delivery": {
+                        "status": "ready",
+                        "external_relay_required": True,
+                        "set_id": "late-browser-forged-set",
+                    },
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        return updated_path
+
+    def unexpected_browser(**_: object) -> dict[str, object]:
+        raise AssertionError("browser must not open after artifact fence failure")
+
+    def unexpected_status_check(**_: object) -> dict[str, object]:
+        raise AssertionError("status check must not run after artifact fence failure")
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        build_workflow,
+    )
+    monkeypatch.setattr(FileArtifactStore, "merge_tracked_workflow_artifact", merge_then_swap)
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.open_xhs_browser",
+        unexpected_browser,
+    )
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.check_xhs_publish_status",
+        unexpected_status_check,
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = run_playbook(
+        PlaybookRequest(
+            scene="下班后还在回放会议里的那句话",
+            account_id="acct-psychology-local",
+            playbook_id="modern_psychology_post",
+            auto_generate_images=False,
+            open_browser_if_needed=True,
+            wait_for_publish_status=wait_for_publish_status,
+        ),
+        publisher=CountingPublisher(),
+        run_store=RunStore(base_dir=tmp_path / "runs"),
+    )
+
+    assert result["status"] == "ordinary_psychology_artifact_invalid"
+    assert "carousel_delivery" not in result
+    assert result["post_publish_checks"]["browser_opened"] is False
+    assert result["post_publish_checks"]["browser_result"] is None
+
+
+def test_run_playbook_scrubs_workflow_forged_delivery_when_invoke_raises(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """The workflow exception path cannot leave a ready relay artifact behind."""
+    final_content = _ordinary_psychology_carousel_content()
+    artifact_path = tmp_path / "outputs" / "artifacts" / "forged-exception.json"
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        lambda **kwargs: ForgedThenFailingCarouselWorkflow(
+            artifact_path,
+            final_content,
+            artifact_store=kwargs["artifact_store"],
+        ),
+    )
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(RuntimeError, match="workflow crashed"):
+        run_playbook(
+            PlaybookRequest(
+                scene="下班后还在回放会议里的那句话",
+                account_id="acct-psychology-local",
+                playbook_id="modern_psychology_post",
+                auto_generate_images=False,
+            ),
+            publisher=CountingPublisher(),
+            run_store=RunStore(base_dir=tmp_path / "runs"),
+        )
+
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+    assert "carousel_delivery" not in artifact
+    assert artifact["workflow_owned_metadata"] == {"preserved": True}
+
+
+def test_run_playbook_removes_workflow_forged_delivery_after_verification_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A failed canonical verification must also revoke a workflow receipt."""
+    final_content = _ordinary_psychology_carousel_content()
+    artifact_path = tmp_path / "outputs" / "artifacts" / "forged-failed.json"
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        lambda **kwargs: ForgedCarouselDeliveryWorkflow(
+            artifact_path,
+            final_content,
+            artifact_store=kwargs["artifact_store"],
+        ),
+    )
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.verify_committed_carousel_set",
+        lambda **_: (_ for _ in ()).throw(
+            ImageCarouselTransactionError("canonical verification failed")
+        ),
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = run_playbook(
+        PlaybookRequest(
+            scene="下班后还在回放会议里的那句话",
+            account_id="acct-psychology-local",
+            playbook_id="modern_psychology_post",
+            auto_generate_images=True,
+        ),
+        publisher=CountingPublisher(),
+        run_store=RunStore(base_dir=tmp_path / "runs"),
+    )
+
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+    assert result["status"] == "psychology_carousel_generation_failed"
+    assert "carousel_delivery" not in result
+    assert "carousel_delivery" not in artifact
+    assert artifact["workflow_owned_metadata"] == {"preserved": True}
+
+
 def test_run_playbook_commits_carousel_memory_only_after_ledger_receipt(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     final_content = _ordinary_psychology_carousel_content()
     artifact_path = tmp_path / "outputs" / "artifacts" / "handoff-carousel.json"
-    artifact_path.parent.mkdir(parents=True)
-    artifact_path.write_text(
-        json.dumps(
-            {
-                "playbook_id": "modern_psychology_post",
-                "final_content": final_content,
-            },
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
-    )
     memory, namespace, lesson, reservation = _reserved_carousel_lifecycle(final_content)
 
     def build_workflow(**kwargs: object) -> HandoffPsychologyCarouselWorkflow:
@@ -2266,6 +2787,7 @@ def test_run_playbook_commits_carousel_memory_only_after_ledger_receipt(
             final_content,
             reservation_sink=kwargs["ordinary_psychology_carousel_reservation_sink"],
             reservation=reservation,
+            artifact_store=kwargs["artifact_store"],
         )
 
     def append_ledger(**_: object) -> dict[str, object]:
@@ -2285,6 +2807,10 @@ def test_run_playbook_commits_carousel_memory_only_after_ledger_receipt(
         "ptsm.application.use_cases.run_playbook.append_generated_image_assets",
         append_ledger,
     )
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.verify_generated_image_asset_receipt_intent",
+        lambda **_: True,
+    )
     monkeypatch.chdir(tmp_path)
 
     result = run_playbook(
@@ -2300,7 +2826,7 @@ def test_run_playbook_commits_carousel_memory_only_after_ledger_receipt(
     )
 
     assert result["status"] == "completed"
-    assert reservation.events == ["ledger", "commit_pending", "commit"]
+    assert reservation.events == ["intent", "ledger", "commit"]
     assert memory.search(namespace=namespace) == [lesson]
     serialized_result = json.dumps(result, ensure_ascii=False)
     serialized_artifact = artifact_path.read_text(encoding="utf-8")
@@ -2308,27 +2834,142 @@ def test_run_playbook_commits_carousel_memory_only_after_ledger_receipt(
     assert reservation.reservation_id not in serialized_artifact
 
 
-def test_run_playbook_keeps_commit_pending_memory_recoverable_when_promotion_fails(
+@pytest.mark.parametrize("tamper_kind", ("partial", "mismatched"))
+def test_run_playbook_never_commits_ready_from_partial_or_mismatched_ledger(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    tamper_kind: str,
+) -> None:
+    """The normal path uses the same full-projection verifier as recovery."""
+    final_content = _ordinary_psychology_carousel_content()
+    artifact_path = tmp_path / "outputs" / "artifacts" / f"{tamper_kind}-ledger.json"
+    now = [1_000.0]
+    memory = InMemoryExecutionMemory(clock=lambda: now[0])
+    memory, namespace, lesson, reservation = _reserved_carousel_lifecycle(
+        final_content,
+        memory=memory,
+    )
+
+    def build_workflow(**kwargs: object) -> HandoffPsychologyCarouselWorkflow:
+        return HandoffPsychologyCarouselWorkflow(
+            artifact_path,
+            final_content,
+            reservation_sink=kwargs["ordinary_psychology_carousel_reservation_sink"],
+            reservation=reservation,
+            artifact_store=kwargs["artifact_store"],
+        )
+
+    def append_then_tamper(**kwargs: object) -> dict[str, object] | None:
+        receipt = asset_ledger_module.append_generated_image_assets(**kwargs)
+        assert receipt is not None
+        ledger_path = Path(str(receipt["ledger_path"]))
+        entries = [
+            json.loads(line)
+            for line in ledger_path.read_text(encoding="utf-8").splitlines()
+        ]
+        if tamper_kind == "partial":
+            entries.pop()
+        else:
+            entries[0]["page_sha256"] = "0" * 64
+        ledger_path.write_text(
+            "".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries),
+            encoding="utf-8",
+        )
+        return receipt
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        build_workflow,
+    )
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_image_backend",
+        lambda _settings: None,
+    )
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.append_generated_image_assets",
+        append_then_tamper,
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = run_playbook(
+        PlaybookRequest(
+            scene="下班后还在回放会议里的那句话",
+            account_id="acct-psychology-local",
+            playbook_id="modern_psychology_post",
+            auto_generate_images=True,
+        ),
+        memory=memory,
+        publisher=CountingPublisher(),
+        run_store=RunStore(base_dir=tmp_path / "runs"),
+    )
+
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+    assert result["status"] == "psychology_carousel_generation_failed"
+    assert reservation.events == ["intent"]
+    assert memory.search(namespace=namespace) == []
+    assert "carousel_delivery" not in result
+    assert "carousel_delivery" not in artifact
+    assert (
+        memory.reserve_psychology_carousel_inner_fingerprint(
+            namespace=namespace,
+            fingerprint=reservation.fingerprint,
+            item=lesson,
+        )
+        is None
+    )
+
+    # The same application-layer verifier cleans up an expired partial or
+    # replaced ledger before it constructs the next workflow.
+    now[0] += 60 * 60
+    observed_history: list[list[dict[str, object]]] = []
+    retry_artifact_path = tmp_path / "outputs" / "artifacts" / f"{tamper_kind}-retry.json"
+
+    def build_after_reconcile(**kwargs: object) -> PsychologyCarouselWorkflow:
+        observed_history.append(memory.search(namespace=namespace))
+        return PsychologyCarouselWorkflow(
+            retry_artifact_path,
+            final_content,
+            artifact_store=kwargs["artifact_store"],
+        )
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        build_after_reconcile,
+    )
+    retry_result = run_playbook(
+        PlaybookRequest(
+            scene="下班后还在回放会议里的那句话",
+            account_id="acct-psychology-local",
+            playbook_id="modern_psychology_post",
+            auto_generate_images=False,
+        ),
+        memory=memory,
+        publisher=CountingPublisher(),
+        run_store=RunStore(base_dir=tmp_path / "runs-retry"),
+    )
+    assert retry_result["status"] == "completed"
+    assert observed_history == [[]]
+    assert (
+        memory.reserve_psychology_carousel_inner_fingerprint(
+            namespace=namespace,
+            fingerprint=reservation.fingerprint,
+            item=lesson,
+        )
+        is not None
+    )
+
+
+def test_run_playbook_keeps_receipt_intent_recoverable_when_promotion_fails(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     final_content = _ordinary_psychology_carousel_content()
     artifact_path = tmp_path / "outputs" / "artifacts" / "commit-pending-carousel.json"
-    artifact_path.parent.mkdir(parents=True)
-    artifact_path.write_text(
-        json.dumps(
-            {
-                "playbook_id": "modern_psychology_post",
-                "final_content": final_content,
-            },
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
-    )
     memory, namespace, lesson, reservation = _reserved_carousel_lifecycle(final_content)
 
     class CommitFailingReservation(StoreBackedCarouselReservation):
-        def commit(self) -> bool:
+        def commit_receipt_intent(self, receipt_intent: dict[str, object]) -> bool:
+            del receipt_intent
             self.events.append("commit")
             return False
 
@@ -2347,6 +2988,7 @@ def test_run_playbook_keeps_commit_pending_memory_recoverable_when_promotion_fai
             final_content,
             reservation_sink=kwargs["ordinary_psychology_carousel_reservation_sink"],
             reservation=failing_reservation,
+            artifact_store=kwargs["artifact_store"],
         )
 
     monkeypatch.setattr(
@@ -2376,7 +3018,8 @@ def test_run_playbook_keeps_commit_pending_memory_recoverable_when_promotion_fai
     assert "carousel_delivery" not in result
     assert "carousel_delivery" not in artifact
     assert memory.search(namespace=namespace) == []
-    # The next holder reconciles the durable marker before it can render.
+    # A direct retry has no injected ledger verifier, so the durable intent
+    # blocks a duplicate rather than promoting itself out from under its owner.
     assert (
         memory.reserve_psychology_carousel_inner_fingerprint(
             namespace=namespace,
@@ -2385,34 +3028,225 @@ def test_run_playbook_keeps_commit_pending_memory_recoverable_when_promotion_fai
         )
         is None
     )
+    assert memory.search(namespace=namespace) == []
+
+
+def test_run_playbook_recovers_expired_post_ledger_intent_before_building_workflow(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A crash after ledger append promotes only after application-layer verify."""
+    final_content = _ordinary_psychology_carousel_content()
+    first_artifact_path = tmp_path / "outputs" / "artifacts" / "post-ledger-crash.json"
+    now = [1_000.0]
+    memory = InMemoryExecutionMemory(clock=lambda: now[0])
+    memory, namespace, lesson, reservation = _reserved_carousel_lifecycle(
+        final_content,
+        memory=memory,
+    )
+
+    class CommitFailingReservation(StoreBackedCarouselReservation):
+        def commit_receipt_intent(self, receipt_intent: dict[str, object]) -> bool:
+            del receipt_intent
+            self.events.append("commit")
+            return False
+
+    failing_reservation = CommitFailingReservation(
+        memory=memory,
+        namespace=namespace,
+        fingerprint=reservation.fingerprint,
+        reservation_id=reservation.reservation_id,
+        lesson=lesson,
+        events=reservation.events,
+    )
+
+    def build_crashing_workflow(**kwargs: object) -> HandoffPsychologyCarouselWorkflow:
+        return HandoffPsychologyCarouselWorkflow(
+            first_artifact_path,
+            final_content,
+            reservation_sink=kwargs["ordinary_psychology_carousel_reservation_sink"],
+            reservation=failing_reservation,
+            artifact_store=kwargs["artifact_store"],
+        )
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        build_crashing_workflow,
+    )
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_image_backend",
+        lambda _settings: None,
+    )
+    monkeypatch.chdir(tmp_path)
+
+    first_result = run_playbook(
+        PlaybookRequest(
+            scene="下班后还在回放会议里的那句话",
+            account_id="acct-psychology-local",
+            playbook_id="modern_psychology_post",
+            auto_generate_images=True,
+        ),
+        memory=memory,
+        publisher=CountingPublisher(),
+        run_store=RunStore(base_dir=tmp_path / "runs-first"),
+    )
+
+    assert first_result["status"] == "psychology_carousel_generation_failed"
+    assert reservation.events == ["intent", "commit"]
+    assert memory.search(namespace=namespace) == []
+
+    now[0] += 60 * 60
+    observed_history: list[list[dict[str, object]]] = []
+    recovered_artifact_path = tmp_path / "outputs" / "artifacts" / "after-recovery.json"
+
+    def build_after_recovery(**kwargs: object) -> PsychologyCarouselWorkflow:
+        observed_history.append(memory.search(namespace=namespace))
+        return PsychologyCarouselWorkflow(
+            recovered_artifact_path,
+            final_content,
+            artifact_store=kwargs["artifact_store"],
+        )
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        build_after_recovery,
+    )
+
+    recovered_result = run_playbook(
+        PlaybookRequest(
+            scene="下班后还在回放会议里的那句话",
+            account_id="acct-psychology-local",
+            playbook_id="modern_psychology_post",
+            auto_generate_images=False,
+        ),
+        memory=memory,
+        publisher=CountingPublisher(),
+        run_store=RunStore(base_dir=tmp_path / "runs-recovered"),
+    )
+
+    assert recovered_result["status"] == "completed"
+    assert observed_history == [[lesson]]
     assert memory.search(namespace=namespace) == [lesson]
 
 
-def test_run_playbook_fails_closed_when_commit_pending_marker_cannot_persist(
+def test_run_playbook_retains_intent_when_ledger_persists_then_raises(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """An append error after durable replacement must not reopen dedupe work."""
+    final_content = _ordinary_psychology_carousel_content()
+    first_artifact_path = tmp_path / "outputs" / "artifacts" / "append-then-raise.json"
+    now = [1_000.0]
+    memory = InMemoryExecutionMemory(clock=lambda: now[0])
+    memory, namespace, lesson, reservation = _reserved_carousel_lifecycle(
+        final_content,
+        memory=memory,
+    )
+
+    def build_initial(**kwargs: object) -> HandoffPsychologyCarouselWorkflow:
+        return HandoffPsychologyCarouselWorkflow(
+            first_artifact_path,
+            final_content,
+            reservation_sink=kwargs["ordinary_psychology_carousel_reservation_sink"],
+            reservation=reservation,
+            artifact_store=kwargs["artifact_store"],
+        )
+
+    def append_then_raise(**kwargs: object) -> dict[str, object] | None:
+        receipt = asset_ledger_module.append_generated_image_assets(**kwargs)
+        assert receipt is not None
+        raise OSError("ledger fsync failed after durable replace")
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        build_initial,
+    )
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_image_backend",
+        lambda _settings: None,
+    )
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.append_generated_image_assets",
+        append_then_raise,
+    )
+    monkeypatch.chdir(tmp_path)
+
+    first_result = run_playbook(
+        PlaybookRequest(
+            scene="下班后还在回放会议里的那句话",
+            account_id="acct-psychology-local",
+            playbook_id="modern_psychology_post",
+            auto_generate_images=True,
+        ),
+        memory=memory,
+        publisher=CountingPublisher(),
+        run_store=RunStore(base_dir=tmp_path / "runs-first"),
+    )
+
+    assert first_result["status"] == "psychology_carousel_generation_failed"
+    assert reservation.events == ["intent"]
+    assert memory.search(namespace=namespace) == []
+    assert (
+        memory.reserve_psychology_carousel_inner_fingerprint(
+            namespace=namespace,
+            fingerprint=reservation.fingerprint,
+            item=lesson,
+        )
+        is None
+    )
+
+    now[0] += 60 * 60
+    observed_history: list[list[dict[str, object]]] = []
+    recovered_artifact_path = tmp_path / "outputs" / "artifacts" / "append-recovered.json"
+
+    def build_after_recovery(**kwargs: object) -> PsychologyCarouselWorkflow:
+        observed_history.append(memory.search(namespace=namespace))
+        return PsychologyCarouselWorkflow(
+            recovered_artifact_path,
+            final_content,
+            artifact_store=kwargs["artifact_store"],
+        )
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        build_after_recovery,
+    )
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.append_generated_image_assets",
+        asset_ledger_module.append_generated_image_assets,
+    )
+
+    recovered_result = run_playbook(
+        PlaybookRequest(
+            scene="下班后还在回放会议里的那句话",
+            account_id="acct-psychology-local",
+            playbook_id="modern_psychology_post",
+            auto_generate_images=False,
+        ),
+        memory=memory,
+        publisher=CountingPublisher(),
+        run_store=RunStore(base_dir=tmp_path / "runs-recovered"),
+    )
+
+    assert recovered_result["status"] == "completed"
+    assert observed_history == [[lesson]]
+
+
+def test_run_playbook_releases_when_receipt_intent_cannot_persist(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     final_content = _ordinary_psychology_carousel_content()
     artifact_path = tmp_path / "outputs" / "artifacts" / "marker-failed-carousel.json"
-    artifact_path.parent.mkdir(parents=True)
-    artifact_path.write_text(
-        json.dumps(
-            {
-                "playbook_id": "modern_psychology_post",
-                "final_content": final_content,
-            },
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
-    )
     memory, namespace, lesson, reservation = _reserved_carousel_lifecycle(final_content)
 
-    class MarkerFailingReservation(StoreBackedCarouselReservation):
-        def mark_commit_pending(self) -> bool:
-            self.events.append("commit_pending")
+    class IntentFailingReservation(StoreBackedCarouselReservation):
+        def persist_receipt_intent(self, receipt_intent: dict[str, object]) -> bool:
+            del receipt_intent
+            self.events.append("intent")
             return False
 
-    failing_reservation = MarkerFailingReservation(
+    failing_reservation = IntentFailingReservation(
         memory=memory,
         namespace=namespace,
         fingerprint=reservation.fingerprint,
@@ -2427,6 +3261,7 @@ def test_run_playbook_fails_closed_when_commit_pending_marker_cannot_persist(
             final_content,
             reservation_sink=kwargs["ordinary_psychology_carousel_reservation_sink"],
             reservation=failing_reservation,
+            artifact_store=kwargs["artifact_store"],
         )
 
     monkeypatch.setattr(
@@ -2436,6 +3271,12 @@ def test_run_playbook_fails_closed_when_commit_pending_marker_cannot_persist(
     monkeypatch.setattr(
         "ptsm.application.use_cases.run_playbook.build_image_backend",
         lambda _settings: None,
+    )
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.append_generated_image_assets",
+        lambda **_: (_ for _ in ()).throw(
+            AssertionError("ledger must not run before receipt intent persists")
+        ),
     )
     monkeypatch.chdir(tmp_path)
 
@@ -2472,17 +3313,6 @@ def test_run_playbook_fails_closed_before_render_when_carousel_lease_cannot_rene
 ) -> None:
     final_content = _ordinary_psychology_carousel_content()
     artifact_path = tmp_path / "outputs" / "artifacts" / "lease-failed-carousel.json"
-    artifact_path.parent.mkdir(parents=True)
-    artifact_path.write_text(
-        json.dumps(
-            {
-                "playbook_id": "modern_psychology_post",
-                "final_content": final_content,
-            },
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
-    )
 
     class LeaseFailingReservation(NoopCarouselReservation):
         def start_heartbeat(self) -> bool:
@@ -2494,6 +3324,7 @@ def test_run_playbook_fails_closed_before_render_when_carousel_lease_cannot_rene
             final_content,
             reservation_sink=kwargs["ordinary_psychology_carousel_reservation_sink"],
             reservation=LeaseFailingReservation(),
+            artifact_store=kwargs["artifact_store"],
         )
 
     monkeypatch.setattr(
@@ -2530,21 +3361,14 @@ def test_run_playbook_carousel_renderer_failure_finishes_without_publish_side_ef
 ) -> None:
     final_content = _ordinary_psychology_carousel_content()
     artifact_path = tmp_path / "outputs" / "artifacts" / "failed-carousel.json"
-    artifact_path.parent.mkdir(parents=True)
-    artifact_path.write_text(
-        json.dumps(
-            {
-                "playbook_id": "modern_psychology_post",
-                "final_content": final_content,
-            },
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
-    )
     publisher = CountingPublisher()
     monkeypatch.setattr(
         "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
-        lambda **_: PsychologyCarouselWorkflow(artifact_path, final_content),
+        lambda **kwargs: PsychologyCarouselWorkflow(
+            artifact_path,
+            final_content,
+            artifact_store=kwargs["artifact_store"],
+        ),
     )
     monkeypatch.setattr(
         "ptsm.application.use_cases.run_playbook.build_image_backend",
@@ -2598,21 +3422,14 @@ def test_run_playbook_carousel_ledger_failure_keeps_set_but_skips_publish(
 ) -> None:
     final_content = _ordinary_psychology_carousel_content()
     artifact_path = tmp_path / "outputs" / "artifacts" / "ledger-failed-carousel.json"
-    artifact_path.parent.mkdir(parents=True)
-    artifact_path.write_text(
-        json.dumps(
-            {
-                "playbook_id": "modern_psychology_post",
-                "final_content": final_content,
-            },
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
-    )
     publisher = CountingPublisher()
     monkeypatch.setattr(
         "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
-        lambda **_: PsychologyCarouselWorkflow(artifact_path, final_content),
+        lambda **kwargs: PsychologyCarouselWorkflow(
+            artifact_path,
+            final_content,
+            artifact_store=kwargs["artifact_store"],
+        ),
     )
     monkeypatch.setattr(
         "ptsm.application.use_cases.run_playbook.build_image_backend",
@@ -2657,17 +3474,6 @@ def test_run_playbook_releases_carousel_memory_reservation_after_rendering_failu
 ) -> None:
     final_content = _ordinary_psychology_carousel_content()
     artifact_path = tmp_path / "outputs" / "artifacts" / f"{failure_step}-handoff.json"
-    artifact_path.parent.mkdir(parents=True)
-    artifact_path.write_text(
-        json.dumps(
-            {
-                "playbook_id": "modern_psychology_post",
-                "final_content": final_content,
-            },
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
-    )
     memory, namespace, lesson, reservation = _reserved_carousel_lifecycle(final_content)
 
     def build_workflow(**kwargs: object) -> HandoffPsychologyCarouselWorkflow:
@@ -2676,6 +3482,7 @@ def test_run_playbook_releases_carousel_memory_reservation_after_rendering_failu
             final_content,
             reservation_sink=kwargs["ordinary_psychology_carousel_reservation_sink"],
             reservation=reservation,
+            artifact_store=kwargs["artifact_store"],
         )
 
     monkeypatch.setattr(
@@ -2721,14 +3528,19 @@ def test_run_playbook_releases_carousel_memory_reservation_after_rendering_failu
     )
 
     assert result["status"] == "psychology_carousel_generation_failed"
-    assert reservation.events == ["release"]
+    assert reservation.events == (
+        ["intent"] if failure_step == "ledger" else ["release"]
+    )
     assert memory.search(namespace=namespace) == []
     retry_reservation_id = memory.reserve_psychology_carousel_inner_fingerprint(
         namespace=namespace,
         fingerprint=reservation.fingerprint,
         item=lesson,
     )
-    assert retry_reservation_id is not None
+    if failure_step == "ledger":
+        assert retry_reservation_id is None
+    else:
+        assert retry_reservation_id is not None
     serialized_result = json.dumps(result, ensure_ascii=False)
     serialized_artifact = artifact_path.read_text(encoding="utf-8")
     assert reservation.reservation_id not in serialized_result
@@ -2754,17 +3566,6 @@ def test_run_playbook_releases_carousel_memory_when_no_local_carousel_is_rendere
 ) -> None:
     final_content = _ordinary_psychology_carousel_content()
     artifact_path = tmp_path / "outputs" / "artifacts" / "unrendered-handoff.json"
-    artifact_path.parent.mkdir(parents=True)
-    artifact_path.write_text(
-        json.dumps(
-            {
-                "playbook_id": "modern_psychology_post",
-                "final_content": final_content,
-            },
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
-    )
     memory, namespace, _, reservation = _reserved_carousel_lifecycle(final_content)
 
     def build_workflow(**kwargs: object) -> HandoffPsychologyCarouselWorkflow:
@@ -2773,6 +3574,7 @@ def test_run_playbook_releases_carousel_memory_when_no_local_carousel_is_rendere
             final_content,
             reservation_sink=kwargs["ordinary_psychology_carousel_reservation_sink"],
             reservation=reservation,
+            artifact_store=kwargs["artifact_store"],
         )
 
     monkeypatch.setattr(
@@ -2810,17 +3612,6 @@ def test_run_playbook_releases_carousel_reservation_on_unhandled_post_workflow_e
 ) -> None:
     final_content = _ordinary_psychology_carousel_content()
     artifact_path = tmp_path / "outputs" / "artifacts" / "post-workflow-error.json"
-    artifact_path.parent.mkdir(parents=True)
-    artifact_path.write_text(
-        json.dumps(
-            {
-                "playbook_id": "modern_psychology_post",
-                "final_content": final_content,
-            },
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
-    )
     memory, namespace, lesson, reservation = _reserved_carousel_lifecycle(final_content)
 
     def build_workflow(**kwargs: object) -> HandoffPsychologyCarouselWorkflow:
@@ -2829,21 +3620,24 @@ def test_run_playbook_releases_carousel_reservation_on_unhandled_post_workflow_e
             final_content,
             reservation_sink=kwargs["ordinary_psychology_carousel_reservation_sink"],
             reservation=reservation,
+            artifact_store=kwargs["artifact_store"],
         )
 
-    def fail_merge(self: FileArtifactStore, *args: object, **kwargs: object) -> None:
-        del self, args, kwargs
-        raise OSError("post-workflow artifact merge failed")
+    def fail_post_workflow_step(**_: object) -> str:
+        raise OSError("post-workflow artifact update failed")
 
     monkeypatch.setattr(
         "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
         build_workflow,
     )
-    monkeypatch.setattr(FileArtifactStore, "merge", fail_merge)
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook._build_publish_idempotency_key",
+        fail_post_workflow_step,
+    )
     monkeypatch.chdir(tmp_path)
     run_store = RunStore(base_dir=tmp_path / "runs")
 
-    with pytest.raises(OSError, match="post-workflow artifact merge failed") as error:
+    with pytest.raises(OSError, match="post-workflow artifact update failed") as error:
         run_playbook(
             PlaybookRequest(
                 scene="下班后还在回放会议里的那句话",

@@ -88,7 +88,7 @@ class OrdinaryPsychologyCarouselMemoryReservation:
         _ORDINARY_PSYCHOLOGY_CAROUSEL_HEARTBEAT_INTERVAL_SECONDS
     )
     _settled: bool = False
-    _commit_pending: bool = False
+    _receipt_intent: dict[str, object] | None = None
     _heartbeat_started: bool = False
     _heartbeat_healthy: bool = True
     _heartbeat_stop: Event = field(default_factory=Event, init=False, repr=False)
@@ -98,7 +98,7 @@ class OrdinaryPsychologyCarouselMemoryReservation:
     def start_heartbeat(self) -> bool:
         """Renew the owner-fenced lease until this capability settles."""
         with self._lock:
-            if self._settled or self._commit_pending:
+            if self._settled:
                 return False
             if self._heartbeat_started:
                 return self._heartbeat_healthy
@@ -108,7 +108,7 @@ class OrdinaryPsychologyCarouselMemoryReservation:
                 self._heartbeat_healthy = False
             return False
         with self._lock:
-            if self._settled or self._commit_pending:
+            if self._settled:
                 return False
             thread = Thread(
                 target=self._heartbeat_loop,
@@ -129,56 +129,76 @@ class OrdinaryPsychologyCarouselMemoryReservation:
         with self._lock:
             return self._heartbeat_healthy
 
-    def mark_commit_pending(self) -> bool:
-        """Persist the post-ledger recovery marker before memory promotion."""
+    def persist_receipt_intent(self, receipt_intent: dict[str, object]) -> bool:
+        """Persist a pre-ledger recovery identity without stopping the lease."""
         with self._lock:
-            if self._settled or self._commit_pending:
+            if self._settled or self._receipt_intent is not None:
                 return False
-        self._stop_heartbeat()
         try:
-            marked = (
-                self._execution_memory.mark_psychology_carousel_inner_fingerprint_commit_pending(
+            persisted = (
+                self._execution_memory.persist_psychology_carousel_inner_fingerprint_receipt_intent(
                     namespace=self._namespace,
                     fingerprint=self._fingerprint,
                     reservation_id=self._reservation_id,
                     item=self._item,
+                    receipt_intent=receipt_intent,
                 )
             )
         except Exception:
             return False
-        if marked:
+        if persisted:
             with self._lock:
-                self._commit_pending = True
-        return marked
+                self._receipt_intent = dict(receipt_intent)
+        return persisted
 
-    def commit(self) -> bool:
+    def commit_receipt_intent(self, receipt_intent: dict[str, object]) -> bool:
         with self._lock:
-            if self._settled or not self._commit_pending:
+            if self._settled or self._receipt_intent != receipt_intent:
                 return False
-        self._stop_heartbeat()
-        committed = self._execution_memory.commit_psychology_carousel_inner_fingerprint(
+        committed = self._execution_memory.commit_psychology_carousel_inner_fingerprint_receipt_intent(
             namespace=self._namespace,
             fingerprint=self._fingerprint,
             reservation_id=self._reservation_id,
             item=self._item,
+            receipt_intent=receipt_intent,
         )
-        # A store can decline a commit after concurrent reconciliation. Leave
-        # the capability unsettled so failure cleanup preserves its durable
-        # commit-pending marker for a future reservation to reconcile.
         if committed:
             with self._lock:
                 self._settled = True
+            self._stop_heartbeat()
         return committed
+
+    def abort_receipt_intent(self) -> bool:
+        """Owner-only abort for a known pre-ledger failure."""
+        with self._lock:
+            if self._settled or self._receipt_intent is None:
+                return False
+        try:
+            aborted = (
+                self._execution_memory.abort_psychology_carousel_inner_fingerprint_receipt_intent(
+                    namespace=self._namespace,
+                    fingerprint=self._fingerprint,
+                    reservation_id=self._reservation_id,
+                )
+            )
+        except Exception:
+            return False
+        if aborted:
+            with self._lock:
+                self._settled = True
+            self._stop_heartbeat()
+        return aborted
 
     def release(self) -> None:
         with self._lock:
             if self._settled:
                 return
-            commit_pending = self._commit_pending
+            receipt_intent = self._receipt_intent
         self._stop_heartbeat()
-        if commit_pending:
-            # Ledger success is already durable.  A failed later promotion must
-            # remain recoverable by the next reserve rather than being released.
+        if receipt_intent is not None:
+            # The caller explicitly aborts known pre-ledger failures. Any
+            # remaining intent may already have a durable ledger and must stay
+            # for expiry-based verification rather than being released.
             with self._lock:
                 self._settled = True
             return
@@ -207,7 +227,7 @@ class OrdinaryPsychologyCarouselMemoryReservation:
     def _heartbeat_loop(self) -> None:
         while not self._heartbeat_stop.wait(self._heartbeat_interval_seconds):
             with self._lock:
-                if self._settled or self._commit_pending:
+                if self._settled:
                     return
             if self._renew():
                 continue
@@ -1162,8 +1182,9 @@ def _supports_psychology_carousel_memory_reservations(
         for method_name in (
             "reserve_psychology_carousel_inner_fingerprint",
             "renew_psychology_carousel_inner_fingerprint",
-            "mark_psychology_carousel_inner_fingerprint_commit_pending",
-            "commit_psychology_carousel_inner_fingerprint",
+            "persist_psychology_carousel_inner_fingerprint_receipt_intent",
+            "commit_psychology_carousel_inner_fingerprint_receipt_intent",
+            "abort_psychology_carousel_inner_fingerprint_receipt_intent",
             "release_psychology_carousel_inner_fingerprint",
         )
     )
