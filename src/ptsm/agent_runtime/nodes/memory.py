@@ -4,7 +4,10 @@ import re
 from typing import Any
 
 from ptsm.agent_runtime.state import ExecutionState
-from ptsm.infrastructure.memory.store import ExecutionMemoryStore
+from ptsm.infrastructure.memory.store import (
+    ExecutionMemoryStore,
+    ordinary_psychology_carousel_memory_fingerprint,
+)
 
 
 _MODERN_PSYCHOLOGY_PLAYBOOK_ID = "modern_psychology_post"
@@ -150,9 +153,7 @@ def _recent_modern_psychology_inner_fingerprints(
 ) -> list[str]:
     fingerprints: list[str] = []
     for lesson in reversed(lessons):
-        fingerprint = _valid_inner_carousel_fingerprint(
-            lesson.get("psychology_carousel_inner_fingerprint")
-        )
+        fingerprint = ordinary_psychology_carousel_memory_fingerprint(lesson)
         if not fingerprint:
             continue
         fingerprints.append(fingerprint)

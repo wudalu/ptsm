@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 import re
 from threading import RLock
-from typing import Callable, Iterator, Protocol
+from typing import Callable, Iterator, Mapping, Protocol
 from uuid import uuid4
 
 try:  # pragma: no cover - Windows uses the in-process lock below.
@@ -20,12 +20,30 @@ _INNER_CAROUSEL_FINGERPRINT_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 _INNER_CAROUSEL_FINGERPRINT_FIELD = "psychology_carousel_inner_fingerprint"
 _MODERN_PSYCHOLOGY_PLAYBOOK_ID = "modern_psychology_post"
 _PSYCHOLOGY_CAROUSEL_FINGERPRINT_WINDOW = 12
+ORDINARY_PSYCHOLOGY_CAROUSEL_MEMORY_MARKER = (
+    "_ptsm_ordinary_psychology_carousel_v1"
+)
 _RESERVATION_NAMESPACE_COMPONENT = "__psychology_carousel_inner_fingerprint_reservations"
 _FILE_LOCKS: dict[Path, RLock] = {}
 _FILE_LOCKS_GUARD = RLock()
 _StorageKey = tuple[str, ...] | str
 _Storage = dict[_StorageKey, list[dict[str, object]]]
 _NamespaceKey = Callable[[tuple[str, ...]], _StorageKey]
+
+
+def ordinary_psychology_carousel_memory_fingerprint(
+    item: Mapping[str, object],
+) -> str | None:
+    """Return an attested ordinary-carousel fingerprint, never inferred history."""
+    raw_fingerprint = item.get(_INNER_CAROUSEL_FINGERPRINT_FIELD)
+    if (
+        item.get("playbook_id") != _MODERN_PSYCHOLOGY_PLAYBOOK_ID
+        or item.get(ORDINARY_PSYCHOLOGY_CAROUSEL_MEMORY_MARKER) is not True
+        or not isinstance(raw_fingerprint, str)
+        or _INNER_CAROUSEL_FINGERPRINT_PATTERN.fullmatch(raw_fingerprint) is None
+    ):
+        return None
+    return raw_fingerprint
 
 
 class ExecutionMemoryStore(Protocol):
@@ -38,6 +56,7 @@ class ExecutionMemoryStore(Protocol):
         *,
         namespace: tuple[str, ...],
         fingerprint: str,
+        item: dict[str, object],
     ) -> str | None: ...
 
     def commit_psychology_carousel_inner_fingerprint(
@@ -78,8 +97,10 @@ class InMemoryExecutionMemory:
         *,
         namespace: tuple[str, ...],
         fingerprint: str,
+        item: dict[str, object],
     ) -> str | None:
         fingerprint = _require_inner_carousel_fingerprint(fingerprint)
+        _require_ordinary_carousel_memory_item(item=item, fingerprint=fingerprint)
         with self._lock:
             return _reserve_inner_carousel_fingerprint(
                 storage=self._storage,
@@ -98,7 +119,7 @@ class InMemoryExecutionMemory:
     ) -> bool:
         fingerprint = _require_inner_carousel_fingerprint(fingerprint)
         _require_reservation_id(reservation_id)
-        _require_matching_lesson_fingerprint(item=item, fingerprint=fingerprint)
+        _require_ordinary_carousel_memory_item(item=item, fingerprint=fingerprint)
         with self._lock:
             return _commit_inner_carousel_fingerprint(
                 storage=self._storage,
@@ -149,8 +170,10 @@ class FileExecutionMemory:
         *,
         namespace: tuple[str, ...],
         fingerprint: str,
+        item: dict[str, object],
     ) -> str | None:
         fingerprint = _require_inner_carousel_fingerprint(fingerprint)
+        _require_ordinary_carousel_memory_item(item=item, fingerprint=fingerprint)
         with self._locked_storage() as storage:
             reservation_id = _reserve_inner_carousel_fingerprint(
                 storage=storage,
@@ -172,7 +195,7 @@ class FileExecutionMemory:
     ) -> bool:
         fingerprint = _require_inner_carousel_fingerprint(fingerprint)
         _require_reservation_id(reservation_id)
-        _require_matching_lesson_fingerprint(item=item, fingerprint=fingerprint)
+        _require_ordinary_carousel_memory_item(item=item, fingerprint=fingerprint)
         with self._locked_storage() as storage:
             committed = _commit_inner_carousel_fingerprint(
                 storage=storage,
@@ -269,11 +292,11 @@ def _require_reservation_id(reservation_id: str) -> None:
         raise ValueError("psychology carousel reservation_id is required")
 
 
-def _require_matching_lesson_fingerprint(
+def _require_ordinary_carousel_memory_item(
     *, item: dict[str, object], fingerprint: str
 ) -> None:
-    if item.get(_INNER_CAROUSEL_FINGERPRINT_FIELD) != fingerprint:
-        raise ValueError("reserved psychology carousel fingerprint must match lesson memory")
+    if ordinary_psychology_carousel_memory_fingerprint(item) != fingerprint:
+        raise ValueError("ordinary psychology carousel memory item is required")
 
 
 def _reserve_inner_carousel_fingerprint(
@@ -294,7 +317,14 @@ def _reserve_inner_carousel_fingerprint(
     if _contains_reservation(reservations, fingerprint=fingerprint):
         return None
     reservation_id = uuid4().hex
-    reservations.append({"fingerprint": fingerprint, "reservation_id": reservation_id})
+    reservations.append(
+        {
+            "playbook_id": _MODERN_PSYCHOLOGY_PLAYBOOK_ID,
+            _INNER_CAROUSEL_FINGERPRINT_FIELD: fingerprint,
+            ORDINARY_PSYCHOLOGY_CAROUSEL_MEMORY_MARKER: True,
+            "reservation_id": reservation_id,
+        }
+    )
     return reservation_id
 
 
@@ -370,15 +400,10 @@ def _contains_recent_inner_carousel_fingerprint(
 ) -> bool:
     recent_fingerprints: list[str] = []
     for item in reversed(items or []):
-        if item.get("playbook_id") != _MODERN_PSYCHOLOGY_PLAYBOOK_ID:
+        ordinary_fingerprint = ordinary_psychology_carousel_memory_fingerprint(item)
+        if ordinary_fingerprint is None:
             continue
-        raw_fingerprint = item.get(_INNER_CAROUSEL_FINGERPRINT_FIELD)
-        if (
-            not isinstance(raw_fingerprint, str)
-            or _INNER_CAROUSEL_FINGERPRINT_PATTERN.fullmatch(raw_fingerprint) is None
-        ):
-            continue
-        recent_fingerprints.append(raw_fingerprint)
+        recent_fingerprints.append(ordinary_fingerprint)
         if len(recent_fingerprints) == _PSYCHOLOGY_CAROUSEL_FINGERPRINT_WINDOW:
             break
     return fingerprint in recent_fingerprints
@@ -390,7 +415,8 @@ def _contains_reservation(
     fingerprint: str,
 ) -> bool:
     return any(
-        reservation.get("fingerprint") == fingerprint for reservation in reservations
+        ordinary_psychology_carousel_memory_fingerprint(reservation) == fingerprint
+        for reservation in reservations
     )
 
 
@@ -402,7 +428,7 @@ def _reservation_index(
 ) -> int | None:
     for index, reservation in enumerate(reservations):
         if (
-            reservation.get("fingerprint") == fingerprint
+            ordinary_psychology_carousel_memory_fingerprint(reservation) == fingerprint
             and reservation.get("reservation_id") == reservation_id
         ):
             return index

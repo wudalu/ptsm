@@ -18,7 +18,11 @@ from ptsm.domain.ai_tech_content import parse_ai_tech_evidence_bundle
 from ptsm.domain.psychology_carousel import normalize_psychology_carousel_plan
 from ptsm.infrastructure.artifacts.file_store import FileArtifactStore
 from ptsm.infrastructure.llm.factory import DeterministicDraftBackend
-from ptsm.infrastructure.memory.store import FileExecutionMemory, InMemoryExecutionMemory
+from ptsm.infrastructure.memory.store import (
+    ORDINARY_PSYCHOLOGY_CAROUSEL_MEMORY_MARKER,
+    FileExecutionMemory,
+    InMemoryExecutionMemory,
+)
 
 
 def _ai_news_contract() -> dict[str, object]:
@@ -87,22 +91,35 @@ def test_psychology_carousel_draft_gate_reports_schema_error_detail() -> None:
 def test_modern_psychology_memory_keeps_twelve_valid_inner_fingerprints() -> None:
     memory = InMemoryExecutionMemory()
     namespace = ("accounts", "acct-psychology-local", "lessons")
-    fingerprints: list[str | None] = [
-        f"{0:064x}",
-        f"{1:064x}",
-        "not-a-fingerprint",
-        None,
-        *[f"{index:064x}" for index in range(2, 14)],
+    records: list[tuple[str, str | None, bool]] = [
+        ("modern_psychology_post", f"{0:064x}", True),
+        ("modern_psychology_post", f"{1:064x}", True),
+        *[
+            ("modern_psychology_post", f"{index:064x}", True)
+            for index in range(2, 8)
+        ],
+        ("modern_psychology_post", "e" * 64, False),
+        ("other_playbook", "d" * 64, True),
+        ("modern_psychology_post", "not-a-fingerprint", True),
+        ("modern_psychology_post", "c" * 64, False),
+        *[
+            ("modern_psychology_post", f"{index:064x}", True)
+            for index in range(8, 14)
+        ],
     ]
-    for index, fingerprint in enumerate(fingerprints):
+    for index, (playbook_id, fingerprint, is_ordinary) in enumerate(records):
         item: dict[str, object] = {
-            "playbook_id": "modern_psychology_post",
+            "playbook_id": playbook_id,
             "scene": f"场景{index}",
             "title": f"标题{index}",
             "final_body": f"body-extra-{index}",
         }
         if fingerprint is not None:
             item["psychology_carousel_inner_fingerprint"] = fingerprint
+        if is_ordinary:
+            item[ORDINARY_PSYCHOLOGY_CAROUSEL_MEMORY_MARKER] = True
+        if fingerprint == "e" * 64:
+            item["psychology_learning_mode"] = "learning_series"
         memory.record(
             namespace=namespace,
             item=item,
@@ -126,6 +143,9 @@ def test_modern_psychology_memory_keeps_twelve_valid_inner_fingerprints() -> Non
     assert f"{0:064x}" not in context
     assert f"{2:064x}" in context
     assert "not-a-fingerprint" not in context
+    assert "e" * 64 not in context
+    assert "d" * 64 not in context
+    assert "c" * 64 not in context
     assert "body-extra-4" not in context
 
 
@@ -149,6 +169,7 @@ def test_psychology_carousel_gate_rejects_inner_pages_in_recent_account_memory()
             "scene": "昨天的下班时刻",
             "title": "昨天的标题",
             "psychology_carousel_inner_fingerprint": fingerprint,
+            ORDINARY_PSYCHOLOGY_CAROUSEL_MEMORY_MARKER: True,
         },
     )
     memory_state = build_memory_node(execution_memory=memory)(
@@ -192,6 +213,7 @@ def test_finalize_uses_actual_memory_state_to_reject_duplicate_carousel(
                     final_content["image_plan"]
                 )
             ),
+            ORDINARY_PSYCHOLOGY_CAROUSEL_MEMORY_MARKER: True,
         },
     )
     memory_state = build_memory_node(execution_memory=memory)(
@@ -369,6 +391,11 @@ def test_finalize_releases_carousel_reservation_when_artifact_write_fails(
     reservation_id = memory.reserve_psychology_carousel_inner_fingerprint(
         namespace=namespace,
         fingerprint=fingerprint,
+        item={
+            "playbook_id": "modern_psychology_post",
+            "psychology_carousel_inner_fingerprint": fingerprint,
+            ORDINARY_PSYCHOLOGY_CAROUSEL_MEMORY_MARKER: True,
+        },
     )
     assert reservation_id is not None
 
@@ -899,6 +926,7 @@ def test_finalize_preserves_ordered_psychology_slides_in_review_and_artifact(
             generated["image_plan"]
         )
     )
+    assert lessons[-1][ORDINARY_PSYCHOLOGY_CAROUSEL_MEMORY_MARKER] is True
 
 
 def test_finalize_rejects_invalid_psychology_slides_before_artifact_write(

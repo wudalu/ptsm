@@ -44,6 +44,7 @@ from ptsm.infrastructure.evaluations.content_quality_gate import (
 from ptsm.infrastructure.llm.factory import build_drafting_backend, build_llm_judge_backend
 from ptsm.infrastructure.memory.checkpoint import FileCheckpointSaver
 from ptsm.infrastructure.memory.store import (
+    ORDINARY_PSYCHOLOGY_CAROUSEL_MEMORY_MARKER,
     ExecutionMemoryStore,
     FileExecutionMemory,
     InMemoryExecutionMemory,
@@ -890,10 +891,12 @@ def build_finalize_node(
             )
             if fingerprint is not None:
                 lesson_memory_item["psychology_carousel_inner_fingerprint"] = fingerprint
+                lesson_memory_item[ORDINARY_PSYCHOLOGY_CAROUSEL_MEMORY_MARKER] = True
                 reservation_id = (
                     execution_memory.reserve_psychology_carousel_inner_fingerprint(
                         namespace=lesson_namespace,
                         fingerprint=fingerprint,
+                        item=lesson_memory_item,
                     )
                 )
                 if reservation_id is None:
