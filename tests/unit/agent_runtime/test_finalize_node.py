@@ -312,8 +312,10 @@ def test_finalize_reservation_rejects_interleaved_duplicate_before_artifact_writ
     assert len(memory.search(namespace=("accounts", "acct-psychology-local", "lessons"))) == 1
 
 
+@pytest.mark.parametrize("memory_kind", ("in_memory", "file"))
 def test_finalize_releases_carousel_reservation_when_artifact_write_fails(
     tmp_path: Path,
+    memory_kind: str,
 ) -> None:
     class FailingArtifactStore(FileArtifactStore):
         def write(
@@ -334,7 +336,11 @@ def test_finalize_releases_carousel_reservation_when_artifact_write_fails(
             "# XHS Image Strategy\n输出 image_plan。",
         ],
     )
-    memory = InMemoryExecutionMemory()
+    memory = (
+        InMemoryExecutionMemory()
+        if memory_kind == "in_memory"
+        else FileExecutionMemory(path=tmp_path / "execution-memory.json")
+    )
     finalize = build_finalize_node(
         execution_memory=memory,
         artifact_store=FailingArtifactStore(tmp_path / "artifacts"),

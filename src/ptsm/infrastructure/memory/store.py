@@ -18,6 +18,8 @@ except ImportError:  # pragma: no cover
 
 _INNER_CAROUSEL_FINGERPRINT_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 _INNER_CAROUSEL_FINGERPRINT_FIELD = "psychology_carousel_inner_fingerprint"
+_MODERN_PSYCHOLOGY_PLAYBOOK_ID = "modern_psychology_post"
+_PSYCHOLOGY_CAROUSEL_FINGERPRINT_WINDOW = 12
 _RESERVATION_NAMESPACE_COMPONENT = "__psychology_carousel_inner_fingerprint_reservations"
 _FILE_LOCKS: dict[Path, RLock] = {}
 _FILE_LOCKS_GUARD = RLock()
@@ -283,7 +285,10 @@ def _reserve_inner_carousel_fingerprint(
 ) -> str | None:
     final_key = namespace_key(namespace)
     reservation_key = namespace_key(_reservation_namespace(namespace))
-    if _contains_inner_carousel_fingerprint(storage.get(final_key, []), fingerprint):
+    if _contains_recent_inner_carousel_fingerprint(
+        storage.get(final_key, []),
+        fingerprint,
+    ):
         return None
     reservations = storage.setdefault(reservation_key, [])
     if _contains_reservation(reservations, fingerprint=fingerprint):
@@ -312,7 +317,10 @@ def _commit_inner_carousel_fingerprint(
     )
     if reservation_index is None:
         return False
-    if _contains_inner_carousel_fingerprint(storage.get(final_key, []), fingerprint):
+    if _contains_recent_inner_carousel_fingerprint(
+        storage.get(final_key, []),
+        fingerprint,
+    ):
         _drop_reservation(
             storage=storage,
             reservation_key=reservation_key,
@@ -356,14 +364,24 @@ def _release_inner_carousel_fingerprint(
     return True
 
 
-def _contains_inner_carousel_fingerprint(
+def _contains_recent_inner_carousel_fingerprint(
     items: list[dict[str, object]] | None,
     fingerprint: str,
 ) -> bool:
-    return any(
-        item.get(_INNER_CAROUSEL_FINGERPRINT_FIELD) == fingerprint
-        for item in (items or [])
-    )
+    recent_fingerprints: list[str] = []
+    for item in reversed(items or []):
+        if item.get("playbook_id") != _MODERN_PSYCHOLOGY_PLAYBOOK_ID:
+            continue
+        raw_fingerprint = item.get(_INNER_CAROUSEL_FINGERPRINT_FIELD)
+        if (
+            not isinstance(raw_fingerprint, str)
+            or _INNER_CAROUSEL_FINGERPRINT_PATTERN.fullmatch(raw_fingerprint) is None
+        ):
+            continue
+        recent_fingerprints.append(raw_fingerprint)
+        if len(recent_fingerprints) == _PSYCHOLOGY_CAROUSEL_FINGERPRINT_WINDOW:
+            break
+    return fingerprint in recent_fingerprints
 
 
 def _contains_reservation(

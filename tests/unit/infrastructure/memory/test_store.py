@@ -77,3 +77,27 @@ def test_psychology_inner_fingerprint_reservation_allows_one_interleaved_writer(
         is None
     )
     assert stores[0].search(namespace=namespace) == [lesson]
+
+    for index in range(12):
+        stores[0].record(
+            namespace=namespace,
+            item={
+                "playbook_id": "modern_psychology_post",
+                "psychology_carousel_inner_fingerprint": f"{index:064x}",
+            },
+        )
+
+    recycled_reservation_id = (
+        stores[1].reserve_psychology_carousel_inner_fingerprint(
+            namespace=namespace,
+            fingerprint=fingerprint,
+        )
+    )
+    assert recycled_reservation_id is not None
+    assert (
+        stores[0].reserve_psychology_carousel_inner_fingerprint(
+            namespace=namespace,
+            fingerprint=fingerprint,
+        )
+        is None
+    )

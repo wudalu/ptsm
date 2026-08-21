@@ -385,7 +385,14 @@ def test_deterministic_psychology_carousel_uses_a_new_inner_variation_from_hash_
     )
 
     assert second["image_plan"]["slides"][0] == first["image_plan"]["slides"][0]
-    assert second["image_plan"]["slides"][1:] != first["image_plan"]["slides"][1:]
+    for first_slide, second_slide in zip(
+        first["image_plan"]["slides"][1:],
+        second["image_plan"]["slides"][1:],
+        strict=True,
+    ):
+        assert first_slide["role"] == second_slide["role"]
+        assert first_slide["headline"] != second_slide["headline"]
+        assert first_slide["body_lines"] != second_slide["body_lines"]
     assert psychology_carousel_inner_pages_fingerprint(second["image_plan"]) != (
         first_fingerprint
     )
@@ -403,6 +410,7 @@ def test_deterministic_psychology_carousel_has_an_unused_inner_variant_after_twe
     }
     recent_fingerprints: list[str] = []
 
+    prior_inner_slide_sets: list[list[dict[str, object]]] = []
     for _ in range(13):
         runtime_skill_contents = []
         if recent_fingerprints:
@@ -421,6 +429,16 @@ def test_deterministic_psychology_carousel_has_an_unused_inner_variant_after_twe
             draft["image_plan"]
         )
         assert fingerprint not in recent_fingerprints[-12:]
+        current_inner_slides = draft["image_plan"]["slides"][1:]
+        for previous_inner_slides in prior_inner_slide_sets:
+            for previous, current in zip(
+                previous_inner_slides,
+                current_inner_slides,
+                strict=True,
+            ):
+                assert previous["headline"] != current["headline"]
+                assert previous["body_lines"] != current["body_lines"]
+        prior_inner_slide_sets.append(current_inner_slides)
         recent_fingerprints.append(fingerprint)
 
     assert len(set(recent_fingerprints)) == 13

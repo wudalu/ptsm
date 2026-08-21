@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import json
 import re
 from typing import Any, Mapping
@@ -23,22 +24,189 @@ _RECENT_PSYCHOLOGY_CAROUSEL_FINGERPRINT_HEADER = (
 _RECENT_PSYCHOLOGY_CAROUSEL_FINGERPRINT_PATTERN = re.compile(
     r"(?m)^- inner_fingerprint: ([0-9a-f]{64})$"
 )
-# Keep the first sequence byte-for-byte stable.  A 12-fingerprint memory window
-# always leaves one of these 13 renderable inner-card variants available.
-_MODERN_PSYCHOLOGY_SAVE_TOOL_HEADLINE_VARIANTS = (
-    "先把这一刻写清",
-    "先给今晚留一小步",
-    "先让这一刻停一下",
-    "先把问题缩小一点",
-    "先停十秒再决定",
-    "先换一个更小的动作",
-    "先把答案留到明天",
-    "先给自己一个暂停键",
-    "先从最容易的一步开始",
-    "先把这一页存下来",
-    "先让注意力回到眼前",
-    "先少做一点也可以",
+
+@dataclass(frozen=True)
+class _ModernPsychologyInnerVariant:
+    """A complete visible treatment for every non-cover carousel card."""
+
+    scene_headline: str
+    scene_lines: tuple[str, ...]
+    mechanism_headline: str
+    mechanism_lines: tuple[str, ...]
+    tool_headline: str
+    tool_lines: tuple[str, ...]
+    boundary_headline: str
+    boundary_lines: tuple[str, ...]
+    comment_headline: str
+    comment_lines: tuple[str, ...]
+
+
+# Keep the first sequence byte-for-byte stable.  Each of these twelve complete
+# treatments changes all five rendered inner cards, so a twelve-fingerprint
+# window always leaves one materially different sequence available.
+_MODERN_PSYCHOLOGY_INNER_VARIANTS = (
+    _ModernPsychologyInnerVariant(
+        "先把这一刻按下暂停",
+        ("当{theme}冒出来，先认出自己正在被什么拉住",),
+        "感受和解释可以分开",
+        ("先有感受，不等于现在就要找到标准答案",),
+        "写下一张当下卡",
+        ("发生了什么", "身体先说了什么", "今晚只做哪一小步"),
+        "难受持续时，也可求助",
+        ("反复影响生活时，及时寻求专业帮助",),
+        "这一刻你会先做哪步？",
+        ("A.停十秒", "B.写下来"),
+    ),
+    _ModernPsychologyInnerVariant(
+        "先把镜头拉回现在",
+        ("看见{theme}时，先把注意力放回眼前一件事",),
+        "大脑会先替空白配音",
+        ("配音不一定是事实，先给判断留一点空位",),
+        "做一个三栏小记录",
+        ("我看见的事实", "我补出的意思", "我现在能做的动作"),
+        "状态反复时，不必独扛",
+        ("已经打乱生活节奏时，可以找专业支持",),
+        "你会先看哪一栏？",
+        ("A.事实", "B.脑补"),
+    ),
+    _ModernPsychologyInnerVariant(
+        "先给反应留一个名字",
+        ("{theme}出现时，先说清它像紧张、累还是悬着",),
+        "命名能让反应慢一点",
+        ("说清感受，不是在给自己下结论",),
+        "试试一分钟收口",
+        ("吐一口气", "写一个关键词", "把下一步缩到五分钟"),
+        "先照顾生活节奏",
+        ("若影响工作、睡眠或生活，可寻求专业帮助",),
+        "你会给它起什么名字？",
+        ("A.累", "B.悬着"),
+    ),
+    _ModernPsychologyInnerVariant(
+        "别急着把它当判决",
+        ("遇到{theme}，先把今天这一段单独放着",),
+        "重复想，未必会更清楚",
+        ("先停止加字幕，信息才有机会慢慢变清",),
+        "给自己一个停靠点",
+        ("喝一口水", "离开屏幕十秒", "再决定要不要处理"),
+        "需要支持不是失败",
+        ("难受持续牵动生活时，及时寻求专业帮助",),
+        "你最想先停哪一步？",
+        ("A.加字幕", "B.马上处理"),
+    ),
+    _ModernPsychologyInnerVariant(
+        "先看见身体的信号",
+        ("{theme}来时，肩颈、呼吸或手指先有什么变化",),
+        "身体也在提醒边界",
+        ("先听见信号，比逼自己立刻平静更实际",),
+        "做一次小小回到场",
+        ("把脚踩稳", "慢慢呼气三次", "只选一个眼前动作"),
+        "持续失衡时，找人聊聊",
+        ("若已影响日常生活，可以寻求专业帮助",),
+        "你先察觉哪里绷着？",
+        ("A.肩颈", "B.呼吸"),
+    ),
+    _ModernPsychologyInnerVariant(
+        "先把问题缩到今晚",
+        ("{theme}来了，今晚不必一次处理完所有事",),
+        "小范围能找回一点控制",
+        ("可控的一步，会比反复预演更有用",),
+        "列一张今晚清单",
+        ("暂时不用做的", "可以晚点做的", "现在只做一件"),
+        "撑不住时，先扩大支持",
+        ("若反复影响生活，请及时寻求专业帮助",),
+        "今晚你会先划掉什么？",
+        ("A.脑内待办", "B.多余提醒"),
+    ),
+    _ModernPsychologyInnerVariant(
+        "先分清眼前和想象",
+        ("{theme}出现时，先问自己现在有几条证据",),
+        "空白常会被补成故事",
+        ("把猜测放回猜测，心会多一点空间",),
+        "写下两句核对",
+        ("我确定知道什么", "我还在猜什么", "明天要不要确认"),
+        "反复困住时，考虑支持",
+        ("影响日常安排时，可以寻求专业帮助",),
+        "你更容易卡在哪句？",
+        ("A.我知道的", "B.我猜的"),
+    ),
+    _ModernPsychologyInnerVariant(
+        "先把节奏放慢半格",
+        ("{theme}来时，先允许自己不马上回应",),
+        "慢一点不是逃避",
+        ("给反应留时间，才能看见真正的需要",),
+        "留一段缓冲时间",
+        ("先不回消息", "设十分钟计时", "结束后再选动作"),
+        "生活被打乱时，别硬撑",
+        ("若长期受影响，及时寻求专业帮助",),
+        "你愿意留几分钟缓冲？",
+        ("A.五分钟", "B.十分钟"),
+    ),
+    _ModernPsychologyInnerVariant(
+        "先把注意力放回手边",
+        ("{theme}冒出来，先碰一件真实的小东西",),
+        "具体动作会打断循环",
+        ("手边的现实感，能帮思绪先落地",),
+        "找一个可触碰的锚点",
+        ("握住杯子", "看窗外十秒", "写下现在的位置"),
+        "需要时，给自己多条路",
+        ("状态持续影响生活时，可寻求专业帮助",),
+        "你的锚点会是什么？",
+        ("A.杯子", "B.窗边"),
+    ),
+    _ModernPsychologyInnerVariant(
+        "先把这段经历外放",
+        ("{theme}出现时，把它写成一句不评判的描述",),
+        "写出来能减少脑内重播",
+        ("文字不是答案，只是让事情有个容器",),
+        "试试一句事实记录",
+        ("今天发生了什么", "我最在意什么", "先不急着解释"),
+        "记录之外，也可以求助",
+        ("若困扰持续影响生活，请及时寻求专业帮助",),
+        "你想先写哪一句？",
+        ("A.发生什么", "B.在意什么"),
+    ),
+    _ModernPsychologyInnerVariant(
+        "先把自己放回关系里",
+        ("{theme}来时，先问自己真正想被怎样对待",),
+        "需要说清，比猜更轻松",
+        ("把需要说成具体请求，会少一点拉扯",),
+        "写一句低压力表达",
+        ("我现在的状态", "我需要一点什么", "什么时候再继续谈"),
+        "关系之外，也要照顾自己",
+        ("若反复影响生活，可以寻求专业帮助",),
+        "你最想说清哪句？",
+        ("A.我的状态", "B.我的需要"),
+    ),
+    _ModernPsychologyInnerVariant(
+        "先为明天留一条线",
+        ("{theme}来了，先让今晚有一个收尾动作",),
+        "收尾会给大脑结束信号",
+        ("不必全部解决，也能把这一段先放下",),
+        "做一个明天起点",
+        ("写下第一步", "关掉一个入口", "把其余留到明天"),
+        "长期难受时，别独自耗着",
+        ("当生活持续受影响，请及时寻求专业帮助",),
+        "你会留下哪一个收尾？",
+        ("A.写第一步", "B.关一个入口"),
+    ),
 )
+
+_MODERN_PSYCHOLOGY_VARIANT_THEMES = {
+    "relationship_uncertainty": "关系里的悬着感",
+    "romantic_waiting": "等回复时的悬着感",
+    "meeting_replay": "会后反复回放",
+    "digital_overload": "屏幕停不下来",
+    "social_depletion": "社交没电",
+    "loneliness_comparison": "比较后的扣分感",
+    "sunday_anticipation": "周日晚的预演",
+    "after_hours_message": "下班消息",
+    "sleep_recovery": "下班后的待命感",
+    "sandwich_boundary": "边界句卡住",
+    "boundary_pressure": "边界被碰到后的回放",
+    "brain_meeting": "脑内反复开会",
+    "ordinary_reply": "回复后的反复检查",
+    "rumination_default": "脑内反复回放",
+}
 
 
 def build_contextual_deterministic_draft(
@@ -588,6 +756,7 @@ def _build_modern_psychology_carousel_plan(
     )
     return _select_unused_modern_psychology_inner_plan(
         plan=plan,
+        lane=lane,
         recent_inner_fingerprints=recent_inner_fingerprints or set(),
     )
 
@@ -595,12 +764,17 @@ def _build_modern_psychology_carousel_plan(
 def _select_unused_modern_psychology_inner_plan(
     *,
     plan: dict[str, Any],
+    lane: str,
     recent_inner_fingerprints: set[str],
 ) -> dict[str, Any]:
     candidates = [plan]
     candidates.extend(
-        _with_modern_psychology_save_tool_headline(plan, headline)
-        for headline in _MODERN_PSYCHOLOGY_SAVE_TOOL_HEADLINE_VARIANTS
+        _with_modern_psychology_inner_variant(
+            plan=plan,
+            lane=lane,
+            variant=variant,
+        )
+        for variant in _MODERN_PSYCHOLOGY_INNER_VARIANTS
     )
     for candidate in candidates:
         if (
@@ -614,16 +788,32 @@ def _select_unused_modern_psychology_inner_plan(
     return plan
 
 
-def _with_modern_psychology_save_tool_headline(
+def _with_modern_psychology_inner_variant(
+    *,
     plan: dict[str, Any],
-    headline: str,
+    lane: str,
+    variant: _ModernPsychologyInnerVariant,
 ) -> dict[str, Any]:
+    theme = _MODERN_PSYCHOLOGY_VARIANT_THEMES[lane]
+    visible_cards = {
+        "concrete_scene": (variant.scene_headline, variant.scene_lines),
+        "light_mechanism": (variant.mechanism_headline, variant.mechanism_lines),
+        "save_tool": (variant.tool_headline, variant.tool_lines),
+        "professional_boundary": (variant.boundary_headline, variant.boundary_lines),
+        "comment_prompt": (variant.comment_headline, variant.comment_lines),
+    }
     slides: list[dict[str, Any]] = []
     for slide in plan["slides"]:
         copied_slide = dict(slide)
-        copied_slide["body_lines"] = list(slide["body_lines"])
-        if copied_slide["role"] == "save_tool":
-            copied_slide["headline"] = headline
+        visible_card = visible_cards.get(copied_slide["role"])
+        if visible_card is not None:
+            headline, body_lines = visible_card
+            copied_slide["headline"] = headline.format(theme=theme)
+            copied_slide["body_lines"] = [
+                body_line.format(theme=theme) for body_line in body_lines
+            ]
+        else:
+            copied_slide["body_lines"] = list(slide["body_lines"])
         slides.append(copied_slide)
     return normalize_psychology_carousel_plan({**plan, "slides": slides})
 
