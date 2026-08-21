@@ -307,3 +307,44 @@ def test_file_execution_memory_fails_closed_without_cross_process_lock(
 
     with pytest.raises(RuntimeError, match="cross-process file locking"):
         store.search(namespace=("accounts", "acct-psychology-local", "lessons"))
+
+
+def test_file_execution_memory_fsyncs_parent_after_atomic_replace(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    if memory_store.fcntl is None:
+        pytest.skip("FileExecutionMemory fails closed where flock is unavailable")
+
+    calls: list[tuple[str, object]] = []
+    original_replace = memory_store.os.replace
+    original_open = memory_store.os.open
+    original_fsync = memory_store.os.fsync
+
+    def track_replace(source: object, destination: object) -> None:
+        calls.append(("replace", destination))
+        original_replace(source, destination)
+
+    def track_open(path: object, flags: int, *args: object, **kwargs: object) -> int:
+        calls.append(("open_directory", Path(path)))
+        return original_open(path, flags, *args, **kwargs)
+
+    def track_fsync(file_descriptor: int) -> None:
+        calls.append(("fsync", file_descriptor))
+        original_fsync(file_descriptor)
+
+    monkeypatch.setattr(memory_store.os, "replace", track_replace)
+    monkeypatch.setattr(memory_store.os, "open", track_open)
+    monkeypatch.setattr(memory_store.os, "fsync", track_fsync)
+    memory_path = tmp_path / "execution-memory.json"
+
+    FileExecutionMemory(path=memory_path).record(
+        namespace=("accounts", "acct-psychology-local", "lessons"),
+        item={"playbook_id": "modern_psychology_post"},
+    )
+
+    replace_index = next(
+        index for index, (event, _) in enumerate(calls) if event == "replace"
+    )
+    assert calls[replace_index + 1] == ("open_directory", memory_path.parent)
+    assert calls[replace_index + 2][0] == "fsync"

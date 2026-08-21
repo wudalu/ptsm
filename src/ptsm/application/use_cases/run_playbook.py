@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from contextvars import ContextVar
 from dataclasses import dataclass
+from functools import wraps
 import json
 import os
 from pathlib import Path
@@ -121,6 +123,12 @@ _PSYCHOLOGY_LEARNING_POST_PUBLISH_STATUSES = frozenset(
         "error",
         "failed",
     }
+)
+_ACTIVE_ORDINARY_PSYCHOLOGY_CAROUSEL_RESERVATION: ContextVar[
+    OrdinaryPsychologyCarouselMemoryReservation | None
+] = ContextVar(
+    "active_ordinary_psychology_carousel_reservation",
+    default=None,
 )
 
 
@@ -1314,6 +1322,37 @@ def _remove_owned_unsafe_psychology_learning_artifact(
     del artifact_store, artifact_path, scope
 
 
+def _release_active_ordinary_psychology_carousel_reservation() -> None:
+    """Best-effort release that never obscures a post-workflow exception."""
+    reservation = _ACTIVE_ORDINARY_PSYCHOLOGY_CAROUSEL_RESERVATION.get()
+    if reservation is None:
+        return
+    try:
+        reservation.release()
+    except BaseException:
+        # A durable lease bounds a release error.  Retain the primary result or
+        # exception rather than leaking an internal capability failure.
+        pass
+
+
+def _guard_ordinary_psychology_carousel_reservation(
+    function: Callable[..., dict[str, Any]],
+) -> Callable[..., dict[str, Any]]:
+    """Release an uncommitted ordinary-carousel reservation on every exit."""
+
+    @wraps(function)
+    def guarded(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        context_token = _ACTIVE_ORDINARY_PSYCHOLOGY_CAROUSEL_RESERVATION.set(None)
+        try:
+            return function(*args, **kwargs)
+        finally:
+            _release_active_ordinary_psychology_carousel_reservation()
+            _ACTIVE_ORDINARY_PSYCHOLOGY_CAROUSEL_RESERVATION.reset(context_token)
+
+    return guarded
+
+
+@_guard_ordinary_psychology_carousel_reservation
 def run_playbook(
     request: PlaybookRequest,
     *,
@@ -1741,15 +1780,24 @@ def run_playbook(
             workflow_payload["fresh_topic_research"] = False
     try:
         result = workflow.invoke(workflow_payload, config=config)
-    except Exception:
+    except BaseException:
         for reservation in deferred_carousel_reservations:
-            reservation.release()
+            try:
+                reservation.release()
+            except BaseException:
+                # Preserve the workflow exception; the durable lease bounds a
+                # release failure until recovery.
+                pass
         raise
     deferred_carousel_reservation = (
         deferred_carousel_reservations.pop()
         if deferred_carousel_reservations
         else None
     )
+    if deferred_carousel_reservation is not None:
+        _ACTIVE_ORDINARY_PSYCHOLOGY_CAROUSEL_RESERVATION.set(
+            deferred_carousel_reservation
+        )
     result = {"playbook_id": playbook.playbook_id, **result}
     # Evidence is a workflow-construction capability, never a graph/input
     # state field.  The artifact receipt retains only the opaque manifest.
@@ -2723,11 +2771,6 @@ def run_playbook(
             artifact_path=result.get("artifact_path"),
             run_id=run.run_id,
         )
-
-    if deferred_carousel_reservation is not None:
-        # Any ordinary carousel path that did not pass renderer, validation,
-        # and ledger commit must leave no recent-memory fingerprint behind.
-        deferred_carousel_reservation.release()
 
     response: dict[str, Any] = {
         **result,

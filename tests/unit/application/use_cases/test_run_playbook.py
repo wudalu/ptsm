@@ -2531,6 +2531,78 @@ def test_run_playbook_releases_carousel_memory_when_no_local_carousel_is_rendere
     assert memory.search(namespace=namespace) == []
 
 
+def test_run_playbook_releases_carousel_reservation_on_unhandled_post_workflow_error(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    final_content = _ordinary_psychology_carousel_content()
+    artifact_path = tmp_path / "outputs" / "artifacts" / "post-workflow-error.json"
+    artifact_path.parent.mkdir(parents=True)
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "modern_psychology_post",
+                "final_content": final_content,
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    memory, namespace, lesson, reservation = _reserved_carousel_lifecycle(final_content)
+
+    def build_workflow(**kwargs: object) -> HandoffPsychologyCarouselWorkflow:
+        return HandoffPsychologyCarouselWorkflow(
+            artifact_path,
+            final_content,
+            reservation_sink=kwargs["ordinary_psychology_carousel_reservation_sink"],
+            reservation=reservation,
+        )
+
+    def fail_merge(self: FileArtifactStore, *args: object, **kwargs: object) -> None:
+        del self, args, kwargs
+        raise OSError("post-workflow artifact merge failed")
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        build_workflow,
+    )
+    monkeypatch.setattr(FileArtifactStore, "merge", fail_merge)
+    monkeypatch.chdir(tmp_path)
+    run_store = RunStore(base_dir=tmp_path / "runs")
+
+    with pytest.raises(OSError, match="post-workflow artifact merge failed") as error:
+        run_playbook(
+            PlaybookRequest(
+                scene="下班后还在回放会议里的那句话",
+                account_id="acct-psychology-local",
+                playbook_id="modern_psychology_post",
+                auto_generate_images=False,
+            ),
+            memory=memory,
+            publisher=CountingPublisher(),
+            run_store=run_store,
+        )
+
+    assert reservation.events == ["release"]
+    assert memory.search(namespace=namespace) == []
+    assert (
+        memory.reserve_psychology_carousel_inner_fingerprint(
+            namespace=namespace,
+            fingerprint=reservation.fingerprint,
+            item=lesson,
+        )
+        is not None
+    )
+    serialized_artifact = artifact_path.read_text(encoding="utf-8")
+    serialized_events = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in (tmp_path / "runs").glob("*/events.jsonl")
+    )
+    assert reservation.reservation_id not in str(error.value)
+    assert reservation.reservation_id not in serialized_artifact
+    assert reservation.reservation_id not in serialized_events
+
+
 def test_run_fengkuang_playbook_uses_requested_local_image_style_when_provider_missing(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
