@@ -2,7 +2,7 @@
 title: PTSM Development Workflow
 status: active
 owner: ptsm
-last_verified: 2026-05-19
+last_verified: 2026-08-21
 source_of_truth: true
 related_paths:
   - AGENTS.md
