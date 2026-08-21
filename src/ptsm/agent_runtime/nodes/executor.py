@@ -8,7 +8,7 @@ from ptsm.agent_runtime.state import ExecutionState
 
 AiTechDraftGate = Callable[[dict[str, object]], list[str]]
 PsychologyLearningDraftGate = Callable[[dict[str, object]], list[str]]
-PsychologyCarouselDraftGate = Callable[[dict[str, object]], list[str]]
+PsychologyCarouselDraftGate = Callable[[ExecutionState, dict[str, object]], list[str]]
 
 
 def build_executor_node(
@@ -37,7 +37,7 @@ def build_executor_node(
             else []
         )
         psychology_carousel_errors = (
-            psychology_carousel_draft_gate(draft)
+            psychology_carousel_draft_gate(state, draft)
             if psychology_carousel_draft_gate is not None
             and psychology_learning_draft_gate is None
             else []

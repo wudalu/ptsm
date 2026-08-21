@@ -7,6 +7,8 @@ from ptsm.agent_runtime.runtime import (
     _build_psychology_carousel_draft_gate,
     build_finalize_node,
 )
+from ptsm.agent_runtime.nodes.memory import build_memory_node
+from ptsm.domain import psychology_carousel
 from ptsm.domain.ai_tech_content import parse_ai_tech_evidence_bundle
 from ptsm.domain.psychology_carousel import normalize_psychology_carousel_plan
 from ptsm.infrastructure.artifacts.file_store import FileArtifactStore
@@ -75,6 +77,140 @@ def test_psychology_carousel_draft_gate_reports_schema_error_detail() -> None:
     assert errors[0].startswith("invalid psychology carousel plan: ")
     assert "concrete_scene" in errors[0]
     assert "prompt_focus" in errors[0]
+
+
+def test_modern_psychology_memory_keeps_twelve_valid_inner_fingerprints() -> None:
+    memory = InMemoryExecutionMemory()
+    namespace = ("accounts", "acct-psychology-local", "lessons")
+    for index in range(13):
+        memory.record(
+            namespace=namespace,
+            item={
+                "playbook_id": "modern_psychology_post",
+                "scene": f"场景{index}",
+                "title": f"标题{index}",
+                "psychology_carousel_inner_fingerprint": (
+                    "not-a-fingerprint" if index == 12 else f"{index:064x}"
+                ),
+            },
+        )
+
+    memory_state = build_memory_node(execution_memory=memory)(
+        {
+            "account_id": "acct-psychology-local",
+            "playbook_id": "modern_psychology_post",
+            "runtime_skill_contents": [],
+            "runtime_skill_details": [],
+        }
+    )
+
+    context = "\n".join(memory_state["runtime_skill_contents"])
+    assert len(memory_state["memory_hits"]) == 12
+    assert f"{0:064x}" not in context
+    assert f"{1:064x}" in context
+    assert "not-a-fingerprint" not in context
+    assert "psychology_carousel_inner_fingerprint" not in memory_state["memory_hits"][-1]
+
+
+def test_psychology_carousel_gate_rejects_inner_pages_in_recent_account_memory() -> None:
+    draft = DeterministicDraftBackend().generate(
+        scene="下班后身体还在工位，需要5分钟恢复信号",
+        planner_prompt="modern_psychology_post 现代心理困境观察",
+        skill_contents=[
+            "# Psychology Style\n#心理学，使用具体场景和低风险工具。",
+            "# XHS Image Strategy\n输出 image_plan。",
+        ],
+    )
+    fingerprint = psychology_carousel.psychology_carousel_inner_pages_fingerprint(
+        draft["image_plan"]
+    )
+    memory = InMemoryExecutionMemory()
+    memory.record(
+        namespace=("accounts", "acct-psychology-local", "lessons"),
+        item={
+            "playbook_id": "modern_psychology_post",
+            "scene": "昨天的下班时刻",
+            "title": "昨天的标题",
+            "psychology_carousel_inner_fingerprint": fingerprint,
+        },
+    )
+    memory_state = build_memory_node(execution_memory=memory)(
+        {
+            "account_id": "acct-psychology-local",
+            "playbook_id": "modern_psychology_post",
+            "runtime_skill_contents": [],
+            "runtime_skill_details": [],
+        }
+    )
+    draft["image_plan"]["slides"][0]["headline"] = "今天先别替沉默写结局"
+
+    errors = _build_psychology_carousel_draft_gate()(memory_state, draft)
+
+    assert "# Recent Account Memory" in "\n".join(
+        memory_state["runtime_skill_contents"]
+    )
+    assert errors == [
+        "psychology carousel inner pages repeat recent account memory"
+    ]
+
+
+def test_finalize_uses_actual_memory_state_to_reject_duplicate_carousel(
+    tmp_path: Path,
+) -> None:
+    final_content = DeterministicDraftBackend().generate(
+        scene="下班后身体还在工位，需要5分钟恢复信号",
+        planner_prompt="modern_psychology_post 现代心理困境观察",
+        skill_contents=[
+            "# Psychology Style\n#心理学，使用具体场景和低风险工具。",
+            "# XHS Image Strategy\n输出 image_plan。",
+        ],
+    )
+    memory = InMemoryExecutionMemory()
+    memory.record(
+        namespace=("accounts", "acct-psychology-local", "lessons"),
+        item={
+            "playbook_id": "modern_psychology_post",
+            "psychology_carousel_inner_fingerprint": (
+                psychology_carousel.psychology_carousel_inner_pages_fingerprint(
+                    final_content["image_plan"]
+                )
+            ),
+        },
+    )
+    memory_state = build_memory_node(execution_memory=memory)(
+        {
+            "account_id": "acct-psychology-local",
+            "playbook_id": "modern_psychology_post",
+            "runtime_skill_contents": [],
+            "runtime_skill_details": [],
+        }
+    )
+    artifact_root = tmp_path / "artifacts"
+    finalize = build_finalize_node(
+        execution_memory=memory,
+        artifact_store=FileArtifactStore(base_dir=artifact_root),
+        psychology_carousel_draft_gate=_build_psychology_carousel_draft_gate(),
+    )
+
+    result = finalize(
+        {
+            **memory_state,
+            "account_id": "acct-psychology-local",
+            "playbook_id": "modern_psychology_post",
+            "drafting_provider": "deterministic",
+            "attempt_count": 1,
+            "reflection_decision": "finalize",
+            "scene": "下班后身体还在工位",
+            "final_content": final_content,
+        }
+    )
+
+    assert result["status"] == "psychology_carousel_draft_invalid"
+    assert result["reflection_decision"] == "fail"
+    assert result["reflection_feedback"] == (
+        "psychology carousel inner pages repeat recent account memory"
+    )
+    assert not artifact_root.exists()
 
 
 def test_finalize_blocks_invalid_ai_draft_before_artifact_or_memory(tmp_path: Path) -> None:
@@ -570,8 +706,9 @@ def test_finalize_preserves_ordered_psychology_slides_in_review_and_artifact(
         "image_plan": generated["image_plan"],
     }
     artifact_root = tmp_path / "artifacts"
+    memory = InMemoryExecutionMemory()
     finalize = build_finalize_node(
-        execution_memory=InMemoryExecutionMemory(),
+        execution_memory=memory,
         artifact_store=FileArtifactStore(base_dir=artifact_root),
         psychology_carousel_draft_gate=_ordinary_psychology_carousel_gate,
     )
@@ -596,6 +733,12 @@ def test_finalize_preserves_ordered_psychology_slides_in_review_and_artifact(
     assert review["quality_signals"]["safety_risk_terms"] == ["心理医生"]
     assert artifact["final_content"]["image_plan"] == generated["image_plan"]
     assert artifact["content_review"]["image_plan"] == generated["image_plan"]
+    lessons = memory.search(namespace=("accounts", "acct-psychology-local", "lessons"))
+    assert lessons[-1]["psychology_carousel_inner_fingerprint"] == (
+        psychology_carousel.psychology_carousel_inner_pages_fingerprint(
+            generated["image_plan"]
+        )
+    )
 
 
 def test_finalize_rejects_invalid_psychology_slides_before_artifact_write(

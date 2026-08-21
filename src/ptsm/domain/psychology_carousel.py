@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 import unicodedata
 from typing import Any, Literal, Mapping
@@ -281,6 +283,27 @@ class PsychologyCarouselPlan(_FrozenClosedModel):
 def normalize_psychology_carousel_plan(value: Mapping[str, Any]) -> dict[str, Any]:
     """Return one canonical JSON-compatible plan or raise a validation error."""
     return PsychologyCarouselPlan.model_validate(value).model_dump(mode="json")
+
+
+def psychology_carousel_inner_pages_fingerprint(value: Mapping[str, Any]) -> str:
+    """Return a stable identity for the rendered inner cards, never the cover."""
+    plan = normalize_psychology_carousel_plan(value)
+    visible_inner_cards = [
+        {
+            "order": slide["order"],
+            "role": slide["role"],
+            "headline": slide["headline"],
+            "body_lines": slide["body_lines"],
+        }
+        for slide in plan["slides"][1:]
+    ]
+    payload = json.dumps(
+        {"slides": visible_inner_cards},
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def _require_safe_visible_text(

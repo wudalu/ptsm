@@ -23,7 +23,10 @@ from ptsm.domain.ai_tech_content import (
     parse_ai_tech_runtime_contract,
     validate_ai_tech_draft_contract,
 )
-from ptsm.domain.psychology_carousel import normalize_psychology_carousel_plan
+from ptsm.domain.psychology_carousel import (
+    normalize_psychology_carousel_plan,
+    psychology_carousel_inner_pages_fingerprint,
+)
 from ptsm.domain.psychology_learning import (
     PSYCHOLOGY_LEARNING_MODE,
     PsychologyLearningEvidenceManifest,
@@ -60,6 +63,7 @@ AI_TECH_PLAYBOOK_ID = "ai_tech_daily_post"
 MODERN_PSYCHOLOGY_PLAYBOOK_ID = "modern_psychology_post"
 DEFAULT_RUNTIME_STATE_DIR = Path(".ptsm") / "agent_runtime"
 _SAFE_AI_RUNTIME_IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
+_INNER_CAROUSEL_FINGERPRINT_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 PsychologyCarouselDraftGate = Callable[
     [ExecutionState, dict[str, object]],
     list[str],
@@ -354,11 +358,7 @@ def build_playbook_workflow(
                 if psychology_learning_draft_gate is not None
                 else None
             ),
-            psychology_carousel_draft_gate=(
-                (lambda draft: psychology_carousel_draft_gate({}, draft))
-                if psychology_carousel_draft_gate is not None
-                else None
-            ),
+            psychology_carousel_draft_gate=psychology_carousel_draft_gate,
         ),
         reflector=build_reflector_node(
             max_attempts=max_attempts,
@@ -456,16 +456,20 @@ def _build_psychology_learning_draft_gate(
 def _build_psychology_carousel_draft_gate() -> PsychologyCarouselDraftGate:
     """Validate optional ordinary psychology slides without exposing bad text."""
 
-    def gate(_: ExecutionState, draft: dict[str, object]) -> list[str]:
+    def gate(state: ExecutionState, draft: dict[str, object]) -> list[str]:
         raw_plan = draft.get("image_plan")
         if not isinstance(raw_plan, Mapping) or not _is_psychology_carousel_plan(
             raw_plan
         ):
             return []
         try:
-            draft["image_plan"] = normalize_psychology_carousel_plan(raw_plan)
+            normalized_plan = normalize_psychology_carousel_plan(raw_plan)
         except (TypeError, ValueError) as exc:
             return [f"invalid psychology carousel plan: {_validation_error_detail(exc)}"]
+        draft["image_plan"] = normalized_plan
+        fingerprint = psychology_carousel_inner_pages_fingerprint(normalized_plan)
+        if fingerprint in _recent_psychology_carousel_fingerprints(state):
+            return ["psychology carousel inner pages repeat recent account memory"]
         return []
 
     return gate
@@ -499,6 +503,23 @@ def _is_psychology_carousel_plan(raw_plan: Mapping[str, Any]) -> bool:
         or raw_plan.get("style") == "psychology_text_card"
         or raw_plan.get("role") == "text_carousel"
     )
+
+
+def _recent_psychology_carousel_fingerprints(state: ExecutionState) -> set[str]:
+    raw_hits = state.get("memory_hits")
+    if not isinstance(raw_hits, list):
+        return set()
+    fingerprints: set[str] = set()
+    for raw_hit in raw_hits:
+        if not isinstance(raw_hit, Mapping):
+            continue
+        raw_fingerprint = raw_hit.get("psychology_carousel_inner_fingerprint")
+        if not isinstance(raw_fingerprint, str):
+            continue
+        fingerprint = raw_fingerprint.strip()
+        if _INNER_CAROUSEL_FINGERPRINT_PATTERN.fullmatch(fingerprint) is not None:
+            fingerprints.add(fingerprint)
+    return fingerprints
 
 
 def _resolve_verified_psychology_learning_catalog_contract(
@@ -801,7 +822,7 @@ def build_finalize_node(
                 ),
             )
         elif psychology_carousel_draft_gate is not None:
-            validation_errors = psychology_carousel_draft_gate({}, final_content)
+            validation_errors = psychology_carousel_draft_gate(state, final_content)
             if validation_errors:
                 return {
                     "status": "psychology_carousel_draft_invalid",
@@ -858,17 +879,24 @@ def build_finalize_node(
         )
 
         if psychology_learning_contract is None:
+            lesson_memory_item: dict[str, object] = {
+                "playbook_id": state["playbook_id"],
+                "scene": state["scene"],
+                "attempt_count": state["attempt_count"],
+                "title": final_content.get("title", ""),
+                "image_text": final_content.get("image_text", ""),
+                "hashtags": list(final_content.get("hashtags", [])),
+                "final_body": final_content.get("body", ""),
+            }
+            fingerprint = _ordinary_psychology_carousel_inner_fingerprint(
+                state=state,
+                final_content=final_content,
+            )
+            if fingerprint is not None:
+                lesson_memory_item["psychology_carousel_inner_fingerprint"] = fingerprint
             execution_memory.record(
                 namespace=("accounts", state["account_id"], "lessons"),
-                item={
-                    "playbook_id": state["playbook_id"],
-                    "scene": state["scene"],
-                    "attempt_count": state["attempt_count"],
-                    "title": final_content.get("title", ""),
-                    "image_text": final_content.get("image_text", ""),
-                    "hashtags": list(final_content.get("hashtags", [])),
-                    "final_body": final_content.get("body", ""),
-                },
+                item=lesson_memory_item,
             )
         return {
             "status": "completed",
@@ -877,6 +905,23 @@ def build_finalize_node(
         }
 
     return finalize
+
+
+def _ordinary_psychology_carousel_inner_fingerprint(
+    *,
+    state: ExecutionState,
+    final_content: dict[str, object],
+) -> str | None:
+    if state.get("playbook_id") != MODERN_PSYCHOLOGY_PLAYBOOK_ID:
+        return None
+    raw_plan = final_content.get("image_plan")
+    if not isinstance(raw_plan, Mapping) or not _is_psychology_carousel_plan(raw_plan):
+        return None
+    try:
+        normalized_plan = normalize_psychology_carousel_plan(raw_plan)
+    except (TypeError, ValueError):
+        return None
+    return psychology_carousel_inner_pages_fingerprint(normalized_plan)
 
 
 def _build_ai_tech_evidence_receipt(

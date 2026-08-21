@@ -5,6 +5,7 @@ from copy import deepcopy
 import pytest
 from pydantic import ValidationError
 
+from ptsm.domain import psychology_carousel
 from ptsm.domain.psychology_carousel import normalize_psychology_carousel_plan
 
 
@@ -72,6 +73,27 @@ def test_normalize_psychology_carousel_plan_preserves_closed_ordered_contract() 
     assert normalized == _valid_plan()
     assert [slide["order"] for slide in normalized["slides"]] == [1, 2, 3, 4, 5, 6]
     assert normalized["slides"][0]["role"] == "cover_hook"
+
+
+def test_inner_pages_fingerprint_ignores_cover_and_tracks_visible_inner_cards() -> None:
+    plan = normalize_psychology_carousel_plan(_valid_plan())
+
+    baseline = psychology_carousel.psychology_carousel_inner_pages_fingerprint(plan)
+
+    cover_changed = deepcopy(plan)
+    cover_changed["slides"][0]["headline"] = "他半天没回"
+    cover_changed["slides"][0]["body_lines"] = ["我又开始替沉默写结局"]
+    assert (
+        psychology_carousel.psychology_carousel_inner_pages_fingerprint(cover_changed)
+        == baseline
+    )
+
+    inner_changed = deepcopy(plan)
+    inner_changed["slides"][1]["body_lines"] = ["脑子却开始替等待写结局"]
+    assert (
+        psychology_carousel.psychology_carousel_inner_pages_fingerprint(inner_changed)
+        != baseline
+    )
 
 
 @pytest.mark.parametrize(
