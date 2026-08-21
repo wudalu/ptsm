@@ -41,10 +41,15 @@ from ptsm.domain.psychology_learning import (
     require_sealed_psychology_learning_preflight_bundle,
     resolve_psychology_learning_selection,
 )
+from ptsm.domain.psychology_carousel import psychology_carousel_inner_pages_fingerprint
 from ptsm.infrastructure.artifacts.file_store import FileArtifactStore
 from ptsm.infrastructure.images.image_file_evidence import ImageFileEvidenceError
 from ptsm.infrastructure.memory.checkpoint import FileCheckpointSaver
-from ptsm.infrastructure.memory.store import FileExecutionMemory
+from ptsm.infrastructure.memory.store import (
+    ORDINARY_PSYCHOLOGY_CAROUSEL_MEMORY_MARKER,
+    FileExecutionMemory,
+    InMemoryExecutionMemory,
+)
 from ptsm.infrastructure.observability.run_store import RunStore
 from ptsm.infrastructure.publishers.xiaohongshu_mcp_publisher import PublisherPreflightError
 from ptsm.playbooks.registry import PlaybookRegistry
@@ -297,6 +302,116 @@ class PsychologyCarouselWorkflow:
             "activated_skill_details": [],
             "runtime_skill_details": [],
         }
+
+
+class StoreBackedCarouselReservation:
+    """Exercise the private runtime handoff without exposing its token in state."""
+
+    def __init__(
+        self,
+        *,
+        memory: InMemoryExecutionMemory,
+        namespace: tuple[str, ...],
+        fingerprint: str,
+        reservation_id: str,
+        lesson: dict[str, object],
+        events: list[str],
+    ) -> None:
+        self.memory = memory
+        self.namespace = namespace
+        self.fingerprint = fingerprint
+        self.reservation_id = reservation_id
+        self.lesson = lesson
+        self.events = events
+        self._settled = False
+
+    def commit(self) -> bool:
+        if self._settled:
+            return False
+        self.events.append("commit")
+        committed = self.memory.commit_psychology_carousel_inner_fingerprint(
+            namespace=self.namespace,
+            fingerprint=self.fingerprint,
+            reservation_id=self.reservation_id,
+            item=self.lesson,
+        )
+        self._settled = True
+        return committed
+
+    def release(self) -> None:
+        if self._settled:
+            return
+        self.events.append("release")
+        self.memory.release_psychology_carousel_inner_fingerprint(
+            namespace=self.namespace,
+            fingerprint=self.fingerprint,
+            reservation_id=self.reservation_id,
+        )
+        self._settled = True
+
+
+class NoopCarouselReservation:
+    def commit(self) -> bool:
+        return True
+
+    def release(self) -> None:
+        return None
+
+
+class HandoffPsychologyCarouselWorkflow(PsychologyCarouselWorkflow):
+    def __init__(
+        self,
+        artifact_path: Path,
+        final_content: dict[str, object],
+        *,
+        reservation_sink: object,
+        reservation: object,
+    ) -> None:
+        super().__init__(artifact_path, final_content)
+        self._reservation_sink = reservation_sink
+        self._reservation = reservation
+
+    def invoke(
+        self,
+        payload: dict[str, object],
+        config: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        assert callable(self._reservation_sink)
+        self._reservation_sink(self._reservation)
+        return super().invoke(payload, config)
+
+
+def _reserved_carousel_lifecycle(
+    final_content: dict[str, object],
+) -> tuple[
+    InMemoryExecutionMemory,
+    tuple[str, ...],
+    dict[str, object],
+    StoreBackedCarouselReservation,
+]:
+    memory = InMemoryExecutionMemory()
+    namespace = ("accounts", "acct-psychology-local", "lessons")
+    fingerprint = psychology_carousel_inner_pages_fingerprint(final_content["image_plan"])
+    lesson = {
+        "playbook_id": "modern_psychology_post",
+        "psychology_carousel_inner_fingerprint": fingerprint,
+        ORDINARY_PSYCHOLOGY_CAROUSEL_MEMORY_MARKER: True,
+    }
+    reservation_id = memory.reserve_psychology_carousel_inner_fingerprint(
+        namespace=namespace,
+        fingerprint=fingerprint,
+        item=lesson,
+    )
+    assert reservation_id is not None
+    reservation = StoreBackedCarouselReservation(
+        memory=memory,
+        namespace=namespace,
+        fingerprint=fingerprint,
+        reservation_id=reservation_id,
+        lesson=lesson,
+        events=[],
+    )
+    return memory, namespace, lesson, reservation
 
 
 class SuccessfulPublisher:
@@ -2022,9 +2137,18 @@ def test_run_playbook_publishes_complete_psychology_carousel_in_manifest_order(
         encoding="utf-8",
     )
     publisher = CapturingPublisher()
+
+    def build_workflow(**kwargs: object) -> HandoffPsychologyCarouselWorkflow:
+        return HandoffPsychologyCarouselWorkflow(
+            artifact_path,
+            final_content,
+            reservation_sink=kwargs["ordinary_psychology_carousel_reservation_sink"],
+            reservation=NoopCarouselReservation(),
+        )
+
     monkeypatch.setattr(
         "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
-        lambda **_: PsychologyCarouselWorkflow(artifact_path, final_content),
+        build_workflow,
     )
     monkeypatch.setattr(
         "ptsm.application.use_cases.run_playbook.build_image_backend",
@@ -2063,6 +2187,73 @@ def test_run_playbook_publishes_complete_psychology_carousel_in_manifest_order(
     assert artifact["image_generation"]["manifest_sha256"] == generation[
         "manifest_sha256"
     ]
+
+
+def test_run_playbook_commits_carousel_memory_only_after_ledger_receipt(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    final_content = _ordinary_psychology_carousel_content()
+    artifact_path = tmp_path / "outputs" / "artifacts" / "handoff-carousel.json"
+    artifact_path.parent.mkdir(parents=True)
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "modern_psychology_post",
+                "final_content": final_content,
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    memory, namespace, lesson, reservation = _reserved_carousel_lifecycle(final_content)
+
+    def build_workflow(**kwargs: object) -> HandoffPsychologyCarouselWorkflow:
+        return HandoffPsychologyCarouselWorkflow(
+            artifact_path,
+            final_content,
+            reservation_sink=kwargs["ordinary_psychology_carousel_reservation_sink"],
+            reservation=reservation,
+        )
+
+    def append_ledger(**_: object) -> dict[str, object]:
+        reservation.events.append("ledger")
+        assert memory.search(namespace=namespace) == []
+        return {"entry_count": 6}
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        build_workflow,
+    )
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_image_backend",
+        lambda _settings: None,
+    )
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.append_generated_image_assets",
+        append_ledger,
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = run_playbook(
+        PlaybookRequest(
+            scene="下班后还在回放会议里的那句话",
+            account_id="acct-psychology-local",
+            playbook_id="modern_psychology_post",
+            auto_generate_images=True,
+        ),
+        memory=memory,
+        publisher=CapturingPublisher(),
+        run_store=RunStore(base_dir=tmp_path / "runs"),
+    )
+
+    assert result["status"] == "completed"
+    assert reservation.events == ["ledger", "commit"]
+    assert memory.search(namespace=namespace) == [lesson]
+    serialized_result = json.dumps(result, ensure_ascii=False)
+    serialized_artifact = artifact_path.read_text(encoding="utf-8")
+    assert reservation.reservation_id not in serialized_result
+    assert reservation.reservation_id not in serialized_artifact
 
 
 def test_run_playbook_carousel_renderer_failure_finishes_without_publish_side_effects(
@@ -2185,6 +2376,159 @@ def test_run_playbook_carousel_ledger_failure_keeps_set_but_skips_publish(
     assert result["publish_result"] is None
     assert publisher.calls == 0
     assert "ledger contains private path" not in json.dumps(result, ensure_ascii=False)
+
+
+@pytest.mark.parametrize("failure_step", ("renderer", "verification", "ledger"))
+def test_run_playbook_releases_carousel_memory_reservation_after_rendering_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    failure_step: str,
+) -> None:
+    final_content = _ordinary_psychology_carousel_content()
+    artifact_path = tmp_path / "outputs" / "artifacts" / f"{failure_step}-handoff.json"
+    artifact_path.parent.mkdir(parents=True)
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "modern_psychology_post",
+                "final_content": final_content,
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    memory, namespace, lesson, reservation = _reserved_carousel_lifecycle(final_content)
+
+    def build_workflow(**kwargs: object) -> HandoffPsychologyCarouselWorkflow:
+        return HandoffPsychologyCarouselWorkflow(
+            artifact_path,
+            final_content,
+            reservation_sink=kwargs["ordinary_psychology_carousel_reservation_sink"],
+            reservation=reservation,
+        )
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        build_workflow,
+    )
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_image_backend",
+        lambda _settings: None,
+    )
+    if failure_step == "renderer":
+        monkeypatch.setattr(
+            ImageCarouselTransaction,
+            "generate",
+            lambda self, **kwargs: (_ for _ in ()).throw(
+                ImageCarouselTransactionError("renderer failure")
+            ),
+        )
+    elif failure_step == "verification":
+        monkeypatch.setattr(
+            "ptsm.application.use_cases.run_playbook.verify_committed_carousel_set",
+            lambda **_: (_ for _ in ()).throw(
+                ImageCarouselTransactionError("verification failure")
+            ),
+        )
+    else:
+        monkeypatch.setattr(
+            "ptsm.application.use_cases.run_playbook.append_generated_image_assets",
+            lambda **_: (_ for _ in ()).throw(OSError("ledger failure")),
+        )
+    monkeypatch.chdir(tmp_path)
+
+    result = run_playbook(
+        PlaybookRequest(
+            scene="下班后还在回放会议里的那句话",
+            account_id="acct-psychology-local",
+            playbook_id="modern_psychology_post",
+            auto_generate_images=True,
+        ),
+        memory=memory,
+        publisher=CountingPublisher(),
+        run_store=RunStore(base_dir=tmp_path / "runs"),
+    )
+
+    assert result["status"] == "psychology_carousel_generation_failed"
+    assert reservation.events == ["release"]
+    assert memory.search(namespace=namespace) == []
+    retry_reservation_id = memory.reserve_psychology_carousel_inner_fingerprint(
+        namespace=namespace,
+        fingerprint=reservation.fingerprint,
+        item=lesson,
+    )
+    assert retry_reservation_id is not None
+    serialized_result = json.dumps(result, ensure_ascii=False)
+    serialized_artifact = artifact_path.read_text(encoding="utf-8")
+    assert reservation.reservation_id not in serialized_result
+    assert reservation.reservation_id not in serialized_artifact
+
+
+@pytest.mark.parametrize(
+    ("auto_generate_images", "publish_image_paths", "local_image_style"),
+    (
+        (False, [], None),
+        (True, ["provided-carousel.png"], None),
+        (True, [], "legacy_note_card"),
+    ),
+)
+def test_run_playbook_releases_carousel_memory_when_no_local_carousel_is_rendered(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    auto_generate_images: bool,
+    publish_image_paths: list[str],
+    local_image_style: str | None,
+) -> None:
+    final_content = _ordinary_psychology_carousel_content()
+    artifact_path = tmp_path / "outputs" / "artifacts" / "unrendered-handoff.json"
+    artifact_path.parent.mkdir(parents=True)
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "modern_psychology_post",
+                "final_content": final_content,
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    memory, namespace, _, reservation = _reserved_carousel_lifecycle(final_content)
+
+    def build_workflow(**kwargs: object) -> HandoffPsychologyCarouselWorkflow:
+        return HandoffPsychologyCarouselWorkflow(
+            artifact_path,
+            final_content,
+            reservation_sink=kwargs["ordinary_psychology_carousel_reservation_sink"],
+            reservation=reservation,
+        )
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        build_workflow,
+    )
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_image_backend",
+        lambda _settings: None,
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = run_playbook(
+        PlaybookRequest(
+            scene="下班后还在回放会议里的那句话",
+            account_id="acct-psychology-local",
+            playbook_id="modern_psychology_post",
+            auto_generate_images=auto_generate_images,
+            publish_image_paths=publish_image_paths,
+            local_image_style=local_image_style,
+        ),
+        memory=memory,
+        publisher=CountingPublisher(),
+        run_store=RunStore(base_dir=tmp_path / "runs"),
+    )
+
+    assert result["status"] == "completed"
+    assert reservation.events == ["release"]
+    assert memory.search(namespace=namespace) == []
 
 
 def test_run_fengkuang_playbook_uses_requested_local_image_style_when_provider_missing(

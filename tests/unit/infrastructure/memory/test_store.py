@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+import json
 from pathlib import Path
 
 import pytest
 
+import ptsm.infrastructure.memory.store as memory_store
 from ptsm.infrastructure.memory.store import (
     ORDINARY_PSYCHOLOGY_CAROUSEL_MEMORY_MARKER,
     FileExecutionMemory,
@@ -207,3 +209,101 @@ def test_psychology_reservation_uses_only_marked_ordinary_history(
         fingerprint=ignored_fingerprint,
         reservation_id=reservation_id,
     )
+
+
+@pytest.mark.parametrize("store_kind", ("in_memory", "file"))
+def test_expired_psychology_carousel_reservation_is_recovered_for_retry(
+    store_kind: str,
+    tmp_path: Path,
+) -> None:
+    namespace = ("accounts", "acct-psychology-local", "lessons")
+    fingerprint = "a" * 64
+    now = [1_000.0]
+    store = (
+        InMemoryExecutionMemory(clock=lambda: now[0])
+        if store_kind == "in_memory"
+        else FileExecutionMemory(
+            path=tmp_path / "execution-memory.json",
+            clock=lambda: now[0],
+        )
+    )
+    lesson = {
+        "playbook_id": "modern_psychology_post",
+        "psychology_carousel_inner_fingerprint": fingerprint,
+        ORDINARY_PSYCHOLOGY_CAROUSEL_MEMORY_MARKER: True,
+    }
+
+    first_reservation_id = store.reserve_psychology_carousel_inner_fingerprint(
+        namespace=namespace,
+        fingerprint=fingerprint,
+        item=lesson,
+    )
+
+    assert first_reservation_id is not None
+    now[0] += 60 * 60
+    assert not store.commit_psychology_carousel_inner_fingerprint(
+        namespace=namespace,
+        fingerprint=fingerprint,
+        reservation_id=first_reservation_id,
+        item=lesson,
+    )
+    retry_reservation_id = store.reserve_psychology_carousel_inner_fingerprint(
+        namespace=namespace,
+        fingerprint=fingerprint,
+        item=lesson,
+    )
+    assert retry_reservation_id is not None
+    assert retry_reservation_id != first_reservation_id
+
+
+def test_file_execution_memory_recovers_legacy_reservation_without_lease(
+    tmp_path: Path,
+) -> None:
+    namespace = ("accounts", "acct-psychology-local", "lessons")
+    fingerprint = "b" * 64
+    reservation_namespace = (
+        *namespace,
+        "__psychology_carousel_inner_fingerprint_reservations",
+    )
+    memory_path = tmp_path / "execution-memory.json"
+    memory_path.write_text(
+        json.dumps(
+            {
+                json.dumps(list(reservation_namespace)): [
+                    {
+                        "playbook_id": "modern_psychology_post",
+                        "psychology_carousel_inner_fingerprint": fingerprint,
+                        ORDINARY_PSYCHOLOGY_CAROUSEL_MEMORY_MARKER: True,
+                        "reservation_id": "legacy-unleased-reservation",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    store = FileExecutionMemory(path=memory_path, clock=lambda: 1_000.0)
+    lesson = {
+        "playbook_id": "modern_psychology_post",
+        "psychology_carousel_inner_fingerprint": fingerprint,
+        ORDINARY_PSYCHOLOGY_CAROUSEL_MEMORY_MARKER: True,
+    }
+
+    assert (
+        store.reserve_psychology_carousel_inner_fingerprint(
+            namespace=namespace,
+            fingerprint=fingerprint,
+            item=lesson,
+        )
+        is not None
+    )
+
+
+def test_file_execution_memory_fails_closed_without_cross_process_lock(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(memory_store, "fcntl", None)
+    store = FileExecutionMemory(path=tmp_path / "execution-memory.json")
+
+    with pytest.raises(RuntimeError, match="cross-process file locking"):
+        store.search(namespace=("accounts", "acct-psychology-local", "lessons"))

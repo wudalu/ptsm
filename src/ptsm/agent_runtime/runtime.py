@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import hashlib
 import os
 from pathlib import Path
@@ -68,6 +69,52 @@ _INNER_CAROUSEL_FINGERPRINT_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 PsychologyCarouselDraftGate = Callable[
     [ExecutionState, dict[str, object]],
     list[str],
+]
+
+
+@dataclass
+class OrdinaryPsychologyCarouselMemoryReservation:
+    """Opaque, process-local capability for the post-render memory commit."""
+
+    _execution_memory: ExecutionMemoryStore
+    _namespace: tuple[str, ...]
+    _fingerprint: str
+    _reservation_id: str
+    _item: dict[str, object]
+    _settled: bool = False
+
+    def commit(self) -> bool:
+        if self._settled:
+            return False
+        committed = self._execution_memory.commit_psychology_carousel_inner_fingerprint(
+            namespace=self._namespace,
+            fingerprint=self._fingerprint,
+            reservation_id=self._reservation_id,
+            item=self._item,
+        )
+        # A store can decline a commit after a concurrent recovery/duplicate
+        # decision.  Leave the capability releasable so the caller's failure
+        # cleanup can clear any adapter that did not remove it itself.
+        if committed:
+            self._settled = True
+        return committed
+
+    def release(self) -> None:
+        if self._settled:
+            return
+        try:
+            self._execution_memory.release_psychology_carousel_inner_fingerprint(
+                namespace=self._namespace,
+                fingerprint=self._fingerprint,
+                reservation_id=self._reservation_id,
+            )
+        finally:
+            self._settled = True
+
+
+OrdinaryPsychologyCarouselReservationSink = Callable[
+    [OrdinaryPsychologyCarouselMemoryReservation],
+    None,
 ]
 
 
@@ -201,6 +248,9 @@ def build_playbook_workflow(
     psychology_learning_manifest: Mapping[str, Any] | None = None,
     psychology_learning_catalog_receipt: Mapping[str, Any] | None = None,
     psychology_learning_preflight_capability: _PsychologyLearningPreflightCapability | None = None,
+    ordinary_psychology_carousel_reservation_sink: (
+        OrdinaryPsychologyCarouselReservationSink | None
+    ) = None,
 ):
     """Build a workflow for a specific playbook/domain pair."""
     execution_memory = memory or InMemoryExecutionMemory()
@@ -381,6 +431,9 @@ def build_playbook_workflow(
             ),
             psychology_carousel_draft_gate=psychology_carousel_draft_gate,
             expected_artifact_root_identity=expected_artifact_root_identity,
+            ordinary_psychology_carousel_reservation_sink=(
+                ordinary_psychology_carousel_reservation_sink
+            ),
         ),
         checkpointer=checkpointer or InMemorySaver(),
     )
@@ -752,6 +805,9 @@ def build_finalize_node(
     psychology_learning_preflight_capability: _PsychologyLearningPreflightCapability | None = None,
     psychology_carousel_draft_gate: PsychologyCarouselDraftGate | None = None,
     expected_artifact_root_identity: os.stat_result | None = None,
+    ordinary_psychology_carousel_reservation_sink: (
+        OrdinaryPsychologyCarouselReservationSink | None
+    ) = None,
 ):
     normalized_ai_tech_manifest = (
         AiTechEvidenceManifest.model_validate(ai_tech_evidence_manifest).model_dump(mode="json")
@@ -892,6 +948,16 @@ def build_finalize_node(
             if fingerprint is not None:
                 lesson_memory_item["psychology_carousel_inner_fingerprint"] = fingerprint
                 lesson_memory_item[ORDINARY_PSYCHOLOGY_CAROUSEL_MEMORY_MARKER] = True
+                if not _supports_psychology_carousel_memory_reservations(
+                    execution_memory
+                ):
+                    return {
+                        "status": "psychology_carousel_memory_capability_required",
+                        "reflection_decision": "fail",
+                        "reflection_feedback": (
+                            "execution memory lacks atomic psychology carousel reservations"
+                        ),
+                    }
                 reservation_id = (
                     execution_memory.reserve_psychology_carousel_inner_fingerprint(
                         namespace=lesson_namespace,
@@ -925,19 +991,24 @@ def build_finalize_node(
 
         if lesson_memory_item is not None:
             if fingerprint is not None and reservation_id is not None:
-                if not execution_memory.commit_psychology_carousel_inner_fingerprint(
-                    namespace=lesson_namespace,
-                    fingerprint=fingerprint,
-                    reservation_id=reservation_id,
-                    item=lesson_memory_item,
-                ):
-                    return {
-                        "status": "psychology_carousel_draft_invalid",
-                        "reflection_decision": "fail",
-                        "reflection_feedback": (
-                            "psychology carousel inner pages repeat recent account memory"
-                        ),
-                    }
+                reservation = OrdinaryPsychologyCarouselMemoryReservation(
+                    _execution_memory=execution_memory,
+                    _namespace=lesson_namespace,
+                    _fingerprint=fingerprint,
+                    _reservation_id=reservation_id,
+                    _item=lesson_memory_item,
+                )
+                if ordinary_psychology_carousel_reservation_sink is None:
+                    # A direct workflow/finalizer invocation has no local
+                    # renderer lifecycle to prove the carousel was created.
+                    # Do not let artifact creation alone populate recent-12.
+                    reservation.release()
+                else:
+                    try:
+                        ordinary_psychology_carousel_reservation_sink(reservation)
+                    except Exception:
+                        reservation.release()
+                        raise
             else:
                 execution_memory.record(
                     namespace=lesson_namespace,
@@ -967,6 +1038,19 @@ def _ordinary_psychology_carousel_inner_fingerprint(
     except (TypeError, ValueError):
         return None
     return psychology_carousel_inner_pages_fingerprint(normalized_plan)
+
+
+def _supports_psychology_carousel_memory_reservations(
+    execution_memory: object,
+) -> bool:
+    return all(
+        callable(getattr(execution_memory, method_name, None))
+        for method_name in (
+            "reserve_psychology_carousel_inner_fingerprint",
+            "commit_psychology_carousel_inner_fingerprint",
+            "release_psychology_carousel_inner_fingerprint",
+        )
+    )
 
 
 def _build_ai_tech_evidence_receipt(

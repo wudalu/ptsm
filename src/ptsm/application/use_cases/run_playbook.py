@@ -8,12 +8,13 @@ import re
 import shlex
 import stat
 import sys
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 from pydantic import ValidationError
 
 from ptsm.accounts.registry import AccountRegistry
 from ptsm.agent_runtime.runtime import (
+    OrdinaryPsychologyCarouselMemoryReservation,
     build_playbook_workflow,
     build_fengkuang_workflow,
     build_file_backed_runtime_state,
@@ -1664,6 +1665,16 @@ def run_playbook(
                     ),
                 }
 
+    deferred_carousel_reservations: list[OrdinaryPsychologyCarouselMemoryReservation] = []
+
+    def hold_carousel_reservation(
+        reservation: OrdinaryPsychologyCarouselMemoryReservation,
+    ) -> None:
+        if deferred_carousel_reservations:
+            reservation.release()
+            raise RuntimeError("ordinary psychology workflow returned multiple carousel reservations")
+        deferred_carousel_reservations.append(reservation)
+
     workflow = _build_workflow_for_playbook(
         domain=playbook.domain,
         playbook_id=playbook.playbook_id,
@@ -1701,6 +1712,7 @@ def run_playbook(
             if psychology_learning_artifact_scope is not None
             else None
         ),
+        ordinary_psychology_carousel_reservation_sink=hold_carousel_reservation,
     )
     effective_thread_id = thread_id or run.run_id
     config = {"configurable": {"thread_id": effective_thread_id}}
@@ -1727,7 +1739,17 @@ def run_playbook(
             # builders must remain local-only for this workflow invocation so
             # they cannot run another scan or add a competing live context.
             workflow_payload["fresh_topic_research"] = False
-    result = workflow.invoke(workflow_payload, config=config)
+    try:
+        result = workflow.invoke(workflow_payload, config=config)
+    except Exception:
+        for reservation in deferred_carousel_reservations:
+            reservation.release()
+        raise
+    deferred_carousel_reservation = (
+        deferred_carousel_reservations.pop()
+        if deferred_carousel_reservations
+        else None
+    )
     result = {"playbook_id": playbook.playbook_id, **result}
     # Evidence is a workflow-construction capability, never a graph/input
     # state field.  The artifact receipt retains only the opaque manifest.
@@ -1964,6 +1986,9 @@ def run_playbook(
                         psychology_learning_preflight_capability=(
                             psychology_learning_preflight_capability
                         ),
+                        ordinary_psychology_carousel_reservation=(
+                            deferred_carousel_reservation
+                        ),
                     )
             elif image_decision["route"] == "local":
                 image_generation = NoteCardImageBackend().generate(
@@ -2023,6 +2048,14 @@ def run_playbook(
                 try:
                     if (
                         carousel_plan is not None
+                        and psychology_learning_bundle is None
+                        and deferred_carousel_reservation is None
+                    ):
+                        raise ImageCarouselTransactionError(
+                            "ordinary psychology carousel reservation is required"
+                        )
+                    if (
+                        carousel_plan is not None
                         and carousel_output_stem is not None
                         and carousel_commit_receipt is not None
                     ):
@@ -2038,7 +2071,32 @@ def run_playbook(
                         account_id=account.account_id,
                         image_generation=image_generation,
                     )
-                except (ImageCarouselTransactionError, OSError, ValueError):
+                    if asset_ledger is not None:
+                        image_generation["asset_ledger"] = asset_ledger
+                    if (
+                        carousel_plan is not None
+                        and carousel_output_stem is not None
+                        and carousel_commit_receipt is not None
+                    ):
+                        # Commit only after the generated set is still whole
+                        # and the asset ledger is durably appended.
+                        verify_committed_carousel_set(
+                            image_plan=carousel_plan,
+                            receipt=carousel_commit_receipt,
+                            output_stem=carousel_output_stem,
+                        )
+                        if psychology_learning_bundle is None:
+                            reservation = deferred_carousel_reservation
+                            if reservation is None or not reservation.commit():
+                                raise ImageCarouselTransactionError(
+                                    "ordinary psychology carousel reservation could not commit"
+                                )
+                except (
+                    ImageCarouselTransactionError,
+                    OSError,
+                    RuntimeError,
+                    ValueError,
+                ):
                     if carousel_plan is None:
                         raise
                     result["status"] = "psychology_carousel_generation_failed"
@@ -2060,10 +2118,10 @@ def run_playbook(
                         psychology_learning_preflight_capability=(
                             psychology_learning_preflight_capability
                         ),
+                        ordinary_psychology_carousel_reservation=(
+                            deferred_carousel_reservation
+                        ),
                     )
-                if asset_ledger is not None:
-                    image_generation["asset_ledger"] = asset_ledger
-
         watermark_removal = None
         if _should_skip_watermark_removal_for_local_renderer(
             image_generation=image_generation,
@@ -2102,39 +2160,6 @@ def run_playbook(
             }
             if cleaned_paths:
                 resolved_image_paths = cleaned_paths
-
-        if (
-            carousel_plan is not None
-            and carousel_output_stem is not None
-            and carousel_commit_receipt is not None
-        ):
-            try:
-                verify_committed_carousel_set(
-                    image_plan=carousel_plan,
-                    receipt=carousel_commit_receipt,
-                    output_stem=carousel_output_stem,
-                )
-            except (ImageCarouselTransactionError, ValidationError, ValueError, OSError):
-                result["status"] = "psychology_carousel_generation_failed"
-                return _finish_psychology_carousel_failure(
-                    result=result,
-                    run=run,
-                    run_store=run_store,
-                    artifact_store=artifact_store,
-                    account=account,
-                    publish_mode=publish_mode,
-                    image_generation=image_generation,
-                    post_publish_checks=post_publish_checks,
-                    format_patterns_used=format_patterns_used,
-                    topic_selection_metadata=topic_selection_metadata,
-                    psychology_learning_bundle=psychology_learning_bundle,
-                    psychology_learning_artifact_scope=(
-                        psychology_learning_artifact_scope
-                    ),
-                    psychology_learning_preflight_capability=(
-                        psychology_learning_preflight_capability
-                    ),
-                )
 
         publish_idempotency_key = _build_publish_idempotency_key(
             account_id=account.account_id,
@@ -2186,6 +2211,9 @@ def run_playbook(
                         ),
                         psychology_learning_preflight_capability=(
                             psychology_learning_preflight_capability
+                        ),
+                        ordinary_psychology_carousel_reservation=(
+                            deferred_carousel_reservation
                         ),
                     )
                 publish_result = {
@@ -2696,6 +2724,11 @@ def run_playbook(
             run_id=run.run_id,
         )
 
+    if deferred_carousel_reservation is not None:
+        # Any ordinary carousel path that did not pass renderer, validation,
+        # and ledger commit must leave no recent-memory fingerprint behind.
+        deferred_carousel_reservation.release()
+
     response: dict[str, Any] = {
         **result,
         "account": (
@@ -2856,6 +2889,9 @@ def _build_workflow_for_playbook(
     psychology_learning_manifest: dict[str, Any] | None = None,
     psychology_learning_catalog_receipt: dict[str, Any] | None = None,
     psychology_learning_preflight_capability: _PsychologyLearningPreflightCapability | None = None,
+    ordinary_psychology_carousel_reservation_sink: (
+        Callable[[OrdinaryPsychologyCarouselMemoryReservation], None] | None
+    ) = None,
 ):
     skill_context_resolver = _build_runtime_skill_context_resolver(
         settings,
@@ -2884,6 +2920,9 @@ def _build_workflow_for_playbook(
         psychology_learning_catalog_receipt=psychology_learning_catalog_receipt,
         psychology_learning_preflight_capability=(
             psychology_learning_preflight_capability
+        ),
+        ordinary_psychology_carousel_reservation_sink=(
+            ordinary_psychology_carousel_reservation_sink
         ),
     )
 
@@ -3093,9 +3132,20 @@ def _finish_psychology_carousel_failure(
     psychology_learning_preflight_capability: (
         _PsychologyLearningPreflightCapability | None
     ),
+    ordinary_psychology_carousel_reservation: (
+        OrdinaryPsychologyCarouselMemoryReservation | None
+    ) = None,
 ) -> dict[str, Any]:
     """Finish a failed carousel run before watermarking, publishing, or progress."""
     result["status"] = "psychology_carousel_generation_failed"
+    if ordinary_psychology_carousel_reservation is not None:
+        try:
+            ordinary_psychology_carousel_reservation.release()
+        except (OSError, RuntimeError, ValueError):
+            # The durable lease bounds a process crash or an adapter-side
+            # release failure; do not expose internal memory errors in the
+            # public carousel failure receipt.
+            pass
     artifact_path = result.get("artifact_path")
     if isinstance(artifact_path, str) and artifact_path:
         if psychology_learning_bundle is None:

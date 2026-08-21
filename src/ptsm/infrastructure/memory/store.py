@@ -2,15 +2,18 @@ from __future__ import annotations
 
 from collections import defaultdict
 from contextlib import contextmanager
+import errno
 import json
+import math
 import os
 from pathlib import Path
 import re
 from threading import RLock
+from time import time
 from typing import Callable, Iterator, Mapping, Protocol
 from uuid import uuid4
 
-try:  # pragma: no cover - Windows uses the in-process lock below.
+try:  # pragma: no cover - Windows fails closed below when unavailable.
     import fcntl
 except ImportError:  # pragma: no cover
     fcntl = None  # type: ignore[assignment]
@@ -20,6 +23,10 @@ _INNER_CAROUSEL_FINGERPRINT_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 _INNER_CAROUSEL_FINGERPRINT_FIELD = "psychology_carousel_inner_fingerprint"
 _MODERN_PSYCHOLOGY_PLAYBOOK_ID = "modern_psychology_post"
 _PSYCHOLOGY_CAROUSEL_FINGERPRINT_WINDOW = 12
+# Local rendering, hashing, and ledger persistence should normally take seconds,
+# but the lease tolerates slow disks and busy hosts while bounding crash recovery.
+_PSYCHOLOGY_CAROUSEL_RESERVATION_LEASE_SECONDS = 20 * 60
+_RESERVATION_LEASE_EXPIRES_AT_FIELD = "lease_expires_at"
 ORDINARY_PSYCHOLOGY_CAROUSEL_MEMORY_MARKER = (
     "_ptsm_ordinary_psychology_carousel_v1"
 )
@@ -29,6 +36,7 @@ _FILE_LOCKS_GUARD = RLock()
 _StorageKey = tuple[str, ...] | str
 _Storage = dict[_StorageKey, list[dict[str, object]]]
 _NamespaceKey = Callable[[tuple[str, ...]], _StorageKey]
+_Clock = Callable[[], float]
 
 
 def ordinary_psychology_carousel_memory_fingerprint(
@@ -80,9 +88,10 @@ class ExecutionMemoryStore(Protocol):
 class InMemoryExecutionMemory:
     """Minimal long-term memory adapter for dry-run execution lessons."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, clock: _Clock = time) -> None:
         self._storage: dict[tuple[str, ...], list[dict[str, object]]] = defaultdict(list)
         self._lock = RLock()
+        self._clock = clock
 
     def record(self, namespace: tuple[str, ...], item: dict[str, object]) -> None:
         with self._lock:
@@ -107,6 +116,7 @@ class InMemoryExecutionMemory:
                 namespace=namespace,
                 fingerprint=fingerprint,
                 namespace_key=_identity_namespace,
+                now=_reservation_now(self._clock),
             )
 
     def commit_psychology_carousel_inner_fingerprint(
@@ -128,6 +138,7 @@ class InMemoryExecutionMemory:
                 reservation_id=reservation_id,
                 item=item,
                 namespace_key=_identity_namespace,
+                now=_reservation_now(self._clock),
             )
 
     def release_psychology_carousel_inner_fingerprint(
@@ -146,14 +157,16 @@ class InMemoryExecutionMemory:
                 fingerprint=fingerprint,
                 reservation_id=reservation_id,
                 namespace_key=_identity_namespace,
+                now=_reservation_now(self._clock),
             )
 
 
 class FileExecutionMemory:
     """Persist execution lessons on disk for reuse across runs."""
 
-    def __init__(self, path: Path | str) -> None:
+    def __init__(self, path: Path | str, *, clock: _Clock = time) -> None:
         self.path = Path(path)
+        self._clock = clock
 
     def record(self, namespace: tuple[str, ...], item: dict[str, object]) -> None:
         with self._locked_storage() as storage:
@@ -180,9 +193,9 @@ class FileExecutionMemory:
                 namespace=namespace,
                 fingerprint=fingerprint,
                 namespace_key=self._encode_namespace,
+                now=_reservation_now(self._clock),
             )
-            if reservation_id is not None:
-                self._save(storage)
+            self._save(storage)
             return reservation_id
 
     def commit_psychology_carousel_inner_fingerprint(
@@ -204,6 +217,7 @@ class FileExecutionMemory:
                 reservation_id=reservation_id,
                 item=item,
                 namespace_key=self._encode_namespace,
+                now=_reservation_now(self._clock),
             )
             # A failed commit can still remove a stale reservation after
             # detecting an independently committed fingerprint.
@@ -220,30 +234,32 @@ class FileExecutionMemory:
         fingerprint = _require_inner_carousel_fingerprint(fingerprint)
         _require_reservation_id(reservation_id)
         with self._locked_storage() as storage:
-            released = _release_inner_carousel_fingerprint(
+            _release_inner_carousel_fingerprint(
                 storage=storage,
                 namespace=namespace,
                 fingerprint=fingerprint,
                 reservation_id=reservation_id,
                 namespace_key=self._encode_namespace,
+                now=_reservation_now(self._clock),
             )
-            if released:
-                self._save(storage)
+            self._save(storage)
 
     @contextmanager
     def _locked_storage(self) -> Iterator[dict[str, list[dict[str, object]]]]:
+        if fcntl is None:
+            raise RuntimeError(
+                "FileExecutionMemory requires cross-process file locking on this platform"
+            )
         self.path.parent.mkdir(parents=True, exist_ok=True)
         lock_path = self.path.with_name(f".{self.path.name}.lock")
         lock = _file_lock_for(lock_path)
         with lock:
             with lock_path.open("a+", encoding="utf-8") as lock_file:
-                if fcntl is not None:
-                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
                 try:
                     yield self._load()
                 finally:
-                    if fcntl is not None:
-                        fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
     def _load(self) -> dict[str, list[dict[str, object]]]:
         if not self.path.exists():
@@ -259,6 +275,7 @@ class FileExecutionMemory:
                 temporary_file.flush()
                 os.fsync(temporary_file.fileno())
             os.replace(temporary_path, self.path)
+            _fsync_parent_directory(self.path.parent)
         finally:
             temporary_path.unlink(missing_ok=True)
 
@@ -269,6 +286,29 @@ class FileExecutionMemory:
 def _file_lock_for(path: Path) -> RLock:
     with _FILE_LOCKS_GUARD:
         return _FILE_LOCKS.setdefault(path.resolve(), RLock())
+
+
+def _fsync_parent_directory(path: Path) -> None:
+    """Durably persist a replace where directory fsync is supported."""
+    try:
+        directory_fd = os.open(path, os.O_RDONLY)
+    except OSError:
+        # Windows and some filesystems do not permit opening a directory this
+        # way.  The replacement itself remains atomic; skip only that optional
+        # durability barrier where the platform cannot express it.
+        return
+    try:
+        os.fsync(directory_fd)
+    except OSError as exc:
+        if exc.errno not in {
+            errno.EBADF,
+            errno.EINVAL,
+            errno.ENOTSUP,
+            errno.EPERM,
+        }:
+            raise
+    finally:
+        os.close(directory_fd)
 
 
 def _identity_namespace(namespace: tuple[str, ...]) -> tuple[str, ...]:
@@ -299,12 +339,20 @@ def _require_ordinary_carousel_memory_item(
         raise ValueError("ordinary psychology carousel memory item is required")
 
 
+def _reservation_now(clock: _Clock) -> float:
+    value = float(clock())
+    if not math.isfinite(value):
+        raise ValueError("psychology carousel reservation clock must be finite")
+    return value
+
+
 def _reserve_inner_carousel_fingerprint(
     *,
     storage: _Storage,
     namespace: tuple[str, ...],
     fingerprint: str,
     namespace_key: _NamespaceKey,
+    now: float,
 ) -> str | None:
     final_key = namespace_key(namespace)
     reservation_key = namespace_key(_reservation_namespace(namespace))
@@ -313,8 +361,13 @@ def _reserve_inner_carousel_fingerprint(
         fingerprint,
     ):
         return None
+    _recover_expired_reservations(
+        storage=storage,
+        reservation_key=reservation_key,
+        now=now,
+    )
     reservations = storage.setdefault(reservation_key, [])
-    if _contains_reservation(reservations, fingerprint=fingerprint):
+    if _contains_reservation(reservations, fingerprint=fingerprint, now=now):
         return None
     reservation_id = uuid4().hex
     reservations.append(
@@ -323,6 +376,9 @@ def _reserve_inner_carousel_fingerprint(
             _INNER_CAROUSEL_FINGERPRINT_FIELD: fingerprint,
             ORDINARY_PSYCHOLOGY_CAROUSEL_MEMORY_MARKER: True,
             "reservation_id": reservation_id,
+            _RESERVATION_LEASE_EXPIRES_AT_FIELD: (
+                now + _PSYCHOLOGY_CAROUSEL_RESERVATION_LEASE_SECONDS
+            ),
         }
     )
     return reservation_id
@@ -336,14 +392,21 @@ def _commit_inner_carousel_fingerprint(
     reservation_id: str,
     item: dict[str, object],
     namespace_key: _NamespaceKey,
+    now: float,
 ) -> bool:
     final_key = namespace_key(namespace)
     reservation_key = namespace_key(_reservation_namespace(namespace))
+    _recover_expired_reservations(
+        storage=storage,
+        reservation_key=reservation_key,
+        now=now,
+    )
     reservations = storage.get(reservation_key, [])
     reservation_index = _reservation_index(
         reservations,
         fingerprint=fingerprint,
         reservation_id=reservation_id,
+        now=now,
     )
     if reservation_index is None:
         return False
@@ -375,13 +438,20 @@ def _release_inner_carousel_fingerprint(
     fingerprint: str,
     reservation_id: str,
     namespace_key: _NamespaceKey,
+    now: float,
 ) -> bool:
     reservation_key = namespace_key(_reservation_namespace(namespace))
+    _recover_expired_reservations(
+        storage=storage,
+        reservation_key=reservation_key,
+        now=now,
+    )
     reservations = storage.get(reservation_key, [])
     reservation_index = _reservation_index(
         reservations,
         fingerprint=fingerprint,
         reservation_id=reservation_id,
+        now=now,
     )
     if reservation_index is None:
         return False
@@ -413,9 +483,10 @@ def _contains_reservation(
     reservations: list[dict[str, object]],
     *,
     fingerprint: str,
+    now: float,
 ) -> bool:
     return any(
-        ordinary_psychology_carousel_memory_fingerprint(reservation) == fingerprint
+        _live_reservation_fingerprint(reservation, now=now) == fingerprint
         for reservation in reservations
     )
 
@@ -425,14 +496,57 @@ def _reservation_index(
     *,
     fingerprint: str,
     reservation_id: str,
+    now: float,
 ) -> int | None:
     for index, reservation in enumerate(reservations):
         if (
-            ordinary_psychology_carousel_memory_fingerprint(reservation) == fingerprint
+            _live_reservation_fingerprint(reservation, now=now) == fingerprint
             and reservation.get("reservation_id") == reservation_id
         ):
             return index
     return None
+
+
+def _recover_expired_reservations(
+    *,
+    storage: _Storage,
+    reservation_key: _StorageKey,
+    now: float,
+) -> None:
+    reservations = storage.get(reservation_key)
+    if reservations is None:
+        return
+    live_reservations = [
+        reservation
+        for reservation in reservations
+        if _live_reservation_fingerprint(reservation, now=now) is not None
+    ]
+    if len(live_reservations) == len(reservations):
+        return
+    if live_reservations:
+        storage[reservation_key] = live_reservations
+    else:
+        storage.pop(reservation_key, None)
+
+
+def _live_reservation_fingerprint(
+    reservation: object,
+    *,
+    now: float,
+) -> str | None:
+    if not isinstance(reservation, Mapping):
+        return None
+    fingerprint = ordinary_psychology_carousel_memory_fingerprint(reservation)
+    expires_at = reservation.get(_RESERVATION_LEASE_EXPIRES_AT_FIELD)
+    if (
+        fingerprint is None
+        or isinstance(expires_at, bool)
+        or not isinstance(expires_at, (int, float))
+        or not math.isfinite(float(expires_at))
+        or float(expires_at) <= now
+    ):
+        return None
+    return fingerprint
 
 
 def _drop_reservation(

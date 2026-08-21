@@ -331,7 +331,7 @@ def test_finalize_reservation_rejects_interleaved_duplicate_before_artifact_writ
     )
     assert artifact_store.calls == 1
     assert len(list(artifact_root.glob("*.json"))) == 1
-    assert len(memory.search(namespace=("accounts", "acct-psychology-local", "lessons"))) == 1
+    assert memory.search(namespace=("accounts", "acct-psychology-local", "lessons")) == []
 
 
 @pytest.mark.parametrize("memory_kind", ("in_memory", "file"))
@@ -398,6 +398,146 @@ def test_finalize_releases_carousel_reservation_when_artifact_write_fails(
         },
     )
     assert reservation_id is not None
+
+
+def test_finalize_hands_off_carousel_reservation_without_committing_memory(
+    tmp_path: Path,
+) -> None:
+    final_content = DeterministicDraftBackend().generate(
+        scene="下班后身体还在工位，需要5分钟恢复信号",
+        planner_prompt="modern_psychology_post 现代心理困境观察",
+        skill_contents=[
+            "# Psychology Style\n#心理学，使用具体场景和低风险工具。",
+            "# XHS Image Strategy\n输出 image_plan。",
+        ],
+    )
+    memory = InMemoryExecutionMemory()
+    handed_off: list[object] = []
+    finalize = build_finalize_node(
+        execution_memory=memory,
+        artifact_store=FileArtifactStore(base_dir=tmp_path / "artifacts"),
+        psychology_carousel_draft_gate=_build_psychology_carousel_draft_gate(),
+        ordinary_psychology_carousel_reservation_sink=handed_off.append,
+    )
+
+    result = finalize(
+        {
+            "account_id": "acct-psychology-local",
+            "playbook_id": "modern_psychology_post",
+            "drafting_provider": "deterministic",
+            "attempt_count": 1,
+            "reflection_decision": "finalize",
+            "scene": "下班后身体还在工位",
+            "final_content": final_content,
+        }
+    )
+
+    namespace = ("accounts", "acct-psychology-local", "lessons")
+    assert result["status"] == "completed"
+    assert memory.search(namespace=namespace) == []
+    assert len(handed_off) == 1
+    reservation = handed_off.pop()
+    assert reservation.commit()
+    lessons = memory.search(namespace=namespace)
+    assert len(lessons) == 1
+    serialized_result = json.dumps(result, ensure_ascii=False)
+    serialized_artifact = Path(result["artifact_path"]).read_text(encoding="utf-8")
+    assert "reservation_id" not in serialized_result
+    assert "reservation_id" not in serialized_artifact
+
+
+def test_finalize_releases_carousel_reservation_after_artifact_without_handoff(
+    tmp_path: Path,
+) -> None:
+    final_content = DeterministicDraftBackend().generate(
+        scene="下班后身体还在工位，需要5分钟恢复信号",
+        planner_prompt="modern_psychology_post 现代心理困境观察",
+        skill_contents=[
+            "# Psychology Style\n#心理学，使用具体场景和低风险工具。",
+            "# XHS Image Strategy\n输出 image_plan。",
+        ],
+    )
+    memory = InMemoryExecutionMemory()
+    finalize = build_finalize_node(
+        execution_memory=memory,
+        artifact_store=FileArtifactStore(base_dir=tmp_path / "artifacts"),
+        psychology_carousel_draft_gate=_build_psychology_carousel_draft_gate(),
+    )
+
+    result = finalize(
+        {
+            "account_id": "acct-psychology-local",
+            "playbook_id": "modern_psychology_post",
+            "drafting_provider": "deterministic",
+            "attempt_count": 1,
+            "reflection_decision": "finalize",
+            "scene": "下班后身体还在工位",
+            "final_content": final_content,
+        }
+    )
+
+    fingerprint = psychology_carousel.psychology_carousel_inner_pages_fingerprint(
+        final_content["image_plan"]
+    )
+    namespace = ("accounts", "acct-psychology-local", "lessons")
+    assert result["status"] == "completed"
+    assert memory.search(namespace=namespace) == []
+    assert (
+        memory.reserve_psychology_carousel_inner_fingerprint(
+            namespace=namespace,
+            fingerprint=fingerprint,
+            item={
+                "playbook_id": "modern_psychology_post",
+                "psychology_carousel_inner_fingerprint": fingerprint,
+                ORDINARY_PSYCHOLOGY_CAROUSEL_MEMORY_MARKER: True,
+            },
+        )
+        is not None
+    )
+
+
+def test_finalize_returns_controlled_failure_for_legacy_memory_without_reservations(
+    tmp_path: Path,
+) -> None:
+    class LegacyMemory:
+        def record(self, namespace: tuple[str, ...], item: dict[str, object]) -> None:
+            del namespace, item
+
+        def search(self, namespace: tuple[str, ...]) -> list[dict[str, object]]:
+            del namespace
+            return []
+
+    final_content = DeterministicDraftBackend().generate(
+        scene="下班后身体还在工位，需要5分钟恢复信号",
+        planner_prompt="modern_psychology_post 现代心理困境观察",
+        skill_contents=[
+            "# Psychology Style\n#心理学，使用具体场景和低风险工具。",
+            "# XHS Image Strategy\n输出 image_plan。",
+        ],
+    )
+    finalize = build_finalize_node(
+        execution_memory=LegacyMemory(),  # type: ignore[arg-type]
+        artifact_store=FileArtifactStore(base_dir=tmp_path / "artifacts"),
+        psychology_carousel_draft_gate=_build_psychology_carousel_draft_gate(),
+    )
+
+    result = finalize(
+        {
+            "account_id": "acct-psychology-local",
+            "playbook_id": "modern_psychology_post",
+            "drafting_provider": "deterministic",
+            "attempt_count": 1,
+            "reflection_decision": "finalize",
+            "scene": "下班后身体还在工位",
+            "final_content": final_content,
+        }
+    )
+
+    assert result == {
+        "status": "psychology_carousel_memory_capability_required",
+        "reflection_decision": "fail",
+        "reflection_feedback": "execution memory lacks atomic psychology carousel reservations",
+    }
 
 
 def test_finalize_blocks_invalid_ai_draft_before_artifact_or_memory(tmp_path: Path) -> None:
@@ -921,12 +1061,7 @@ def test_finalize_preserves_ordered_psychology_slides_in_review_and_artifact(
     assert artifact["final_content"]["image_plan"] == generated["image_plan"]
     assert artifact["content_review"]["image_plan"] == generated["image_plan"]
     lessons = memory.search(namespace=("accounts", "acct-psychology-local", "lessons"))
-    assert lessons[-1]["psychology_carousel_inner_fingerprint"] == (
-        psychology_carousel.psychology_carousel_inner_pages_fingerprint(
-            generated["image_plan"]
-        )
-    )
-    assert lessons[-1][ORDINARY_PSYCHOLOGY_CAROUSEL_MEMORY_MARKER] is True
+    assert lessons == []
 
 
 def test_finalize_rejects_invalid_psychology_slides_before_artifact_write(

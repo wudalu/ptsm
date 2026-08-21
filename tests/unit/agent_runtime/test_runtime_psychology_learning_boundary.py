@@ -203,7 +203,7 @@ def test_ordinary_psychology_carousel_survives_runtime_review_and_artifact(
 
 
 @pytest.mark.parametrize("memory_kind", ("in_memory", "file"))
-def test_ordinary_psychology_same_scene_twice_uses_distinct_inner_carousels(
+def test_ordinary_psychology_direct_workflow_releases_inner_carousel_reservation(
     tmp_path: Path,
     memory_kind: str,
 ) -> None:
@@ -243,14 +243,14 @@ def test_ordinary_psychology_same_scene_twice_uses_distinct_inner_carousels(
     second_fingerprint = psychology_carousel_inner_pages_fingerprint(
         second["final_content"]["image_plan"]
     )
-    assert first_fingerprint != second_fingerprint
+    # A direct workflow invocation has no local renderer/ledger receipt.  It
+    # must not make either candidate part of the durable recent-12 history.
+    assert first_fingerprint
+    assert second_fingerprint
     lessons = memory.search(
         namespace=("accounts", "acct-psychology-repeat", "lessons")
     )
-    assert [lesson["psychology_carousel_inner_fingerprint"] for lesson in lessons] == [
-        first_fingerprint,
-        second_fingerprint,
-    ]
+    assert lessons == []
 
 
 def test_ordinary_psychology_canonicalizes_carousel_before_checkpoint(
