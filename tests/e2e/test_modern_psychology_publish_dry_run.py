@@ -121,6 +121,12 @@ def test_run_playbook_cli_generates_and_publishes_complete_psychology_carousel(
     ]
     assert all(Path(path).is_file() for path in generation["generated_image_paths"])
     assert Path(generation["manifest_path"]).is_file()
+    delivery = payload["carousel_delivery"]
+    assert delivery["status"] == "ready"
+    assert delivery["external_relay_required"] is True
+    assert [attachment["path"] for attachment in delivery["attachments"]] == generation[
+        "generated_image_paths"
+    ]
     ledger_path = (
         tmp_path
         / "outputs"
@@ -287,6 +293,8 @@ def test_run_playbook_cli_generates_catalog_owned_learning_carousel(
     }
     artifact = json.loads(Path(payload["artifact_path"]).read_text(encoding="utf-8"))
     assert artifact["image_generation"] == image_receipt
+    assert "carousel_delivery" not in payload
+    assert "carousel_delivery" not in artifact
     ledger_path = (
         tmp_path
         / "outputs"

@@ -9,6 +9,7 @@ from threading import Event, Lock
 import pytest
 
 from ptsm.agent_runtime.runtime import (
+    OrdinaryPsychologyCarouselMemoryReservation,
     _build_psychology_carousel_draft_gate,
     build_finalize_node,
 )
@@ -444,6 +445,76 @@ def test_finalize_hands_off_carousel_reservation_without_committing_memory(
     serialized_artifact = Path(result["artifact_path"]).read_text(encoding="utf-8")
     assert "reservation_id" not in serialized_result
     assert "reservation_id" not in serialized_artifact
+
+
+def test_carousel_reservation_heartbeat_renews_until_release_then_stops(
+    tmp_path: Path,
+) -> None:
+    del tmp_path
+    namespace = ("accounts", "acct-psychology-local", "lessons")
+    fingerprint = "e" * 64
+    now = [1_000.0]
+    renewed_after_deadline = Event()
+
+    class TrackingMemory(InMemoryExecutionMemory):
+        def renew_psychology_carousel_inner_fingerprint(
+            self,
+            *,
+            namespace: tuple[str, ...],
+            fingerprint: str,
+            reservation_id: str,
+        ) -> bool:
+            if now[0] >= 2_199.0:
+                renewed_after_deadline.set()
+            return super().renew_psychology_carousel_inner_fingerprint(
+                namespace=namespace,
+                fingerprint=fingerprint,
+                reservation_id=reservation_id,
+            )
+
+    memory = TrackingMemory(clock=lambda: now[0])
+    lesson = {
+        "playbook_id": "modern_psychology_post",
+        "psychology_carousel_inner_fingerprint": fingerprint,
+        ORDINARY_PSYCHOLOGY_CAROUSEL_MEMORY_MARKER: True,
+    }
+    reservation_id = memory.reserve_psychology_carousel_inner_fingerprint(
+        namespace=namespace,
+        fingerprint=fingerprint,
+        item=lesson,
+    )
+    assert reservation_id is not None
+    reservation = OrdinaryPsychologyCarouselMemoryReservation(
+        _execution_memory=memory,
+        _namespace=namespace,
+        _fingerprint=fingerprint,
+        _reservation_id=reservation_id,
+        _item=lesson,
+        _heartbeat_interval_seconds=0.001,
+    )
+
+    assert reservation.start_heartbeat()
+    now[0] = 2_199.0
+    assert renewed_after_deadline.wait(timeout=1.0)
+    now[0] = 2_201.0
+    assert (
+        memory.reserve_psychology_carousel_inner_fingerprint(
+            namespace=namespace,
+            fingerprint=fingerprint,
+            item=lesson,
+        )
+        is None
+    )
+
+    reservation.release()
+    assert (
+        memory.reserve_psychology_carousel_inner_fingerprint(
+            namespace=namespace,
+            fingerprint=fingerprint,
+            item=lesson,
+        )
+        is not None
+    )
 
 
 def test_finalize_releases_carousel_reservation_after_artifact_without_handoff(

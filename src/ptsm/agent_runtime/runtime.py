@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import hashlib
 import os
 from pathlib import Path
 import re
+from threading import Event, RLock, Thread, current_thread
 from typing import Any, Callable, Mapping
 
 from langgraph.checkpoint.memory import InMemorySaver
@@ -70,6 +71,8 @@ PsychologyCarouselDraftGate = Callable[
     [ExecutionState, dict[str, object]],
     list[str],
 ]
+_ORDINARY_PSYCHOLOGY_CAROUSEL_HEARTBEAT_INTERVAL_SECONDS = 60.0
+_ORDINARY_PSYCHOLOGY_CAROUSEL_HEARTBEAT_JOIN_TIMEOUT_SECONDS = 1.0
 
 
 @dataclass
@@ -81,11 +84,78 @@ class OrdinaryPsychologyCarouselMemoryReservation:
     _fingerprint: str
     _reservation_id: str
     _item: dict[str, object]
+    _heartbeat_interval_seconds: float = (
+        _ORDINARY_PSYCHOLOGY_CAROUSEL_HEARTBEAT_INTERVAL_SECONDS
+    )
     _settled: bool = False
+    _commit_pending: bool = False
+    _heartbeat_started: bool = False
+    _heartbeat_healthy: bool = True
+    _heartbeat_stop: Event = field(default_factory=Event, init=False, repr=False)
+    _heartbeat_thread: Thread | None = field(default=None, init=False, repr=False)
+    _lock: Any = field(default_factory=RLock, init=False, repr=False)
+
+    def start_heartbeat(self) -> bool:
+        """Renew the owner-fenced lease until this capability settles."""
+        with self._lock:
+            if self._settled or self._commit_pending:
+                return False
+            if self._heartbeat_started:
+                return self._heartbeat_healthy
+            self._heartbeat_started = True
+        if not self._renew():
+            with self._lock:
+                self._heartbeat_healthy = False
+            return False
+        with self._lock:
+            if self._settled or self._commit_pending:
+                return False
+            thread = Thread(
+                target=self._heartbeat_loop,
+                name="ptsm-psychology-carousel-lease",
+                daemon=True,
+            )
+            self._heartbeat_thread = thread
+        try:
+            thread.start()
+        except RuntimeError:
+            with self._lock:
+                self._heartbeat_thread = None
+                self._heartbeat_healthy = False
+            return False
+        return True
+
+    def heartbeat_is_healthy(self) -> bool:
+        with self._lock:
+            return self._heartbeat_healthy
+
+    def mark_commit_pending(self) -> bool:
+        """Persist the post-ledger recovery marker before memory promotion."""
+        with self._lock:
+            if self._settled or self._commit_pending:
+                return False
+        self._stop_heartbeat()
+        try:
+            marked = (
+                self._execution_memory.mark_psychology_carousel_inner_fingerprint_commit_pending(
+                    namespace=self._namespace,
+                    fingerprint=self._fingerprint,
+                    reservation_id=self._reservation_id,
+                    item=self._item,
+                )
+            )
+        except Exception:
+            return False
+        if marked:
+            with self._lock:
+                self._commit_pending = True
+        return marked
 
     def commit(self) -> bool:
-        if self._settled:
-            return False
+        with self._lock:
+            if self._settled:
+                return False
+        self._stop_heartbeat()
         committed = self._execution_memory.commit_psychology_carousel_inner_fingerprint(
             namespace=self._namespace,
             fingerprint=self._fingerprint,
@@ -96,11 +166,21 @@ class OrdinaryPsychologyCarouselMemoryReservation:
         # decision.  Leave the capability releasable so the caller's failure
         # cleanup can clear any adapter that did not remove it itself.
         if committed:
-            self._settled = True
+            with self._lock:
+                self._settled = True
         return committed
 
     def release(self) -> None:
-        if self._settled:
+        with self._lock:
+            if self._settled:
+                return
+            commit_pending = self._commit_pending
+        self._stop_heartbeat()
+        if commit_pending:
+            # Ledger success is already durable.  A failed later promotion must
+            # remain recoverable by the next reserve rather than being released.
+            with self._lock:
+                self._settled = True
             return
         try:
             self._execution_memory.release_psychology_carousel_inner_fingerprint(
@@ -109,7 +189,41 @@ class OrdinaryPsychologyCarouselMemoryReservation:
                 reservation_id=self._reservation_id,
             )
         finally:
-            self._settled = True
+            with self._lock:
+                self._settled = True
+
+    def _renew(self) -> bool:
+        try:
+            return bool(
+                self._execution_memory.renew_psychology_carousel_inner_fingerprint(
+                    namespace=self._namespace,
+                    fingerprint=self._fingerprint,
+                    reservation_id=self._reservation_id,
+                )
+            )
+        except Exception:
+            return False
+
+    def _heartbeat_loop(self) -> None:
+        while not self._heartbeat_stop.wait(self._heartbeat_interval_seconds):
+            with self._lock:
+                if self._settled or self._commit_pending:
+                    return
+            if self._renew():
+                continue
+            with self._lock:
+                self._heartbeat_healthy = False
+            return
+
+    def _stop_heartbeat(self) -> None:
+        with self._lock:
+            self._heartbeat_stop.set()
+            thread = self._heartbeat_thread
+            self._heartbeat_thread = None
+        if thread is not None and thread is not current_thread():
+            thread.join(
+                timeout=_ORDINARY_PSYCHOLOGY_CAROUSEL_HEARTBEAT_JOIN_TIMEOUT_SECONDS
+            )
 
 
 OrdinaryPsychologyCarouselReservationSink = Callable[
@@ -1047,6 +1161,8 @@ def _supports_psychology_carousel_memory_reservations(
         callable(getattr(execution_memory, method_name, None))
         for method_name in (
             "reserve_psychology_carousel_inner_fingerprint",
+            "renew_psychology_carousel_inner_fingerprint",
+            "mark_psychology_carousel_inner_fingerprint_commit_pending",
             "commit_psychology_carousel_inner_fingerprint",
             "release_psychology_carousel_inner_fingerprint",
         )

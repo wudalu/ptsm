@@ -256,6 +256,133 @@ def test_expired_psychology_carousel_reservation_is_recovered_for_retry(
     assert retry_reservation_id != first_reservation_id
 
 
+@pytest.mark.parametrize("store_kind", ("in_memory", "file"))
+def test_psychology_carousel_reservation_renewal_is_owner_fenced_and_settlement_stops_it(
+    store_kind: str,
+    tmp_path: Path,
+) -> None:
+    namespace = ("accounts", "acct-psychology-local", "lessons")
+    fingerprint = "c" * 64
+    now = [1_000.0]
+    store = (
+        InMemoryExecutionMemory(clock=lambda: now[0])
+        if store_kind == "in_memory"
+        else FileExecutionMemory(
+            path=tmp_path / "execution-memory.json",
+            clock=lambda: now[0],
+        )
+    )
+    lesson = {
+        "playbook_id": "modern_psychology_post",
+        "psychology_carousel_inner_fingerprint": fingerprint,
+        ORDINARY_PSYCHOLOGY_CAROUSEL_MEMORY_MARKER: True,
+    }
+    reservation_id = store.reserve_psychology_carousel_inner_fingerprint(
+        namespace=namespace,
+        fingerprint=fingerprint,
+        item=lesson,
+    )
+
+    assert reservation_id is not None
+    assert not store.renew_psychology_carousel_inner_fingerprint(
+        namespace=namespace,
+        fingerprint=fingerprint,
+        reservation_id="not-the-owner",
+    )
+    now[0] += memory_store._PSYCHOLOGY_CAROUSEL_RESERVATION_LEASE_SECONDS - 1
+    assert store.renew_psychology_carousel_inner_fingerprint(
+        namespace=namespace,
+        fingerprint=fingerprint,
+        reservation_id=reservation_id,
+    )
+
+    # This is past the original 20-minute deadline, but the owner renewed it.
+    now[0] += 2
+    assert (
+        store.reserve_psychology_carousel_inner_fingerprint(
+            namespace=namespace,
+            fingerprint=fingerprint,
+            item=lesson,
+        )
+        is None
+    )
+
+    store.release_psychology_carousel_inner_fingerprint(
+        namespace=namespace,
+        fingerprint=fingerprint,
+        reservation_id=reservation_id,
+    )
+    assert (
+        store.reserve_psychology_carousel_inner_fingerprint(
+            namespace=namespace,
+            fingerprint=fingerprint,
+            item=lesson,
+        )
+        is not None
+    )
+
+
+@pytest.mark.parametrize("store_kind", ("in_memory", "file"))
+def test_commit_pending_carousel_reservation_reconciles_before_a_retry_can_render(
+    store_kind: str,
+    tmp_path: Path,
+) -> None:
+    namespace = ("accounts", "acct-psychology-local", "lessons")
+    fingerprint = "d" * 64
+    now = [1_000.0]
+    memory_path = tmp_path / "execution-memory.json"
+    store = (
+        InMemoryExecutionMemory(clock=lambda: now[0])
+        if store_kind == "in_memory"
+        else FileExecutionMemory(
+            path=memory_path,
+            clock=lambda: now[0],
+        )
+    )
+    lesson = {
+        "playbook_id": "modern_psychology_post",
+        "psychology_carousel_inner_fingerprint": fingerprint,
+        ORDINARY_PSYCHOLOGY_CAROUSEL_MEMORY_MARKER: True,
+        "title": "账本已持久化的轮播",
+    }
+    reservation_id = store.reserve_psychology_carousel_inner_fingerprint(
+        namespace=namespace,
+        fingerprint=fingerprint,
+        item=lesson,
+    )
+
+    assert reservation_id is not None
+    assert store.mark_psychology_carousel_inner_fingerprint_commit_pending(
+        namespace=namespace,
+        fingerprint=fingerprint,
+        reservation_id=reservation_id,
+        item=lesson,
+    )
+    # A late cleanup must never delete the durable post-ledger marker.
+    store.release_psychology_carousel_inner_fingerprint(
+        namespace=namespace,
+        fingerprint=fingerprint,
+        reservation_id=reservation_id,
+    )
+    now[0] += memory_store._PSYCHOLOGY_CAROUSEL_RESERVATION_LEASE_SECONDS * 2
+    if store_kind == "file":
+        # The post-ledger marker must survive the process that could not finish
+        # the memory promotion.
+        store = FileExecutionMemory(path=memory_path, clock=lambda: now[0])
+
+    # Reserving a retry first promotes the pending marker, then rejects the
+    # duplicate before a second renderer invocation can start.
+    assert (
+        store.reserve_psychology_carousel_inner_fingerprint(
+            namespace=namespace,
+            fingerprint=fingerprint,
+            item=lesson,
+        )
+        is None
+    )
+    assert store.search(namespace=namespace) == [lesson]
+
+
 def test_file_execution_memory_recovers_legacy_reservation_without_lease(
     tmp_path: Path,
 ) -> None:

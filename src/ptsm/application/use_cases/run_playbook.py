@@ -1794,11 +1794,19 @@ def run_playbook(
         if deferred_carousel_reservations
         else None
     )
+    ordinary_carousel_lease_started = True
     if deferred_carousel_reservation is not None:
         _ACTIVE_ORDINARY_PSYCHOLOGY_CAROUSEL_RESERVATION.set(
             deferred_carousel_reservation
         )
+        ordinary_carousel_lease_started = (
+            deferred_carousel_reservation.start_heartbeat()
+        )
     result = {"playbook_id": playbook.playbook_id, **result}
+    # A workflow cannot self-authorize an external relay handoff.  The only
+    # legitimate receipt is assembled locally after the canonical set, ledger,
+    # and ordinary-memory lifecycle all succeed below.
+    result.pop("carousel_delivery", None)
     # Evidence is a workflow-construction capability, never a graph/input
     # state field.  The artifact receipt retains only the opaque manifest.
     if ai_tech_evidence_bundle is not None and result.get("status") == "completed":
@@ -1951,6 +1959,7 @@ def run_playbook(
     publish_result = None
     image_generation: dict[str, Any] | None = None
     watermark_removal: dict[str, Any] | None = None
+    carousel_delivery: dict[str, Any] | None = None
     if result["status"] == "completed":
         resolved_image_paths = list(request.publish_image_paths)
         artifact_path = Path(result["artifact_path"])
@@ -1983,6 +1992,15 @@ def run_playbook(
             if carousel_plan is not None:
                 carousel_output_stem = f"{artifact_path.stem}-carousel"
                 try:
+                    if psychology_learning_bundle is None:
+                        reservation = deferred_carousel_reservation
+                        if reservation is not None and (
+                            not ordinary_carousel_lease_started
+                            or not reservation.heartbeat_is_healthy()
+                        ):
+                            raise ImageCarouselTransactionError(
+                                "ordinary psychology carousel reservation lease is unavailable"
+                            )
                     canonical_carousel_plan = normalize_psychology_carousel_plan(
                         carousel_plan
                     )
@@ -2000,6 +2018,14 @@ def run_playbook(
                             output_stem=carousel_output_stem,
                         )
                     )
+                    if (
+                        psychology_learning_bundle is None
+                        and deferred_carousel_reservation is not None
+                        and not deferred_carousel_reservation.heartbeat_is_healthy()
+                    ):
+                        raise ImageCarouselTransactionError(
+                            "ordinary psychology carousel reservation lease renewal failed"
+                        )
                     image_generation = dict(carousel_commit_receipt)
                     image_generation["image_plan"] = canonical_carousel_plan
                     image_generation["runtime_context_summary"] = runtime_context_summary
@@ -2097,10 +2123,13 @@ def run_playbook(
                     if (
                         carousel_plan is not None
                         and psychology_learning_bundle is None
-                        and deferred_carousel_reservation is None
+                        and (
+                            deferred_carousel_reservation is None
+                            or not deferred_carousel_reservation.heartbeat_is_healthy()
+                        )
                     ):
                         raise ImageCarouselTransactionError(
-                            "ordinary psychology carousel reservation is required"
+                            "ordinary psychology carousel reservation lease is unavailable"
                         )
                     if (
                         carousel_plan is not None
@@ -2119,6 +2148,13 @@ def run_playbook(
                         account_id=account.account_id,
                         image_generation=image_generation,
                     )
+                    if carousel_plan is not None and not _is_complete_carousel_asset_ledger(
+                        asset_ledger,
+                        expected_image_count=len(carousel_plan["slides"]),
+                    ):
+                        raise ImageCarouselTransactionError(
+                            "psychology carousel asset ledger is incomplete"
+                        )
                     if asset_ledger is not None:
                         image_generation["asset_ledger"] = asset_ledger
                     if (
@@ -2128,17 +2164,32 @@ def run_playbook(
                     ):
                         # Commit only after the generated set is still whole
                         # and the asset ledger is durably appended.
-                        verify_committed_carousel_set(
+                        verified_carousel_receipt = verify_committed_carousel_set(
                             image_plan=carousel_plan,
                             receipt=carousel_commit_receipt,
                             output_stem=carousel_output_stem,
                         )
                         if psychology_learning_bundle is None:
                             reservation = deferred_carousel_reservation
-                            if reservation is None or not reservation.commit():
+                            if (
+                                reservation is None
+                                or not reservation.heartbeat_is_healthy()
+                            ):
+                                raise ImageCarouselTransactionError(
+                                    "ordinary psychology carousel reservation lease renewal failed"
+                                )
+                            if not reservation.mark_commit_pending():
+                                raise ImageCarouselTransactionError(
+                                    "ordinary psychology carousel commit recovery marker could not persist"
+                                )
+                            if not reservation.commit():
                                 raise ImageCarouselTransactionError(
                                     "ordinary psychology carousel reservation could not commit"
                                 )
+                            carousel_delivery = _build_carousel_delivery_receipt(
+                                image_plan=carousel_plan,
+                                receipt=verified_carousel_receipt,
+                            )
                 except (
                     ImageCarouselTransactionError,
                     OSError,
@@ -2351,6 +2402,8 @@ def run_playbook(
                 "format_patterns_used": format_patterns_used,
                 "run": run.to_dict(),
             }
+            if carousel_delivery is not None:
+                artifact_update["carousel_delivery"] = carousel_delivery
             if topic_selection_metadata is not None:
                 artifact_update["topic_selection"] = topic_selection_metadata
         if psychology_learning_bundle is not None:
@@ -2805,6 +2858,8 @@ def run_playbook(
     }
     if topic_selection_metadata is not None:
         response["topic_selection"] = topic_selection_metadata
+    if carousel_delivery is not None:
+        response["carousel_delivery"] = carousel_delivery
     return response
 
 
@@ -3158,6 +3213,111 @@ def _psychology_carousel_failure_receipt(
     }
 
 
+def _is_complete_carousel_asset_ledger(
+    asset_ledger: object,
+    *,
+    expected_image_count: int,
+) -> bool:
+    return (
+        isinstance(asset_ledger, Mapping)
+        and asset_ledger.get("status") == "recorded"
+        and isinstance(asset_ledger.get("entry_count"), int)
+        and not isinstance(asset_ledger.get("entry_count"), bool)
+        and asset_ledger.get("entry_count") == expected_image_count
+    )
+
+
+def _build_carousel_delivery_receipt(
+    *,
+    image_plan: Mapping[str, Any],
+    receipt: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Build the only ordinary-carousel handoff safe for an external relay."""
+    slides = image_plan.get("slides")
+    paths = receipt.get("generated_image_paths")
+    pages = receipt.get("pages")
+    image_count = receipt.get("image_count")
+    if (
+        not isinstance(slides, Sequence)
+        or isinstance(slides, (str, bytes))
+        or not isinstance(paths, list)
+        or not isinstance(pages, list)
+        or not isinstance(image_count, int)
+        or isinstance(image_count, bool)
+        or len(slides) != image_count
+        or len(paths) != image_count
+        or len(pages) != image_count
+    ):
+        raise ImageCarouselTransactionError("carousel delivery receipt is incomplete")
+
+    attachments: list[dict[str, Any]] = []
+    file_hashes: set[str] = set()
+    for expected_order, (slide, page, path) in enumerate(
+        zip(slides, pages, paths, strict=True), start=1
+    ):
+        if (
+            not isinstance(slide, Mapping)
+            or not isinstance(page, Mapping)
+            or not isinstance(path, str)
+            or not path
+            or page.get("path") != path
+            or page.get("order") != expected_order
+            or slide.get("order") != expected_order
+        ):
+            raise ImageCarouselTransactionError("carousel delivery receipt is not canonical")
+        role = page.get("role")
+        page_sha256 = page.get("page_sha256")
+        file_sha256 = page.get("file_sha256")
+        if (
+            not isinstance(role, str)
+            or not role
+            or not _is_lower_sha256(page_sha256)
+            or not _is_lower_sha256(file_sha256)
+            or file_sha256 in file_hashes
+        ):
+            raise ImageCarouselTransactionError("carousel delivery receipt is not unique")
+        file_hashes.add(file_sha256)
+        attachments.append(
+            {
+                "order": expected_order,
+                "role": role,
+                "path": path,
+                "page_sha256": page_sha256,
+                "file_sha256": file_sha256,
+            }
+        )
+
+    set_id = receipt.get("set_id")
+    manifest_path = receipt.get("manifest_path")
+    manifest_sha256 = receipt.get("manifest_sha256")
+    if (
+        not _is_lower_sha256(set_id)
+        or not isinstance(manifest_path, str)
+        or not manifest_path
+        or not _is_lower_sha256(manifest_sha256)
+    ):
+        raise ImageCarouselTransactionError("carousel delivery receipt is incomplete")
+    return {
+        "status": "ready",
+        "external_relay_required": True,
+        "set_id": set_id,
+        "manifest_path": manifest_path,
+        "manifest_sha256": manifest_sha256,
+        "expected_image_count": len(slides),
+        "generated_image_count": len(paths),
+        "unique_file_count": len(file_hashes),
+        "attachments": attachments,
+    }
+
+
+def _is_lower_sha256(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
 def _finish_psychology_carousel_failure(
     *,
     result: dict[str, Any],
@@ -3181,6 +3341,7 @@ def _finish_psychology_carousel_failure(
 ) -> dict[str, Any]:
     """Finish a failed carousel run before watermarking, publishing, or progress."""
     result["status"] = "psychology_carousel_generation_failed"
+    result.pop("carousel_delivery", None)
     if ordinary_psychology_carousel_reservation is not None:
         try:
             ordinary_psychology_carousel_reservation.release()

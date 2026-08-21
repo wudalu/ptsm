@@ -260,6 +260,7 @@ class ImageCarouselTransaction:
     ) -> "_RenderedSet":
         pages: list[dict[str, object]] = []
         returned_paths: set[Path] = set()
+        rendered_file_hashes: set[str] = set()
         provider = ""
         model = ""
         provenance: dict[str, object] = {}
@@ -304,6 +305,11 @@ class ImageCarouselTransaction:
             )
             returned_paths.add(returned_path)
             file_sha256 = _verify_and_hash_png(returned_path, page_order=order)
+            if file_sha256 in rendered_file_hashes:
+                raise ImageCarouselTransactionError(
+                    "carousel set contains duplicate PNG bytes"
+                )
+            rendered_file_hashes.add(file_sha256)
             page_provider, page_model, page_provenance = _renderer_metadata(
                 renderer_result,
                 expected_style=str(plan["carousel_style"]),
@@ -566,6 +572,7 @@ def _validate_complete_staging_set(
         raise ImageCarouselTransactionError("staging set is not readable") from exc
     if actual_names != expected_names:
         raise ImageCarouselTransactionError("staging set contains unexpected entries")
+    file_hashes: set[str] = set()
     for page in pages:
         order = int(page["order"])
         path = staging_path / str(page["filename"])
@@ -574,6 +581,9 @@ def _validate_complete_staging_set(
             raise ImageCarouselTransactionError(
                 f"staging page {order} changed after rendering"
             )
+        if current_hash in file_hashes:
+            raise ImageCarouselTransactionError("carousel set contains duplicate PNG bytes")
+        file_hashes.add(current_hash)
 
 
 def _set_id_for_rendered_set(
@@ -701,6 +711,7 @@ def _reuse_identical_set(
             raise ImageCarouselTransactionError("conflicting manifest for carousel set")
         expected_names = {_MANIFEST_NAME}
         generated_paths: list[str] = []
+        file_hashes: set[str] = set()
         for page, slide in zip(raw_pages, raw_slides, strict=True):
             if not isinstance(page, dict) or not isinstance(slide, Mapping):
                 raise ImageCarouselTransactionError("conflicting manifest for carousel set")
@@ -741,6 +752,11 @@ def _reuse_identical_set(
             file_sha256 = _verify_and_hash_png(path, page_order=order)
             if file_sha256 != page.get("file_sha256"):
                 raise ImageCarouselTransactionError("conflicting manifest for carousel set")
+            if file_sha256 in file_hashes:
+                raise ImageCarouselTransactionError(
+                    "carousel set contains duplicate PNG bytes"
+                )
+            file_hashes.add(file_sha256)
             generated_paths.append(str(path))
         actual_set_id = _set_id_for_rendered_set(
             provider=provider,

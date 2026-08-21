@@ -324,6 +324,26 @@ class StoreBackedCarouselReservation:
         self.lesson = lesson
         self.events = events
         self._settled = False
+        self._commit_pending = False
+
+    def start_heartbeat(self) -> bool:
+        return True
+
+    def heartbeat_is_healthy(self) -> bool:
+        return True
+
+    def mark_commit_pending(self) -> bool:
+        if self._settled:
+            return False
+        self.events.append("commit_pending")
+        pending = self.memory.mark_psychology_carousel_inner_fingerprint_commit_pending(
+            namespace=self.namespace,
+            fingerprint=self.fingerprint,
+            reservation_id=self.reservation_id,
+            item=self.lesson,
+        )
+        self._commit_pending = pending
+        return pending
 
     def commit(self) -> bool:
         if self._settled:
@@ -342,15 +362,25 @@ class StoreBackedCarouselReservation:
         if self._settled:
             return
         self.events.append("release")
-        self.memory.release_psychology_carousel_inner_fingerprint(
-            namespace=self.namespace,
-            fingerprint=self.fingerprint,
-            reservation_id=self.reservation_id,
-        )
+        if not self._commit_pending:
+            self.memory.release_psychology_carousel_inner_fingerprint(
+                namespace=self.namespace,
+                fingerprint=self.fingerprint,
+                reservation_id=self.reservation_id,
+            )
         self._settled = True
 
 
 class NoopCarouselReservation:
+    def start_heartbeat(self) -> bool:
+        return True
+
+    def heartbeat_is_healthy(self) -> bool:
+        return True
+
+    def mark_commit_pending(self) -> bool:
+        return True
+
     def commit(self) -> bool:
         return True
 
@@ -2187,6 +2217,28 @@ def test_run_playbook_publishes_complete_psychology_carousel_in_manifest_order(
     assert artifact["image_generation"]["manifest_sha256"] == generation[
         "manifest_sha256"
     ]
+    delivery = result["carousel_delivery"]
+    assert delivery == artifact["carousel_delivery"]
+    assert delivery["status"] == "ready"
+    assert delivery["external_relay_required"] is True
+    assert delivery["set_id"] == generation["set_id"]
+    assert delivery["manifest_path"] == generation["manifest_path"]
+    assert delivery["manifest_sha256"] == generation["manifest_sha256"]
+    assert delivery["expected_image_count"] == 6
+    assert delivery["generated_image_count"] == 6
+    assert delivery["unique_file_count"] == 6
+    assert delivery["attachments"] == [
+        {
+            "order": page["order"],
+            "role": page["role"],
+            "path": path,
+            "page_sha256": page["page_sha256"],
+            "file_sha256": page["file_sha256"],
+        }
+        for page, path in zip(
+            generation["pages"], generation["generated_image_paths"], strict=True
+        )
+    ]
 
 
 def test_run_playbook_commits_carousel_memory_only_after_ledger_receipt(
@@ -2219,7 +2271,7 @@ def test_run_playbook_commits_carousel_memory_only_after_ledger_receipt(
     def append_ledger(**_: object) -> dict[str, object]:
         reservation.events.append("ledger")
         assert memory.search(namespace=namespace) == []
-        return {"entry_count": 6}
+        return {"status": "recorded", "entry_count": 6}
 
     monkeypatch.setattr(
         "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
@@ -2248,12 +2300,228 @@ def test_run_playbook_commits_carousel_memory_only_after_ledger_receipt(
     )
 
     assert result["status"] == "completed"
-    assert reservation.events == ["ledger", "commit"]
+    assert reservation.events == ["ledger", "commit_pending", "commit"]
     assert memory.search(namespace=namespace) == [lesson]
     serialized_result = json.dumps(result, ensure_ascii=False)
     serialized_artifact = artifact_path.read_text(encoding="utf-8")
     assert reservation.reservation_id not in serialized_result
     assert reservation.reservation_id not in serialized_artifact
+
+
+def test_run_playbook_keeps_commit_pending_memory_recoverable_when_promotion_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    final_content = _ordinary_psychology_carousel_content()
+    artifact_path = tmp_path / "outputs" / "artifacts" / "commit-pending-carousel.json"
+    artifact_path.parent.mkdir(parents=True)
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "modern_psychology_post",
+                "final_content": final_content,
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    memory, namespace, lesson, reservation = _reserved_carousel_lifecycle(final_content)
+
+    class CommitFailingReservation(StoreBackedCarouselReservation):
+        def commit(self) -> bool:
+            self.events.append("commit")
+            return False
+
+    failing_reservation = CommitFailingReservation(
+        memory=memory,
+        namespace=namespace,
+        fingerprint=reservation.fingerprint,
+        reservation_id=reservation.reservation_id,
+        lesson=lesson,
+        events=reservation.events,
+    )
+
+    def build_workflow(**kwargs: object) -> HandoffPsychologyCarouselWorkflow:
+        return HandoffPsychologyCarouselWorkflow(
+            artifact_path,
+            final_content,
+            reservation_sink=kwargs["ordinary_psychology_carousel_reservation_sink"],
+            reservation=failing_reservation,
+        )
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        build_workflow,
+    )
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_image_backend",
+        lambda _settings: None,
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = run_playbook(
+        PlaybookRequest(
+            scene="下班后还在回放会议里的那句话",
+            account_id="acct-psychology-local",
+            playbook_id="modern_psychology_post",
+            auto_generate_images=True,
+        ),
+        memory=memory,
+        publisher=CountingPublisher(),
+        run_store=RunStore(base_dir=tmp_path / "runs"),
+    )
+
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+    assert result["status"] == "psychology_carousel_generation_failed"
+    assert "carousel_delivery" not in result
+    assert "carousel_delivery" not in artifact
+    assert memory.search(namespace=namespace) == []
+    # The next holder reconciles the durable marker before it can render.
+    assert (
+        memory.reserve_psychology_carousel_inner_fingerprint(
+            namespace=namespace,
+            fingerprint=failing_reservation.fingerprint,
+            item=lesson,
+        )
+        is None
+    )
+    assert memory.search(namespace=namespace) == [lesson]
+
+
+def test_run_playbook_fails_closed_when_commit_pending_marker_cannot_persist(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    final_content = _ordinary_psychology_carousel_content()
+    artifact_path = tmp_path / "outputs" / "artifacts" / "marker-failed-carousel.json"
+    artifact_path.parent.mkdir(parents=True)
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "modern_psychology_post",
+                "final_content": final_content,
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    memory, namespace, lesson, reservation = _reserved_carousel_lifecycle(final_content)
+
+    class MarkerFailingReservation(StoreBackedCarouselReservation):
+        def mark_commit_pending(self) -> bool:
+            self.events.append("commit_pending")
+            return False
+
+    failing_reservation = MarkerFailingReservation(
+        memory=memory,
+        namespace=namespace,
+        fingerprint=reservation.fingerprint,
+        reservation_id=reservation.reservation_id,
+        lesson=lesson,
+        events=reservation.events,
+    )
+
+    def build_workflow(**kwargs: object) -> HandoffPsychologyCarouselWorkflow:
+        return HandoffPsychologyCarouselWorkflow(
+            artifact_path,
+            final_content,
+            reservation_sink=kwargs["ordinary_psychology_carousel_reservation_sink"],
+            reservation=failing_reservation,
+        )
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        build_workflow,
+    )
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_image_backend",
+        lambda _settings: None,
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = run_playbook(
+        PlaybookRequest(
+            scene="下班后还在回放会议里的那句话",
+            account_id="acct-psychology-local",
+            playbook_id="modern_psychology_post",
+            auto_generate_images=True,
+        ),
+        memory=memory,
+        publisher=CountingPublisher(),
+        run_store=RunStore(base_dir=tmp_path / "runs"),
+    )
+
+    artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+    assert result["status"] == "psychology_carousel_generation_failed"
+    assert "carousel_delivery" not in result
+    assert "carousel_delivery" not in artifact
+    assert memory.search(namespace=namespace) == []
+    assert (
+        memory.reserve_psychology_carousel_inner_fingerprint(
+            namespace=namespace,
+            fingerprint=failing_reservation.fingerprint,
+            item=lesson,
+        )
+        is not None
+    )
+
+
+def test_run_playbook_fails_closed_before_render_when_carousel_lease_cannot_renew(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    final_content = _ordinary_psychology_carousel_content()
+    artifact_path = tmp_path / "outputs" / "artifacts" / "lease-failed-carousel.json"
+    artifact_path.parent.mkdir(parents=True)
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "playbook_id": "modern_psychology_post",
+                "final_content": final_content,
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    class LeaseFailingReservation(NoopCarouselReservation):
+        def start_heartbeat(self) -> bool:
+            return False
+
+    def build_workflow(**kwargs: object) -> HandoffPsychologyCarouselWorkflow:
+        return HandoffPsychologyCarouselWorkflow(
+            artifact_path,
+            final_content,
+            reservation_sink=kwargs["ordinary_psychology_carousel_reservation_sink"],
+            reservation=LeaseFailingReservation(),
+        )
+
+    monkeypatch.setattr(
+        "ptsm.application.use_cases.run_playbook.build_playbook_workflow",
+        build_workflow,
+    )
+    monkeypatch.setattr(
+        ImageCarouselTransaction,
+        "generate",
+        lambda self, **kwargs: (_ for _ in ()).throw(
+            AssertionError("renderer must not run after lease failure")
+        ),
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = run_playbook(
+        PlaybookRequest(
+            scene="下班后还在回放会议里的那句话",
+            account_id="acct-psychology-local",
+            playbook_id="modern_psychology_post",
+            auto_generate_images=True,
+        ),
+        publisher=CountingPublisher(),
+        run_store=RunStore(base_dir=tmp_path / "runs"),
+    )
+
+    assert result["status"] == "psychology_carousel_generation_failed"
+    assert "carousel_delivery" not in result
 
 
 def test_run_playbook_carousel_renderer_failure_finishes_without_publish_side_effects(
@@ -2316,6 +2584,8 @@ def test_run_playbook_carousel_renderer_failure_finishes_without_publish_side_ef
     assert publisher.calls == 0
     artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
     assert artifact["image_generation"] == result["image_generation"]
+    assert "carousel_delivery" not in result
+    assert "carousel_delivery" not in artifact
     assert "private path" not in json.dumps(result, ensure_ascii=False)
     assert not (
         tmp_path / "outputs" / "artifacts" / "generated-image-assets" / "assets.jsonl"
@@ -2376,6 +2646,7 @@ def test_run_playbook_carousel_ledger_failure_keeps_set_but_skips_publish(
     assert result["publish_result"] is None
     assert publisher.calls == 0
     assert "ledger contains private path" not in json.dumps(result, ensure_ascii=False)
+    assert "carousel_delivery" not in result
 
 
 @pytest.mark.parametrize("failure_step", ("renderer", "verification", "ledger"))
@@ -2462,6 +2733,8 @@ def test_run_playbook_releases_carousel_memory_reservation_after_rendering_failu
     serialized_artifact = artifact_path.read_text(encoding="utf-8")
     assert reservation.reservation_id not in serialized_result
     assert reservation.reservation_id not in serialized_artifact
+    assert "carousel_delivery" not in result
+    assert "carousel_delivery" not in serialized_artifact
 
 
 @pytest.mark.parametrize(

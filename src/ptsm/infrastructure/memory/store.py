@@ -27,6 +27,10 @@ _PSYCHOLOGY_CAROUSEL_FINGERPRINT_WINDOW = 12
 # but the lease tolerates slow disks and busy hosts while bounding crash recovery.
 _PSYCHOLOGY_CAROUSEL_RESERVATION_LEASE_SECONDS = 20 * 60
 _RESERVATION_LEASE_EXPIRES_AT_FIELD = "lease_expires_at"
+_RESERVATION_STATE_FIELD = "state"
+_RESERVATION_STATE_ACTIVE = "active"
+_RESERVATION_STATE_COMMIT_PENDING = "commit_pending"
+_RESERVATION_PENDING_ITEM_FIELD = "pending_item"
 ORDINARY_PSYCHOLOGY_CAROUSEL_MEMORY_MARKER = (
     "_ptsm_ordinary_psychology_carousel_v1"
 )
@@ -66,6 +70,23 @@ class ExecutionMemoryStore(Protocol):
         fingerprint: str,
         item: dict[str, object],
     ) -> str | None: ...
+
+    def renew_psychology_carousel_inner_fingerprint(
+        self,
+        *,
+        namespace: tuple[str, ...],
+        fingerprint: str,
+        reservation_id: str,
+    ) -> bool: ...
+
+    def mark_psychology_carousel_inner_fingerprint_commit_pending(
+        self,
+        *,
+        namespace: tuple[str, ...],
+        fingerprint: str,
+        reservation_id: str,
+        item: dict[str, object],
+    ) -> bool: ...
 
     def commit_psychology_carousel_inner_fingerprint(
         self,
@@ -115,6 +136,47 @@ class InMemoryExecutionMemory:
                 storage=self._storage,
                 namespace=namespace,
                 fingerprint=fingerprint,
+                namespace_key=_identity_namespace,
+                now=_reservation_now(self._clock),
+            )
+
+    def renew_psychology_carousel_inner_fingerprint(
+        self,
+        *,
+        namespace: tuple[str, ...],
+        fingerprint: str,
+        reservation_id: str,
+    ) -> bool:
+        fingerprint = _require_inner_carousel_fingerprint(fingerprint)
+        _require_reservation_id(reservation_id)
+        with self._lock:
+            return _renew_inner_carousel_fingerprint_reservation(
+                storage=self._storage,
+                namespace=namespace,
+                fingerprint=fingerprint,
+                reservation_id=reservation_id,
+                namespace_key=_identity_namespace,
+                now=_reservation_now(self._clock),
+            )
+
+    def mark_psychology_carousel_inner_fingerprint_commit_pending(
+        self,
+        *,
+        namespace: tuple[str, ...],
+        fingerprint: str,
+        reservation_id: str,
+        item: dict[str, object],
+    ) -> bool:
+        fingerprint = _require_inner_carousel_fingerprint(fingerprint)
+        _require_reservation_id(reservation_id)
+        _require_ordinary_carousel_memory_item(item=item, fingerprint=fingerprint)
+        with self._lock:
+            return _mark_inner_carousel_fingerprint_commit_pending(
+                storage=self._storage,
+                namespace=namespace,
+                fingerprint=fingerprint,
+                reservation_id=reservation_id,
+                item=item,
                 namespace_key=_identity_namespace,
                 now=_reservation_now(self._clock),
             )
@@ -223,6 +285,51 @@ class FileExecutionMemory:
             # detecting an independently committed fingerprint.
             self._save(storage)
             return committed
+
+    def renew_psychology_carousel_inner_fingerprint(
+        self,
+        *,
+        namespace: tuple[str, ...],
+        fingerprint: str,
+        reservation_id: str,
+    ) -> bool:
+        fingerprint = _require_inner_carousel_fingerprint(fingerprint)
+        _require_reservation_id(reservation_id)
+        with self._locked_storage() as storage:
+            renewed = _renew_inner_carousel_fingerprint_reservation(
+                storage=storage,
+                namespace=namespace,
+                fingerprint=fingerprint,
+                reservation_id=reservation_id,
+                namespace_key=self._encode_namespace,
+                now=_reservation_now(self._clock),
+            )
+            self._save(storage)
+            return renewed
+
+    def mark_psychology_carousel_inner_fingerprint_commit_pending(
+        self,
+        *,
+        namespace: tuple[str, ...],
+        fingerprint: str,
+        reservation_id: str,
+        item: dict[str, object],
+    ) -> bool:
+        fingerprint = _require_inner_carousel_fingerprint(fingerprint)
+        _require_reservation_id(reservation_id)
+        _require_ordinary_carousel_memory_item(item=item, fingerprint=fingerprint)
+        with self._locked_storage() as storage:
+            marked = _mark_inner_carousel_fingerprint_commit_pending(
+                storage=storage,
+                namespace=namespace,
+                fingerprint=fingerprint,
+                reservation_id=reservation_id,
+                item=item,
+                namespace_key=self._encode_namespace,
+                now=_reservation_now(self._clock),
+            )
+            self._save(storage)
+            return marked
 
     def release_psychology_carousel_inner_fingerprint(
         self,
@@ -356,16 +463,21 @@ def _reserve_inner_carousel_fingerprint(
 ) -> str | None:
     final_key = namespace_key(namespace)
     reservation_key = namespace_key(_reservation_namespace(namespace))
-    if _contains_recent_inner_carousel_fingerprint(
-        storage.get(final_key, []),
-        fingerprint,
-    ):
-        return None
+    _reconcile_commit_pending_inner_carousel_reservations(
+        storage=storage,
+        final_key=final_key,
+        reservation_key=reservation_key,
+    )
     _recover_expired_reservations(
         storage=storage,
         reservation_key=reservation_key,
         now=now,
     )
+    if _contains_recent_inner_carousel_fingerprint(
+        storage.get(final_key, []),
+        fingerprint,
+    ):
+        return None
     reservations = storage.setdefault(reservation_key, [])
     if _contains_reservation(reservations, fingerprint=fingerprint, now=now):
         return None
@@ -376,12 +488,83 @@ def _reserve_inner_carousel_fingerprint(
             _INNER_CAROUSEL_FINGERPRINT_FIELD: fingerprint,
             ORDINARY_PSYCHOLOGY_CAROUSEL_MEMORY_MARKER: True,
             "reservation_id": reservation_id,
+            _RESERVATION_STATE_FIELD: _RESERVATION_STATE_ACTIVE,
             _RESERVATION_LEASE_EXPIRES_AT_FIELD: (
                 now + _PSYCHOLOGY_CAROUSEL_RESERVATION_LEASE_SECONDS
             ),
         }
     )
     return reservation_id
+
+
+def _renew_inner_carousel_fingerprint_reservation(
+    *,
+    storage: _Storage,
+    namespace: tuple[str, ...],
+    fingerprint: str,
+    reservation_id: str,
+    namespace_key: _NamespaceKey,
+    now: float,
+) -> bool:
+    reservation_key = namespace_key(_reservation_namespace(namespace))
+    _recover_expired_reservations(
+        storage=storage,
+        reservation_key=reservation_key,
+        now=now,
+    )
+    reservations = storage.get(reservation_key, [])
+    reservation_index = _reservation_index(
+        reservations,
+        fingerprint=fingerprint,
+        reservation_id=reservation_id,
+        now=now,
+    )
+    if reservation_index is None:
+        return False
+    reservations[reservation_index][_RESERVATION_LEASE_EXPIRES_AT_FIELD] = (
+        now + _PSYCHOLOGY_CAROUSEL_RESERVATION_LEASE_SECONDS
+    )
+    return True
+
+
+def _mark_inner_carousel_fingerprint_commit_pending(
+    *,
+    storage: _Storage,
+    namespace: tuple[str, ...],
+    fingerprint: str,
+    reservation_id: str,
+    item: dict[str, object],
+    namespace_key: _NamespaceKey,
+    now: float,
+) -> bool:
+    final_key = namespace_key(namespace)
+    reservation_key = namespace_key(_reservation_namespace(namespace))
+    _recover_expired_reservations(
+        storage=storage,
+        reservation_key=reservation_key,
+        now=now,
+    )
+    if _contains_recent_inner_carousel_fingerprint(
+        storage.get(final_key, []),
+        fingerprint,
+    ):
+        return False
+    reservations = storage.get(reservation_key, [])
+    reservation_index = _reservation_index(
+        reservations,
+        fingerprint=fingerprint,
+        reservation_id=reservation_id,
+        now=now,
+    )
+    if reservation_index is None:
+        return False
+    reservations[reservation_index].update(
+        {
+            _RESERVATION_STATE_FIELD: _RESERVATION_STATE_COMMIT_PENDING,
+            _RESERVATION_PENDING_ITEM_FIELD: dict(item),
+        }
+    )
+    return True
 
 
 def _commit_inner_carousel_fingerprint(
@@ -407,9 +590,15 @@ def _commit_inner_carousel_fingerprint(
         fingerprint=fingerprint,
         reservation_id=reservation_id,
         now=now,
+        allow_commit_pending=True,
     )
     if reservation_index is None:
         return False
+    reservation = reservations[reservation_index]
+    if _reservation_is_commit_pending(reservation):
+        pending_item = reservation.get(_RESERVATION_PENDING_ITEM_FIELD)
+        if not isinstance(pending_item, dict) or pending_item != item:
+            return False
     if _contains_recent_inner_carousel_fingerprint(
         storage.get(final_key, []),
         fingerprint,
@@ -497,14 +686,62 @@ def _reservation_index(
     fingerprint: str,
     reservation_id: str,
     now: float,
+    allow_commit_pending: bool = False,
 ) -> int | None:
     for index, reservation in enumerate(reservations):
+        if not isinstance(reservation, Mapping):
+            continue
         if (
-            _live_reservation_fingerprint(reservation, now=now) == fingerprint
-            and reservation.get("reservation_id") == reservation_id
+            ordinary_psychology_carousel_memory_fingerprint(reservation) != fingerprint
+            or reservation.get("reservation_id") != reservation_id
         ):
+            continue
+        if _reservation_is_commit_pending(reservation):
+            if allow_commit_pending:
+                return index
+            continue
+        if _live_reservation_fingerprint(reservation, now=now) == fingerprint:
             return index
     return None
+
+
+def _reconcile_commit_pending_inner_carousel_reservations(
+    *,
+    storage: _Storage,
+    final_key: _StorageKey,
+    reservation_key: _StorageKey,
+) -> None:
+    """Promote durable post-ledger markers before any retry can reserve work."""
+    reservations = storage.get(reservation_key)
+    if reservations is None:
+        return
+    pending: list[tuple[str, dict[str, object]]] = []
+    retained: list[dict[str, object]] = []
+    for reservation in reservations:
+        if not _reservation_is_commit_pending(reservation):
+            retained.append(reservation)
+            continue
+        fingerprint = ordinary_psychology_carousel_memory_fingerprint(reservation)
+        item = reservation.get(_RESERVATION_PENDING_ITEM_FIELD)
+        if (
+            fingerprint is None
+            or not isinstance(item, dict)
+            or ordinary_psychology_carousel_memory_fingerprint(item) != fingerprint
+        ):
+            raise RuntimeError(
+                "psychology carousel commit-pending reservation is invalid"
+            )
+        pending.append((fingerprint, dict(item)))
+
+    for fingerprint, item in pending:
+        if not _contains_recent_inner_carousel_fingerprint(
+            storage.get(final_key, []), fingerprint
+        ):
+            storage.setdefault(final_key, []).append(item)
+    if retained:
+        storage[reservation_key] = retained
+    else:
+        storage.pop(reservation_key, None)
 
 
 def _recover_expired_reservations(
@@ -519,7 +756,8 @@ def _recover_expired_reservations(
     live_reservations = [
         reservation
         for reservation in reservations
-        if _live_reservation_fingerprint(reservation, now=now) is not None
+        if _reservation_is_commit_pending(reservation)
+        or _live_reservation_fingerprint(reservation, now=now) is not None
     ]
     if len(live_reservations) == len(reservations):
         return
@@ -536,6 +774,8 @@ def _live_reservation_fingerprint(
 ) -> str | None:
     if not isinstance(reservation, Mapping):
         return None
+    if _reservation_state(reservation) != _RESERVATION_STATE_ACTIVE:
+        return None
     fingerprint = ordinary_psychology_carousel_memory_fingerprint(reservation)
     expires_at = reservation.get(_RESERVATION_LEASE_EXPIRES_AT_FIELD)
     if (
@@ -547,6 +787,18 @@ def _live_reservation_fingerprint(
     ):
         return None
     return fingerprint
+
+
+def _reservation_state(reservation: Mapping[str, object]) -> str:
+    raw_state = reservation.get(_RESERVATION_STATE_FIELD)
+    # No state denotes the prior on-disk active-reservation shape.
+    return _RESERVATION_STATE_ACTIVE if raw_state is None else str(raw_state)
+
+
+def _reservation_is_commit_pending(reservation: object) -> bool:
+    return isinstance(reservation, Mapping) and (
+        _reservation_state(reservation) == _RESERVATION_STATE_COMMIT_PENDING
+    )
 
 
 def _drop_reservation(

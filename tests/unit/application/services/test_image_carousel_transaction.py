@@ -115,7 +115,11 @@ class _ScriptedRenderer:
             os.link(escaped_path, output_path)
             return self._result(output_path)
 
-        self._write_png(output_path, int(payload["order"]) + self.seed_offset)
+        if self.mode == "duplicate_bytes" and call_number == 2:
+            assert self.first_path is not None
+            output_path.write_bytes(self.first_path.read_bytes())
+        else:
+            self._write_png(output_path, int(payload["order"]) + self.seed_offset)
         if call_number == 1:
             self.first_path = output_path
         if self.mode == "unreadable" and call_number == 2:
@@ -262,6 +266,7 @@ def test_transaction_validates_the_complete_plan_before_rendering(tmp_path: Path
     ("mode", "message"),
     [
         ("duplicate", "duplicate"),
+        ("duplicate_bytes", "duplicate PNG bytes"),
         ("escape", "outside"),
         ("missing", "missing"),
         ("unreadable", "readable"),
@@ -595,6 +600,56 @@ def test_committed_set_verifier_returns_the_exact_canonical_receipt(
     )
 
     assert verified == receipt
+
+
+def test_committed_set_verifier_rejects_distinct_paths_with_duplicate_png_bytes(
+    tmp_path: Path,
+) -> None:
+    receipt = _transaction(_ScriptedRenderer()).generate(
+        image_plan=_carousel_plan(),
+        output_dir=tmp_path / "images",
+        output_stem="artifact",
+    )
+    original_manifest_path = Path(receipt["manifest_path"])
+    original_set_path = original_manifest_path.parent
+    paths = [Path(path) for path in receipt["generated_image_paths"]]
+    paths[1].write_bytes(paths[0].read_bytes())
+
+    manifest = json.loads(original_manifest_path.read_text(encoding="utf-8"))
+    duplicate_hash = hashlib.sha256(paths[0].read_bytes()).hexdigest()
+    manifest["pages"][1]["file_sha256"] = duplicate_hash
+    duplicate_set_id = transaction_module._set_id_for_rendered_set(
+        provider=manifest["provider"],
+        model=manifest["model"],
+        style=manifest["style"],
+        provenance=manifest["provenance"],
+        pages=manifest["pages"],
+    )
+    duplicate_set_path = original_set_path.parent / f"artifact-{duplicate_set_id[:16]}"
+    for page in manifest["pages"]:
+        page["path"] = str(duplicate_set_path / page["filename"])
+    manifest["set_id"] = duplicate_set_id
+    original_manifest_path.write_bytes(
+        transaction_module._canonical_json_bytes(manifest, trailing_newline=True)
+    )
+    original_set_path.rename(duplicate_set_path)
+    duplicate_manifest_path = duplicate_set_path / "manifest.json"
+    duplicate_manifest_bytes = duplicate_manifest_path.read_bytes()
+    duplicate_receipt = {
+        **receipt,
+        "set_id": duplicate_set_id,
+        "manifest_path": str(duplicate_manifest_path),
+        "manifest_sha256": hashlib.sha256(duplicate_manifest_bytes).hexdigest(),
+        "generated_image_paths": [str(duplicate_set_path / path.name) for path in paths],
+        "pages": manifest["pages"],
+    }
+
+    with pytest.raises(ImageCarouselTransactionError, match="duplicate PNG bytes"):
+        verify_committed_carousel_set(
+            image_plan=_carousel_plan(),
+            receipt=duplicate_receipt,
+            output_stem="artifact",
+        )
 
 
 @pytest.mark.parametrize(
