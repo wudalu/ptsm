@@ -61,11 +61,11 @@ uv run python -m ptsm.bootstrap run-fengkuang \
 This exercises:
 - **Planner**: selects playbook (`fengkuang_daily_post`) and skills such as `xhs_trend_scan`, `topic_research`, `fengkuang_style`, `positive_reframe`, `xhs_hashtagging`, and `xhs_image_strategy`.
 - **xhs_trend_scan**: loads the local XHS pattern library snapshot when available and injects reusable hook/body/image structures into `runtime_skill_contents`. Ordinary generation does not call live XHS by default; if no snapshot exists, it falls back to static SKILL.md guidance.
-- **Memory**: reads recent same-account, same-playbook lessons and injects a compact anti-repetition context before drafting.
+- **Memory**: reads recent same-account, same-playbook lessons and injects a compact anti-repetition context before drafting. Ordinary psychology also maintains a private, cover-excluded inner-page fingerprint window of the recent 12 successful complete carousel receipts; it never reuses learning-series history.
 - **Executor**: DeepSeek LLM generates title, image_text, body, hashtags from scene + persona + planner + static skills + local pattern context + recent memory context. XHS prompts use `xhs_compact_native_v1`: a concrete human/scene entry, 2–4 short beats, one domain-usable detail, and a natural combined save/reply opening inside the playbook’s compact length band—not four fixed正文 moves.
 - **Reflector**: enforces required rules such as `#发疯文学`, configured deterministic quality rules such as rejecting generic titles, requiring a comment/copyable mechanic, keeping正文 inside the playbook length band, and blocking mental-health/medical jokes. Light positive closings like `也算` are recommended style, not a mandatory phrase gate. Passes to finalize, or retries up to max_attempts.
 
-Review `content_review`, `content_review.image_plan`, and the final正文. If content and image strategy look good, proceed to real publish. When the planned style is `wechat_chat`, check that the visible text is a short content-only transcript rather than a full phone screenshot. For `modern_psychology_post`, a default `text_carousel` plan must contain 4–7 ordered semantic slides for one topic; the first cover remains low-density and inner pages contain bounded short lines.
+Review `content_review`, `content_review.image_plan`, and the final正文. If content and image strategy look good, proceed to real publish. When the planned style is `wechat_chat`, check that the visible text is a short content-only transcript rather than a full phone screenshot. For `modern_psychology_post`, a default `text_carousel` plan must contain **one topic, one 4–7-page set** of ordered semantic slides; the first cover remains low-density and inner pages contain bounded short lines. A request for more than 7 pages/images (including 12) needs clarification before any run: one ordinary carousel or separately confirmed posts, never a silent batch/loop/repeat. `max_text_units` is per-page text density, not image count.
 
 ### Step 3 — Real Publish
 
@@ -104,11 +104,13 @@ With `--wait-for-publish-status`, PTSM retries `search_feeds` title match for ~8
 
 #### What happens in both paths
 
-1. **Image generation**: Auto-triggered when `publish_mode=mcp-real`, no `--publish-image-path` is provided, and `--no-auto-generate-image` is not set. Ordinary single-image routes keep the existing operator/provider/local selection. A validated `modern_psychology_post` text carousel is different: it always uses local `psychology_text_card_v1`, renders every ordered slide under a runtime-owned staging directory, verifies all PNG/page hashes, writes `manifest.json`, and atomically promotes only the complete set under `outputs/generated_images/`. An explicit ordinary-post `--local-image-style note_card|iphone_notes|wechat_chat` intentionally bypasses the carousel and keeps the legacy single-cover path; learning-series overrides remain forbidden.
+1. **Image generation**: Auto-triggered when `publish_mode=mcp-real`, no `--publish-image-path` is provided, and `--no-auto-generate-image` is not set. Ordinary single-image routes keep the existing operator/provider/local selection. A validated `modern_psychology_post` text carousel is different: it always uses local `psychology_text_card_v1`, renders every ordered slide under a runtime-owned staging directory, verifies all PNG/page hashes, writes `manifest.json`, and atomically promotes only the complete set under `outputs/generated_images/`. Its private reservation is committed to the recent-12 inner-page window only after canonical receipt verification and page-aware ledger success; failure/non-carousel exit releases it and stale leases recover. An explicit ordinary-post `--local-image-style note_card|iphone_notes|wechat_chat` intentionally bypasses the carousel and keeps the legacy single-cover path; learning-series overrides remain forbidden.
 
 2. **Watermark removal**: PTSM local-renderer output has no provider watermark and records a group-level skip; this includes every page in a psychology carousel. Provider/LLM output and manual image paths still run OpenCV Canny edge detection + TELEA inpainting before real publish. Dry-run provider/manual experiments only run this step when `WATERMARK_REMOVAL_ENABLED=true`.
 
 3. **Publish**: XHS MCP `publish_content` is called with title, body, images, tags, and visibility. The side-effect ledger (`.ptsm/agent_runtime/side-effects.json`) records successful publishes keyed by `thread_id` — re-running with the same thread_id will skip duplicate publish.
+
+Keep `.ptsm/agent_runtime/` on durable local storage alongside `outputs/` while writers may run. Its execution-memory store holds ordinary-carousel reservations and the recent-12 successful receipt identities; do not delete, reinitialize, or copy it between concurrent writers as a retry shortcut. Normal image/ledger failure releases a reservation; stale leases are recovered by the store rather than by deleting memory files.
 
 ### Step 4 — Verify Publish
 
@@ -185,19 +187,23 @@ These local styles render iPhone Notes-like and WeChat chat transcript-like cove
 `wechat_chat` now renders a content-only chat transcript: 无头部、无底部、无头像, with speaker labels beside the bubbles. It is meant for scenes where the first-screen asset is the actual chat exchange, copyable reply, or comment prompt. The renderer reads explicit structured messages from `chat_messages` / `messages`, or speaker-prefixed body lines such as `同事：刚看见热搜` and `我：我现在啥事都发文字确认`; this prevents a chat cover from collapsing into one generic bubble. `theme=dark` switches the transcript to a dark background, `chat_times` inserts up to three timestamp labels, and `chat_title` / `conversation_title` can label incoming messages when the body uses generic speakers. `status_time`, `unread_count`, and `show_avatars` are preserved in the payload for audit compatibility, but the current content-only renderer does not draw phone chrome or avatar blocks.
 
 `psychology_text_card_v1` is not a `--local-image-style` choice. It is the local-only automatic
-carousel renderer selected by a validated psychology `image_plan`. The parent plan keeps
+carousel renderer selected by a validated psychology `image_plan`. It creates one topic / one 4–7-page
+set, not a generic batch; more than 7 pages/images requires clarification before a run. The parent plan keeps
 `backend/style/role/text_density/max_text_units/cover_text_strategy/reason/prompt_focus` and adds
 `carousel_style` plus `slides`; each slide has exactly `slide_id`, one-based contiguous `order`,
 `role`, `headline`, and `body_lines`. A set contains 4–7 pages, starts with `cover_hook`, and uses
 semantic inner roles such as scene, light mechanism, save tool, boundary and comment prompt. It
-does not split the final body or invoke another model.
+does not split the final body or invoke another model. `max_text_units` limits text on each page.
 
 Successful output is an immutable directory named from the output stem and content-addressed set id.
 Treat its `manifest.json` as authoritative: `pages.order` must match `generated_image_paths`, all files
-must be regular/readable PNGs, and manifest/page/file hashes must match before publish. If generation,
-manifest verification or asset-ledger projection fails, the run status is
-`psychology_carousel_generation_failed`; no partial page reaches watermark processing or XHS MCP.
-If only the later external publish fails, keep the committed set for retry.
+must be regular/readable PNGs, and each page's `page_sha256` (canonical content) / `file_sha256` (PNG bytes)
+must match before publish. Only an ordinary set with a verified receipt and ledger can expose
+`carousel_delivery.status=ready`, whose ordered `attachments` are the only safe handoff to an outer chat/IM
+relay. PTSM does not own external delivery, so ready is not delivered. If generation, manifest verification
+or asset-ledger projection fails, the run status is `psychology_carousel_generation_failed`; no partial page
+reaches watermark processing, XHS MCP, an outer relay, or the recent-12 committed memory window. If only the
+later external publish fails, keep the committed set for retry.
 
 ### Watermark Removal
 
@@ -397,6 +403,8 @@ uv run python -m ptsm.bootstrap run-playbook \
 The ordinary psychology guide now returns `format_archetype=text_carousel`,
 `local_style=psychology_text_card_v1`, `page_count.min=4`, `page_count.max=7`, ordered semantic
 roles, and `command_hint=--auto-generate-image`. There is no page-copy or carousel-style CLI flag.
+There is also no batch/count flag: more than 7 pages/images must be clarified as one ordinary carousel or
+separately confirmed posts, and `max_text_units` remains a per-page density bound.
 Use an explicit `--local-image-style note_card|iphone_notes|wechat_chat` only when the ordinary post
 really needs one legacy cover instead of the default carousel.
 

@@ -260,6 +260,25 @@ def test_docs_cover_psychology_learning_series_contract() -> None:
         assert marker in doc_text, f"{relative_path} must document {marker}"
 
 
+def test_docs_cover_ordinary_psychology_carousel_batch_integrity() -> None:
+    required_markers = {
+        "architecture.md": "recent 12 successful complete ordinary carousel receipts",
+        "runtime.md": "committed only after the complete local receipt and asset ledger",
+        "playbooks.md": "per-page text density, not image count",
+        "skills.md": "carousel_delivery.status=ready",
+        "harness-engineering.md": "stale lease recovery",
+        "operations.md": "carousel_delivery.status=ready",
+        "operations/local-runbook.md": "carousel_delivery.status=ready",
+        "operations/content-experiment-runbook.md": "recent 12 successful complete ordinary carousel receipts",
+        "operations/publish-quickstart.md": "more than 7 pages/images",
+        "operations/cloud-bootstrap.md": ".ptsm/agent_runtime",
+    }
+
+    for relative_path, marker in required_markers.items():
+        doc_text = (DOCS_ROOT / relative_path).read_text(encoding="utf-8")
+        assert marker in doc_text, f"{relative_path} must document {marker}"
+
+
 def test_psychology_publication_mode_router_is_discoverable_in_skill_and_operator_docs() -> None:
     document_paths = [
         PROJECT_ROOT

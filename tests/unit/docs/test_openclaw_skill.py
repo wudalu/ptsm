@@ -156,3 +156,20 @@ def test_openclaw_psychology_skill_uses_only_ptsm_returned_carousel_structure() 
     assert "historic controlled-template-v1" in normalized_text
     assert "builtin and newly confirmed v2" in normalized_text
     assert "psychology_carousel_generation_failed" in text
+
+
+def test_openclaw_psychology_skill_clarifies_oversized_carousels_and_relay_boundary() -> None:
+    text = SKILL_PATH.read_text(encoding="utf-8")
+    normalized_text = " ".join(text.split())
+
+    assert "more than 7 pages/images" in normalized_text
+    assert "for example 12" in normalized_text
+    assert "one 4–7-page carousel for one topic" in normalized_text
+    assert "Do not silently split, loop, repeat, or promise" in normalized_text
+    assert "max_text_units" in normalized_text
+    assert "per-page copy, not page count" in normalized_text
+    assert "carousel_delivery.status=ready" in text
+    assert "attachments" in text
+    assert "page_sha256" in text
+    assert "file_sha256" in text
+    assert "PTSM does not own external chat/IM delivery" in normalized_text

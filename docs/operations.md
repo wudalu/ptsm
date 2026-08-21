@@ -2,7 +2,7 @@
 title: PTSM Operations
 status: active
 owner: ptsm
-last_verified: 2026-08-14
+last_verified: 2026-08-21
 source_of_truth: true
 related_paths:
   - docs/operations/publish-quickstart.md
@@ -20,6 +20,7 @@ related_paths:
   - src/ptsm/application/models.py
   - src/ptsm/interfaces/cli/main.py
   - src/ptsm/application/use_cases/run_playbook.py
+  - src/ptsm/infrastructure/memory/store.py
   - src/ptsm/application/services/image_carousel_transaction.py
   - src/ptsm/application/use_cases/guide_post.py
   - src/ptsm/application/use_cases/psychology_learning_series.py
@@ -215,7 +216,10 @@ AI playbook。AI mode 使用 `--fresh-topic-research` 会返回
 
 ## Psychology Text Carousel Runs
 
-普通 `modern_psychology_post` 默认把一个主题表达成 4–7 张本地文字卡。先用只读 guide 查看
+普通 `modern_psychology_post` 默认把一个主题表达成**一组** 4–7 张本地文字卡。它不是通用 batch
+接口：用户显式要求超过 7 页/图片（例如 12 张）时，先澄清是要一组普通 4–7 页 carousel，还是多个
+分别确认的帖子；不要静默拆分、循环运行、复用同一组或承诺未支持数量。`max_text_units` 是每页文字
+密度，不是图片数量。先用只读 guide 查看
 `format_archetype=text_carousel`、`local_style=psychology_text_card_v1`、page range 和 ordered roles：
 
 ```bash
@@ -241,13 +245,20 @@ uv run python -m ptsm.bootstrap run-playbook \
 `backend/style/role/text_density/max_text_units/cover_text_strategy/reason/prompt_focus/carousel_style/slides`；
 每个 slide 只能有 `slide_id/order/role/headline/body_lines`。`slides.order` 是发布顺序，第一页必须是
 低密度 `cover_hook`；inner pages 从 `concrete_scene`、`light_mechanism`、`save_tool`、
-`scope_boundary`、`professional_boundary`、`comment_prompt` 中选择。所有页只讲同一主题。
+`scope_boundary`、`professional_boundary`、`comment_prompt` 中选择。所有页只讲同一主题；每页的
+`max_text_units` 约束的是短行密度，而不是页数。
 
 成功时检查 `image_generation.status=committed`、`image_count`、`set_id`、`manifest_path`、
-`manifest_sha256` 和 ordered `pages`，并以 committed set 中的 `manifest.json` 为权威 receipt。任一
-page/manifest/ledger 不完整都会返回 `psychology_carousel_generation_failed`，不会进入 watermark 或
-publisher；已在完整提交后发生的 publish failure 则保留 set，修复外部发布条件后可重试。若 ordinary post
-明确只要一张旧式封面，才传 `--local-image-style note_card|iphone_notes|wechat_chat`；该显式 override
+`manifest_sha256` 和 ordered `pages`，并以 committed set 中的 `manifest.json` 为权威 receipt。普通
+carousel 的 `pages` 必须完整连续地带 `order`、`page_sha256`（canonical page content）和
+`file_sha256`（PNG bytes）。只有 canonical receipt 与 page-aware asset ledger 都成功后，才会 commit
+per-account/per-playbook 的 cover-excluded inner fingerprint 到最近 12 个 successful complete ordinary
+carousel receipts；draft artifact、reservation、失败页或 learning-series 都不占该窗口，失败会 release，过期
+lease 可恢复。任一 page/manifest/ledger 不完整都会返回 `psychology_carousel_generation_failed`，不会进入
+watermark、publisher 或 ready relay receipt；已在完整提交后发生的 publish failure 则保留 set，修复外部发布
+条件后可重试。外层 chat/IM relay 只能在 ordinary `carousel_delivery.status=ready` 时使用 receipt 的完整有序
+`attachments` 转发，并以这些 canonical hashes 校验；PTSM 不拥有该 sender，ready 不等于已送达。若 ordinary
+post 明确只要一张旧式封面，才传 `--local-image-style note_card|iphone_notes|wechat_chat`；该显式 override
 保留 legacy single-image 行为。
 
 ## Psychology Learning Series Runs
@@ -467,14 +478,14 @@ learning artifact 才能写入课程指标；同一 artifact + checkpoint 会更
 - 对 `对方忽冷忽热，我想问清楚又怕显得烦，想让评论区站队` 这类亲密关系场景，心理学 `guide-post` 应返回 `relationship_mixed_signal_camp_vote`、`事实 / 信号 / 我要不要问清楚` 和 A/B 阵营评论入口；不要把它写成职场处理时间或优先级。
 - 对 `约好的局临时不想去了，怕扫兴又很累，想写社交电量边界` 这类社交耗竭场景，心理学 `guide-post` 应返回 `social_battery_cancel_plan_boundary`、`取消局三句` 和 A/B 角色认领；不要鼓励失联或羞辱社交。
 - 对 `领导18:57发来一句在吗，下班后身体被消息拉回工位` 这类下班消息场景，心理学 `guide-post` 应返回 `after_hours_message_body_alarm`、`下班消息三步` 和 A/B/C 评论入口；这是心理学的职场低控制感/身体警报表达，不是发疯文学。
-- OpenClaw 心理学集成使用 `integrations/openclaw/ptsm-xhs-psychology/SKILL.md` 作为薄 wrapper：先调用 `guide-post` 展示 `topic_guidance.directions`、`direction_type`、`scene_fit` 和 `format_recommendation`，用户确认方向后再调用 `run-playbook --caller openclaw --guidance-ack --topic-direction-id <chosen id>`。如果 OpenClaw 直接调用 `run-playbook --caller openclaw` 生成 `modern_psychology_post` 且没有 `--guidance-ack`，PTSM 会返回 `topic_guidance_required`，不会启动 workflow、写 run 或发布。
+- OpenClaw 心理学集成使用 `integrations/openclaw/ptsm-xhs-psychology/SKILL.md` 作为薄 wrapper：先调用 `guide-post` 展示 `topic_guidance.directions`、`direction_type`、`scene_fit` 和 `format_recommendation`，用户确认方向后再调用 `run-playbook --caller openclaw --guidance-ack --topic-direction-id <chosen id>`。用户要求 >7/12 张时，wrapper 先澄清一组 4–7 页 ordinary carousel 与多个分别确认的帖子，绝不在 PTSM 内循环或假装支持 batch。如果 OpenClaw 直接调用 `run-playbook --caller openclaw` 生成 `modern_psychology_post` 且没有 `--guidance-ack`，PTSM 会返回 `topic_guidance_required`，不会启动 workflow、写 run 或发布。成功普通轮播只提供 `carousel_delivery.status=ready` 的 relay handoff；外部 sender 是否真的给用户发完全部 ordered `attachments` 不属于 PTSM。
 - OpenClaw 非心理学 XHS 集成使用 `integrations/openclaw/ptsm-xhs-topic-guide/SKILL.md`。该 wrapper 自动把发疯文学、人类丰容、古诗词金句、武侠人物、AI科技、每日英语、世界杯和 Reddit英文讨论转译意图映射到对应 playbook；意图模糊时先问一个短澄清问题。除 AI 科技外，方向确认后展示 PTSM 返回的 `format_recommendation` 和 `topic_guidance.image_recommendation`，再 dry-run 生成，并把确认的方向 id 作为 `--topic-direction-id` 传给 `run-playbook`。AI 科技必须先选 evidence mode、获取 matching direction，并带 `--ai-content-mode` + `--ai-evidence-file`；它有应用层 evidence preflight，即使 caller 是 OpenClaw 也不能跳过。wrapper 只能展示 PTSM-returned direction、格式/图片建议，不能自己发明开放方向、格式或图片策略。心理学的 `guidance_ack` 是独立 gate；其他非心理学 playbook 不因缺 guidance ack 被拒绝。
 - OpenClaw/Codex 领域机会分析使用 `integrations/openclaw/ptsm-xhs-domain-opportunity/SKILL.md` 作为薄 wrapper：当用户给出明确候选小红书领域/关键词、想比较覆盖缺口时，先调用 `xhs-domain-opportunity` CLI 生成 JSON/Markdown brief，再按 `existing_playbook_fit`、`sublane_first`、`new_domain_candidate` 给下一步建议。该 scan 只比较 bounded XHS keyword-search evidence：跨关键词优先去重同一 `feed_id`，完整 title+author 只桥接缺 ID 的一条观察到首个真实 ID，后续不同真实 ID 仍保留；若已有多个真实 ID，后续缺 ID 样本也保持 unresolved。ASCII `,` 和中文 `，` 可以分隔关键词，但 separator-only 输入会被拒绝。`insufficient_evidence` 或 no successful unique samples 时不得输出静态 ranking/fit/new-domain 结论；默认登录预检的 `login_required` 表示尚未搜索，必须先恢复 XHS 登录。wrapper 不生成、不发布、不复制 PTSM scoring，也不展示原始 feed id/token。
 - `hotspot-discovery` 是默认的 discovery-first 操作入口：它不接受领域、账号、playbook、平台或关键词筛选，先运行 Topic Radar 默认平台扫描，再按 evidence-backed cluster 输出 `existing_playbook_fit`、`ambiguous`、`unmapped` 和可能的 `new_domain_candidate`。默认按 score 展示前 12 个；`--max-hotspots` 仅改变返回条数，receipt 必须保留 `eligible_hotspot_count` / `returned_hotspot_count` / `hotspot_limit`。如果 Top-N 外仍有已映射候选，`routed_hotspots` 会以不重复的补充视图给出最多 6 个；每行至少引入一个未展示 playbook，`ambiguous` 保留完整候选，并以 `route_status_counts` 说明完整已验证 cluster 集合的路由分布；它不改变全平台排名。阅读 `partial` 必须先展示 `platform_errors`，不得称为全平台结果；`insufficient_evidence` 时无可用热点建议。用户选择一个已有 playbook 后才进入 `guide-post` / `run-playbook`。OpenClaw/Codex 通过 `integrations/openclaw/ptsm-topic-radar-discovery/SKILL.md` 调用它。
 - `--auto-generate-image` 会在缺少 `--publish-image-path` 时执行已验证的图片计划；普通单图仍按即梦、百炼或本地 renderer 路由，现代心理学 text carousel 则始终使用 local-only `psychology_text_card_v1` transaction，不被 provider 配置替换。PTSM 生成图会请求源头不加 provider 水印，并在 artifact 的 `image_generation.watermark_policy` 里记录 `no_provider_watermark` 和具体 controls；本地 renderer 记录 `image_generation.provenance.source == "ptsm_local_renderer"`，完整 carousel 作为一组跳过去水印。
 - `--no-auto-generate-image` 可以关闭自动补图；`--publish-image-path` 使用手动图片；`--local-image-style note_card|iphone_notes|wechat_chat` 可以主动选择本地截图式封面，即使外部图片 provider 已配置也生效。当前 `wechat_chat` 是内容区聊天转录封面，不绘制手机头部、底部输入栏或头像；正文或 `final_content.image_plan` 中的 `theme`、`chat_title`、`chat_times`、`golden_line` 等本地渲染参数会进入 renderer payload 和 artifact 证据。缺省本地时间会按 scene 明确时间或 payload hash 确定性变化，generic 对话发言人会补模拟昵称。
 - 真实发布会按图片来源执行去水印：PTSM 本地 renderer 图片不画水印，也跳过 `watermark_removal` 后处理；provider/LLM 生成图和手动 `--publish-image-path` 图片仍会经过防御性去水印。dry-run 图片实验仍可用 `WATERMARK_REMOVAL_ENABLED=true` 选择是否预览 provider/manual 图片清理。
-- 自动生成图片会更新本地资产台账 `outputs/artifacts/generated-image-assets/assets.jsonl`。单图保留既有记录；carousel 按 manifest order 原子写入整批 page-aware entries，包括 set/manifest、slide id/order/role、path 和 hashes，任一页不一致时不保留部分 batch。current v2 learning carousel 也写该 operational ledger，但 sealed learning artifact/response 不复制 ledger、paths 或 page text，只保留安全 manifest-hash receipt。台账不会复制图片字节。
+- 自动生成图片会更新本地资产台账 `outputs/artifacts/generated-image-assets/assets.jsonl`。单图保留既有记录；carousel 按 manifest order 原子写入整批 page-aware entries，包括 set/manifest、slide id/order/role、path 和 `page_sha256` / `file_sha256`，任一页不一致时不保留部分 batch，也不会给 ordinary run `carousel_delivery.status=ready`。current v2 learning carousel 也写该 operational ledger，但 sealed learning artifact/response 不复制 ledger、paths 或 page text，只保留安全 manifest-hash receipt。台账不会复制图片字节。
 - 小红书真实发布前，需要先单独启动外部 `xiaohongshu-mcp` 服务；PTSM 默认不会自动拉起 `.ptsm/bin/xhs-mcp/xiaohongshu-mcp-darwin-amd64`。
 - 浏览器动作保留为人工或条件触发，不应成为默认无人值守 gate。
 - psychology carousel 不改变 Topic Radar discovery/routing，也不改变任务完成自动化的完成状态语义；它只在已选 `modern_psychology_post` 的 draft/image/publish 边界内工作。跨领域 minimum `final_content` eval schema 也保持不变。

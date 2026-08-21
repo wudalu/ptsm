@@ -2,7 +2,7 @@
 title: PTSM Cloud Bootstrap
 status: active
 owner: ptsm
-last_verified: 2026-08-14
+last_verified: 2026-08-21
 source_of_truth: true
 related_paths:
   - README.md
@@ -12,6 +12,7 @@ related_paths:
   - src/ptsm/application/services/image_carousel_transaction.py
   - src/ptsm/application/use_cases/run_playbook.py
   - src/ptsm/domain/psychology_carousel.py
+  - src/ptsm/infrastructure/memory/store.py
   - src/ptsm/accounts/definitions/acct-fk-local.yaml
   - docs/operations/local-runbook.md
   - docs/operations/task-completion-automation.md
@@ -175,17 +176,21 @@ uv run python -m ptsm.bootstrap run-playbook \
 ```
 
 `guide-post` 会先给出 `text_carousel`、`psychology_text_card_v1`、4–7 页和 ordered roles；命令
-仍只使用 `--auto-generate-image`。系统在 `outputs/generated_images/` 下先写 staging，再把全部
+仍只使用 `--auto-generate-image`。这是一个主题的一组 4–7 页，不是 batch；显式 >7 页/12 张请求必须
+先由 caller 澄清为这一组 ordinary carousel 或多个分别确认的帖子，不能循环、拆分、重复或把
+`max_text_units` 当成图片数。系统在 `outputs/generated_images/` 下先写 staging，再把全部
 ordered PNG 与 `manifest.json` 原子 rename 为 content-addressed committed set。请把
 `outputs/generated_images/` 放在持久磁盘上，并确保 staging 与 final set 位于同一 filesystem；不要把
 它挂成每次任务结束即销毁的临时层。`outputs/artifacts/generated-image-assets/` 也应持久化，以保留
-ordinary 与 current v2 learning carousel 的 page-aware operational ledger；sealed learning artifact/response 不复制 ledger 或路径。容器/主机重启后，已提交 set 可用于发布失败重试。
+ordinary 与 current v2 learning carousel 的 page-aware operational ledger；sealed learning artifact/response 不复制 ledger 或路径。**`.ptsm/agent_runtime/` 也必须使用同一稳定、可写的持久卷**：File execution memory 保存 ordinary carousel 的 reservation 和 recent 12 successful complete receipt identities，丢失该目录会丢失跨重启去重窗口。不要在有 writer 时通过删除/复制该目录“释放” reservation；已知失败会 release，stale lease 自动恢复。容器/主机重启后，已提交 set 可用于发布失败重试。
 
 成功 ordinary artifact 可检查 `image_generation.status=committed`、`image_count`、`set_id`、
-`manifest_path`、`manifest_sha256` 和 ordered `pages`。learning-series artifact 为避免路径/课程内容
-泄漏，只保留 renderer/style/count/manifest hash 的安全 receipt；可信 operator 可从持久输出卷检查
-manifest。任一页、manifest 或 ledger 失败都会返回 `psychology_carousel_generation_failed`，不会把
-部分图片交给 XHS MCP。
+`manifest_path`、`manifest_sha256` 和 ordered `pages`，其中每页包含 `page_sha256` / `file_sha256`。
+只有该 receipt 和 ledger 都成功后才给 ordinary response `carousel_delivery.status=ready`，供外层 relay
+按完整有序 `attachments` 转发；PTSM 本身不拥有 chat/IM sender，ready 不代表 delivered。learning-series
+artifact 为避免路径/课程内容泄漏，只保留 renderer/style/count/manifest hash 的安全 receipt；可信 operator 可从
+持久输出卷检查 manifest。任一页、manifest 或 ledger 失败都会返回 `psychology_carousel_generation_failed`，
+不会把部分图片交给 XHS MCP 或外层 relay。
 
 ## Step 6: Real Publish Prerequisites
 
@@ -290,6 +295,6 @@ uv run python -m ptsm.bootstrap run-plan \
 
 - 无 GUI 环境下，不要把 `xhs-open-browser` 当默认路径。
 - 小红书真实发布仍依赖 `xiaohongshu-mcp` 服务和有效登录态。
-- psychology carousel 本身不依赖图片 provider，但依赖 Pillow 字体/渲染环境和可持久、同 filesystem 的 `outputs/generated_images/`；部署时要备份 committed set manifest 与 page-aware asset ledger。
+- psychology carousel 本身不依赖图片 provider，但依赖 Pillow 字体/渲染环境和可持久、同 filesystem 的 `outputs/generated_images/`；部署时要备份 committed set manifest、page-aware asset ledger 和 `.ptsm/agent_runtime/` execution-memory store，后者保存 ordinary recent-12 receipt identities/reservations。
 - `仅自己可见` 的帖子在上游未返回 `post_id/post_url` 时，仍然不能完全自动核验。
 - 最稳定的云上用途仍然是：`dry-run + run-plan + diagnostics + harness-report`。

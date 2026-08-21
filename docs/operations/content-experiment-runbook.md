@@ -2,7 +2,7 @@
 title: XHS Content Experiment Runbook
 status: active
 owner: ptsm
-last_verified: 2026-08-14
+last_verified: 2026-08-21
 source_of_truth: true
 related_paths:
   - docs/research/2026-05-15-xhs-content-experiment-log.md
@@ -10,6 +10,7 @@ related_paths:
   - src/ptsm/application/use_cases/xhs_post_metrics.py
   - src/ptsm/domain/psychology_learning.py
   - src/ptsm/domain/psychology_carousel.py
+  - src/ptsm/infrastructure/memory/store.py
   - src/ptsm/playbooks/definitions
   - src/ptsm/skills/builtin
   - outputs/artifacts
@@ -34,7 +35,7 @@ Run each topic as one of three variants:
 3. Generate the draft with `--eval`.
 4. Confirm deterministic eval has `required_failed = 0`.
 5. Confirm the planned image format in `content_review.image_plan`, `content_review.image_form`, or `image_generation.image_plan` when the run generated an image.
-6. For a psychology text carousel, require `image_generation.status=committed`, 4–7 ordered pages and a matching immutable `manifest.json`; never score or publish a partial set.
+6. For a psychology text carousel, require `image_generation.status=committed`, **one topic / one 4–7-page set**, ordered pages with `page_sha256` / `file_sha256`, a matching immutable `manifest.json`, and a completed page-aware asset ledger; never score, relay, or publish a partial set. `carousel_delivery.status=ready` is an outer-relay handoff only, not proof that a chat/IM sender delivered it.
 7. Record the planned variant and image format in `docs/research/2026-05-15-xhs-content-experiment-log.md`.
 
 Variant labels are operator metadata. They can be written in the experiment log or used while planning, but final正文 must not contain `变体要求`, `comment_chain`, `save_tool`, or `identity_conflict`; the playbook eval contracts treat those as instruction leakage.
@@ -43,7 +44,9 @@ When generating several variants for the same account and playbook, keep each re
 
 For XHS copy experiments, reject variants whose title is only a category label such as `日常`, `实录`, or `干货分享`; use the playbook’s concrete-entry rule rather than inserting a universal tension keyword. The final正文 follows `xhs_compact_native_v1`: 2–4 short beats with a scene/human anchor, one usable domain detail, and a natural save or reply opening. Save and comment intent may share one sentence; do not turn them into four labelled moves. Keep candidates inside their compact playbook body band before considering publish.
 
-For `modern_psychology_post`, do not reuse six near-identical "反复复盘一句话" scenes. The deterministic fallback now separates meeting replay, boundary pressure, Sunday work-message anxiety, after-work message pullback, brain-in-review-meeting, and ordinary-reply replay. A calibration batch should keep those scene mechanics distinct before publishing.
+For `modern_psychology_post`, do not reuse six near-identical "反复复盘一句话" scenes. The deterministic fallback now separates meeting replay, boundary pressure, Sunday work-message anxiety, after-work message pullback, brain-in-review-meeting, and ordinary-reply replay. A calibration batch should keep those scene mechanics distinct before publishing. A new artifact, title, or cover alone is not a distinct ordinary carousel variant: the cover-excluded canonical inner cards must differ from the recent 12 successful complete ordinary carousel receipts. Reservations made before an artifact do not count; only local render + canonical receipt verification + ledger success commit the identity. Failures, non-carousel exits, and learning-series do not consume this ordinary window, and stale leases recover.
+
+An explicit request for more than 7 pages/images (including 12) is not an experiment batch parameter. Stop and clarify whether the operator wants one ordinary 4–7-page carousel or multiple separately confirmed posts; do not loop, split, repeat, or treat `max_text_units` as image count.
 
 For `modern_psychology_post --psychology-content-mode learning_series`, this rule is stricter: a variant is one confirmed catalog lesson, not a rewritten free scene or a made-up next lesson. Before the first custom topic, a trusted operator must run `provision-psychology-learning-storage --format json` while all writers are stopped and that operator exclusively controls the storage parent. It provisions the fixed private `proposals`、`confirmations`、`catalogs` and `progress` directories; plan and confirmation never provision missing directories during an experiment. This includes custom topics only after PTSM has created an immutable `user_confirmed` version from a reviewed proposal; never experiment with a manual catalog or an unconfirmed outline. Historic controlled-template-v1 revisions remain immutable single-card baselines; builtin and newly confirmed revisions use template v2, whose 7 carousel pages are reconstructed only from catalog fields. The controlled renderer gives each selected lesson its own catalog-approved title, cover hook, body, tags and image plan; do not hand-edit pages or add `--local-image-style` / `--publish-image-path` as an experiment. Compare lessons only after a reviewed catalog/version change, and keep the returned series/lesson identity fixed. For a custom guide response, `series.recommended_next_lesson` is a publication suggestion, not an automatic assignment; `series.production_progress.kind == operator_content_production` is version-bound production bookkeeping. Without image generation it retains the existing safe content-artifact timing; when images are requested it advances only after a complete committed carousel and strict receipt. `psychology_carousel_generation_failed` never advances it. Progress is at-least-once: once persistence reaches the rename boundary, a later storage/boundary error can be returned even though the completion marker is visible, so re-query the roadmap and retry the exact lesson idempotently rather than assuming no update occurred. It is not reader learning progress, does not mean the post was published, and never auto-publishes the next lesson. A rejected/raced artifact or sidecar is not removed or overwritten online; stop the affected run and use trusted offline maintenance for review/cleanup only after all writers stop. These transaction-time checks do not promise persistent tamper resistance against a continuing same-UID writer across independent operations. Builtin roadmaps omit these custom sequence/progress fields. Do not use hotspot text as lesson evidence.
 
