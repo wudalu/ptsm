@@ -71,6 +71,21 @@ def test_psychology_inner_fingerprint_reservation_allows_one_interleaved_writer(
     winners = [reservation for reservation in reservations if reservation is not None]
     assert len(winners) == 1
     reservation_id = winners[0]
+    # An active render lease cannot turn into recent-history memory directly:
+    # the post-ledger marker is the required durable state transition.
+    assert not stores[0].commit_psychology_carousel_inner_fingerprint(
+        namespace=namespace,
+        fingerprint=fingerprint,
+        reservation_id=reservation_id,
+        item=lesson,
+    )
+    assert stores[0].search(namespace=namespace) == []
+    assert stores[0].mark_psychology_carousel_inner_fingerprint_commit_pending(
+        namespace=namespace,
+        fingerprint=fingerprint,
+        reservation_id=reservation_id,
+        item=lesson,
+    )
     assert stores[0].commit_psychology_carousel_inner_fingerprint(
         namespace=namespace,
         fingerprint=fingerprint,

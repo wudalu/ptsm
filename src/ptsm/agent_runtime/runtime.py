@@ -153,7 +153,7 @@ class OrdinaryPsychologyCarouselMemoryReservation:
 
     def commit(self) -> bool:
         with self._lock:
-            if self._settled:
+            if self._settled or not self._commit_pending:
                 return False
         self._stop_heartbeat()
         committed = self._execution_memory.commit_psychology_carousel_inner_fingerprint(
@@ -162,9 +162,9 @@ class OrdinaryPsychologyCarouselMemoryReservation:
             reservation_id=self._reservation_id,
             item=self._item,
         )
-        # A store can decline a commit after a concurrent recovery/duplicate
-        # decision.  Leave the capability releasable so the caller's failure
-        # cleanup can clear any adapter that did not remove it itself.
+        # A store can decline a commit after concurrent reconciliation. Leave
+        # the capability unsettled so failure cleanup preserves its durable
+        # commit-pending marker for a future reservation to reconcile.
         if committed:
             with self._lock:
                 self._settled = True

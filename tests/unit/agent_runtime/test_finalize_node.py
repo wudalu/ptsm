@@ -401,7 +401,7 @@ def test_finalize_releases_carousel_reservation_when_artifact_write_fails(
     assert reservation_id is not None
 
 
-def test_finalize_hands_off_carousel_reservation_without_committing_memory(
+def test_finalize_handoff_reservation_requires_commit_pending_before_memory_promotion(
     tmp_path: Path,
 ) -> None:
     final_content = DeterministicDraftBackend().generate(
@@ -438,6 +438,11 @@ def test_finalize_hands_off_carousel_reservation_without_committing_memory(
     assert memory.search(namespace=namespace) == []
     assert len(handed_off) == 1
     reservation = handed_off.pop()
+    # An artifact handoff is not enough to mark a carousel as recent.  The
+    # renderer/ledger lifecycle must first persist the commit-pending state.
+    assert not reservation.commit()
+    assert memory.search(namespace=namespace) == []
+    assert reservation.mark_commit_pending()
     assert reservation.commit()
     lessons = memory.search(namespace=namespace)
     assert len(lessons) == 1

@@ -595,10 +595,11 @@ def _commit_inner_carousel_fingerprint(
     if reservation_index is None:
         return False
     reservation = reservations[reservation_index]
-    if _reservation_is_commit_pending(reservation):
-        pending_item = reservation.get(_RESERVATION_PENDING_ITEM_FIELD)
-        if not isinstance(pending_item, dict) or pending_item != item:
-            return False
+    if not _reservation_is_commit_pending(reservation):
+        return False
+    pending_item = reservation.get(_RESERVATION_PENDING_ITEM_FIELD)
+    if not isinstance(pending_item, dict) or pending_item != item:
+        return False
     if _contains_recent_inner_carousel_fingerprint(
         storage.get(final_key, []),
         fingerprint,
