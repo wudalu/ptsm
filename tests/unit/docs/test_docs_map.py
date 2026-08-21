@@ -304,6 +304,11 @@ def test_psychology_carousel_oversize_router_and_relay_contract_are_documented()
     wrapper_text = router_paths[0].read_text(encoding="utf-8")
     for marker in (
         "not a PTSM response schema",
+        "batch_id",
+        "target_count",
+        "slot_index",
+        "variation_brief",
+        "variation_fingerprint",
         "relay_attempt_id",
         "relay_idempotency_key",
         "acknowledged_at",
@@ -320,6 +325,67 @@ def test_psychology_carousel_oversize_router_and_relay_contract_are_documented()
     assert "external_relay_required" in observability_text
     assert "not a relay acknowledgement" in observability_text
     assert "run summary" in observability_text
+
+    operations_text = (DOCS_ROOT / "operations.md").read_text(encoding="utf-8")
+    for marker in (
+        "not a PTSM response schema",
+        "batch_id",
+        "target_count",
+        "slot_index",
+        "variation_brief",
+        "variation_fingerprint",
+        "retry_of",
+    ):
+        assert marker in operations_text
+
+    skills_text = (DOCS_ROOT / "skills.md").read_text(encoding="utf-8")
+    skills_summary = skills_text.split(
+        "- `integrations/openclaw/ptsm-xhs-psychology/SKILL.md`", 1
+    )[1].split("- `integrations/openclaw/ptsm-xhs-topic-guide/SKILL.md`", 1)[0]
+    playbooks_text = (DOCS_ROOT / "playbooks.md").read_text(encoding="utf-8")
+    playbooks_summary = playbooks_text.split(
+        "- `modern_psychology_post` 专门输出", 1
+    )[1].split("- `PlaybookRegistry`", 1)[0]
+    for summary in (skills_summary, playbooks_summary):
+        assert "one_carousel" in summary
+        assert "multiple_posts" in summary
+        assert "independent_assets" in summary
+
+    for marker in (
+        "batch_id",
+        "target_count",
+        "slot_index",
+        "variation_brief",
+        "variation_fingerprint",
+        "retry_of",
+        "not PTSM response fields",
+    ):
+        assert marker in skills_summary
+
+    assert "澄清一组 4–7 页普通 carousel 与多个分别确认帖子" not in skills_summary
+    assert "澄清为这一组普通轮播或多个分别确认的帖子" not in playbooks_summary
+
+    quickstart_text = (DOCS_ROOT / "operations" / "publish-quickstart.md").read_text(
+        encoding="utf-8"
+    )
+    local_runbook_text = (DOCS_ROOT / "operations" / "local-runbook.md").read_text(
+        encoding="utf-8"
+    )
+    cloud_bootstrap_text = (DOCS_ROOT / "operations" / "cloud-bootstrap.md").read_text(
+        encoding="utf-8"
+    )
+    for text in (quickstart_text, local_runbook_text, cloud_bootstrap_text):
+        normalized_text = " ".join(text.split())
+        assert "relay ACK/outcome is authoritative" in normalized_text
+        assert "emitted no ready handoff" in normalized_text
+        assert "invoked no external chat/IM sender" in normalized_text
+
+    assert "publisher/relay 尚未收到部分 set" not in quickstart_text
+    assert (
+        "no partial page\nreaches watermark processing, XHS MCP, an outer relay"
+        not in local_runbook_text
+    )
+    assert "不会把部分图片交给 XHS MCP 或外层 relay" not in cloud_bootstrap_text
 
 
 def test_psychology_publication_mode_router_is_discoverable_in_skill_and_operator_docs() -> None:

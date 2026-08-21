@@ -204,9 +204,10 @@ must match before publish. Only an ordinary set with a verified receipt and ledg
 relay. PTSM does not own external delivery, so ready is not delivered, published, or acknowledged. The relay
 keeps its own (not PTSM) `relay_attempt_id`, acknowledgement/outcome/retry record keyed by the receipt; it may
 call an image set delivered only after all ordered attachments are acknowledged. If generation, manifest verification
-or asset-ledger projection fails, the run status is `psychology_carousel_generation_failed`; no partial page
-reaches watermark processing, XHS MCP, an outer relay, or the recent-12 committed memory window. If only the
-later external publish fails, keep the committed set for retry.
+or asset-ledger projection fails, the run status is `psychology_carousel_generation_failed`; PTSM **emitted no ready
+handoff** and **invoked no external chat/IM sender**, and it does not advance the recent-12 committed memory window.
+It cannot assert that a relay or recipient received no page: **relay ACK/outcome is authoritative** for whether any
+page was received or delivered. If only the later external publish fails, keep the committed set for retry.
 
 ### Watermark Removal
 

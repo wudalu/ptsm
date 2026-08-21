@@ -178,6 +178,11 @@ def test_openclaw_psychology_skill_clarifies_oversized_carousels_and_relay_bound
     assert "independent_assets" in text
     assert "independent image assets" in normalized_text
     assert "not a PTSM response schema" in normalized_text
+    assert "batch_id" in text
+    assert "target_count" in text
+    assert "slot_index" in text
+    assert "variation_brief" in text
+    assert "variation_fingerprint" in text
     assert "relay_attempt_id" in text
     assert "relay_idempotency_key" in text
     assert "acknowledged_at" in text

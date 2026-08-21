@@ -277,6 +277,11 @@ idempotency；目标支持逐张幂等时只重发未确认项，否则使用 ch
 post 明确只要一张旧式封面，才传 `--local-image-style note_card|iphone_notes|wechat_chat`；该显式 override
 保留 legacy single-image 行为。
 
+当 relay 在 PTSM 外部编排用户已逐帖确认的 `multiple_posts` 时，它可额外保存 `batch_id`、
+`target_count`（已确认 target 的数量，不是 PTSM 图片数）、`slot_index`、`variation_brief` 和
+`variation_fingerprint`。这些是 relay/batch schema 的可选关联字段，仍然 **not a PTSM response schema**：
+它们不能把多个独立 run 变成一个 PTSM batch，不能支持 `independent_assets`，也不能被写回 receipt/artifact。
+
 ## Psychology Learning Series Runs
 
 `learning_series` 是 `modern_psychology_post` 的受控课程子模式，有 builtin

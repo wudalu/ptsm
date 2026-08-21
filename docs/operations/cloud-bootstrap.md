@@ -192,7 +192,9 @@ ordinary 与 current v2 learning carousel 的 page-aware operational ledger；se
 outcome 和 retry 必须保存在 relay 自己的 receipt-keyed record，不能被 PTSM response/artifact 推断或回写。learning-series
 artifact 为避免路径/课程内容泄漏，只保留 renderer/style/count/manifest hash 的安全 receipt；可信 operator 可从
 持久输出卷检查 manifest。任一页、manifest 或 ledger 失败都会返回 `psychology_carousel_generation_failed`，
-不会把部分图片交给 XHS MCP 或外层 relay。
+此时 PTSM 只能说明它 **emitted no ready handoff** 且 **invoked no external chat/IM sender**；它不能断言
+外层 relay、目标平台或用户未收到任何页，**relay ACK/outcome is authoritative** for whether any page was
+received or delivered.
 
 ## Step 6: Real Publish Prerequisites
 

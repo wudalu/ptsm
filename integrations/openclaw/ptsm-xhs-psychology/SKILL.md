@@ -283,6 +283,11 @@ and never fields that the wrapper may append to `carousel_delivery` or a PTSM
 artifact:
 
 - immutable receipt identity: `set_id` and `manifest_sha256`;
+- optional external batch correlation for separately confirmed `multiple_posts`:
+  `batch_id`, `target_count` (the number of separately confirmed targets, not a
+  PTSM image count), `slot_index`, `variation_brief`, and
+  `variation_fingerprint`; these only describe relay orchestration and never
+  create a PTSM batch or make `independent_assets` supported;
 - attempt identity: `relay_attempt_id`, `relay_idempotency_key`, and `retry_of`
   for a later attempt;
 - per-attachment acknowledgement: the attachment `order`, its `file_sha256`, a

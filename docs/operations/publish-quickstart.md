@@ -73,8 +73,10 @@ turn an unsupported request into a batch; `max_text_units` is per-page text dens
 ordinary 才会出现 `carousel_delivery.status=ready`；外层 relay 必须按 `attachments` 顺序发送整组，且不能把
 ready 说成 delivered。relay 以 `set_id` / `manifest_sha256` 关联自己的 acknowledgement/outcome/retry
 record；只有全部 ordered attachments 得到 sender ACK 后才可称 delivered，PTSM 不写这类结果。出现
-`psychology_carousel_generation_failed` 时不要手工拿残留页继续发布；该状态保证 publisher/relay 尚未收到部分
-set，也不会消耗 ordinary 的 recent-12 inner-page window。若完整 set 已提交、仅外部 publish 失败，可保留 set 重试。
+`psychology_carousel_generation_failed` 时不要手工拿残留页继续发布；PTSM 在该失败路径只能说明它 **emitted no
+ready handoff** 且 **invoked no external chat/IM sender**，不会消耗 ordinary 的 recent-12 inner-page window。
+它不能据此断言 relay、目标平台或用户没有收到任何页：**relay ACK/outcome is authoritative** for whether any
+page was received or delivered. 若完整 set 已提交、仅外部 publish 失败，可保留 set 重试。
 current v2 learning carousel 还必须完成 page-aware operational asset ledger；sealed learning artifact/
 response 仍只保留安全的 status/renderer/style/count/manifest-hash receipt，不暴露 ledger、路径或 page text。
 
