@@ -177,8 +177,9 @@ uv run python -m ptsm.bootstrap run-playbook \
 
 `guide-post` 会先给出 `text_carousel`、`psychology_text_card_v1`、4–7 页和 ordered roles；命令
 仍只使用 `--auto-generate-image`。这是一个主题的一组 4–7 页，不是 batch；显式 >7 页/12 张请求必须
-先由 caller 澄清为这一组 ordinary carousel 或多个分别确认的帖子，不能循环、拆分、重复或把
-`max_text_units` 当成图片数。系统在 `outputs/generated_images/` 下先写 staging，再把全部
+先由 caller 选择 `one_carousel`（支持的一组）、`multiple_posts`（逐帖确认并独立 run/receipt），或
+unsupported `independent_assets`（8–12 张 **independent image assets** 必须转交另行授权的素材流程），
+不能循环、拆分、重复、伪造 ready 或把 `max_text_units` 当成图片数。系统在 `outputs/generated_images/` 下先写 staging，再把全部
 ordered PNG 与 `manifest.json` 原子 rename 为 content-addressed committed set。请把
 `outputs/generated_images/` 放在持久磁盘上，并确保 staging 与 final set 位于同一 filesystem；不要把
 它挂成每次任务结束即销毁的临时层。`outputs/artifacts/generated-image-assets/` 也应持久化，以保留
@@ -187,7 +188,8 @@ ordinary 与 current v2 learning carousel 的 page-aware operational ledger；se
 成功 ordinary artifact 可检查 `image_generation.status=committed`、`image_count`、`set_id`、
 `manifest_path`、`manifest_sha256` 和 ordered `pages`，其中每页包含 `page_sha256` / `file_sha256`。
 只有该 receipt 和 ledger 都成功后才给 ordinary response `carousel_delivery.status=ready`，供外层 relay
-按完整有序 `attachments` 转发；PTSM 本身不拥有 chat/IM sender，ready 不代表 delivered。learning-series
+按完整有序 `attachments` 转发；PTSM 本身不拥有 chat/IM sender，ready 不代表 delivered。relay 的 ACK、
+outcome 和 retry 必须保存在 relay 自己的 receipt-keyed record，不能被 PTSM response/artifact 推断或回写。learning-series
 artifact 为避免路径/课程内容泄漏，只保留 renderer/style/count/manifest hash 的安全 receipt；可信 operator 可从
 持久输出卷检查 manifest。任一页、manifest 或 ledger 失败都会返回 `psychology_carousel_generation_failed`，
 不会把部分图片交给 XHS MCP 或外层 relay。

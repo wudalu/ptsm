@@ -97,6 +97,25 @@ artifact/progress fail closed，不在线 cleanup 或复用；progress rename �
 
 ## OpenClaw Wrapper
 
+### Psychology carousel count and relay boundary
+
+For an ordinary psychology request over 7 pages/images (for example 12), the
+OpenClaw wrapper must use the explicit three-way router rather than the older
+two-choice shorthand: `one_carousel` is the supported one-topic 4–7-page set;
+`multiple_posts` is supported only when every post/topic is separately confirmed
+and run with its own receipt; `independent_assets` is unsupported because 8–12
+**independent image assets** that are not posts/carousels are outside this
+psychology wrapper/PTSM path. The wrapper must report unsupported and hand the
+last case to a separately authorized asset workflow, never silently turn it into
+a carousel/multi-run batch or fabricate `carousel_delivery.status=ready`.
+
+For an ordinary ready receipt, `carousel_delivery.status=ready` and
+`external_relay_required=true` are local-handoff evidence only. An external
+chat/IM relay owns ACK, outcome, and retry state in its own record keyed by the
+immutable `set_id` / `manifest_sha256`; PTSM does not infer those states or
+claim delivered. The detailed relay-owned acknowledgement contract is part of
+the wrapper below, not a PTSM sender capability.
+
 - `integrations/openclaw/ptsm-xhs-psychology/SKILL.md` 是外部 OpenClaw 的薄包装说明，不是 PTSM builtin skill，也不参与 `SkillRegistry`。它先作为发布模式引导器，让用户在 **单篇心理学帖**、**内置学习系列**、**自定义学习系列** 中明确选择：单篇帖走现有 `guide-post` 场景流；内置系列只查询 `after_work_rumination` roadmap 并等待选课；自定义系列先走已有的 proposal/review/exact-confirmation/roadmap 流。意图不清时 wrapper 先等待选择，不能默认创建 custom catalog、生成或发布。“继续下一课”与“看系列进度”先重新查询 roadmap，推荐顺序不等于自动选课、生成或发布；“改目录”只能创建新 proposal 和 immutable version。明确要求 >7 页/12 张时，wrapper 必须先澄清一组 4–7 页普通 carousel 与多个分别确认帖子，不能把 `max_text_units` 当图片数、静默拆分、循环或承诺 batch。选择完成后，wrapper 才负责让 OpenClaw 展示返回的 4 个 `topic_guidance.directions`（名称、`direction_type`、`scene_fit`、趋势信号、病毒式 hook、适合场景、保存工具、评论提示、避坑和 `format_recommendation`），用户确认方向后先展示该方向的 `format_recommendation`，再展示 `topic_guidance.image_recommendation`；普通心理学默认时每个 direction 都显示 `text_carousel` / `cover_hook`，顶层 recommendation 再显示 `psychology_text_card_v1`、4–7 页和 ordered roles，执行命令仍只加 `--auto-generate-image`。心理学 `open_scene` 由 PTSM 限制为该领域可用机制，不向 wrapper 暴露世界杯看球清单或 AI 工具交接候选。运行成功后，outer relay 只能处理 ordinary `carousel_delivery.status=ready`：用 receipt 的完整有序 `attachments`，并按 `page_sha256` / `file_sha256` 核验；PTSM 不负责外部 chat/IM delivery，ready 不能写成 delivered。学习系列的自定义主题先执行 `plan-psychology-series`，展示 proposal 的 `series.lessons`、top-level `publication_plan`、review 与 exact fingerprint（proposal 没有 roadmap），再执行 `confirm-psychology-series --confirm`；确认后，只有 `user_confirmed` custom guide 额外展示 `selection_required`、`series.roadmap`、`series.publication_plan`、`series.recommended_next_lesson` 与 `series.production_progress`，后者的 `kind` 是 `operator_content_production`。builtin roadmap 保持较小响应面，不含后三个 custom schedule/progress 字段。wrapper 等待用户选择明确 lesson/version 后，只展示该课 PTSM-returned direction、distinct title/cover hook 和 `page_count` / `ordered_roles`；不得声称 guide 返回了 `slides` 或 page copy，也不能拼接 manual image override 或自行写学习卡 copy。如果 PTSM 返回睡眠恢复、轻养生或办公室恢复这类 psychology sublane，或 `relationship_mixed_signal_camp_vote`、`social_battery_cancel_plan_boundary`、`after_hours_message_body_alarm` 这类增长假设方向，wrapper 只展示 payload，不把它改成非心理学 playbook，也不额外发明格式、建议或效果结论。用户要求提高浏览量、点赞或做发布后数据复盘时，wrapper 应转入 `xhs-record-metrics` / `xhs-metrics-report` 本地指标 loop，只用真实提供或 artifact-backed 的 views/likes/collects/comments/shares，并优先按 `topic_direction_id`、`image_style` 或 `carousel_style` 分组比较 `modern_psychology_post`；`image_count` 是每条 metrics row 的规范化读数字段，不是 `--group-by` 维度。
 - `integrations/openclaw/ptsm-xhs-topic-guide/SKILL.md` 是非心理学 XHS playbook 的通用薄 wrapper。它先按用户意图自动映射到 `fengkuang_daily_post`、`human_enrichment_daily_post`、`classic_poetry_quote_post`、`wuxia_character_post`、`ai_tech_daily_post`、`daily_english_post`、`world_cup_daily_post` 或 `reddit_curation_daily_post`；AI 科技是证据优先例外：先让 caller 选 `news_brief` / `hands_on` / `fact_translation`，说明所需 evidence file，再带该 mode 调 `guide-post`，只展示匹配的 directions。确认方向后必须用 `run-playbook --ai-content-mode <mode> --ai-evidence-file <path> --topic-direction-id <id> --publish-mode dry-run`；wrapper 不把热点 headline 当事实，也不发明实测。其他领域保持原有的 scene/lane 指引：如果意图模糊，只问一个短澄清问题；如果 caller 已经给出 `--playbook-id`，直接用显式 id。随后它调用 `guide-post`，只展示返回的 `topic_guidance.directions`、每条方向的 `direction_type`、`scene_fit` 和 `format_recommendation`，方向确认后展示该方向的 `format_recommendation` 与 `topic_guidance.image_recommendation`。
 - `integrations/openclaw/ptsm-xhs-domain-opportunity/SKILL.md` 是小红书领域机会分析的薄 wrapper。它只负责把“哪些领域容易爆 / 是否新增领域 / 现有 playbook 缺口”这类请求转成 `xhs-domain-opportunity` bounded scan，读取生成的 Markdown/JSON brief，并把结果分流为 `existing_playbook_fit`、`sublane_first`、`new_domain_candidate`。它不生成帖子、不发布、不复制 scoring 和 mapping 逻辑，也不展示 raw feed id/token。

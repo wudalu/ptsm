@@ -267,6 +267,7 @@ def test_docs_cover_ordinary_psychology_carousel_batch_integrity() -> None:
         "playbooks.md": "per-page text density, not image count",
         "skills.md": "carousel_delivery.status=ready",
         "harness-engineering.md": "stale lease recovery",
+        "observability.md": "carousel_delivery",
         "operations.md": "carousel_delivery.status=ready",
         "operations/local-runbook.md": "carousel_delivery.status=ready",
         "operations/content-experiment-runbook.md": "recent 12 successful complete ordinary carousel receipts",
@@ -277,6 +278,48 @@ def test_docs_cover_ordinary_psychology_carousel_batch_integrity() -> None:
     for relative_path, marker in required_markers.items():
         doc_text = (DOCS_ROOT / relative_path).read_text(encoding="utf-8")
         assert marker in doc_text, f"{relative_path} must document {marker}"
+
+
+def test_psychology_carousel_oversize_router_and_relay_contract_are_documented() -> None:
+    router_paths = [
+        PROJECT_ROOT
+        / "integrations"
+        / "openclaw"
+        / "ptsm-xhs-psychology"
+        / "SKILL.md",
+        DOCS_ROOT / "skills.md",
+        DOCS_ROOT / "operations.md",
+        DOCS_ROOT / "operations" / "local-runbook.md",
+        DOCS_ROOT / "operations" / "publish-quickstart.md",
+    ]
+
+    for document_path in router_paths:
+        text = document_path.read_text(encoding="utf-8")
+        assert "one_carousel" in text, document_path
+        assert "multiple_posts" in text, document_path
+        assert "independent_assets" in text, document_path
+        assert "independent image assets" in text, document_path
+        assert "unsupported" in text, document_path
+
+    wrapper_text = router_paths[0].read_text(encoding="utf-8")
+    for marker in (
+        "not a PTSM response schema",
+        "relay_attempt_id",
+        "relay_idempotency_key",
+        "acknowledged_at",
+        "retry_of",
+        "relay_outcome",
+        "pending",
+        "partial",
+        "delivered",
+        "failed",
+    ):
+        assert marker in wrapper_text
+
+    observability_text = (DOCS_ROOT / "observability.md").read_text(encoding="utf-8")
+    assert "external_relay_required" in observability_text
+    assert "not a relay acknowledgement" in observability_text
+    assert "run summary" in observability_text
 
 
 def test_psychology_publication_mode_router_is_discoverable_in_skill_and_operator_docs() -> None:

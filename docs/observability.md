@@ -2,7 +2,7 @@
 title: PTSM Observability
 status: active
 owner: ptsm
-last_verified: 2026-08-14
+last_verified: 2026-08-21
 source_of_truth: true
 related_paths:
   - src/ptsm/infrastructure/observability/run_store.py
@@ -28,6 +28,7 @@ related_paths:
   - src/ptsm/domain/psychology_carousel.py
   - src/ptsm/domain/hotspot_routing.py
   - src/ptsm/skills/runtime_context.py
+  - integrations/openclaw/ptsm-xhs-psychology/SKILL.md
   - src/topic_radar/cli.py
   - src/topic_radar/analysis/evidence.py
   - src/ptsm/plan_runner/runner.py
@@ -96,6 +97,15 @@ PTSM 当前的观测性核心是本地文件系统里的 run store 和 artifacts
 - `ptsm harness-report` 会把 `doctor`、`gc` 和 `harness-evals` 合成一个本地快照，并支持对 stale docs、gc candidate、run completion rate、plan-run completion rate 做 threshold 检查。
 - `ptsm diagnose-publish` 会把 `doctor`、run logs、artifact metadata 和 `xhs-check-publish` 的结果组合成一次只读诊断，给出 `likely_cause`、`evidence` 和 `next_actions`。
 - real publish 或显式 `--auto-generate-image` 运行现在会把 `image_generation` metadata 落进 artifact。普通单图继续记录 provider、model/style、prompt 或本地渲染输入、`generated_image_paths`、`runtime_context_summary`、watermark policy 与 provenance。心理学 text carousel 的 ordinary artifact 还记录 `status=committed`、`carousel_style=psychology_text_card_v1`、`image_count`、content-addressed `set_id`、`manifest_path` / `manifest_sha256`、ordered `pages` 和 `generated_image_paths`；page evidence 包含 slide id/order/role/style、filename/path、bounded visible-text summary、prompt/page/file hashes 与 provenance。canonical manifest 才是权威 set receipt，不能用散落路径推断完整性。
+- complete ordinary psychology carousel 的**response 和 artifact**还会有 `carousel_delivery`：它固定为本地 handoff
+  receipt（`status=ready`、`external_relay_required=true`、`set_id`、`manifest_sha256`、count checks 和按
+  manifest order 的 attachment hashes）。这不是 run summary，也不是 XHS publish success、chat/IM sender
+  ACK 或用户已收到图片；`ready` is **not a relay acknowledgement**. learning-series response/artifact 和任一
+  `psychology_carousel_generation_failed` response/artifact 都不会出现该字段。
+- relay acknowledgement/outcome/retry 不写入 PTSM observability。外部 relay 必须在自己的 durable record 中以
+  `set_id` / `manifest_sha256` 关联 receipt，并保存自己的 attempt/idempotency、per-attachment ACK、retry 和
+  delivered/partial/failed 结果；PTSM response、artifact、event 和 run summary 都不推断或回写这些状态。只有
+  relay 获得完整有序附件的 sender acknowledgement 后，relay 自己才能报告 delivered。
 - ordinary single-image evidence 仍明确保留 `image_generation.watermark_policy.requested=no_provider_watermark` 与 provider controls；`image_generation.image_plan` 仍记录 `role`、`text_density`、`max_text_units` 和 style routing。`wechat_chat` 的 `theme`、`chat_title` / `conversation_title`、`chat_times`、`status_time`、`show_avatars` 与结构化消息仍保留供 audit，carousel 扩展不会移除这些字段。
 - sealed learning artifact 不复制上述路径或 page text。成功 `image_generation` 只允许 `{status, renderer, carousel_style, image_count, manifest_sha256}`；失败只允许 `{status, renderer, carousel_style, image_count, reason}`，其中 reason 固定为 `psychology_carousel_generation_failed`。这使 offline learning receipt 可以证明 complete set，又不会泄漏本地 filesystem 或 catalog source。
 - 自动生成图片会更新本地 JSONL `outputs/artifacts/generated-image-assets/assets.jsonl`。ledger writer 固定 `base_dir` 句柄，并以 `dir_fd` + no-follow 逐级创建或打开固定 `outputs/artifacts/generated-image-assets` 链；持锁后、replace 前及父目录 fsync 后都会重验每一级目录名仍指向原句柄，祖先 symlink 或 rename/recreate 竞态会 fail closed。carousel projection 在该受校验的进程锁内一次原子重写整批 page-aware rows；并发追加不会让后写批次覆盖先写批次。各行按 manifest 顺序记录 set id/manifest hash、slide id/order/role、image path、provider/style/model、playbook/account、artifact path、provenance source，以及 `prompt_hash` / `page_file_sha256`；更丰富的 prompt/page/file hashes 留在 canonical manifest/page evidence。任一页不匹配时不留下部分 batch。current v2 learning carousel 同样记录这些 operational rows，但 sealed learning artifact/response 为避免路径泄漏不复制 `asset_ledger`、paths 或 page text，只保留上面的安全 manifest-hash receipt。ledger 不复制图片字节。

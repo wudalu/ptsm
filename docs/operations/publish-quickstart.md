@@ -29,8 +29,11 @@ roles；执行时仍只加 `--auto-generate-image`，不手写页面参数。系
 learning-series 禁止 `--local-image-style` 和 `--publish-image-path`。
 
 普通心理学一次只支持一个主题 / 一组 4–7 页。If the user asks for **more than 7 pages/images** (for
-example 12), stop and clarify: one ordinary carousel or multiple separately confirmed posts. Do not silently
-split, loop, repeat, or promise an unsupported batch; `max_text_units` is per-page text density, not image count.
+example 12), stop at the explicit three-way router: `one_carousel` is the supported one-topic 4–7-page
+set; `multiple_posts` is supported only after separately confirming and independently running every post;
+`independent_assets` is unsupported because 8–12 **independent image assets** are outside this psychology
+wrapper/PTSM path and need a separately authorized asset workflow. Do not silently split, loop, repeat, or
+turn an unsupported request into a batch; `max_text_units` is per-page text density, not image count.
 
 系统生成图会请求源头不加 provider 水印，并在 artifact 的 `image_generation.watermark_policy.requested` 里记录 `no_provider_watermark`。PTSM 本地 renderer 图还会记录 `image_generation.provenance.source == "ptsm_local_renderer"`，不画水印，也不走去水印后处理；provider/LLM 图和手动图仍会在真实发布时防御性清理。
 
@@ -48,7 +51,7 @@ split, loop, repeat, or promise an unsupported batch; `max_text_units` is per-pa
 - `image_generation.image_plan`
 - `image_generation.watermark_policy`
 - psychology carousel 的 `image_generation.image_count`、`carousel_style`、`manifest_path` / `manifest_sha256` 和 ordered `pages`（ordinary page 要核验 `page_sha256` / `file_sha256`；sealed learning artifact 只保留安全 count/style/hash receipt）
-- ordinary-only `carousel_delivery.status=ready` 与完整有序 `attachments`：这是交给外层 relay 的 ready receipt，不是 PTSM 或 chat/IM 已送达证明
+- ordinary-only `carousel_delivery.status=ready` 与完整有序 `attachments`：这是交给外层 relay 的 ready receipt，不是 PTSM 或 chat/IM 已送达证明；relay 的 ACK/outcome/retry 是它自己的记录，不会回写 PTSM
 - `watermark_removal`
 - `publish_result`
 - `post_publish_checks`
@@ -68,9 +71,10 @@ split, loop, repeat, or promise an unsupported batch; `max_text_units` is per-pa
 心理学 carousel 还要确认 `image_generation.status=committed`，并以 set 目录中的 `manifest.json` 为
 权威检查一组 4–7 张 PNG、页序与 `page_sha256` / `file_sha256`。只有 receipt 与 asset ledger 都成功后，
 ordinary 才会出现 `carousel_delivery.status=ready`；外层 relay 必须按 `attachments` 顺序发送整组，且不能把
-ready 说成 delivered。出现 `psychology_carousel_generation_failed` 时不要手工拿残留页继续发布；该状态保证
-publisher/relay 尚未收到部分 set，也不会消耗 ordinary 的 recent-12 inner-page window。若完整 set 已提交、仅外部
-publish 失败，可保留 set 重试。
+ready 说成 delivered。relay 以 `set_id` / `manifest_sha256` 关联自己的 acknowledgement/outcome/retry
+record；只有全部 ordered attachments 得到 sender ACK 后才可称 delivered，PTSM 不写这类结果。出现
+`psychology_carousel_generation_failed` 时不要手工拿残留页继续发布；该状态保证 publisher/relay 尚未收到部分
+set，也不会消耗 ordinary 的 recent-12 inner-page window。若完整 set 已提交、仅外部 publish 失败，可保留 set 重试。
 current v2 learning carousel 还必须完成 page-aware operational asset ledger；sealed learning artifact/
 response 仍只保留安全的 status/renderer/style/count/manifest-hash receipt，不暴露 ledger、路径或 page text。
 

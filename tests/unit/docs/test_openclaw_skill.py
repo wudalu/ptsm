@@ -173,3 +173,14 @@ def test_openclaw_psychology_skill_clarifies_oversized_carousels_and_relay_bound
     assert "page_sha256" in text
     assert "file_sha256" in text
     assert "PTSM does not own external chat/IM delivery" in normalized_text
+    assert "one_carousel" in text
+    assert "multiple_posts" in text
+    assert "independent_assets" in text
+    assert "independent image assets" in normalized_text
+    assert "not a PTSM response schema" in normalized_text
+    assert "relay_attempt_id" in text
+    assert "relay_idempotency_key" in text
+    assert "acknowledged_at" in text
+    assert "retry_of" in text
+    assert "relay_outcome" in text
+    assert "all expected ordered attachments" in normalized_text

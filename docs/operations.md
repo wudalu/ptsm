@@ -217,9 +217,16 @@ AI playbook。AI mode 使用 `--fresh-topic-research` 会返回
 ## Psychology Text Carousel Runs
 
 普通 `modern_psychology_post` 默认把一个主题表达成**一组** 4–7 张本地文字卡。它不是通用 batch
-接口：用户显式要求超过 7 页/图片（例如 12 张）时，先澄清是要一组普通 4–7 页 carousel，还是多个
-分别确认的帖子；不要静默拆分、循环运行、复用同一组或承诺未支持数量。`max_text_units` 是每页文字
-密度，不是图片数量。先用只读 guide 查看
+接口：用户显式要求超过 7 页/图片（例如 12 张）时，先停在三路 router，而不是循环运行：
+
+- `one_carousel`：支持，一个主题的一组 4–7 页；确认主题后按一次普通 run 处理。
+- `multiple_posts`：支持，但每一帖/主题都要用户分别明确确认、分别 guide/run，并各自取得 immutable
+  receipt；“12 张”本身不是批量执行授权。
+- `independent_assets`：不支持；8–12 张 **independent image assets**（不是帖子也不是 4–7 页 carousel）
+  不属于当前心理学 wrapper/PTSM 路径。明确说 unsupported，并转交另行授权的素材工作流；不得把它暗改为
+  carousel/多帖、生成假 receipt 或返回 ready。
+
+不要静默拆分、循环运行、复用同一组或承诺未支持数量。`max_text_units` 是每页文字密度，不是图片数量。先用只读 guide 查看
 `format_archetype=text_carousel`、`local_style=psychology_text_card_v1`、page range 和 ordered roles：
 
 ```bash
@@ -256,8 +263,17 @@ per-account/per-playbook 的 cover-excluded inner fingerprint 到最近 12 个 s
 carousel receipts；draft artifact、reservation、失败页或 learning-series 都不占该窗口，失败会 release，过期
 lease 可恢复。任一 page/manifest/ledger 不完整都会返回 `psychology_carousel_generation_failed`，不会进入
 watermark、publisher 或 ready relay receipt；已在完整提交后发生的 publish failure 则保留 set，修复外部发布
-条件后可重试。外层 chat/IM relay 只能在 ordinary `carousel_delivery.status=ready` 时使用 receipt 的完整有序
-`attachments` 转发，并以这些 canonical hashes 校验；PTSM 不拥有该 sender，ready 不等于已送达。若 ordinary
+条件后可重试。外层 chat/IM relay 只能在 ordinary `carousel_delivery.status=ready` 和
+`external_relay_required=true` 时使用 receipt 的完整有序 `attachments` 转发，并以这些 canonical hashes
+校验；PTSM 不拥有该 sender，ready 不等于已送达、已发布或已被 relay 接收。
+
+relay 必须把 acknowledgement/outcome/retry 保存在自己的 durable record 中，**not a PTSM response schema**：
+以 `set_id` / `manifest_sha256` 关联 immutable receipt，每次发送写 `relay_attempt_id`、
+`relay_idempotency_key` 和（如为重试）`retry_of`；每个确认附件记录 `order`、`file_sha256` 与
+`acknowledged_at`。`relay_outcome` 只能由 relay 写成 `pending`、`partial`、`delivered` 或 `failed`。
+只有所有预期、按原序的附件都取得 sender acknowledgement，relay 才能写 `delivered`；PTSM 不写、不推断
+ack、outcome 或 retry，也不因 relay 失败更改本地 receipt。重试保留同一 receipt identity/order 并使用
+idempotency；目标支持逐张幂等时只重发未确认项，否则使用 channel-safe whole-set retry。若 ordinary
 post 明确只要一张旧式封面，才传 `--local-image-style note_card|iphone_notes|wechat_chat`；该显式 override
 保留 legacy single-image 行为。
 
@@ -478,7 +494,7 @@ learning artifact 才能写入课程指标；同一 artifact + checkpoint 会更
 - 对 `对方忽冷忽热，我想问清楚又怕显得烦，想让评论区站队` 这类亲密关系场景，心理学 `guide-post` 应返回 `relationship_mixed_signal_camp_vote`、`事实 / 信号 / 我要不要问清楚` 和 A/B 阵营评论入口；不要把它写成职场处理时间或优先级。
 - 对 `约好的局临时不想去了，怕扫兴又很累，想写社交电量边界` 这类社交耗竭场景，心理学 `guide-post` 应返回 `social_battery_cancel_plan_boundary`、`取消局三句` 和 A/B 角色认领；不要鼓励失联或羞辱社交。
 - 对 `领导18:57发来一句在吗，下班后身体被消息拉回工位` 这类下班消息场景，心理学 `guide-post` 应返回 `after_hours_message_body_alarm`、`下班消息三步` 和 A/B/C 评论入口；这是心理学的职场低控制感/身体警报表达，不是发疯文学。
-- OpenClaw 心理学集成使用 `integrations/openclaw/ptsm-xhs-psychology/SKILL.md` 作为薄 wrapper：先调用 `guide-post` 展示 `topic_guidance.directions`、`direction_type`、`scene_fit` 和 `format_recommendation`，用户确认方向后再调用 `run-playbook --caller openclaw --guidance-ack --topic-direction-id <chosen id>`。用户要求 >7/12 张时，wrapper 先澄清一组 4–7 页 ordinary carousel 与多个分别确认的帖子，绝不在 PTSM 内循环或假装支持 batch。如果 OpenClaw 直接调用 `run-playbook --caller openclaw` 生成 `modern_psychology_post` 且没有 `--guidance-ack`，PTSM 会返回 `topic_guidance_required`，不会启动 workflow、写 run 或发布。成功普通轮播只提供 `carousel_delivery.status=ready` 的 relay handoff；外部 sender 是否真的给用户发完全部 ordered `attachments` 不属于 PTSM。
+- OpenClaw 心理学集成使用 `integrations/openclaw/ptsm-xhs-psychology/SKILL.md` 作为薄 wrapper：先调用 `guide-post` 展示 `topic_guidance.directions`、`direction_type`、`scene_fit` 和 `format_recommendation`，用户确认方向后再调用 `run-playbook --caller openclaw --guidance-ack --topic-direction-id <chosen id>`。用户要求 >7/12 张时，wrapper 必须明确选择 `one_carousel`（支持的一组 4–7 页）、`multiple_posts`（每帖分别确认和独立 receipt），或 unsupported `independent_assets`（8–12 张 independent image assets 要转交外部素材工作流）；绝不在 PTSM 内循环或把三路折叠成假 batch。如果 OpenClaw 直接调用 `run-playbook --caller openclaw` 生成 `modern_psychology_post` 且没有 `--guidance-ack`，PTSM 会返回 `topic_guidance_required`，不会启动 workflow、写 run 或发布。成功普通轮播只提供 `carousel_delivery.status=ready` 的本地 relay handoff；外部 sender 的 ACK、`relay_outcome` 和 retry 记录属于 relay，只有所有 ordered `attachments` 获确认才可称 delivered，不能倒灌为 PTSM 成功。
 - OpenClaw 非心理学 XHS 集成使用 `integrations/openclaw/ptsm-xhs-topic-guide/SKILL.md`。该 wrapper 自动把发疯文学、人类丰容、古诗词金句、武侠人物、AI科技、每日英语、世界杯和 Reddit英文讨论转译意图映射到对应 playbook；意图模糊时先问一个短澄清问题。除 AI 科技外，方向确认后展示 PTSM 返回的 `format_recommendation` 和 `topic_guidance.image_recommendation`，再 dry-run 生成，并把确认的方向 id 作为 `--topic-direction-id` 传给 `run-playbook`。AI 科技必须先选 evidence mode、获取 matching direction，并带 `--ai-content-mode` + `--ai-evidence-file`；它有应用层 evidence preflight，即使 caller 是 OpenClaw 也不能跳过。wrapper 只能展示 PTSM-returned direction、格式/图片建议，不能自己发明开放方向、格式或图片策略。心理学的 `guidance_ack` 是独立 gate；其他非心理学 playbook 不因缺 guidance ack 被拒绝。
 - OpenClaw/Codex 领域机会分析使用 `integrations/openclaw/ptsm-xhs-domain-opportunity/SKILL.md` 作为薄 wrapper：当用户给出明确候选小红书领域/关键词、想比较覆盖缺口时，先调用 `xhs-domain-opportunity` CLI 生成 JSON/Markdown brief，再按 `existing_playbook_fit`、`sublane_first`、`new_domain_candidate` 给下一步建议。该 scan 只比较 bounded XHS keyword-search evidence：跨关键词优先去重同一 `feed_id`，完整 title+author 只桥接缺 ID 的一条观察到首个真实 ID，后续不同真实 ID 仍保留；若已有多个真实 ID，后续缺 ID 样本也保持 unresolved。ASCII `,` 和中文 `，` 可以分隔关键词，但 separator-only 输入会被拒绝。`insufficient_evidence` 或 no successful unique samples 时不得输出静态 ranking/fit/new-domain 结论；默认登录预检的 `login_required` 表示尚未搜索，必须先恢复 XHS 登录。wrapper 不生成、不发布、不复制 PTSM scoring，也不展示原始 feed id/token。
 - `hotspot-discovery` 是默认的 discovery-first 操作入口：它不接受领域、账号、playbook、平台或关键词筛选，先运行 Topic Radar 默认平台扫描，再按 evidence-backed cluster 输出 `existing_playbook_fit`、`ambiguous`、`unmapped` 和可能的 `new_domain_candidate`。默认按 score 展示前 12 个；`--max-hotspots` 仅改变返回条数，receipt 必须保留 `eligible_hotspot_count` / `returned_hotspot_count` / `hotspot_limit`。如果 Top-N 外仍有已映射候选，`routed_hotspots` 会以不重复的补充视图给出最多 6 个；每行至少引入一个未展示 playbook，`ambiguous` 保留完整候选，并以 `route_status_counts` 说明完整已验证 cluster 集合的路由分布；它不改变全平台排名。阅读 `partial` 必须先展示 `platform_errors`，不得称为全平台结果；`insufficient_evidence` 时无可用热点建议。用户选择一个已有 playbook 后才进入 `guide-post` / `run-playbook`。OpenClaw/Codex 通过 `integrations/openclaw/ptsm-topic-radar-discovery/SKILL.md` 调用它。

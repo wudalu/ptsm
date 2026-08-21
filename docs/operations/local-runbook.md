@@ -65,7 +65,7 @@ This exercises:
 - **Executor**: DeepSeek LLM generates title, image_text, body, hashtags from scene + persona + planner + static skills + local pattern context + recent memory context. XHS prompts use `xhs_compact_native_v1`: a concrete human/scene entry, 2–4 short beats, one domain-usable detail, and a natural combined save/reply opening inside the playbook’s compact length band—not four fixed正文 moves.
 - **Reflector**: enforces required rules such as `#发疯文学`, configured deterministic quality rules such as rejecting generic titles, requiring a comment/copyable mechanic, keeping正文 inside the playbook length band, and blocking mental-health/medical jokes. Light positive closings like `也算` are recommended style, not a mandatory phrase gate. Passes to finalize, or retries up to max_attempts.
 
-Review `content_review`, `content_review.image_plan`, and the final正文. If content and image strategy look good, proceed to real publish. When the planned style is `wechat_chat`, check that the visible text is a short content-only transcript rather than a full phone screenshot. For `modern_psychology_post`, a default `text_carousel` plan must contain **one topic, one 4–7-page set** of ordered semantic slides; the first cover remains low-density and inner pages contain bounded short lines. A request for more than 7 pages/images (including 12) needs clarification before any run: one ordinary carousel or separately confirmed posts, never a silent batch/loop/repeat. `max_text_units` is per-page text density, not image count.
+Review `content_review`, `content_review.image_plan`, and the final正文. If content and image strategy look good, proceed to real publish. When the planned style is `wechat_chat`, check that the visible text is a short content-only transcript rather than a full phone screenshot. For `modern_psychology_post`, a default `text_carousel` plan must contain **one topic, one 4–7-page set** of ordered semantic slides; the first cover remains low-density and inner pages contain bounded short lines. A request for more than 7 pages/images (including 12) needs the explicit three-way router before any run: `one_carousel` is the supported one-topic 4–7-page set; `multiple_posts` is supported only after separately confirming every post and running each independently; `independent_assets` is unsupported because 8–12 **independent image assets** are outside this psychology wrapper/PTSM path and must go to a separately authorized asset workflow. Never silently turn any choice into a batch/loop/repeat. `max_text_units` is per-page text density, not image count.
 
 ### Step 3 — Real Publish
 
@@ -188,7 +188,8 @@ These local styles render iPhone Notes-like and WeChat chat transcript-like cove
 
 `psychology_text_card_v1` is not a `--local-image-style` choice. It is the local-only automatic
 carousel renderer selected by a validated psychology `image_plan`. It creates one topic / one 4–7-page
-set, not a generic batch; more than 7 pages/images requires clarification before a run. The parent plan keeps
+set, not a generic batch; an oversized request must first select `one_carousel`, separately confirmed
+`multiple_posts`, or unsupported `independent_assets` rather than silently use a batch. The parent plan keeps
 `backend/style/role/text_density/max_text_units/cover_text_strategy/reason/prompt_focus` and adds
 `carousel_style` plus `slides`; each slide has exactly `slide_id`, one-based contiguous `order`,
 `role`, `headline`, and `body_lines`. A set contains 4–7 pages, starts with `cover_hook`, and uses
@@ -200,7 +201,9 @@ Treat its `manifest.json` as authoritative: `pages.order` must match `generated_
 must be regular/readable PNGs, and each page's `page_sha256` (canonical content) / `file_sha256` (PNG bytes)
 must match before publish. Only an ordinary set with a verified receipt and ledger can expose
 `carousel_delivery.status=ready`, whose ordered `attachments` are the only safe handoff to an outer chat/IM
-relay. PTSM does not own external delivery, so ready is not delivered. If generation, manifest verification
+relay. PTSM does not own external delivery, so ready is not delivered, published, or acknowledged. The relay
+keeps its own (not PTSM) `relay_attempt_id`, acknowledgement/outcome/retry record keyed by the receipt; it may
+call an image set delivered only after all ordered attachments are acknowledged. If generation, manifest verification
 or asset-ledger projection fails, the run status is `psychology_carousel_generation_failed`; no partial page
 reaches watermark processing, XHS MCP, an outer relay, or the recent-12 committed memory window. If only the
 later external publish fails, keep the committed set for retry.
@@ -403,8 +406,9 @@ uv run python -m ptsm.bootstrap run-playbook \
 The ordinary psychology guide now returns `format_archetype=text_carousel`,
 `local_style=psychology_text_card_v1`, `page_count.min=4`, `page_count.max=7`, ordered semantic
 roles, and `command_hint=--auto-generate-image`. There is no page-copy or carousel-style CLI flag.
-There is also no batch/count flag: more than 7 pages/images must be clarified as one ordinary carousel or
-separately confirmed posts, and `max_text_units` remains a per-page density bound.
+There is also no batch/count flag: more than 7 pages/images must use `one_carousel`, separately confirmed
+`multiple_posts`, or unsupported `independent_assets` for independent image assets; `max_text_units` remains a
+per-page density bound.
 Use an explicit `--local-image-style note_card|iphone_notes|wechat_chat` only when the ordinary post
 really needs one legacy cover instead of the default carousel.
 

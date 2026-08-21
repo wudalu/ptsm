@@ -28,14 +28,27 @@ drafting content. Resolve a clear request into exactly one of these paths:
 
 If the request is ambiguous, show these three choices and wait. Do not default to a custom series, generate a post, or publish.
 
-### Ordinary-carousel count boundary
+### Ordinary-carousel count router
 
 If the user explicitly asks for **more than 7 pages/images** (for example 12),
-stop and clarify. PTSM supports **one 4–7-page carousel for one topic**, not a
-12-image batch. Ask whether the user wants one ordinary carousel or multiple
-separately confirmed posts/topics. Do not silently split, loop, repeat, or
-promise an unsupported batch. `max_text_units` is per-page copy, not page
-count. Never turn this clarification into an automatic multi-run workflow.
+stop before drafting or running PTSM. This is a three-way router, not a request
+to loop a carousel command:
+
+- **`one_carousel`** — supported: **one 4–7-page carousel for one topic**.
+  Confirm the single topic, then use the normal one-run flow.
+- **`multiple_posts`** — supported only after the user separately confirms each
+  post/topic. Each post has its own guide, PTSM run, immutable receipt, and
+  relay handoff; a request for “12” is not permission to create a multi-run
+  batch.
+- **`independent_assets`** — unsupported: 8–12 **independent image assets**
+  that are not a post or a 4–7-page carousel are not supported by this
+  psychology wrapper/PTSM path. Say that it is unsupported and hand off to a
+  separately authorized asset workflow; do not coerce it into a carousel or
+  multiple posts, generate a fake receipt, or return `ready`.
+
+Do not silently split, loop, repeat, or promise an unsupported batch.
+`max_text_units` is per-page copy, not page count. Never turn any of these
+choices into an automatic multi-run workflow.
 
 For a custom series with no supplied outline, let PTSM produce review-only
 proposal material. Do not invent psychology course facts, lesson goals, or a
@@ -254,14 +267,43 @@ topic across the returned 4–7 ordered roles with `psychology_text_card_v1`.
 The cover remains low density and inner pages remain bounded text cards. Do not
 author `slides`; the run must use the exact PTSM-reviewed plan.
 
+### Relay handoff and acknowledgement ownership
+
 After an ordinary run, an outer relay may forward images only when the returned
-`carousel_delivery.status=ready`. Use its exact ordered `attachments` as one
-complete set, and retain the canonical `page_sha256` (page content) and
-`file_sha256` (PNG bytes) checks for every attachment. PTSM does not own
-external chat/IM delivery: `ready` means that local render, canonical receipt,
-and asset ledger are complete; it does not mean the user received any image.
-Do not expose local paths to the user. If the relay fails, report relay failure
-rather than PTSM/user delivery success.
+`carousel_delivery.status=ready` and `external_relay_required=true`. Use its
+exact ordered `attachments` as one complete set, and verify the canonical
+`page_sha256` (page content) and `file_sha256` (PNG bytes) for every attachment.
+PTSM does not own external chat/IM delivery: `ready` means that local render,
+canonical receipt, and asset ledger are complete; it does not mean the user
+received any image, that a platform post succeeded, or that a relay has started.
+Do not expose local paths to the user.
+
+The following are **external relay-owned records**, not a PTSM response schema
+and never fields that the wrapper may append to `carousel_delivery` or a PTSM
+artifact:
+
+- immutable receipt identity: `set_id` and `manifest_sha256`;
+- attempt identity: `relay_attempt_id`, `relay_idempotency_key`, and `retry_of`
+  for a later attempt;
+- per-attachment acknowledgement: the attachment `order`, its `file_sha256`, a
+  sender/provider message id if available, and `acknowledged_at` only after the
+  sender confirms that attachment;
+- outcome: `relay_outcome` is `pending`, `partial`, `delivered`, or `failed`,
+  plus a relay-owned failure reason where applicable.
+
+Only the relay may write or infer those records. It may mark `delivered` only
+after **all expected ordered attachments** have sender acknowledgements. No
+acknowledgement remains `pending`; a subset of acknowledgements is `partial`;
+a terminal sender error is `failed`. PTSM must never infer an acknowledgement,
+retry a sender call, or change the immutable local receipt because of any of
+those outcomes.
+
+A relay retry creates a new `relay_attempt_id`, retains the same receipt
+identity and order, uses its idempotency key, and sets `retry_of`. When the
+destination supports per-attachment idempotency it retries only unacknowledged
+orders; otherwise it must use a channel-safe whole-set idempotency strategy.
+It must not regenerate, reorder, or replace images through PTSM. If the relay
+fails, report relay failure rather than PTSM/user delivery success.
 
 6. Generate through PTSM only after the direction is chosen or confirmed. Pass the chosen direction's id as `--topic-direction-id`.
 
@@ -350,7 +392,7 @@ recommendation; do not claim a direction is proven until real metrics support it
 - Do not invent, expand, or replace PTSM-returned growth-oriented psychology direction(s), including `relationship_mixed_signal_camp_vote`, `social_battery_cancel_plan_boundary`, or `after_hours_message_body_alarm`; only display them when PTSM returns them.
 - Do not invent, expand, or replace PTSM-returned format recommendation; only display `format_recommendation` when PTSM returns it.
 - Do not invent, expand, or replace PTSM-returned image recommendation; only display `topic_guidance.image_recommendation` when PTSM returns it.
-- Before the run, show only the PTSM-returned `page_count` and `ordered_roles`; do not claim that `guide-post` returned `slides` or page copy. Never write, rewrite, split, reorder, or fill a carousel page; one carousel represents one topic. After a successful ordinary run, use only `carousel_delivery.status=ready` for internal relay handoff; do not display its local attachment paths to the user or turn ready into a delivery claim.
+- Before the run, show only the PTSM-returned `page_count` and `ordered_roles`; do not claim that `guide-post` returned `slides` or page copy. Never write, rewrite, split, reorder, or fill a carousel page; one carousel represents one topic. For an oversized request, explicitly select `one_carousel`, `multiple_posts`, or unsupported `independent_assets`; never use the first two as an implicit substitute for independent image assets. After a successful ordinary run, use only `carousel_delivery.status=ready` for internal relay handoff; do not display its local attachment paths to the user, turn ready into a delivery claim, or write relay acknowledgements/outcomes into PTSM.
 - Do not invent views, likes, saves, comments, shares, interaction rates, or uplift claims. Use `xhs-record-metrics` / `xhs-metrics-report` only with real supplied metrics.
 - If `run-playbook --caller openclaw` returns `topic_guidance_required`, show the directions and call `run-playbook` again only after direction confirmation with `--guidance-ack`.
 - Keep psychology safety boundaries intact: no diagnosis, no treatment promises, no medication advice, and crisis or persistent impairment should be redirected to professional support.
