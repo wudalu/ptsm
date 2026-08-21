@@ -31,39 +31,59 @@ def build_memory_node(
         namespace = ("accounts", state["account_id"], "lessons")
         lessons = execution_memory.search(namespace=namespace)
         playbook_id = state["playbook_id"]
-        lesson_limit = (
-            _MODERN_PSYCHOLOGY_MEMORY_LESSONS
-            if playbook_id == _MODERN_PSYCHOLOGY_PLAYBOOK_ID
-            else max_lessons
-        )
+        matching_lessons = [
+            item for item in lessons if item.get("playbook_id") == playbook_id
+        ]
         hits = [
             _compact_lesson(item)
-            for item in lessons
-            if item.get("playbook_id") == playbook_id
-        ][-lesson_limit:]
-        if not hits:
+            for item in matching_lessons
+        ][-max_lessons:]
+        recent_inner_fingerprints = (
+            _recent_modern_psychology_inner_fingerprints(matching_lessons)
+            if playbook_id == _MODERN_PSYCHOLOGY_PLAYBOOK_ID
+            else []
+        )
+        if not hits and not recent_inner_fingerprints:
             return {
                 "memory_hits": [],
                 "runtime_skill_contents": list(state.get("runtime_skill_contents", [])),
                 "runtime_skill_details": list(state.get("runtime_skill_details", [])),
+                **_psychology_fingerprint_state(recent_inner_fingerprints),
             }
 
-        return {
-            "memory_hits": hits,
-            "runtime_skill_contents": [
-                *list(state.get("runtime_skill_contents", [])),
-                _render_memory_context(hits),
-            ],
-            "runtime_skill_details": [
-                *list(state.get("runtime_skill_details", [])),
+        runtime_skill_contents = list(state.get("runtime_skill_contents", []))
+        runtime_skill_details = list(state.get("runtime_skill_details", []))
+        if hits:
+            runtime_skill_contents.append(_render_memory_context(hits))
+            runtime_skill_details.append(
                 {
                     "skill_name": "recent_account_memory",
                     "resource_type": "runtime_context",
                     "resource_id": "recent_account_memory:runtime_context",
                     "source_path": None,
                     "content_preview": "# Recent Account Memory",
-                },
-            ],
+                }
+            )
+        if recent_inner_fingerprints:
+            runtime_skill_contents.append(
+                _render_psychology_carousel_fingerprint_context(
+                    recent_inner_fingerprints
+                )
+            )
+            runtime_skill_details.append(
+                {
+                    "skill_name": "recent_psychology_carousel_fingerprints",
+                    "resource_type": "runtime_context",
+                    "resource_id": "recent_psychology_carousel_fingerprints:runtime_context",
+                    "source_path": None,
+                    "content_preview": "# Recent Psychology Carousel Fingerprints",
+                }
+            )
+        return {
+            "memory_hits": hits,
+            "runtime_skill_contents": runtime_skill_contents,
+            "runtime_skill_details": runtime_skill_details,
+            **_psychology_fingerprint_state(recent_inner_fingerprints),
         }
 
     return memory
@@ -103,9 +123,6 @@ def _render_memory_context(hits: list[dict[str, Any]]) -> str:
                 f"  body_preview: {rendered_hit['final_body'] or '(empty)'}",
             ]
         )
-        fingerprint = rendered_hit.get("psychology_carousel_inner_fingerprint", "")
-        if fingerprint:
-            lines.append(f"  psychology_carousel_inner_fingerprint: {fingerprint}")
     lines.append(
         "Use a different concrete object, opening sentence, repeated hotwords, and closing turn."
     )
@@ -113,26 +130,52 @@ def _render_memory_context(hits: list[dict[str, Any]]) -> str:
 
 
 def _memory_prompt_hit(hit: dict[str, Any]) -> dict[str, str]:
-    fingerprint = _valid_inner_carousel_fingerprint(
-        hit.get("psychology_carousel_inner_fingerprint")
-    )
     if hit.get("playbook_id") != "reddit_curation_daily_post":
-        rendered = {
+        return {
             "scene": str(hit.get("scene", "")),
             "title": str(hit.get("title", "")),
             "image_text": str(hit.get("image_text", "")),
             "final_body": str(hit.get("final_body", "")),
         }
-    else:
-        rendered = {
-            "scene": "same internal-source curation scene",
-            "title": _strip_reddit_source_markers(hit.get("title", "")),
-            "image_text": _strip_reddit_source_markers(hit.get("image_text", "")),
-            "final_body": _strip_reddit_source_markers(hit.get("final_body", "")),
-        }
-    if fingerprint:
-        rendered["psychology_carousel_inner_fingerprint"] = fingerprint
-    return rendered
+    return {
+        "scene": "same internal-source curation scene",
+        "title": _strip_reddit_source_markers(hit.get("title", "")),
+        "image_text": _strip_reddit_source_markers(hit.get("image_text", "")),
+        "final_body": _strip_reddit_source_markers(hit.get("final_body", "")),
+    }
+
+
+def _recent_modern_psychology_inner_fingerprints(
+    lessons: list[dict[str, object]],
+) -> list[str]:
+    fingerprints: list[str] = []
+    for lesson in reversed(lessons):
+        fingerprint = _valid_inner_carousel_fingerprint(
+            lesson.get("psychology_carousel_inner_fingerprint")
+        )
+        if not fingerprint:
+            continue
+        fingerprints.append(fingerprint)
+        if len(fingerprints) == _MODERN_PSYCHOLOGY_MEMORY_LESSONS:
+            break
+    return list(reversed(fingerprints))
+
+
+def _render_psychology_carousel_fingerprint_context(
+    fingerprints: list[str],
+) -> str:
+    lines = [
+        "# Recent Psychology Carousel Fingerprints",
+        "Avoid reusing these rendered inner-card identities:",
+        *(f"- inner_fingerprint: {fingerprint}" for fingerprint in fingerprints),
+    ]
+    return "\n".join(lines)
+
+
+def _psychology_fingerprint_state(fingerprints: list[str]) -> dict[str, object]:
+    if not fingerprints:
+        return {}
+    return {"recent_psychology_carousel_inner_fingerprints": fingerprints}
 
 
 def _strip_reddit_source_markers(value: object) -> str:

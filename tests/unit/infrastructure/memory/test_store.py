@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from ptsm.infrastructure.memory.store import FileExecutionMemory
+import pytest
+
+from ptsm.infrastructure.memory.store import FileExecutionMemory, InMemoryExecutionMemory
 
 
 def test_file_execution_memory_persists_records_across_instances(
@@ -23,3 +26,54 @@ def test_file_execution_memory_persists_records_across_instances(
 
     assert memory_path.exists()
     assert reloaded.search(namespace=namespace) == [lesson]
+
+
+@pytest.mark.parametrize("store_kind", ("in_memory", "file"))
+def test_psychology_inner_fingerprint_reservation_allows_one_interleaved_writer(
+    store_kind: str,
+    tmp_path: Path,
+) -> None:
+    namespace = ("accounts", "acct-psychology-local", "lessons")
+    fingerprint = "a" * 64
+    if store_kind == "in_memory":
+        shared_store = InMemoryExecutionMemory()
+        stores = (shared_store, shared_store)
+    else:
+        memory_path = tmp_path / "execution-memory.json"
+        stores = (
+            FileExecutionMemory(path=memory_path),
+            FileExecutionMemory(path=memory_path),
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        reservations = list(
+            executor.map(
+                lambda store: store.reserve_psychology_carousel_inner_fingerprint(
+                    namespace=namespace,
+                    fingerprint=fingerprint,
+                ),
+                stores,
+            )
+        )
+
+    winners = [reservation for reservation in reservations if reservation is not None]
+    assert len(winners) == 1
+    reservation_id = winners[0]
+    lesson = {
+        "playbook_id": "modern_psychology_post",
+        "psychology_carousel_inner_fingerprint": fingerprint,
+    }
+    assert stores[0].commit_psychology_carousel_inner_fingerprint(
+        namespace=namespace,
+        fingerprint=fingerprint,
+        reservation_id=reservation_id,
+        item=lesson,
+    )
+    assert (
+        stores[1].reserve_psychology_carousel_inner_fingerprint(
+            namespace=namespace,
+            fingerprint=fingerprint,
+        )
+        is None
+    )
+    assert stores[0].search(namespace=namespace) == [lesson]

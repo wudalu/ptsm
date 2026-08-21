@@ -9,6 +9,7 @@ import pytest
 
 from ptsm.config.settings import Settings
 from ptsm.domain.ai_tech_content import parse_ai_tech_evidence_bundle, validate_ai_tech_draft
+from ptsm.domain.psychology_carousel import psychology_carousel_inner_pages_fingerprint
 from ptsm.domain.psychology_learning import (
     list_psychology_learning_series,
     render_psychology_learning_draft,
@@ -358,6 +359,71 @@ def test_deterministic_modern_psychology_draft_builds_semantic_text_carousel(
             *[str(line) for line in slide["body_lines"]],
         )
     )
+
+
+def test_deterministic_psychology_carousel_uses_a_new_inner_variation_from_hash_context() -> None:
+    backend = DeterministicDraftBackend()
+    kwargs = {
+        "scene": "下班后身体还在工位，需要5分钟恢复信号",
+        "planner_prompt": "modern_psychology_post 现代心理困境观察",
+        "skill_contents": [
+            "# Psychology Style\n#心理学，使用具体场景和低风险工具。",
+            "# XHS Image Strategy\n输出 image_plan。",
+        ],
+    }
+    first = backend.generate(**kwargs)
+    first_fingerprint = psychology_carousel_inner_pages_fingerprint(
+        first["image_plan"]
+    )
+
+    second = backend.generate(
+        **kwargs,
+        runtime_skill_contents=[
+            "# Recent Psychology Carousel Fingerprints\n"
+            f"- inner_fingerprint: {first_fingerprint}"
+        ],
+    )
+
+    assert second["image_plan"]["slides"][0] == first["image_plan"]["slides"][0]
+    assert second["image_plan"]["slides"][1:] != first["image_plan"]["slides"][1:]
+    assert psychology_carousel_inner_pages_fingerprint(second["image_plan"]) != (
+        first_fingerprint
+    )
+
+
+def test_deterministic_psychology_carousel_has_an_unused_inner_variant_after_twelve() -> None:
+    backend = DeterministicDraftBackend()
+    kwargs = {
+        "scene": "下班后身体还在工位，需要5分钟恢复信号",
+        "planner_prompt": "modern_psychology_post 现代心理困境观察",
+        "skill_contents": [
+            "# Psychology Style\n#心理学，使用具体场景和低风险工具。",
+            "# XHS Image Strategy\n输出 image_plan。",
+        ],
+    }
+    recent_fingerprints: list[str] = []
+
+    for _ in range(13):
+        runtime_skill_contents = []
+        if recent_fingerprints:
+            runtime_skill_contents = [
+                "# Recent Psychology Carousel Fingerprints\n"
+                + "\n".join(
+                    f"- inner_fingerprint: {fingerprint}"
+                    for fingerprint in recent_fingerprints[-12:]
+                )
+            ]
+        draft = backend.generate(
+            **kwargs,
+            runtime_skill_contents=runtime_skill_contents,
+        )
+        fingerprint = psychology_carousel_inner_pages_fingerprint(
+            draft["image_plan"]
+        )
+        assert fingerprint not in recent_fingerprints[-12:]
+        recent_fingerprints.append(fingerprint)
+
+    assert len(set(recent_fingerprints)) == 13
 
 
 def test_deterministic_non_psychology_image_plan_remains_a_single_image_plan() -> None:

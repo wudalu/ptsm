@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 import json
+import os
 from pathlib import Path
+from threading import Event, Lock
+
+import pytest
 
 from ptsm.agent_runtime.runtime import (
     _build_psychology_carousel_draft_gate,
@@ -13,7 +18,7 @@ from ptsm.domain.ai_tech_content import parse_ai_tech_evidence_bundle
 from ptsm.domain.psychology_carousel import normalize_psychology_carousel_plan
 from ptsm.infrastructure.artifacts.file_store import FileArtifactStore
 from ptsm.infrastructure.llm.factory import DeterministicDraftBackend
-from ptsm.infrastructure.memory.store import InMemoryExecutionMemory
+from ptsm.infrastructure.memory.store import FileExecutionMemory, InMemoryExecutionMemory
 
 
 def _ai_news_contract() -> dict[str, object]:
@@ -82,17 +87,25 @@ def test_psychology_carousel_draft_gate_reports_schema_error_detail() -> None:
 def test_modern_psychology_memory_keeps_twelve_valid_inner_fingerprints() -> None:
     memory = InMemoryExecutionMemory()
     namespace = ("accounts", "acct-psychology-local", "lessons")
-    for index in range(13):
+    fingerprints: list[str | None] = [
+        f"{0:064x}",
+        f"{1:064x}",
+        "not-a-fingerprint",
+        None,
+        *[f"{index:064x}" for index in range(2, 14)],
+    ]
+    for index, fingerprint in enumerate(fingerprints):
+        item: dict[str, object] = {
+            "playbook_id": "modern_psychology_post",
+            "scene": f"场景{index}",
+            "title": f"标题{index}",
+            "final_body": f"body-extra-{index}",
+        }
+        if fingerprint is not None:
+            item["psychology_carousel_inner_fingerprint"] = fingerprint
         memory.record(
             namespace=namespace,
-            item={
-                "playbook_id": "modern_psychology_post",
-                "scene": f"场景{index}",
-                "title": f"标题{index}",
-                "psychology_carousel_inner_fingerprint": (
-                    "not-a-fingerprint" if index == 12 else f"{index:064x}"
-                ),
-            },
+            item=item,
         )
 
     memory_state = build_memory_node(execution_memory=memory)(
@@ -105,11 +118,15 @@ def test_modern_psychology_memory_keeps_twelve_valid_inner_fingerprints() -> Non
     )
 
     context = "\n".join(memory_state["runtime_skill_contents"])
-    assert len(memory_state["memory_hits"]) == 12
+    assert len(memory_state["memory_hits"]) == 3
+    assert memory_state["recent_psychology_carousel_inner_fingerprints"] == [
+        f"{index:064x}" for index in range(2, 14)
+    ]
+    assert "# Recent Psychology Carousel Fingerprints" in context
     assert f"{0:064x}" not in context
-    assert f"{1:064x}" in context
+    assert f"{2:064x}" in context
     assert "not-a-fingerprint" not in context
-    assert "psychology_carousel_inner_fingerprint" not in memory_state["memory_hits"][-1]
+    assert "body-extra-4" not in context
 
 
 def test_psychology_carousel_gate_rejects_inner_pages_in_recent_account_memory() -> None:
@@ -211,6 +228,143 @@ def test_finalize_uses_actual_memory_state_to_reject_duplicate_carousel(
         "psychology carousel inner pages repeat recent account memory"
     )
     assert not artifact_root.exists()
+
+
+@pytest.mark.parametrize("memory_kind", ("in_memory", "file"))
+def test_finalize_reservation_rejects_interleaved_duplicate_before_artifact_write(
+    tmp_path: Path,
+    memory_kind: str,
+) -> None:
+    class FirstWriteBlockingArtifactStore(FileArtifactStore):
+        def __init__(self, base_dir: Path) -> None:
+            super().__init__(base_dir=base_dir)
+            self.first_write_started = Event()
+            self.allow_first_write = Event()
+            self._calls_lock = Lock()
+            self.calls = 0
+
+        def write(
+            self,
+            payload: dict[str, object],
+            *,
+            run_key: str | None = None,
+            expected_base_identity: os.stat_result | None = None,
+        ) -> Path:
+            with self._calls_lock:
+                self.calls += 1
+                call_number = self.calls
+            if call_number == 1:
+                self.first_write_started.set()
+                assert self.allow_first_write.wait(timeout=3)
+            return super().write(
+                payload,
+                run_key=run_key,
+                expected_base_identity=expected_base_identity,
+            )
+
+    final_content = DeterministicDraftBackend().generate(
+        scene="下班后身体还在工位，需要5分钟恢复信号",
+        planner_prompt="modern_psychology_post 现代心理困境观察",
+        skill_contents=[
+            "# Psychology Style\n#心理学，使用具体场景和低风险工具。",
+            "# XHS Image Strategy\n输出 image_plan。",
+        ],
+    )
+    memory = (
+        InMemoryExecutionMemory()
+        if memory_kind == "in_memory"
+        else FileExecutionMemory(path=tmp_path / "execution-memory.json")
+    )
+    artifact_root = tmp_path / "artifacts"
+    artifact_store = FirstWriteBlockingArtifactStore(artifact_root)
+    finalize = build_finalize_node(
+        execution_memory=memory,
+        artifact_store=artifact_store,
+        psychology_carousel_draft_gate=_build_psychology_carousel_draft_gate(),
+    )
+    state = {
+        "account_id": "acct-psychology-local",
+        "playbook_id": "modern_psychology_post",
+        "drafting_provider": "deterministic",
+        "attempt_count": 1,
+        "reflection_decision": "finalize",
+        "scene": "下班后身体还在工位",
+        "final_content": final_content,
+        "memory_hits": [],
+        "recent_psychology_carousel_inner_fingerprints": [],
+    }
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        first_future = executor.submit(finalize, state)
+        assert artifact_store.first_write_started.wait(timeout=3)
+        second = finalize(dict(state))
+        artifact_store.allow_first_write.set()
+        first = first_future.result(timeout=3)
+
+    assert first["status"] == "completed"
+    assert second["status"] == "psychology_carousel_draft_invalid"
+    assert second["reflection_decision"] == "fail"
+    assert second["reflection_feedback"] == (
+        "psychology carousel inner pages repeat recent account memory"
+    )
+    assert artifact_store.calls == 1
+    assert len(list(artifact_root.glob("*.json"))) == 1
+    assert len(memory.search(namespace=("accounts", "acct-psychology-local", "lessons"))) == 1
+
+
+def test_finalize_releases_carousel_reservation_when_artifact_write_fails(
+    tmp_path: Path,
+) -> None:
+    class FailingArtifactStore(FileArtifactStore):
+        def write(
+            self,
+            payload: dict[str, object],
+            *,
+            run_key: str | None = None,
+            expected_base_identity: os.stat_result | None = None,
+        ) -> Path:
+            del payload, run_key, expected_base_identity
+            raise OSError("artifact storage unavailable")
+
+    final_content = DeterministicDraftBackend().generate(
+        scene="下班后身体还在工位，需要5分钟恢复信号",
+        planner_prompt="modern_psychology_post 现代心理困境观察",
+        skill_contents=[
+            "# Psychology Style\n#心理学，使用具体场景和低风险工具。",
+            "# XHS Image Strategy\n输出 image_plan。",
+        ],
+    )
+    memory = InMemoryExecutionMemory()
+    finalize = build_finalize_node(
+        execution_memory=memory,
+        artifact_store=FailingArtifactStore(tmp_path / "artifacts"),
+        psychology_carousel_draft_gate=_build_psychology_carousel_draft_gate(),
+    )
+    state = {
+        "account_id": "acct-psychology-local",
+        "playbook_id": "modern_psychology_post",
+        "drafting_provider": "deterministic",
+        "attempt_count": 1,
+        "reflection_decision": "finalize",
+        "scene": "下班后身体还在工位",
+        "final_content": final_content,
+        "memory_hits": [],
+        "recent_psychology_carousel_inner_fingerprints": [],
+    }
+
+    with pytest.raises(OSError, match="artifact storage unavailable"):
+        finalize(state)
+
+    fingerprint = psychology_carousel.psychology_carousel_inner_pages_fingerprint(
+        final_content["image_plan"]
+    )
+    namespace = ("accounts", "acct-psychology-local", "lessons")
+    assert memory.search(namespace=namespace) == []
+    reservation_id = memory.reserve_psychology_carousel_inner_fingerprint(
+        namespace=namespace,
+        fingerprint=fingerprint,
+    )
+    assert reservation_id is not None
 
 
 def test_finalize_blocks_invalid_ai_draft_before_artifact_or_memory(tmp_path: Path) -> None:

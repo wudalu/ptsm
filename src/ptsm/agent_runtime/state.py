@@ -35,6 +35,7 @@ class ExecutionState(TypedDict, total=False):
     topic_selection: dict[str, Any]
     artifact_path: str
     memory_hits: list[dict[str, Any]]
+    recent_psychology_carousel_inner_fingerprints: list[str]
     content_quality_eval: dict[str, Any]
     content_review: dict[str, Any]
     ai_tech_executor_errors: list[str]

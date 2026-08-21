@@ -28,9 +28,10 @@ from ptsm.domain.psychology_learning import (
     resolve_psychology_learning_selection,
     seal_psychology_learning_preflight_bundle,
 )
+from ptsm.domain.psychology_carousel import psychology_carousel_inner_pages_fingerprint
 from ptsm.infrastructure.artifacts.file_store import FileArtifactStore
 from ptsm.infrastructure.llm.factory import DeterministicDraftBackend
-from ptsm.infrastructure.memory.store import InMemoryExecutionMemory
+from ptsm.infrastructure.memory.store import FileExecutionMemory, InMemoryExecutionMemory
 
 
 class CapturingLearningDraftAgent:
@@ -199,6 +200,57 @@ def test_ordinary_psychology_carousel_survives_runtime_review_and_artifact(
     assert result["status"] == "completed"
     assert artifact["final_content"]["image_plan"] == draft["image_plan"]
     assert artifact["content_review"]["image_plan"] == draft["image_plan"]
+
+
+@pytest.mark.parametrize("memory_kind", ("in_memory", "file"))
+def test_ordinary_psychology_same_scene_twice_uses_distinct_inner_carousels(
+    tmp_path: Path,
+    memory_kind: str,
+) -> None:
+    memory = (
+        InMemoryExecutionMemory()
+        if memory_kind == "in_memory"
+        else FileExecutionMemory(path=tmp_path / "execution-memory.json")
+    )
+    workflow = build_playbook_workflow(
+        playbook_id="modern_psychology_post",
+        domain="现代心理困境观察",
+        settings=_settings(),
+        memory=memory,
+        max_attempts=1,
+        artifact_store=FileArtifactStore(base_dir=tmp_path / "artifacts"),
+    )
+    request = {
+        "scene": "下班后身体还在工位，需要5分钟恢复信号",
+        "platform": "xiaohongshu",
+        "account_id": "acct-psychology-repeat",
+    }
+
+    first = workflow.invoke(
+        request,
+        config={"configurable": {"thread_id": "ordinary-repeat-one"}},
+    )
+    second = workflow.invoke(
+        request,
+        config={"configurable": {"thread_id": "ordinary-repeat-two"}},
+    )
+
+    assert first["status"] == "completed"
+    assert second["status"] == "completed"
+    first_fingerprint = psychology_carousel_inner_pages_fingerprint(
+        first["final_content"]["image_plan"]
+    )
+    second_fingerprint = psychology_carousel_inner_pages_fingerprint(
+        second["final_content"]["image_plan"]
+    )
+    assert first_fingerprint != second_fingerprint
+    lessons = memory.search(
+        namespace=("accounts", "acct-psychology-repeat", "lessons")
+    )
+    assert [lesson["psychology_carousel_inner_fingerprint"] for lesson in lessons] == [
+        first_fingerprint,
+        second_fingerprint,
+    ]
 
 
 def test_ordinary_psychology_canonicalizes_carousel_before_checkpoint(

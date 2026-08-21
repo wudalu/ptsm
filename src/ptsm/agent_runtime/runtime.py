@@ -506,14 +506,11 @@ def _is_psychology_carousel_plan(raw_plan: Mapping[str, Any]) -> bool:
 
 
 def _recent_psychology_carousel_fingerprints(state: ExecutionState) -> set[str]:
-    raw_hits = state.get("memory_hits")
-    if not isinstance(raw_hits, list):
+    raw_fingerprints = state.get("recent_psychology_carousel_inner_fingerprints")
+    if not isinstance(raw_fingerprints, list):
         return set()
     fingerprints: set[str] = set()
-    for raw_hit in raw_hits:
-        if not isinstance(raw_hit, Mapping):
-            continue
-        raw_fingerprint = raw_hit.get("psychology_carousel_inner_fingerprint")
+    for raw_fingerprint in raw_fingerprints:
         if not isinstance(raw_fingerprint, str):
             continue
         fingerprint = raw_fingerprint.strip()
@@ -872,14 +869,13 @@ def build_finalize_node(
                     ),
                 )
             )
-        artifact_path = artifact_store.write(
-            artifact_payload,
-            run_key=f"{state['account_id']}-{state['playbook_id']}-{state['attempt_count']}",
-            expected_base_identity=expected_artifact_root_identity,
-        )
 
+        lesson_memory_item: dict[str, object] | None = None
+        fingerprint: str | None = None
+        reservation_id: str | None = None
+        lesson_namespace = ("accounts", state["account_id"], "lessons")
         if psychology_learning_contract is None:
-            lesson_memory_item: dict[str, object] = {
+            lesson_memory_item = {
                 "playbook_id": state["playbook_id"],
                 "scene": state["scene"],
                 "attempt_count": state["attempt_count"],
@@ -894,10 +890,56 @@ def build_finalize_node(
             )
             if fingerprint is not None:
                 lesson_memory_item["psychology_carousel_inner_fingerprint"] = fingerprint
-            execution_memory.record(
-                namespace=("accounts", state["account_id"], "lessons"),
-                item=lesson_memory_item,
+                reservation_id = (
+                    execution_memory.reserve_psychology_carousel_inner_fingerprint(
+                        namespace=lesson_namespace,
+                        fingerprint=fingerprint,
+                    )
+                )
+                if reservation_id is None:
+                    return {
+                        "status": "psychology_carousel_draft_invalid",
+                        "reflection_decision": "fail",
+                        "reflection_feedback": (
+                            "psychology carousel inner pages repeat recent account memory"
+                        ),
+                    }
+
+        try:
+            artifact_path = artifact_store.write(
+                artifact_payload,
+                run_key=f"{state['account_id']}-{state['playbook_id']}-{state['attempt_count']}",
+                expected_base_identity=expected_artifact_root_identity,
             )
+        except Exception:
+            if fingerprint is not None and reservation_id is not None:
+                execution_memory.release_psychology_carousel_inner_fingerprint(
+                    namespace=lesson_namespace,
+                    fingerprint=fingerprint,
+                    reservation_id=reservation_id,
+                )
+            raise
+
+        if lesson_memory_item is not None:
+            if fingerprint is not None and reservation_id is not None:
+                if not execution_memory.commit_psychology_carousel_inner_fingerprint(
+                    namespace=lesson_namespace,
+                    fingerprint=fingerprint,
+                    reservation_id=reservation_id,
+                    item=lesson_memory_item,
+                ):
+                    return {
+                        "status": "psychology_carousel_draft_invalid",
+                        "reflection_decision": "fail",
+                        "reflection_feedback": (
+                            "psychology carousel inner pages repeat recent account memory"
+                        ),
+                    }
+            else:
+                execution_memory.record(
+                    namespace=lesson_namespace,
+                    item=lesson_memory_item,
+                )
         return {
             "status": "completed",
             "artifact_path": str(artifact_path),

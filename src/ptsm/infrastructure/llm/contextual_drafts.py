@@ -7,10 +7,37 @@ from typing import Any, Mapping
 from pydantic import ValidationError
 
 from ptsm.domain.ai_tech_content import parse_ai_tech_runtime_contract
-from ptsm.domain.psychology_carousel import normalize_psychology_carousel_plan
+from ptsm.domain.psychology_carousel import (
+    normalize_psychology_carousel_plan,
+    psychology_carousel_inner_pages_fingerprint,
+)
 from ptsm.domain.psychology_learning import (
     parse_psychology_learning_runtime_contract,
     render_psychology_learning_draft,
+)
+
+
+_RECENT_PSYCHOLOGY_CAROUSEL_FINGERPRINT_HEADER = (
+    "# Recent Psychology Carousel Fingerprints"
+)
+_RECENT_PSYCHOLOGY_CAROUSEL_FINGERPRINT_PATTERN = re.compile(
+    r"(?m)^- inner_fingerprint: ([0-9a-f]{64})$"
+)
+# Keep the first sequence byte-for-byte stable.  A 12-fingerprint memory window
+# always leaves one of these 13 renderable inner-card variants available.
+_MODERN_PSYCHOLOGY_SAVE_TOOL_HEADLINE_VARIANTS = (
+    "先把这一刻写清",
+    "先给今晚留一小步",
+    "先让这一刻停一下",
+    "先把问题缩小一点",
+    "先停十秒再决定",
+    "先换一个更小的动作",
+    "先把答案留到明天",
+    "先给自己一个暂停键",
+    "先从最容易的一步开始",
+    "先把这一页存下来",
+    "先让注意力回到眼前",
+    "先少做一点也可以",
 )
 
 
@@ -398,6 +425,7 @@ def _build_modern_psychology_carousel_plan(
     scene: str,
     title: str,
     image_text: str,
+    recent_inner_fingerprints: set[str] | None = None,
 ) -> dict[str, Any]:
     """Build semantic pages beside the deterministic draft, without another model call."""
     lane = _modern_psychology_lane(scene)
@@ -501,7 +529,7 @@ def _build_modern_psychology_carousel_plan(
         comment_headline = "想太多时，你更像哪一派？"
         comment_lines = ["A.马上找答案", "B.忍住却反复想"]
 
-    return normalize_psychology_carousel_plan(
+    plan = normalize_psychology_carousel_plan(
         {
             "backend": "local_social_screenshot",
             "style": "psychology_text_card",
@@ -558,6 +586,46 @@ def _build_modern_psychology_carousel_plan(
             ],
         }
     )
+    return _select_unused_modern_psychology_inner_plan(
+        plan=plan,
+        recent_inner_fingerprints=recent_inner_fingerprints or set(),
+    )
+
+
+def _select_unused_modern_psychology_inner_plan(
+    *,
+    plan: dict[str, Any],
+    recent_inner_fingerprints: set[str],
+) -> dict[str, Any]:
+    candidates = [plan]
+    candidates.extend(
+        _with_modern_psychology_save_tool_headline(plan, headline)
+        for headline in _MODERN_PSYCHOLOGY_SAVE_TOOL_HEADLINE_VARIANTS
+    )
+    for candidate in candidates:
+        if (
+            psychology_carousel_inner_pages_fingerprint(candidate)
+            not in recent_inner_fingerprints
+        ):
+            return candidate
+    # The caller supplies at most 12 validated hashes, but retaining a stable
+    # fallback keeps this deterministic helper safe if a future caller widens
+    # that contract.
+    return plan
+
+
+def _with_modern_psychology_save_tool_headline(
+    plan: dict[str, Any],
+    headline: str,
+) -> dict[str, Any]:
+    slides: list[dict[str, Any]] = []
+    for slide in plan["slides"]:
+        copied_slide = dict(slide)
+        copied_slide["body_lines"] = list(slide["body_lines"])
+        if copied_slide["role"] == "save_tool":
+            copied_slide["headline"] = headline
+        slides.append(copied_slide)
+    return normalize_psychology_carousel_plan({**plan, "slides": slides})
 
 
 def _modern_psychology_lane(scene: str) -> str:
@@ -1148,8 +1216,24 @@ def _build_modern_psychology_draft(
         scene=scene,
         title=title,
         image_text=image_text,
+        recent_inner_fingerprints=_recent_psychology_carousel_inner_fingerprints(
+            runtime_context
+        ),
     )
     return draft
+
+
+def _recent_psychology_carousel_inner_fingerprints(runtime_context: str) -> set[str]:
+    if _RECENT_PSYCHOLOGY_CAROUSEL_FINGERPRINT_HEADER not in runtime_context:
+        return set()
+    fingerprint_context = runtime_context.split(
+        _RECENT_PSYCHOLOGY_CAROUSEL_FINGERPRINT_HEADER,
+        maxsplit=1,
+    )[1]
+    fingerprints = _RECENT_PSYCHOLOGY_CAROUSEL_FINGERPRINT_PATTERN.findall(
+        fingerprint_context
+    )
+    return set(fingerprints[-12:])
 
 
 def _avoid_recent_modern_psychology_memory(
