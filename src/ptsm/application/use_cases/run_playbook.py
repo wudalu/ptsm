@@ -1334,7 +1334,9 @@ def _release_active_ordinary_psychology_carousel_reservation() -> None:
     if reservation is None:
         return
     try:
-        reservation.release()
+        # The handoff is an opaque runtime capability.  Invoke the canonical
+        # implementation rather than a potentially shadowed instance method.
+        OrdinaryPsychologyCarouselMemoryReservation.release(reservation)
     except BaseException:
         # A durable lease bounds a release error.  Retain the primary result or
         # exception rather than leaking an internal capability failure.
@@ -1356,6 +1358,29 @@ def _guard_ordinary_psychology_carousel_reservation(
             _ACTIVE_ORDINARY_PSYCHOLOGY_CAROUSEL_RESERVATION.reset(context_token)
 
     return guarded
+
+
+def _is_current_ordinary_psychology_carousel_reservation(
+    reservation: object,
+    *,
+    memory: ExecutionMemoryStore,
+    namespace: tuple[str, ...],
+) -> bool:
+    """Accept only a capability bound to this run's memory authority.
+
+    A custom workflow may return arbitrary result data, but it cannot turn a
+    look-alike reservation into permission to promote recent-carousel memory.
+    The canonical heartbeat below separately verifies the live reservation id
+    before rendering starts.
+    """
+    return (
+        type(reservation) is OrdinaryPsychologyCarouselMemoryReservation
+        and OrdinaryPsychologyCarouselMemoryReservation.is_bound_to(
+            reservation,
+            execution_memory=memory,
+            namespace=namespace,
+        )
+    )
 
 
 @_guard_ordinary_psychology_carousel_reservation
@@ -1711,14 +1736,36 @@ def run_playbook(
                 }
 
     deferred_carousel_reservations: list[OrdinaryPsychologyCarouselMemoryReservation] = []
+    ordinary_carousel_reservation_handoff_invalid = False
+    ordinary_carousel_reservation_namespace = (
+        "accounts",
+        account.account_id,
+        "lessons",
+    )
 
     def hold_carousel_reservation(
         reservation: OrdinaryPsychologyCarouselMemoryReservation,
     ) -> None:
+        nonlocal ordinary_carousel_reservation_handoff_invalid
+        if not _is_current_ordinary_psychology_carousel_reservation(
+            reservation,
+            memory=memory,
+            namespace=ordinary_carousel_reservation_namespace,
+        ):
+            ordinary_carousel_reservation_handoff_invalid = True
+            return
         if deferred_carousel_reservations:
-            reservation.release()
-            raise RuntimeError("ordinary psychology workflow returned multiple carousel reservations")
-        deferred_carousel_reservations.append(reservation)
+            OrdinaryPsychologyCarouselMemoryReservation.release(reservation)
+            ordinary_carousel_reservation_handoff_invalid = True
+            return
+        # Copy only verified durable authority into an application-owned
+        # capability.  The workflow retains its original Python object, so
+        # never keep that mutable object for the later render/ledger commit.
+        deferred_carousel_reservations.append(
+            OrdinaryPsychologyCarouselMemoryReservation.copy_for_application(
+                reservation
+            )
+        )
 
     if (
         playbook.playbook_id == MODERN_PSYCHOLOGY_PLAYBOOK_ID
@@ -1822,7 +1869,7 @@ def run_playbook(
                     pass
         for reservation in deferred_carousel_reservations:
             try:
-                reservation.release()
+                OrdinaryPsychologyCarouselMemoryReservation.release(reservation)
             except BaseException:
                 # Preserve the workflow exception; the durable lease bounds a
                 # release failure until recovery.
@@ -1848,19 +1895,39 @@ def run_playbook(
         if deferred_carousel_reservations
         else None
     )
+    if (
+        deferred_carousel_reservation is not None
+        and not _is_current_ordinary_psychology_carousel_reservation(
+            deferred_carousel_reservation,
+            memory=memory,
+            namespace=ordinary_carousel_reservation_namespace,
+        )
+    ):
+        # A workflow can mutate an object after handing it off. Do not invoke
+        # its release method through a potentially rebound authority; retain
+        # the durable lease for its original store to recover naturally.
+        ordinary_carousel_reservation_handoff_invalid = True
+        deferred_carousel_reservation = None
     ordinary_carousel_lease_started = True
     if deferred_carousel_reservation is not None:
         _ACTIVE_ORDINARY_PSYCHOLOGY_CAROUSEL_RESERVATION.set(
             deferred_carousel_reservation
         )
         ordinary_carousel_lease_started = (
-            deferred_carousel_reservation.start_heartbeat()
+            OrdinaryPsychologyCarouselMemoryReservation.start_heartbeat(
+                deferred_carousel_reservation
+            )
         )
     result = {"playbook_id": playbook.playbook_id, **result}
     # A workflow cannot self-authorize an external relay handoff.  The only
     # legitimate receipt is assembled locally after the canonical set, ledger,
     # and ordinary-memory lifecycle all succeed below.
     result.pop("carousel_delivery", None)
+    if ordinary_carousel_reservation_handoff_invalid:
+        result["status"] = "ordinary_psychology_carousel_reservation_invalid"
+        result["ordinary_psychology_carousel_reservation_validation"] = {
+            "error": "workflow returned an unbound ordinary psychology carousel reservation"
+        }
     if (
         is_ordinary_psychology_workflow
         and result.get("status") == "completed"
@@ -2078,9 +2145,11 @@ def run_playbook(
                 try:
                     if psychology_learning_bundle is None:
                         reservation = deferred_carousel_reservation
-                        if reservation is not None and (
+                        if reservation is None or (
                             not ordinary_carousel_lease_started
-                            or not reservation.heartbeat_is_healthy()
+                            or not OrdinaryPsychologyCarouselMemoryReservation.heartbeat_is_healthy(
+                                reservation
+                            )
                         ):
                             raise ImageCarouselTransactionError(
                                 "ordinary psychology carousel reservation lease is unavailable"
@@ -2106,7 +2175,9 @@ def run_playbook(
                     if (
                         psychology_learning_bundle is None
                         and deferred_carousel_reservation is not None
-                        and not deferred_carousel_reservation.heartbeat_is_healthy()
+                        and not OrdinaryPsychologyCarouselMemoryReservation.heartbeat_is_healthy(
+                            deferred_carousel_reservation
+                        )
                     ):
                         raise ImageCarouselTransactionError(
                             "ordinary psychology carousel reservation lease renewal failed"
@@ -2218,7 +2289,9 @@ def run_playbook(
                         and psychology_learning_bundle is None
                         and (
                             deferred_carousel_reservation is None
-                            or not deferred_carousel_reservation.heartbeat_is_healthy()
+                            or not OrdinaryPsychologyCarouselMemoryReservation.heartbeat_is_healthy(
+                                deferred_carousel_reservation
+                            )
                         )
                     ):
                         raise ImageCarouselTransactionError(
@@ -2238,7 +2311,9 @@ def run_playbook(
                             reservation = deferred_carousel_reservation
                             if (
                                 reservation is None
-                                or not reservation.heartbeat_is_healthy()
+                                or not OrdinaryPsychologyCarouselMemoryReservation.heartbeat_is_healthy(
+                                    reservation
+                                )
                             ):
                                 raise ImageCarouselTransactionError(
                                     "ordinary psychology carousel reservation lease is unavailable"
@@ -2252,8 +2327,9 @@ def run_playbook(
                                     receipt=verified_pre_ledger_receipt,
                                 )
                             )
-                            if not reservation.persist_receipt_intent(
-                                carousel_receipt_intent
+                            if not OrdinaryPsychologyCarouselMemoryReservation.persist_receipt_intent(
+                                reservation,
+                                carousel_receipt_intent,
                             ):
                                 raise ImageCarouselTransactionError(
                                     "ordinary psychology carousel receipt intent could not persist"
@@ -2301,7 +2377,9 @@ def run_playbook(
                             reservation = deferred_carousel_reservation
                             if (
                                 reservation is None
-                                or not reservation.heartbeat_is_healthy()
+                                or not OrdinaryPsychologyCarouselMemoryReservation.heartbeat_is_healthy(
+                                    reservation
+                                )
                             ):
                                 raise ImageCarouselTransactionError(
                                     "ordinary psychology carousel reservation lease renewal failed"
@@ -2317,8 +2395,9 @@ def run_playbook(
                                 raise ImageCarouselTransactionError(
                                     "ordinary psychology carousel asset ledger projection is incomplete"
                                 )
-                            if not reservation.commit_receipt_intent(
-                                carousel_receipt_intent
+                            if not OrdinaryPsychologyCarouselMemoryReservation.commit_receipt_intent(
+                                reservation,
+                                carousel_receipt_intent,
                             ):
                                 raise ImageCarouselTransactionError(
                                     "ordinary psychology carousel reservation could not commit"
@@ -2342,7 +2421,9 @@ def run_playbook(
                         and deferred_carousel_reservation is not None
                     ):
                         try:
-                            deferred_carousel_reservation.abort_receipt_intent()
+                            OrdinaryPsychologyCarouselMemoryReservation.abort_receipt_intent(
+                                deferred_carousel_reservation
+                            )
                         except Exception:
                             # An unknown abort outcome retains the intent via
                             # the guarded reservation cleanup and fails closed.
@@ -3696,7 +3777,9 @@ def _finish_psychology_carousel_failure(
     result.pop("carousel_delivery", None)
     if ordinary_psychology_carousel_reservation is not None:
         try:
-            ordinary_psychology_carousel_reservation.release()
+            OrdinaryPsychologyCarouselMemoryReservation.release(
+                ordinary_psychology_carousel_reservation
+            )
         except (OSError, RuntimeError, ValueError):
             # The durable lease bounds a process crash or an adapter-side
             # release failure; do not expose internal memory errors in the

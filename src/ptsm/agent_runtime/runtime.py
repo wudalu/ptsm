@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass, field
 import hashlib
 import os
@@ -95,6 +96,39 @@ class OrdinaryPsychologyCarouselMemoryReservation:
     _heartbeat_thread: Thread | None = field(default=None, init=False, repr=False)
     _lock: Any = field(default_factory=RLock, init=False, repr=False)
 
+    def is_bound_to(
+        self,
+        *,
+        execution_memory: ExecutionMemoryStore,
+        namespace: tuple[str, ...],
+    ) -> bool:
+        """Whether this handoff belongs to the caller's memory authority.
+
+        The application must not accept a look-alike object from a custom
+        workflow.  The later heartbeat still confirms the reservation id is
+        live, but this identity check rejects a capability built for another
+        account or store before any image work begins.
+        """
+        with self._lock:
+            return (
+                self._execution_memory is execution_memory
+                and self._namespace == namespace
+                and not self._settled
+            )
+
+    def copy_for_application(self) -> "OrdinaryPsychologyCarouselMemoryReservation":
+        """Return an application-owned copy of a verified handoff capability."""
+        with self._lock:
+            if self._settled:
+                raise RuntimeError("ordinary psychology carousel reservation is settled")
+            return OrdinaryPsychologyCarouselMemoryReservation(
+                _execution_memory=self._execution_memory,
+                _namespace=self._namespace,
+                _fingerprint=self._fingerprint,
+                _reservation_id=self._reservation_id,
+                _item=deepcopy(self._item),
+            )
+
     def start_heartbeat(self) -> bool:
         """Renew the owner-fenced lease until this capability settles."""
         with self._lock:
@@ -103,7 +137,7 @@ class OrdinaryPsychologyCarouselMemoryReservation:
             if self._heartbeat_started:
                 return self._heartbeat_healthy
             self._heartbeat_started = True
-        if not self._renew():
+        if not OrdinaryPsychologyCarouselMemoryReservation._renew(self):
             with self._lock:
                 self._heartbeat_healthy = False
             return False
@@ -165,7 +199,7 @@ class OrdinaryPsychologyCarouselMemoryReservation:
         if committed:
             with self._lock:
                 self._settled = True
-            self._stop_heartbeat()
+            OrdinaryPsychologyCarouselMemoryReservation._stop_heartbeat(self)
         return committed
 
     def abort_receipt_intent(self) -> bool:
@@ -186,7 +220,7 @@ class OrdinaryPsychologyCarouselMemoryReservation:
         if aborted:
             with self._lock:
                 self._settled = True
-            self._stop_heartbeat()
+            OrdinaryPsychologyCarouselMemoryReservation._stop_heartbeat(self)
         return aborted
 
     def release(self) -> None:
@@ -194,7 +228,7 @@ class OrdinaryPsychologyCarouselMemoryReservation:
             if self._settled:
                 return
             receipt_intent = self._receipt_intent
-        self._stop_heartbeat()
+        OrdinaryPsychologyCarouselMemoryReservation._stop_heartbeat(self)
         if receipt_intent is not None:
             # The caller explicitly aborts known pre-ledger failures. Any
             # remaining intent may already have a durable ledger and must stay
@@ -229,7 +263,7 @@ class OrdinaryPsychologyCarouselMemoryReservation:
             with self._lock:
                 if self._settled:
                     return
-            if self._renew():
+            if OrdinaryPsychologyCarouselMemoryReservation._renew(self):
                 continue
             with self._lock:
                 self._heartbeat_healthy = False

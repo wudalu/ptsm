@@ -28,7 +28,8 @@ class _WorkflowArtifactWriteTracker:
     """
 
     owner: object
-    base_identity_before_invoke: os.stat_result | None
+    base_path_before_invoke: Path
+    base_identity_before_invoke: os.stat_result
     writes: dict[Path, "ArtifactFileIdentity"]
 
 
@@ -73,15 +74,21 @@ class FileArtifactStore:
         else:
             raise ValueError("artifact run_key must be a safe filename stem")
         tracker = self._active_workflow_tracker()
-        if (
-            expected_base_identity is None
-            and tracker is not None
-            and tracker.base_identity_before_invoke is not None
-        ):
-            # If the root existed before untrusted workflow execution, every
-            # creation must stay in that exact directory.  This turns a root
-            # rebind into a failed write rather than a cleanup target change.
-            expected_base_identity = tracker.base_identity_before_invoke
+        if tracker is not None:
+            if (
+                self._workflow_path_key(self.base_dir)
+                != tracker.base_path_before_invoke
+            ):
+                raise OSError(
+                    errno.ELOOP,
+                    "workflow artifact root changed",
+                    str(self.base_dir),
+                )
+            if expected_base_identity is None:
+                # Tracking eagerly pins a real root before untrusted workflow
+                # code runs, including the formerly-racy first-create case.
+                # Every direct write must remain in that exact directory.
+                expected_base_identity = tracker.base_identity_before_invoke
         if expected_base_identity is None:
             self.base_dir.mkdir(parents=True, exist_ok=True)
         base_fd, base_identity = self._open_parent_directory(
@@ -186,6 +193,7 @@ class FileArtifactStore:
         """
         tracker = _WorkflowArtifactWriteTracker(
             owner=self,
+            base_path_before_invoke=self._workflow_path_key(self.base_dir),
             base_identity_before_invoke=self._capture_base_identity(),
             writes={},
         )
@@ -352,12 +360,9 @@ class FileArtifactStore:
         tracker = self._active_workflow_tracker()
         if tracker is None:
             return
-        if (
-            tracker.base_identity_before_invoke is not None
-            and not os.path.samestat(
-                identity.parent,
-                tracker.base_identity_before_invoke,
-            )
+        if not os.path.samestat(
+            identity.parent,
+            tracker.base_identity_before_invoke,
         ):
             return
         tracker.writes[self._workflow_path_key(artifact_path)] = identity
@@ -394,11 +399,10 @@ class FileArtifactStore:
             return None
         return tracker.writes.get(self._workflow_path_key(artifact_path))
 
-    def _capture_base_identity(self) -> os.stat_result | None:
-        try:
-            base_fd, base_identity = self._open_parent_directory(self.base_dir)
-        except FileNotFoundError:
-            return None
+    def _capture_base_identity(self) -> os.stat_result:
+        """Create and pin the workflow root before untrusted invocation."""
+        self.base_dir.mkdir(parents=True, exist_ok=True)
+        base_fd, base_identity = self._open_parent_directory(self.base_dir)
         try:
             return base_identity
         finally:

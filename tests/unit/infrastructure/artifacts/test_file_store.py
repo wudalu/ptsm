@@ -85,6 +85,38 @@ def test_workflow_write_tracker_owns_only_new_artifacts_and_fences_cleanup(
     }
 
 
+def test_workflow_write_tracker_pins_a_missing_root_before_untrusted_writes(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "initially-missing-artifacts"
+    store = FileArtifactStore(base_dir=root)
+
+    with store.track_workflow_writes() as tracker:
+        assert root.is_dir()
+        artifact_path = store.write({"title": "first tracked artifact"}, run_key="first")
+
+    assert artifact_path.parent == root
+    assert store.is_tracked_workflow_artifact(artifact_path, tracker=tracker)
+
+
+def test_workflow_write_tracker_rejects_base_dir_mutation_from_a_missing_root(
+    tmp_path: Path,
+) -> None:
+    initial_root = tmp_path / "initially-missing-artifacts"
+    external_root = tmp_path / "external-artifacts"
+    store = FileArtifactStore(base_dir=initial_root)
+
+    with store.track_workflow_writes() as tracker:
+        assert initial_root.is_dir()
+        store.base_dir = external_root
+        with pytest.raises(OSError, match="workflow artifact root changed"):
+            store.write({"title": "must not escape"}, run_key="escaped")
+
+    assert store.tracked_workflow_artifact_paths(tracker) == ()
+    assert not external_root.exists()
+    assert list(initial_root.iterdir()) == []
+
+
 @pytest.mark.parametrize("run_key", ("../escaped", "/tmp/escaped"))
 def test_file_artifact_store_write_rejects_run_keys_that_escape_the_base_directory(
     tmp_path: Path,
