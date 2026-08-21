@@ -260,8 +260,10 @@ uv run python -m ptsm.bootstrap run-playbook \
 carousel 的 `pages` 必须完整连续地带 `order`、`page_sha256`（canonical page content）和
 `file_sha256`（PNG bytes）。只有 canonical receipt 与 page-aware asset ledger 都成功后，才会 commit
 per-account/per-playbook 的 cover-excluded inner fingerprint 到最近 12 个 successful complete ordinary
-carousel receipts；draft artifact、reservation、失败页或 learning-series 都不占该窗口，失败会 release，过期
-lease 可恢复。任一 page/manifest/ledger 不完整都会返回 `psychology_carousel_generation_failed`，不会进入
+carousel receipts；draft artifact、reservation、失败页或 learning-series 都不占该窗口。普通 workflow handoff
+必须是绑定当前 account memory 的 runtime reservation；应用层在 ledger 前写 immutable receipt intent，只有完整有序
+projection 后才 atomic commit。已知 pre-ledger failure 会 abort，可能已写入 ledger 的失败保留 intent，过期时仅由
+application verifier 对账，legacy pending 保持 fail-closed。任一 page/manifest/ledger 不完整都会返回 `psychology_carousel_generation_failed`，不会进入
 watermark、publisher 或 ready relay receipt；已在完整提交后发生的 publish failure 则保留 set，修复外部发布
 条件后可重试。外层 chat/IM relay 只能在 ordinary `carousel_delivery.status=ready` 和
 `external_relay_required=true` 时使用 receipt 的完整有序 `attachments` 转发，并以这些 canonical hashes

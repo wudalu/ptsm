@@ -81,12 +81,18 @@ unsupported 请求伪装为 batch。`max_text_units` 描述单页文字密度，
 
 普通心理学 carousel 另有 per-account/per-playbook 的私有 inner-page identity：它只取除封面外的
 canonical `role/headline/body_lines`，所以只换标题或封面不能把同一内页组伪装成新变体。最近窗口只读
-the **recent 12 successful complete ordinary carousel receipts**；reservation 可在 artifact 前取得，但必须
-在完整本地渲染、canonical receipt 验证和 page-aware asset ledger 都成功后才 commit。图片/manifest/ledger
-失败、非-carousel 退出都会 release，过期 lease 会被恢复；learning-series 使用独立合同和记忆，不进入该窗口。
+the **recent 12 successful complete ordinary carousel receipts**；workflow 交出的 reservation 必须是绑定当前
+execution-memory 与 account namespace 的 exact runtime capability，应用层复制该已验证能力并以 canonical
+lifecycle 方法使用，不能接受 duck-typed look-alike 或 workflow 自己覆盖的方法。应用层会在 ledger 之前持久化
+receipt intent；只有完整本地渲染、canonical receipt 验证、完整有序的 page-aware asset-ledger projection 和
+atomic intent commit 都成功后才提升到 recent-12。图片/manifest/ledger 失败、非-carousel 退出都会 release；
+过期 intent 只能由应用层用 durable ledger verifier 对账，未知 legacy pending marker 保持 fail-closed；
+learning-series 使用独立合同和记忆，不进入该窗口。
 
 运行期以 no-follow descriptor、目录/叶子 identity pin 和私有 regular-file 校验防御单次事务内的目录
-重绑、symlink、hardlink、临时源替换和 payload 竞态；遇到异常即 fail closed。它不会沿可变路径在线
+重绑、symlink、hardlink、临时源替换和 payload 竞态；每次不可信 workflow invoke 前都会创建并 pin 自己的
+artifact root，tracker 只认本次直接创建的文件，根路径或 inode 改变即拒绝写入、scrub、merge、publish。
+遇到异常即 fail closed。它不会沿可变路径在线
 unlink、覆盖或“修复”不可信 artifact/progress，残留只能交给 `trusted offline maintenance`，在所有
 writer 停止后检查、重建或移除。这不是对持续拥有同一 UID 任意写权限的进程的永久 at-rest 防篡改保证：
 such a same-UID writer can still modify an inode after a transaction's final check. 需要这一保证时，必须使用

@@ -99,7 +99,8 @@ PTSM 当前的观测性核心是本地文件系统里的 run store 和 artifacts
 - real publish 或显式 `--auto-generate-image` 运行现在会把 `image_generation` metadata 落进 artifact。普通单图继续记录 provider、model/style、prompt 或本地渲染输入、`generated_image_paths`、`runtime_context_summary`、watermark policy 与 provenance。心理学 text carousel 的 ordinary artifact 还记录 `status=committed`、`carousel_style=psychology_text_card_v1`、`image_count`、content-addressed `set_id`、`manifest_path` / `manifest_sha256`、ordered `pages` 和 `generated_image_paths`；page evidence 包含 slide id/order/role/style、filename/path、bounded visible-text summary、prompt/page/file hashes 与 provenance。canonical manifest 才是权威 set receipt，不能用散落路径推断完整性。
 - complete ordinary psychology carousel 的**response 和 artifact**还会有 `carousel_delivery`：它固定为本地 handoff
   receipt（`status=ready`、`external_relay_required=true`、`set_id`、`manifest_sha256`、count checks 和按
-  manifest order 的 attachment hashes）。这不是 run summary，也不是 XHS publish success、chat/IM sender
+  manifest order 的 attachment hashes）。应用层只有在 verified runtime reservation 的 immutable receipt intent、
+  complete ordered ledger projection 与 owner-fenced artifact 都已完成后才写入它。这不是 run summary，也不是 XHS publish success、chat/IM sender
   ACK 或用户已收到图片；`ready` is **not a relay acknowledgement**. learning-series response/artifact 和任一
   `psychology_carousel_generation_failed` response/artifact 都不会出现该字段。
 - relay acknowledgement/outcome/retry 不写入 PTSM observability。外部 relay 必须在自己的 durable record 中以
