@@ -160,9 +160,12 @@ def test_each_learning_lesson_has_a_distinct_xhs_title_and_cover_hook() -> None:
 
 
 def test_builtin_learning_lesson_uses_controlled_template_v2_carousel() -> None:
-    bundle = _starter_bundle()
+    bundle = resolve_psychology_learning_selection(
+        series_id="after_work_rumination",
+        lesson_id="notice_the_loop",
+        curriculum_version="1",
+    )
 
-    assert CURRENT_PSYCHOLOGY_LEARNING_CONTROLLED_TEMPLATE_VERSION == "2"
     assert bundle.runtime_contract["controlled_template_version"] == "2"
 
     draft = render_psychology_learning_draft(bundle.runtime_contract)
@@ -198,6 +201,59 @@ def test_builtin_learning_lesson_uses_controlled_template_v2_carousel() -> None:
         "comment_prompt",
     ):
         assert bundle.runtime_contract[approved_field] in visible
+
+
+def test_current_builtin_learning_revision_uses_warm_editorial_template_v3() -> None:
+    bundle = _starter_bundle()
+
+    assert CURRENT_PSYCHOLOGY_LEARNING_CONTROLLED_TEMPLATE_VERSION == "3"
+    assert bundle.runtime_contract["curriculum_version"] == "2"
+    assert bundle.runtime_contract["controlled_template_version"] == "3"
+
+    draft = render_psychology_learning_draft(bundle.runtime_contract)
+    assert draft["title"] == "下班路上，那句话又响了一遍"
+    assert "\n\n" in draft["body"]
+    assert [
+        slide["headline"] for slide in draft["image_plan"]["slides"]
+    ] == [
+        "先别急着替自己判错",
+        "先看见回放开始",
+        "大脑只是在找出口",
+        "今晚，只做一个小动作",
+        "这张卡不负责下结论",
+        "需要支持时，不必硬扛",
+        "把这一刻留在这里",
+    ]
+
+
+def test_new_template_v3_custom_catalog_removes_emoji_before_freezing_image_copy() -> None:
+    proposal = build_psychology_learning_series_proposal(
+        PsychologyLearningSeriesPlanIntent(
+            topic="下班后的温柔收尾",
+            outline=(
+                {"id": "notice", "title": "先停一下🙂"},
+                {"id": "practice", "title": "给今天收个尾🌙"},
+            ),
+        )
+    )
+
+    catalog = psychology_learning._build_confirmed_psychology_learning_catalog(
+        proposal,
+        curriculum_version="1",
+    )
+    first = catalog.lessons[0]
+    draft = render_psychology_learning_draft(first.runtime_contract)
+    visible_image_copy = "\n".join(
+        text
+        for slide in draft["image_plan"]["slides"]
+        for text in (slide["headline"], *slide["body_lines"])
+    )
+
+    assert catalog.controlled_template_version == "3"
+    assert "🙂" not in first.lesson_title
+    assert "🌙" not in " ".join(lesson.lesson_title for lesson in catalog.lessons)
+    assert "🙂" not in visible_image_copy
+    assert "🌙" not in visible_image_copy
 
 
 def test_historic_learning_template_v1_keeps_single_card_rendering() -> None:

@@ -29,11 +29,14 @@ from pydantic import (
     model_validator,
 )
 
-from ptsm.domain.psychology_carousel import normalize_psychology_carousel_plan
+from ptsm.domain.psychology_carousel import (
+    normalize_psychology_carousel_plan,
+    remove_unsupported_image_emoji,
+)
 
 
 PSYCHOLOGY_LEARNING_MODE = "learning_series"
-PSYCHOLOGY_LEARNING_CURRICULUM_VERSION = "1"
+PSYCHOLOGY_LEARNING_CURRICULUM_VERSION = "2"
 STARTER_SERIES_ID = "after_work_rumination"
 _PSYCHOLOGY_LEARNING_PROPOSAL_SCHEMA_VERSION_V1 = "1"
 PSYCHOLOGY_LEARNING_PROPOSAL_SCHEMA_VERSION = (
@@ -43,7 +46,13 @@ _PSYCHOLOGY_LEARNING_CATALOG_SNAPSHOT_SCHEMA_VERSION_V1 = "1"
 PSYCHOLOGY_LEARNING_CATALOG_SNAPSHOT_SCHEMA_VERSION = (
     _PSYCHOLOGY_LEARNING_CATALOG_SNAPSHOT_SCHEMA_VERSION_V1
 )
-CURRENT_PSYCHOLOGY_LEARNING_CONTROLLED_TEMPLATE_VERSION = "2"
+CURRENT_PSYCHOLOGY_LEARNING_CONTROLLED_TEMPLATE_VERSION = "3"
+_BUILTIN_CONTROLLED_TEMPLATE_BY_CURRICULUM_VERSION = MappingProxyType(
+    {
+        "1": "2",
+        "2": "3",
+    }
+)
 PSYCHOLOGY_LEARNING_CAROUSEL_ORDERED_ROLES = (
     "cover_hook",
     "concrete_scene",
@@ -570,12 +579,18 @@ class PsychologyLearningLesson(_FrozenDomainModel):
 
     @property
     def runtime_contract(self) -> dict[str, Any]:
+        controlled_template_version = (
+            _BUILTIN_CONTROLLED_TEMPLATE_BY_CURRICULUM_VERSION.get(
+                self.curriculum_version,
+                CURRENT_PSYCHOLOGY_LEARNING_CONTROLLED_TEMPLATE_VERSION,
+            )
+            if self.series_id == STARTER_SERIES_ID
+            else CURRENT_PSYCHOLOGY_LEARNING_CONTROLLED_TEMPLATE_VERSION
+        )
         return parse_psychology_learning_runtime_contract(
             {
                 "mode": PSYCHOLOGY_LEARNING_MODE,
-                "controlled_template_version": (
-                    CURRENT_PSYCHOLOGY_LEARNING_CONTROLLED_TEMPLATE_VERSION
-                ),
+                "controlled_template_version": controlled_template_version,
                 "series_id": self.series_id,
                 "series_title": self.series_title,
                 "curriculum_version": self.curriculum_version,
@@ -1702,11 +1717,29 @@ def _compact_confirmed_reader_text_v1(value: str, *, max_length: int) -> str:
 
 def _compact_confirmed_reader_text(value: str, *, max_length: int) -> str:
     """Current copy compactor; historic templates bind their own implementation."""
-    return _compact_confirmed_reader_text_v1(value, max_length=max_length)
+    return _compact_confirmed_reader_text_v3(value, max_length=max_length)
+
+
+def _compact_confirmed_reader_text_v3(value: str, *, max_length: int) -> str:
+    """Create calm emoji-free copy for a newly confirmed catalog revision."""
+    text = _require_drafting_safe_text(value, field_name="confirmed catalog text")
+    text = re.sub(r"\s+", " ", remove_unsupported_image_emoji(text)).strip(
+        " ，。；、：:｜|"
+    )
+    if not text:
+        raise ValueError("confirmed catalog text must contain emoji-free text")
+    if len(text) <= max_length:
+        return text
+    compact = text[: max_length - 1].rstrip("，。；、：:｜| ")
+    return f"{compact or text[: max_length - 1]}…"
 
 
 def _confirmed_catalog_series_title_v1(topic: str) -> str:
     return f"{_compact_confirmed_reader_text_v1(topic, max_length=20)}学习系列"
+
+
+def _confirmed_catalog_series_title_v3(topic: str) -> str:
+    return f"{_compact_confirmed_reader_text_v3(topic, max_length=20)}学习系列"
 
 
 def _confirmed_catalog_approval_id_v1(
@@ -1807,6 +1840,47 @@ def _build_confirmed_psychology_learning_lesson_v2(
     )
 
 
+def _build_confirmed_psychology_learning_lesson_v3(
+    *,
+    series_id: str,
+    series_title: str,
+    curriculum_version: str,
+    lesson_id: str,
+    lesson_number: int,
+    lesson_title: str,
+    approval_id: str,
+) -> PsychologyLearningLesson:
+    """Build warm editorial copy for a new immutable custom revision."""
+    compact_title = _compact_confirmed_reader_text_v3(lesson_title, max_length=18)
+    cover_title = _compact_confirmed_reader_text_v3(compact_title, max_length=10)
+    return PsychologyLearningLesson(
+        series_id=series_id,
+        series_title=series_title,
+        curriculum_version=curriculum_version,
+        lesson_id=lesson_id,
+        lesson_number=lesson_number,
+        lesson_title=compact_title,
+        post_title=_compact_confirmed_reader_text_v3(
+            f"今天，先练习{compact_title}",
+            max_length=22,
+        ),
+        cover_text=f"先从{cover_title}开始",
+        scene_anchor="又被一个念头困住时，先不急着催自己立刻想通。",
+        concept_label="生活练习",
+        learning_goal=f"这一课只陪你练习{compact_title}，把注意力轻轻放回眼前。",
+        approved_explanation="它不是一个结论，只是替纷乱的念头留出一点可以看清的距离。",
+        applicability="适合反复想、心里很满，或暂时不知道从哪里开始的时候。",
+        micro_exercise="拿一张纸，写下此刻发生了什么，以及十分钟内愿意做的一个小动作。",
+        scope_limit="不用急着判断对错，也不用一次处理完全部感受。",
+        professional_boundary="如果这种状态持续影响生活，找专业支持比一个人硬扛更重要。",
+        comment_prompt="此刻，你愿意先从哪一个小动作开始？",
+        source_refs=(f"approval:{approval_id}",),
+        lesson_fingerprint=(
+            f"lesson:{series_id}:{lesson_id}:v{curriculum_version}:{approval_id[-12:]}"
+        ),
+    )
+
+
 def _confirmed_catalog_digest_v1(
     *,
     snapshot_schema_version: str,
@@ -1858,6 +1932,30 @@ def _confirmed_catalog_digest_v2(
     )
 
 
+def _confirmed_catalog_digest_v3(
+    *,
+    snapshot_schema_version: str,
+    controlled_template_version: str,
+    series_id: str,
+    series_title: str,
+    curriculum_version: str,
+    approval: PsychologyLearningCatalogApproval,
+    lessons: tuple[PsychologyLearningLesson, ...],
+    publication_plan: PsychologyLearningPublicationPlan,
+) -> str:
+    """Bind v3 editorial copy to its explicit template version."""
+    return _confirmed_catalog_digest_v1(
+        snapshot_schema_version=snapshot_schema_version,
+        controlled_template_version=controlled_template_version,
+        series_id=series_id,
+        series_title=series_title,
+        curriculum_version=curriculum_version,
+        approval=approval,
+        lessons=lessons,
+        publication_plan=publication_plan,
+    )
+
+
 @dataclass(frozen=True)
 class _ControlledCatalogTemplate:
     """One immutable reader-copy template for a persisted custom catalog."""
@@ -1892,6 +1990,16 @@ _CONTROLLED_CATALOG_TEMPLATE_REGISTRY: Mapping[str, _ControlledCatalogTemplate] 
                 build_lesson=_build_confirmed_psychology_learning_lesson_v2,
                 build_approval_id=_confirmed_catalog_approval_id_v1,
                 build_catalog_digest=_confirmed_catalog_digest_v2,
+            ),
+            "3": _ControlledCatalogTemplate(
+                snapshot_schema_version=(
+                    _PSYCHOLOGY_LEARNING_CATALOG_SNAPSHOT_SCHEMA_VERSION_V1
+                ),
+                build_series_title=_confirmed_catalog_series_title_v3,
+                compact_reader_text=_compact_confirmed_reader_text_v3,
+                build_lesson=_build_confirmed_psychology_learning_lesson_v3,
+                build_approval_id=_confirmed_catalog_approval_id_v1,
+                build_catalog_digest=_confirmed_catalog_digest_v3,
             ),
         }
     )
@@ -2445,11 +2553,12 @@ def _lesson(
     scope_limit: str,
     comment_prompt: str,
     source_refs: tuple[str, ...],
+    curriculum_version: str = "1",
 ) -> PsychologyLearningLesson:
     return PsychologyLearningLesson(
         series_id=STARTER_SERIES_ID,
         series_title="下班后脑子停不下来",
-        curriculum_version=PSYCHOLOGY_LEARNING_CURRICULUM_VERSION,
+        curriculum_version=curriculum_version,
         lesson_id=lesson_id,
         lesson_number=lesson_number,
         lesson_title=lesson_title,
@@ -2465,11 +2574,13 @@ def _lesson(
         professional_boundary="如果这种状态持续影响睡眠、工作或生活，专业帮助比继续硬扛更重要。",
         comment_prompt=comment_prompt,
         source_refs=source_refs,
-        lesson_fingerprint=f"lesson:{STARTER_SERIES_ID}:{lesson_id}:v1",
+        lesson_fingerprint=(
+            f"lesson:{STARTER_SERIES_ID}:{lesson_id}:v{curriculum_version}"
+        ),
     )
 
 
-_STARTER_SERIES: tuple[PsychologyLearningLesson, ...] = (
+_STARTER_SERIES_V1: tuple[PsychologyLearningLesson, ...] = (
     _lesson(
         lesson_id="notice_the_loop",
         lesson_number=1,
@@ -2566,6 +2677,107 @@ _STARTER_SERIES: tuple[PsychologyLearningLesson, ...] = (
         comment_prompt="你愿意先把哪一种支持写进名单：A.朋友 B.专业资源 C.休息安排？",
         source_refs=("source:cci-rumination-plan-2026",),
     ),
+)
+
+
+_STARTER_SERIES_V2_COPY: Mapping[str, Mapping[str, str]] = MappingProxyType(
+    {
+        "notice_the_loop": {
+            "lesson_title": "先看见脑内回放",
+            "post_title": "下班路上，那句话又响了一遍",
+            "scene_anchor": "下班路上，那句会议里的话又自己响了一遍。",
+            "learning_goal": "这一课不急着解决它，只先认出：这是复盘，还是同一段回放。",
+            "approved_explanation": "反刍思维像一段没有出口的重播，让不舒服的画面回来，却没有带来新的下一步。",
+            "applicability": "适合下班后、睡前，或消息发出后又开始反复回想的时候。",
+            "micro_exercise": "打开备忘录，慢慢写三行：事实是什么；我补了什么；下一步只做什么。",
+            "scope_limit": "不用急着替自己下结论，只把这段回放轻轻放到眼前。",
+            "comment_prompt": "你更容易在哪个时刻想起它：A.回家路上 B.洗澡以后？",
+        },
+        "facts_and_stories": {
+            "lesson_title": "把事实和猜测分开",
+            "post_title": "“收到”之后，先别急着猜",
+            "cover_text": "先分事实，再放下猜测",
+            "scene_anchor": "同事只回了一个“收到”，心里已经替这两个字写了很多解释。",
+            "learning_goal": "这一课不压住想法，只练习把能核对的事实和脑中补出的故事分开。",
+            "approved_explanation": "事实通常可以被复述；猜测常常是在替沉默补上一个最让人不安的答案。",
+            "applicability": "适合消息没回、语气变短，或会议后反复猜别人意思的时候。",
+            "micro_exercise": "写两行：事实是____；我猜的是____。先让第二行只做一种可能。",
+            "scope_limit": "这一步不负责判断谁对谁错，只让不确定感有一个可以安放的位置。",
+            "comment_prompt": "你最常补哪一种故事：A.他生气了 B.我做错了？",
+        },
+        "control_and_next_step": {
+            "lesson_title": "只留一个可控下一步",
+            "post_title": "会前，先把明天缩小一点",
+            "cover_text": "今晚，只留一个下一步",
+            "scene_anchor": "明天的会还没开始，脑子已经排练了十种可能出错的画面。",
+            "learning_goal": "这一课把大脑里的整面墙，轻轻缩成一件此刻能做的小事。",
+            "approved_explanation": "不确定的部分不一定能靠多想解决，但下一步可以更小，也可以更具体。",
+            "applicability": "适合周日晚、会前，或等待回复时总想把一切控制住的时候。",
+            "micro_exercise": "写两列：现在控制不了什么；十分钟内愿意做的一个动作是什么。",
+            "scope_limit": "不是忽略现实难题，只是不把所有结果都留给今晚的脑子。",
+            "comment_prompt": "今晚，你想先把哪一件事缩小一点？",
+        },
+        "leave_work_signal": {
+            "lesson_title": "把身体接回生活",
+            "post_title": "18:57，身体又回到工位",
+            "cover_text": "先把身体接回生活",
+            "scene_anchor": "领导18:57发来一句“在吗”，人已下班，身体却先回到了工位。",
+            "learning_goal": "这一课不要求立刻放松，只给身体一个从工作回到生活的信号。",
+            "approved_explanation": "工作消息会把注意力拉回待命状态，先看见这个切换，比催自己马上平静更实际。",
+            "applicability": "适合下班后收到工作消息，或回到家仍像坐在工位上的时候。",
+            "micro_exercise": "做一个三步收口：判断紧急度；写下回复时间；慢慢松开肩颈十秒。",
+            "scope_limit": "不替代必要沟通，也不鼓励消失，只把回应和持续待命分开。",
+            "comment_prompt": "你更像哪一种：A.秒回 B.明天再回 C.先看紧急度？",
+        },
+        "close_the_replay": {
+            "lesson_title": "给那句话一个收尾",
+            "post_title": "洗完澡，给那句话收个尾",
+            "cover_text": "今晚，让回放停在这里",
+            "scene_anchor": "洗完澡躺下，那句说错的话又在脑子里开始了第二轮。",
+            "learning_goal": "这一课把“我还要再想想”，换成一个小到可以完成的收尾动作。",
+            "approved_explanation": "当脑内回放一直没有出口，一件能完成的小事，比继续追问原因更容易落回当下。",
+            "applicability": "适合睡前、洗澡后，或已经想了很久却没有新信息的时候。",
+            "micro_exercise": "写一句收尾：这件事我明天先做____；今晚先不替它开第二场会。",
+            "scope_limit": "不需要强行停止想法，只给反复回放留一个暂时的句号。",
+            "comment_prompt": "今晚，你想对哪件事轻轻说一句“先到这里”？",
+        },
+        "support_boundary": {
+            "lesson_title": "别让一张卡扛下全部",
+            "post_title": "一张卡，不必替你扛全部",
+            "cover_text": "需要支持时，不必硬扛",
+            "scene_anchor": "不是今天的一件事，而是很多天都被同一种回放拖住。",
+            "learning_goal": "最后一课只留下一句话：自我练习有边界，需要时可以找人一起处理。",
+            "approved_explanation": "一张卡可以陪你停一下，却不该承担持续痛苦、功能受损或危机时的全部支持。",
+            "applicability": "适合反复回放已经影响睡眠、工作、学习或日常关系的时候。",
+            "micro_exercise": "写一份支持名单：可以聊的人；可以预约的专业资源；今晚先做的一步。",
+            "scope_limit": "不替你判断任何诊断，也不把向外求助写成失败。",
+            "comment_prompt": "你愿意先写下哪一种支持：A.朋友 B.专业资源 C.休息安排？",
+        },
+    }
+)
+
+
+def _build_starter_series_v2() -> tuple[PsychologyLearningLesson, ...]:
+    lessons: list[PsychologyLearningLesson] = []
+    for historic in _STARTER_SERIES_V1:
+        material = historic.model_dump(mode="json")
+        material.update(_STARTER_SERIES_V2_COPY[historic.lesson_id])
+        material["curriculum_version"] = "2"
+        material["lesson_fingerprint"] = (
+            f"lesson:{STARTER_SERIES_ID}:{historic.lesson_id}:v2"
+        )
+        lessons.append(PsychologyLearningLesson.model_validate(material))
+    return tuple(lessons)
+
+
+_STARTER_SERIES_BY_VERSION: Mapping[
+    str,
+    tuple[PsychologyLearningLesson, ...],
+] = MappingProxyType(
+    {
+        "1": _STARTER_SERIES_V1,
+        "2": _build_starter_series_v2(),
+    }
 )
 
 
@@ -3434,12 +3646,10 @@ def resolve_psychology_learning_selection(
     _require_identifier(series_id, field_name="series_id")
     _require_identifier(lesson_id, field_name="lesson_id")
     if series_id == STARTER_SERIES_ID:
-        lessons = _series_lessons(series_id)
-        if (
-            curriculum_version is not None
-            and curriculum_version != PSYCHOLOGY_LEARNING_CURRICULUM_VERSION
-        ):
-            raise ValueError("unsupported psychology learning curriculum version")
+        lessons = _series_lessons(
+            series_id,
+            curriculum_version=curriculum_version,
+        )
         catalog = None
     else:
         if curriculum_version is None:
@@ -3585,12 +3795,10 @@ def list_psychology_learning_series(
     """Return a catalog series for safe guide-post roadmap rendering."""
     _require_identifier(series_id, field_name="series_id")
     if series_id == STARTER_SERIES_ID:
-        if (
-            curriculum_version is not None
-            and curriculum_version != PSYCHOLOGY_LEARNING_CURRICULUM_VERSION
-        ):
-            raise ValueError("unsupported psychology learning curriculum version")
-        return _series_lessons(series_id)
+        return _series_lessons(
+            series_id,
+            curriculum_version=curriculum_version,
+        )
     if curriculum_version is not None:
         return load_confirmed_psychology_learning_catalog(
             series_id=series_id,
@@ -3680,6 +3888,8 @@ def render_psychology_learning_draft(contract: Mapping[str, Any]) -> dict[str, A
         return _render_psychology_learning_draft_v1(normalized)
     if normalized["controlled_template_version"] == "2":
         return _render_psychology_learning_draft_v2(normalized)
+    if normalized["controlled_template_version"] == "3":
+        return _render_psychology_learning_draft_v3(normalized)
     raise ValueError("unsupported psychology learning controlled template version")
 
 
@@ -3821,6 +4031,124 @@ def _render_psychology_learning_draft_v2(
         }
     )
     return draft
+
+
+def _render_psychology_learning_draft_v3(
+    normalized: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Render warm, restrained editorial copy from approved catalog fields."""
+    body = "\n\n".join(
+        (
+            normalized["scene_anchor"],
+            (
+                f"{normalized['series_badge']}｜{normalized['lesson_title']}。"
+                f"这一页想轻轻说的是：{normalized['concept_label']}。"
+                f"{normalized['learning_goal']}{normalized['approved_explanation']}"
+            ),
+            (
+                f"{normalized['applicability']}\n"
+                f"今晚只做一个小动作：{normalized['micro_exercise']}"
+                f"{normalized['scope_limit']}"
+            ),
+            f"{normalized['professional_boundary']}\n{normalized['comment_prompt']}",
+        )
+    )
+    return {
+        "title": normalized["post_title"],
+        "image_text": normalized["cover_text"],
+        "body": body,
+        "hashtags": ["#心理学", "#心理学学习", "#下班后脑子停不下来"],
+        "image_plan": normalize_psychology_carousel_plan(
+            {
+                "backend": "local_social_screenshot",
+                "style": "psychology_text_card",
+                "role": "text_carousel",
+                "text_density": "medium",
+                "max_text_units": "4",
+                "cover_text_strategy": "封面只留一句课程钩子和一行轻提示。",
+                "reason": "同一节心理学课程用温柔克制的有序文字卡展开。",
+                "prompt_focus": "只排版目录批准字段；不添加新结论，不使用 emoji。",
+                "carousel_style": "psychology_text_card_v1",
+                "slides": [
+                    {
+                        "slide_id": "cover",
+                        "order": 1,
+                        "role": "cover_hook",
+                        "headline": _psychology_learning_card_text(
+                            normalized["cover_text"]
+                        ),
+                        "body_lines": _psychology_learning_card_lines(
+                            normalized["learning_goal"]
+                        ),
+                    },
+                    {
+                        "slide_id": "scene",
+                        "order": 2,
+                        "role": "concrete_scene",
+                        "headline": "先看见回放开始",
+                        "body_lines": [
+                            *_psychology_learning_card_lines(
+                                normalized["scene_anchor"]
+                            ),
+                            *_psychology_learning_card_lines(
+                                normalized["applicability"]
+                            ),
+                        ],
+                    },
+                    {
+                        "slide_id": "mechanism",
+                        "order": 3,
+                        "role": "light_mechanism",
+                        "headline": "大脑只是在找出口",
+                        "body_lines": [
+                            *_psychology_learning_card_lines(
+                                normalized["concept_label"]
+                            ),
+                            *_psychology_learning_card_lines(
+                                normalized["approved_explanation"]
+                            ),
+                        ],
+                    },
+                    {
+                        "slide_id": "tool",
+                        "order": 4,
+                        "role": "save_tool",
+                        "headline": "今晚，只做一个小动作",
+                        "body_lines": _psychology_learning_card_lines(
+                            normalized["micro_exercise"]
+                        ),
+                    },
+                    {
+                        "slide_id": "scope",
+                        "order": 5,
+                        "role": "scope_boundary",
+                        "headline": "这张卡不负责下结论",
+                        "body_lines": _psychology_learning_scope_card_lines(
+                            normalized["scope_limit"]
+                        ),
+                    },
+                    {
+                        "slide_id": "professional",
+                        "order": 6,
+                        "role": "professional_boundary",
+                        "headline": "需要支持时，不必硬扛",
+                        "body_lines": _psychology_learning_card_lines(
+                            normalized["professional_boundary"]
+                        ),
+                    },
+                    {
+                        "slide_id": "comment",
+                        "order": 7,
+                        "role": "comment_prompt",
+                        "headline": "把这一刻留在这里",
+                        "body_lines": _psychology_learning_card_lines(
+                            normalized["comment_prompt"]
+                        ),
+                    },
+                ],
+            }
+        ),
+    }
 
 
 def _psychology_learning_card_lines(value: str) -> list[str]:
@@ -4191,7 +4519,7 @@ def _is_valid_psychology_learning_artifact_value(
                 "status": "generated",
                 "renderer": "ptsm_local_renderer",
             }
-        if image_template_version != "2":
+        if image_template_version not in {"2", "3"}:
             return False
         if value.get("status") == "committed":
             return set(value) == {
@@ -4213,27 +4541,30 @@ def _is_valid_psychology_learning_artifact_value(
     if path == ("image_generation", "status"):
         if image_template_version == "1":
             return value == "generated"
-        return image_template_version == "2" and value in {"committed", "failed"}
+        return image_template_version in {"2", "3"} and value in {
+            "committed",
+            "failed",
+        }
     if path == ("image_generation", "renderer"):
-        return image_template_version in {"1", "2"} and value == "ptsm_local_renderer"
+        return image_template_version in {"1", "2", "3"} and value == "ptsm_local_renderer"
     if path == ("image_generation", "carousel_style"):
-        return image_template_version == "2" and value == "psychology_text_card_v1"
+        return image_template_version in {"2", "3"} and value == "psychology_text_card_v1"
     if path == ("image_generation", "image_count"):
         return (
-            image_template_version == "2"
+            image_template_version in {"2", "3"}
             and isinstance(value, int)
             and not isinstance(value, bool)
             and 4 <= value <= 7
         )
     if path == ("image_generation", "manifest_sha256"):
         return (
-            image_template_version == "2"
+            image_template_version in {"2", "3"}
             and isinstance(value, str)
             and re.fullmatch(r"[0-9a-f]{64}", value) is not None
         )
     if path == ("image_generation", "reason"):
         return (
-            image_template_version == "2"
+            image_template_version in {"2", "3"}
             and value == "psychology_carousel_generation_failed"
         )
     if path == ("watermark_removal",):
@@ -4289,7 +4620,7 @@ def _verified_psychology_learning_artifact_template_version(
     if bundle is None:
         return None
     value = bundle.runtime_contract.get("controlled_template_version")
-    return str(value) if value in {"1", "2"} else None
+    return str(value) if value in {"1", "2", "3"} else None
 
 
 def _psychology_learning_artifact_allowed_fields(
@@ -4576,10 +4907,18 @@ def _is_safe_local_artifact_path(value: object, *, suffix: str) -> bool:
     )
 
 
-def _series_lessons(series_id: str) -> tuple[PsychologyLearningLesson, ...]:
+def _series_lessons(
+    series_id: str,
+    *,
+    curriculum_version: str | None = None,
+) -> tuple[PsychologyLearningLesson, ...]:
     if series_id != STARTER_SERIES_ID:
         raise ValueError("unknown psychology learning series_id")
-    return _STARTER_SERIES
+    version = curriculum_version or PSYCHOLOGY_LEARNING_CURRICULUM_VERSION
+    lessons = _STARTER_SERIES_BY_VERSION.get(version)
+    if lessons is None:
+        raise ValueError("unsupported psychology learning curriculum version")
+    return lessons
 
 
 def _contains_source_reference(value: str) -> bool:

@@ -18,7 +18,6 @@ from ptsm.domain.topic_guidance import (
     select_topic_directions,
 )
 from ptsm.domain.psychology_learning import (
-    CURRENT_PSYCHOLOGY_LEARNING_CONTROLLED_TEMPLATE_VERSION,
     PSYCHOLOGY_LEARNING_MODE,
     STARTER_SERIES_ID,
     list_psychology_learning_series,
@@ -870,7 +869,7 @@ def _run_psychology_learning_series_guide_post(
     controlled_template_version = (
         custom_catalog.controlled_template_version
         if custom_catalog is not None
-        else CURRENT_PSYCHOLOGY_LEARNING_CONTROLLED_TEMPLATE_VERSION
+        else str(lessons[0].runtime_contract["controlled_template_version"])
     )
     directions = [
         lesson.public_direction_for_template(controlled_template_version)

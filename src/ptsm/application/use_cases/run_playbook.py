@@ -844,7 +844,7 @@ def _sanitize_psychology_learning_image_generation(
         ):
             return None
         return {"status": "generated", "renderer": "ptsm_local_renderer"}
-    if controlled_template_version != "2":
+    if controlled_template_version not in {"2", "3"}:
         return None
     image_count = value.get("image_count")
     if (

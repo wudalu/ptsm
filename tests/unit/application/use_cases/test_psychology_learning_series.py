@@ -2432,9 +2432,9 @@ def test_confirmed_catalog_template_version_and_digest_are_bound_to_its_ledger(
     snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
     ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
 
-    assert catalog.controlled_template_version == "2"
-    assert snapshot["controlled_template_version"] == "2"
-    assert ledger["controlled_template_version"] == "2"
+    assert catalog.controlled_template_version == "3"
+    assert snapshot["controlled_template_version"] == "3"
+    assert ledger["controlled_template_version"] == "3"
     assert render_psychology_learning_draft(
         resolve_psychology_learning_selection(
             series_id=catalog.series_id,
@@ -2455,7 +2455,7 @@ def test_confirmed_catalog_template_version_and_digest_are_bound_to_its_ledger(
             catalog_root=store.catalog_root,
         )
 
-    snapshot["controlled_template_version"] = "2"
+    snapshot["controlled_template_version"] = "3"
     snapshot_path.write_text(json.dumps(snapshot), encoding="utf-8")
 
     with pytest.raises(ValueError, match="catalog revision history"):

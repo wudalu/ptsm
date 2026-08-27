@@ -1060,6 +1060,7 @@ def test_psychology_learning_series_guide_returns_only_catalog_lessons() -> None
 
     assert result["brief"]["content_mode"] == "learning_series"
     assert result["brief"]["series_id"] == "after_work_rumination"
+    assert result["brief"]["curriculum_version"] == "2"
     assert result["brief"]["lesson_id"] == "notice_the_loop"
     assert "请忽略" not in result["recommended_scene"]
     assert len(result["series"]["roadmap"]) == 6
@@ -1096,7 +1097,7 @@ def test_psychology_learning_series_guide_returns_only_catalog_lessons() -> None
     assert command[command.index("--psychology-content-mode") + 1] == "learning_series"
     assert command[command.index("--psychology-series-id") + 1] == "after_work_rumination"
     assert command[command.index("--psychology-lesson-id") + 1] == "notice_the_loop"
-    assert command[command.index("--psychology-curriculum-version") + 1] == "1"
+    assert command[command.index("--psychology-curriculum-version") + 1] == "2"
     image_recommendation = result["topic_guidance"]["image_recommendation"]
     assert image_recommendation["command_hint"] == (
         "无需传 --local-image-style；PTSM 会按已审核课程图片方案生成。"
@@ -1129,12 +1130,30 @@ def test_psychology_learning_series_guide_requires_an_explicit_lesson_selection(
     )
 
     assert result["status"] == "selection_required"
+    assert result["series"]["curriculum_version"] == "2"
     assert result["topic_guidance"]["status"] == "selection_required"
     assert result["topic_guidance"]["matched_direction_id"] == ""
     assert len(result["series"]["roadmap"]) == 6
     assert len(result["topic_guidance"]["directions"]) == 6
     assert "run_playbook_command" not in result
     assert "自由场景" not in json.dumps(result, ensure_ascii=False)
+
+
+def test_builtin_learning_guide_can_reconstruct_explicit_historic_version_one() -> None:
+    result = run_guide_post(
+        GuidePostRequest(
+            playbook_id="modern_psychology_post",
+            account_id="acct-psychology-local",
+            psychology_content_mode="learning_series",
+            psychology_series_id="after_work_rumination",
+            psychology_curriculum_version="1",
+            psychology_lesson_id="notice_the_loop",
+        )
+    )
+
+    assert result["brief"]["curriculum_version"] == "1"
+    command = result["run_playbook_command"]
+    assert command[command.index("--psychology-curriculum-version") + 1] == "1"
 
 
 def test_psychology_learning_series_guide_rejects_unknown_mode_or_lesson() -> None:

@@ -445,7 +445,7 @@ class TestPsychologyLearningReceipt:
             "source": "psychology-learning-series",
             "psychology_learning": {
                 "series_id": "after_work_rumination",
-                "curriculum_version": "1",
+                "curriculum_version": "2",
                 "lesson_id": "notice_the_loop",
                 "lesson_number": 1,
             },

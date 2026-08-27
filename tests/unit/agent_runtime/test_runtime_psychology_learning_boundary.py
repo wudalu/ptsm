@@ -376,7 +376,7 @@ def test_learning_retry_cannot_replace_catalog_owned_carousel_pages(
     assert len(drafting_agent.calls) == 2
     assert drafting_agent.calls[1]["reflection_feedback"]
     assert artifact["final_content"] == exact_draft
-    assert artifact["psychology_learning_gate"]["validator_version"] == "2"
+    assert artifact["psychology_learning_gate"]["validator_version"] == "3"
     assert tampered_marker not in history
     assert "source" not in receipt_text.lower()
     assert "path" not in receipt_text.lower()
