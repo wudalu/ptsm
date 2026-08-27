@@ -141,6 +141,18 @@ _INSTRUCTION_LEAKAGE_ASCII_MARKERS = (
     "revealprompt",
     "internalinstruction",
 )
+_UNSUPPORTED_IMAGE_EMOJI_RANGES = (
+    (0x1F000, 0x1FAFF),
+    (0x2600, 0x26FF),
+    (0x2700, 0x27BF),
+)
+_UNSUPPORTED_IMAGE_EMOJI_SEQUENCE_CODEPOINTS = frozenset(
+    {
+        0x200D,  # zero-width joiner
+        0x20E3,  # combining enclosing keycap
+        0xFE0F,  # emoji presentation selector
+    }
+)
 _SECURITY_CONFUSABLE_TRANSLATION = str.maketrans(
     {
         "А": "A",
@@ -319,6 +331,8 @@ def _require_safe_visible_text(
         raise ValueError(f"{field_name} exceeds its visible text budget")
     if "\n" in text or "\r" in text:
         raise ValueError(f"{field_name} must be one visible line")
+    if contains_unsupported_image_emoji(text):
+        raise ValueError(f"{field_name} must not contain emoji")
     security_text = _security_text(text, field_name=field_name)
     if re.search(r"(?<!#)#[^#\s]", security_text):
         raise ValueError(f"{field_name} must not contain hashtags")
@@ -329,6 +343,27 @@ def _require_safe_visible_text(
     if _contains_instruction_leakage(security_text):
         raise ValueError(f"{field_name} contains instruction leakage")
     return text
+
+
+def contains_unsupported_image_emoji(value: str) -> bool:
+    """Return whether local psychology-card fonts cannot render the sequence."""
+    for character in value:
+        codepoint = ord(character)
+        if codepoint in _UNSUPPORTED_IMAGE_EMOJI_SEQUENCE_CODEPOINTS or any(
+            start <= codepoint <= end
+            for start, end in _UNSUPPORTED_IMAGE_EMOJI_RANGES
+        ):
+            return True
+    return False
+
+
+def remove_unsupported_image_emoji(value: str) -> str:
+    """Remove only unsupported emoji codepoints for a new controlled revision."""
+    return "".join(
+        character
+        for character in value
+        if not contains_unsupported_image_emoji(character)
+    )
 
 
 def _security_text(value: str, *, field_name: str) -> str:
