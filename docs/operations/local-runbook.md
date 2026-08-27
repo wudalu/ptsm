@@ -201,7 +201,8 @@ Treat its `manifest.json` as authoritative: `pages.order` must match `generated_
 must be regular/readable PNGs, and each page's `page_sha256` (canonical content) / `file_sha256` (PNG bytes)
 must match before publish. Only an ordinary set with a verified receipt and ledger can expose
 `carousel_delivery.status=ready`, whose ordered `attachments` are the only safe handoff to an outer chat/IM
-relay. PTSM does not own external delivery, so ready is not delivered, published, or acknowledged. The relay
+relay. The relay must send them strictly in ascending `attachments[].order`; it must not sort by path or filename.
+PTSM does not own external delivery, so ready is not delivered, published, or acknowledged. The relay
 keeps its own (not PTSM) `relay_attempt_id`, acknowledgement/outcome/retry record keyed by the receipt; it may
 call an image set delivered only after all ordered attachments are acknowledged. If generation, manifest verification
 or asset-ledger projection fails, the run status is `psychology_carousel_generation_failed`; PTSM **emitted no ready
@@ -465,8 +466,9 @@ uv run python -m ptsm.bootstrap run-playbook \
 自定义专题则必须先经过 PTSM plan → review → exact confirmation，不能把热点、operator idea、URL 或
 研究笔记直接传入课程 run。普通心理学场景帖仍走上面的通用 psychology guide flow。受控系列的标题、
 正文、封面和图片计划都不能手改或加 `--local-image-style` / `--publish-image-path`。历史 confirmed
-controlled-template-v1 保持原单卡；builtin 与新确认 custom revision 使用 template v2 的 7 张 catalog-owned
-`psychology_text_card_v1` pages。guide 只返回 `page_count` / `ordered_roles` 结构；wrapper/operator
+controlled-template-v1 保持原单卡；historic builtin curriculum v1 与 historic custom template v2 保留
+旧版 carousel；current builtin curriculum v2 与新确认 custom revision 使用 controlled template v3 的
+7 张温柔克制、留白充分、emoji-free `psychology_text_card_v1` pages。guide 只返回 `page_count` / `ordered_roles` 结构；wrapper/operator
 不得声称拿到了 `slides` 或 page copy，也不能自行补写页面。
 
 #### Choose a publication mode first
@@ -581,9 +583,9 @@ progress rename/durability barrier 报错并返回 `psychology_learning_progress
 #### Builtin catalog
 
 未选 lesson 的查询会返回 `selection_required`，不会默认第一课；课程目录拥有该课的
-catalog-owned image plan。`--psychology-curriculum-version 1` 选择的是 builtin frozen catalog；
-该 catalog 当前用的是 controlled template v2，因此会渲染 7 张 cards。不要把 curriculum version 与
-controlled template version 混为一谈。
+catalog-owned image plan。current builtin curriculum v2 使用 controlled template v3 并渲染新版 7 张
+cards；显式选择 historic builtin curriculum v1 时仍用 controlled template v2 重建旧版 7 张 cards。
+不要把 curriculum version 与 controlled template version 混为一谈。
 
 ```bash
 # 目录查询不会创建 run，也不会读取 live topic research；会返回 selection_required。
@@ -601,7 +603,7 @@ uv run python -m ptsm.bootstrap guide-post \
   --psychology-content-mode learning_series \
   --psychology-series-id after_work_rumination \
   --psychology-lesson-id notice_the_loop \
-  --psychology-curriculum-version 1 \
+  --psychology-curriculum-version 2 \
   --non-interactive --format json
 
 # 仅将上一步返回的 lesson id 与 matching direction id 带回；先 dry-run。
@@ -611,7 +613,7 @@ uv run python -m ptsm.bootstrap run-playbook \
   --psychology-content-mode learning_series \
   --psychology-series-id after_work_rumination \
   --psychology-lesson-id notice_the_loop \
-  --psychology-curriculum-version 1 \
+  --psychology-curriculum-version 2 \
   --topic-direction-id psychology_learning_after_work_rumination_notice_the_loop \
   --publish-mode dry-run --eval --auto-generate-image
 ```

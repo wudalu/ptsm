@@ -429,6 +429,28 @@ def test_learning_series_docs_cover_selection_image_and_metrics_integrity() -> N
     assert "entire artifact" in observability_text
 
 
+def test_psychology_learning_docs_cover_current_editorial_template_and_ordered_relay() -> None:
+    required_markers = {
+        "architecture.md": ("builtin curriculum v2", "controlled template v3", "emoji-free"),
+        "runtime.md": ("builtin curriculum v2", "controlled template v3", "attachments[].order"),
+        "playbooks.md": ("builtin curriculum v2", "controlled template v3", "emoji-free"),
+        "skills.md": ("controlled template v3", "attachments[].order", "emoji-free"),
+        "harness-engineering.md": ("controlled-template-v3", "emoji-free", "attachments[].order"),
+        "observability.md": ("builtin curriculum v2", "controlled template v3", "attachments[].order"),
+        "operations.md": ("builtin curriculum v2", "controlled template v3", "attachments[].order"),
+        "operations/local-runbook.md": (
+            "builtin curriculum v2",
+            "controlled template v3",
+            "attachments[].order",
+        ),
+    }
+
+    for relative_path, markers in required_markers.items():
+        doc_text = (DOCS_ROOT / relative_path).read_text(encoding="utf-8")
+        for marker in markers:
+            assert marker in doc_text, f"{relative_path} must document {marker}"
+
+
 def test_docs_cover_confirmed_custom_psychology_learning_series_lifecycle() -> None:
     architecture_text = (DOCS_ROOT / "architecture.md").read_text(encoding="utf-8")
     runtime_text = (DOCS_ROOT / "runtime.md").read_text(encoding="utf-8")
