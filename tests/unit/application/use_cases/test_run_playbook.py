@@ -5011,7 +5011,7 @@ def test_psychology_learning_login_rerun_preserves_catalog_selection(
             psychology_content_mode="learning_series",
             psychology_series_id="after_work_rumination",
             psychology_lesson_id="notice_the_loop",
-            psychology_curriculum_version="1",
+            psychology_curriculum_version="2",
             topic_direction_id="psychology_learning_after_work_rumination_notice_the_loop",
         ),
         publisher=publisher,
@@ -5660,7 +5660,7 @@ def test_run_playbook_rejects_mismatched_psychology_learning_direction_before_ru
                 psychology_content_mode="learning_series",
                 psychology_series_id="after_work_rumination",
                 psychology_lesson_id="notice_the_loop",
-                psychology_curriculum_version="1",
+                psychology_curriculum_version="2",
                 topic_direction_id="psychology_learning_after_work_rumination_close_the_replay",
         ),
         run_store=NoRunStart(),  # type: ignore[arg-type]
@@ -6163,7 +6163,7 @@ def test_builtin_learning_draft_rejection_refuses_rebound_root_with_custom_catal
             psychology_content_mode="learning_series",
             psychology_series_id="after_work_rumination",
             psychology_lesson_id="notice_the_loop",
-            psychology_curriculum_version="1",
+            psychology_curriculum_version="2",
             topic_direction_id=(
                 "psychology_learning_after_work_rumination_notice_the_loop"
             ),
@@ -6846,7 +6846,7 @@ def test_learning_post_publish_helpers_use_only_in_memory_context(
             psychology_content_mode="learning_series",
             psychology_series_id="after_work_rumination",
             psychology_lesson_id="notice_the_loop",
-            psychology_curriculum_version="1",
+            psychology_curriculum_version="2",
             topic_direction_id="psychology_learning_after_work_rumination_notice_the_loop",
         ),
         publisher=NonMappingPublisher(),  # type: ignore[arg-type]
@@ -8214,7 +8214,7 @@ def test_run_playbook_binds_psychology_learning_contract_without_free_scene_or_s
                 psychology_content_mode="learning_series",
                 psychology_series_id="after_work_rumination",
                 psychology_lesson_id="notice_the_loop",
-                psychology_curriculum_version="1",
+                psychology_curriculum_version="2",
                 topic_direction_id="psychology_learning_after_work_rumination_notice_the_loop",
         ),
         publisher=SuccessfulPublisher(),
@@ -8291,7 +8291,7 @@ def test_run_playbook_leaves_an_unsafe_psychology_learning_artifact_for_offline_
             psychology_content_mode="learning_series",
             psychology_series_id="after_work_rumination",
             psychology_lesson_id="notice_the_loop",
-            psychology_curriculum_version="1",
+            psychology_curriculum_version="2",
             topic_direction_id="psychology_learning_after_work_rumination_notice_the_loop",
         ),
         publisher=publisher,
@@ -8391,7 +8391,7 @@ def test_run_playbook_persists_only_sanitized_learning_publish_metadata(
             psychology_content_mode="learning_series",
             psychology_series_id="after_work_rumination",
             psychology_lesson_id="notice_the_loop",
-            psychology_curriculum_version="1",
+            psychology_curriculum_version="2",
             topic_direction_id="psychology_learning_after_work_rumination_notice_the_loop",
         ),
         accounts=AccountWithPublisherEndpoint(),  # type: ignore[arg-type]
@@ -8431,7 +8431,7 @@ def test_run_playbook_persists_only_sanitized_learning_publish_metadata(
         "source": "psychology-learning-series",
         "psychology_learning": {
             "series_id": "after_work_rumination",
-            "curriculum_version": "1",
+            "curriculum_version": "2",
             "lesson_id": "notice_the_loop",
             "lesson_number": 1,
         },

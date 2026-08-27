@@ -266,7 +266,7 @@ def test_record_xhs_post_metrics_captures_and_groups_learning_series_fields(
 
     record = result["record"]
     assert record["psychology_learning_series_id"] == "after_work_rumination"
-    assert record["psychology_learning_curriculum_version"] == "1"
+    assert record["psychology_learning_curriculum_version"] == "2"
     assert record["psychology_learning_lesson_id"] == "notice_the_loop"
     assert record["psychology_learning_lesson_number"] == 1
     assert record["psychology_learning_mode"] == "learning_series"
