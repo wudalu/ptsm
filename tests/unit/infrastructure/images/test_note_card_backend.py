@@ -765,7 +765,7 @@ def test_psychology_text_card_wraps_maximum_legal_copy_without_drawing_post_fiel
     rendered_text = "".join(text for _, text, _ in drawn)
     assert headline in rendered_text
     assert all(line in rendered_text for line in body_lines)
-    assert "小工具" in rendered_text
+    assert "今晚试试" in rendered_text
     assert "04 / 06" in rendered_text
     assert "绝不能进入图片" not in rendered_text
     assert "#" not in rendered_text
@@ -777,6 +777,48 @@ def test_psychology_text_card_wraps_maximum_legal_copy_without_drawing_post_fiel
         )
         assert bbox[2] <= 1010
         assert bbox[3] <= 1360
+
+
+def test_psychology_text_card_uses_warm_editorial_type_hierarchy(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    drawn: list[tuple[tuple[float, float], str, object]] = []
+    original_text = ImageDraw.ImageDraw.text
+
+    def capture_text(self, xy, text, *args, **kwargs):
+        drawn.append((xy, str(text), kwargs.get("font")))
+        return original_text(self, xy, text, *args, **kwargs)
+
+    monkeypatch.setattr(ImageDraw.ImageDraw, "text", capture_text)
+
+    NoteCardImageBackend().generate(
+        prompt=json.dumps(
+            {
+                "style": "psychology_text_card_v1",
+                "slide_id": "tool",
+                "order": 4,
+                "role": "save_tool",
+                "headline": "今晚，只做一个小动作",
+                "body_lines": ["写下事实", "写下猜测", "留一个下一步"],
+                "page_count": 7,
+            },
+            ensure_ascii=False,
+        ),
+        output_dir=tmp_path,
+        output_stem="editorial",
+    )
+
+    by_text = {text: (xy, font) for xy, text, font in drawn}
+    assert "今晚试试" in by_text
+    assert "04 / 07" in by_text
+    headline_xy, headline_font = by_text["今晚，只做一个小动作"]
+    body_xy, body_font = by_text["写下事实"]
+    assert headline_xy == (140, 310)
+    assert body_xy[0] == 178
+    assert body_xy[1] > headline_xy[1] + 100
+    assert headline_font.size == 58
+    assert body_font.size == 36
 
 
 def test_psychology_text_card_alias_selects_dedicated_style(tmp_path: Path) -> None:

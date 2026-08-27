@@ -64,17 +64,30 @@ class NoteCardImageBackend:
         draw = ImageDraw.Draw(image)
         scale = self.width / 1080
 
-        margin = int(84 * scale)
+        margin = int(92 * scale)
         content_width = self.width - (2 * margin)
-        accent_width = max(1, int(12 * scale))
+        panel_top = int(190 * scale)
+        panel_bottom = self.height - int(96 * scale)
+        draw.rounded_rectangle(
+            (
+                int(70 * scale),
+                panel_top,
+                self.width - int(70 * scale),
+                panel_bottom,
+            ),
+            radius=max(1, int(34 * scale)),
+            fill=theme["panel"],
+            outline=theme["panel_outline"],
+            width=max(1, int(2 * scale)),
+        )
         draw.rounded_rectangle(
             (
                 margin,
-                int(72 * scale),
-                margin + accent_width,
-                self.height - int(72 * scale),
+                panel_top + int(34 * scale),
+                margin + int(124 * scale),
+                panel_top + int(42 * scale),
             ),
-            radius=max(1, int(6 * scale)),
+            radius=max(1, int(4 * scale)),
             fill=theme["accent"],
         )
         draw.ellipse(
@@ -87,16 +100,16 @@ class NoteCardImageBackend:
             fill=theme["decoration"],
         )
 
-        label_font = _load_font(int(28 * scale), bold=True)
-        counter_font = _load_font(int(27 * scale), bold=False)
+        label_font = _load_font(int(25 * scale), bold=True)
+        counter_font = _load_font(int(25 * scale), bold=False)
         role_label = theme["label"]
-        label_x = margin + int(42 * scale)
-        label_y = int(92 * scale)
+        label_x = margin + int(48 * scale)
+        label_y = int(104 * scale)
         label_bbox = draw.textbbox((0, 0), role_label, font=label_font)
         label_width = label_bbox[2] - label_bbox[0]
         label_height = label_bbox[3] - label_bbox[1]
-        label_padding_x = int(20 * scale)
-        label_padding_y = int(12 * scale)
+        label_padding_x = int(18 * scale)
+        label_padding_y = int(10 * scale)
         draw.rounded_rectangle(
             (
                 label_x - label_padding_x,
@@ -104,7 +117,7 @@ class NoteCardImageBackend:
                 label_x + label_width + label_padding_x,
                 label_y + label_height + label_padding_y,
             ),
-            radius=int(18 * scale),
+            radius=int(16 * scale),
             fill=theme["label_background"],
         )
         draw.text((label_x, label_y), role_label, fill=theme["accent"], font=label_font)
@@ -132,11 +145,11 @@ class NoteCardImageBackend:
             else []
         )
         is_cover = role == "cover_hook"
-        headline_font = _load_font(int((78 if is_cover else 62) * scale), bold=True)
-        body_font = _load_font(int((42 if is_cover else 38) * scale), bold=False)
-        headline_y = int((300 if is_cover else 246) * scale)
-        text_x = margin + int(42 * scale)
-        text_width = content_width - int(72 * scale)
+        headline_font = _load_font(int((76 if is_cover else 58) * scale), bold=True)
+        body_font = _load_font(int((38 if is_cover else 36) * scale), bold=False)
+        headline_y = int((360 if is_cover else 310) * scale)
+        text_x = margin + int(48 * scale)
+        text_width = content_width - int(96 * scale)
         y = _draw_wrapped(
             draw,
             text=headline,
@@ -144,25 +157,26 @@ class NoteCardImageBackend:
             font=headline_font,
             fill=theme["primary"],
             max_width=text_width,
-            line_spacing=int(24 * scale),
+            line_spacing=int(22 * scale),
             max_lines=3,
         )
-        y += int((86 if is_cover else 68) * scale)
+        y += int((82 if is_cover else 72) * scale)
 
         for line in body_lines:
             if not is_cover:
-                dot_radius = max(2, int(6 * scale))
+                dot_radius = max(2, int(5 * scale))
                 dot_center_y = y + int(22 * scale)
-                draw.ellipse(
+                draw.rounded_rectangle(
                     (
                         text_x,
                         dot_center_y - dot_radius,
-                        text_x + (2 * dot_radius),
+                        text_x + int(18 * scale),
                         dot_center_y + dot_radius,
                     ),
+                    radius=dot_radius,
                     fill=theme["accent"],
                 )
-            line_x = text_x if is_cover else text_x + int(34 * scale)
+            line_x = text_x if is_cover else text_x + int(38 * scale)
             y = _draw_wrapped(
                 draw,
                 text=line,
@@ -170,10 +184,28 @@ class NoteCardImageBackend:
                 font=body_font,
                 fill=theme["secondary"],
                 max_width=text_width - (line_x - text_x),
-                line_spacing=int(15 * scale),
+                line_spacing=int(16 * scale),
                 max_lines=3,
             )
-            y += int((42 if is_cover else 32) * scale)
+            y += int((44 if is_cover else 34) * scale)
+
+        progress_y = self.height - int(62 * scale)
+        progress_width = self.width - (2 * margin)
+        draw.rounded_rectangle(
+            (margin, progress_y, margin + progress_width, progress_y + int(4 * scale)),
+            radius=max(1, int(2 * scale)),
+            fill=theme["progress_track"],
+        )
+        draw.rounded_rectangle(
+            (
+                margin,
+                progress_y,
+                margin + int(progress_width * order / page_count),
+                progress_y + int(4 * scale),
+            ),
+            radius=max(1, int(2 * scale)),
+            fill=theme["accent"],
+        )
 
         return image
 
@@ -606,74 +638,95 @@ _PSYCHOLOGY_TEXT_CARD_THEMES: dict[
     dict[str, str | tuple[int, int, int]],
 ] = {
     "cover_hook": {
-        "label": "先看这里",
+        "label": "慢慢读",
         "background": (250, 244, 237),
+        "panel": (255, 251, 247),
+        "panel_outline": (239, 224, 214),
         "decoration": (242, 225, 215),
         "label_background": (247, 229, 219),
         "accent": (174, 91, 79),
         "primary": (52, 43, 40),
         "secondary": (91, 73, 67),
         "muted": (137, 116, 107),
+        "progress_track": (232, 218, 209),
     },
     "concrete_scene": {
-        "label": "此刻场景",
+        "label": "这一刻",
         "background": (245, 247, 242),
+        "panel": (251, 252, 248),
+        "panel_outline": (222, 232, 220),
         "decoration": (224, 234, 221),
         "label_background": (225, 236, 223),
         "accent": (75, 124, 88),
         "primary": (39, 51, 42),
         "secondary": (70, 84, 73),
         "muted": (111, 125, 114),
+        "progress_track": (218, 228, 217),
     },
     "light_mechanism": {
-        "label": "轻轻解释",
+        "label": "轻轻理解",
         "background": (244, 246, 250),
+        "panel": (250, 251, 254),
+        "panel_outline": (219, 226, 238),
         "decoration": (220, 229, 241),
         "label_background": (222, 232, 244),
         "accent": (73, 104, 151),
         "primary": (39, 47, 62),
         "secondary": (67, 77, 96),
         "muted": (107, 118, 137),
+        "progress_track": (214, 222, 234),
     },
     "save_tool": {
-        "label": "小工具",
+        "label": "今晚试试",
         "background": (249, 247, 237),
+        "panel": (255, 253, 246),
+        "panel_outline": (237, 229, 200),
         "decoration": (240, 230, 195),
         "label_background": (244, 234, 198),
         "accent": (151, 111, 39),
         "primary": (51, 47, 35),
         "secondary": (84, 77, 57),
         "muted": (127, 118, 91),
+        "progress_track": (231, 223, 193),
     },
     "scope_boundary": {
-        "label": "适用边界",
+        "label": "先到这里",
         "background": (248, 243, 247),
+        "panel": (253, 250, 252),
+        "panel_outline": (233, 219, 230),
         "decoration": (235, 219, 232),
         "label_background": (238, 223, 235),
         "accent": (132, 77, 122),
         "primary": (54, 42, 53),
         "secondary": (87, 68, 84),
         "muted": (128, 105, 124),
+        "progress_track": (229, 215, 226),
     },
     "professional_boundary": {
         "label": "需要支持时",
         "background": (245, 246, 248),
+        "panel": (251, 252, 253),
+        "panel_outline": (221, 226, 232),
         "decoration": (223, 228, 234),
         "label_background": (226, 231, 237),
         "accent": (78, 96, 118),
         "primary": (41, 47, 55),
         "secondary": (70, 78, 88),
         "muted": (109, 118, 128),
+        "progress_track": (217, 223, 230),
     },
     "comment_prompt": {
-        "label": "留一句话",
+        "label": "留给你",
         "background": (247, 244, 239),
+        "panel": (253, 251, 247),
+        "panel_outline": (232, 222, 210),
         "decoration": (235, 224, 211),
         "label_background": (239, 228, 215),
         "accent": (139, 91, 54),
         "primary": (52, 44, 38),
         "secondary": (83, 71, 62),
         "muted": (125, 110, 99),
+        "progress_track": (228, 217, 205),
     },
 }
 
