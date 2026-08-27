@@ -5024,7 +5024,7 @@ def test_psychology_learning_login_rerun_preserves_catalog_selection(
     assert "--psychology-content-mode learning_series" in rerun_instruction
     assert "--psychology-series-id after_work_rumination" in rerun_instruction
     assert "--psychology-lesson-id notice_the_loop" in rerun_instruction
-    assert "--psychology-curriculum-version 1" in rerun_instruction
+    assert "--psychology-curriculum-version 2" in rerun_instruction
     assert (
         "--topic-direction-id psychology_learning_after_work_rumination_notice_the_loop"
         in rerun_instruction
