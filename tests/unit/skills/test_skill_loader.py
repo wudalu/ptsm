@@ -86,6 +86,9 @@ def test_psychology_skills_define_the_local_text_carousel_boundary() -> None:
     assert "封面" in image_strategy and "内页" in image_strategy
     assert "学习系列" in psychology
     assert "不能自行" in psychology or "不得自行" in psychology
+    assert "温柔克制" in psychology
+    assert "emoji" in psychology.lower()
+    assert "图片" in psychology
 
 
 def test_image_strategy_skill_names_exact_carousel_role_enum_values() -> None:

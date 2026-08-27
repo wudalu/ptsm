@@ -225,8 +225,10 @@ plan, and every carousel page; the guide response exposes only the bounded
 carousel structure needed before the run.
 
 historic controlled-template-v1 curricula keep their immutable single-card
-contract. builtin and newly confirmed v2 curricula return an exact
-`psychology_text_card_v1` carousel. Show only the PTSM-returned `page_count` and
+contract. Historic template-v2 curricula keep their original carousel, while
+current builtin curriculum v2 and newly confirmed template-v3 curricula return
+an exact warm editorial `psychology_text_card_v1` carousel. Show only the
+PTSM-returned `page_count` and
 `ordered_roles` before the run. Do not claim that `guide-post` returned `slides`
 or page copy. Never write, rewrite, split, reorder, or fill a carousel page in
 OpenClaw.
@@ -265,13 +267,16 @@ If `recommended_backend` is `provider_image`, describe it as an LLM/provider ima
 For `format_archetype=text_carousel`, explain that PTSM will locally render one
 topic across the returned 4–7 ordered roles with `psychology_text_card_v1`.
 The cover remains low density and inner pages remain bounded text cards. Do not
-author `slides`; the run must use the exact PTSM-reviewed plan.
+author `slides`; the run must use the exact PTSM-reviewed plan. Image-visible
+copy is emoji-free because the local font stack cannot render emoji reliably;
+do not add emoji to a returned title, `headline`, or `body_lines`.
 
 ### Relay handoff and acknowledgement ownership
 
 After an ordinary run, an outer relay may forward images only when the returned
-`carousel_delivery.status=ready` and `external_relay_required=true`. Use its
-exact ordered `attachments` as one complete set, and verify the canonical
+`carousel_delivery.status=ready` and `external_relay_required=true`. Iterate its
+exact `attachments` in ascending canonical `order` as one complete set; the
+relay must not sort by path or filename. Verify the canonical
 `page_sha256` (page content) and `file_sha256` (PNG bytes) for every attachment.
 PTSM does not own external chat/IM delivery: `ready` means that local render,
 canonical receipt, and asset ledger are complete; it does not mean the user
@@ -397,6 +402,7 @@ recommendation; do not claim a direction is proven until real metrics support it
 - Do not invent, expand, or replace PTSM-returned growth-oriented psychology direction(s), including `relationship_mixed_signal_camp_vote`, `social_battery_cancel_plan_boundary`, or `after_hours_message_body_alarm`; only display them when PTSM returns them.
 - Do not invent, expand, or replace PTSM-returned format recommendation; only display `format_recommendation` when PTSM returns it.
 - Do not invent, expand, or replace PTSM-returned image recommendation; only display `topic_guidance.image_recommendation` when PTSM returns it.
+- Keep every image-visible field emoji-free; do not add emoji after PTSM has returned or rendered the reviewed plan.
 - Before the run, show only the PTSM-returned `page_count` and `ordered_roles`; do not claim that `guide-post` returned `slides` or page copy. Never write, rewrite, split, reorder, or fill a carousel page; one carousel represents one topic. For an oversized request, explicitly select `one_carousel`, `multiple_posts`, or unsupported `independent_assets`; never use the first two as an implicit substitute for independent image assets. After a successful ordinary run, use only `carousel_delivery.status=ready` for internal relay handoff; do not display its local attachment paths to the user, turn ready into a delivery claim, or write relay acknowledgements/outcomes into PTSM.
 - Do not invent views, likes, saves, comments, shares, interaction rates, or uplift claims. Use `xhs-record-metrics` / `xhs-metrics-report` only with real supplied metrics.
 - If `run-playbook --caller openclaw` returns `topic_guidance_required`, show the directions and call `run-playbook` again only after direction confirmation with `--guidance-ack`.
