@@ -79,7 +79,8 @@ def test_psychology_skills_define_the_local_text_carousel_boundary() -> None:
 
     for skill_text in (psychology, image_strategy):
         assert "psychology_text_card_v1" in skill_text
-        assert "4-7" in skill_text or "4–7" in skill_text
+        assert "1-18" in skill_text or "1–18" in skill_text
+        assert "动态" in skill_text
         assert "一个主题" in skill_text
         assert "slides" in skill_text
     assert "本地" in image_strategy

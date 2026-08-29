@@ -65,7 +65,7 @@ This exercises:
 - **Executor**: DeepSeek LLM generates title, image_text, body, hashtags from scene + persona + planner + static skills + local pattern context + recent memory context. XHS prompts use `xhs_compact_native_v1`: a concrete human/scene entry, 2–4 short beats, one domain-usable detail, and a natural combined save/reply opening inside the playbook’s compact length band—not four fixed正文 moves.
 - **Reflector**: enforces required rules such as `#发疯文学`, configured deterministic quality rules such as rejecting generic titles, requiring a comment/copyable mechanic, keeping正文 inside the playbook length band, and blocking mental-health/medical jokes. Light positive closings like `也算` are recommended style, not a mandatory phrase gate. Passes to finalize, or retries up to max_attempts.
 
-Review `content_review`, `content_review.image_plan`, and the final正文. If content and image strategy look good, proceed to real publish. When the planned style is `wechat_chat`, check that the visible text is a short content-only transcript rather than a full phone screenshot. For `modern_psychology_post`, a default `text_carousel` plan must contain **one topic, one 4–7-page set** of ordered semantic slides; the first cover remains low-density and inner pages contain bounded short lines. A request for more than 7 pages/images (including 12) needs the explicit three-way router before any run: `one_carousel` is the supported one-topic 4–7-page set; `multiple_posts` is supported only after separately confirming every post and running each independently; `independent_assets` is unsupported because 8–12 **independent image assets** are outside this psychology wrapper/PTSM path and must go to a separately authorized asset workflow. Never silently turn any choice into a batch/loop/repeat. `max_text_units` is per-page text density, not image count.
+Review `content_review`, `content_review.image_plan`, and the final正文. If content and image strategy look good, proceed to real publish. When the planned style is `wechat_chat`, check that the visible text is a short content-only transcript rather than a full phone screenshot. For `modern_psychology_post`, a default `text_carousel` plan must contain **one topic, one dynamic 1–18-page set** of ordered semantic slides; PTSM decides the exact count from content, the first cover remains low-density, and inner pages contain bounded emoji-free short lines. If the content needs more than 18 pages, stop and ask the user to shorten it or confirm separately published posts; never silently turn it into a batch/loop/repeat. `max_text_units` is per-page text density, not image count.
 
 ### Step 3 — Real Publish
 
@@ -187,21 +187,25 @@ These local styles render iPhone Notes-like and WeChat chat transcript-like cove
 `wechat_chat` now renders a content-only chat transcript: 无头部、无底部、无头像, with speaker labels beside the bubbles. It is meant for scenes where the first-screen asset is the actual chat exchange, copyable reply, or comment prompt. The renderer reads explicit structured messages from `chat_messages` / `messages`, or speaker-prefixed body lines such as `同事：刚看见热搜` and `我：我现在啥事都发文字确认`; this prevents a chat cover from collapsing into one generic bubble. `theme=dark` switches the transcript to a dark background, `chat_times` inserts up to three timestamp labels, and `chat_title` / `conversation_title` can label incoming messages when the body uses generic speakers. `status_time`, `unread_count`, and `show_avatars` are preserved in the payload for audit compatibility, but the current content-only renderer does not draw phone chrome or avatar blocks.
 
 `psychology_text_card_v1` is not a `--local-image-style` choice. It is the local-only automatic
-carousel renderer selected by a validated psychology `image_plan`. It creates one topic / one 4–7-page
-set, not a generic batch; an oversized request must first select `one_carousel`, separately confirmed
-`multiple_posts`, or unsupported `independent_assets` rather than silently use a batch. The parent plan keeps
+carousel renderer selected by a validated psychology `image_plan`. It creates one topic / one dynamic 1–18-page
+set, not a generic batch; content beyond 18 pages must be shortened or split only after separately confirming
+each post rather than silently using a batch. The parent plan keeps
 `backend/style/role/text_density/max_text_units/cover_text_strategy/reason/prompt_focus` and adds
 `carousel_style` plus `slides`; each slide has exactly `slide_id`, one-based contiguous `order`,
-`role`, `headline`, and `body_lines`. A set contains 4–7 pages, starts with `cover_hook`, and uses
+`role`, `headline`, and `body_lines`. A set contains 1–18 pages, starts with `cover_hook`, and uses
 semantic inner roles such as scene, light mechanism, save tool, boundary and comment prompt. It
-does not split the final body or invoke another model. `max_text_units` limits text on each page.
+does not split the final body or invoke another model. `max_text_units` limits text on each page; the
+renderer adds visible `NN / TT` page counters and a progress bar.
 
 Successful output is an immutable directory named from the output stem and content-addressed set id.
 Treat its `manifest.json` as authoritative: `pages.order` must match `generated_image_paths`, all files
 must be regular/readable PNGs, and each page's `page_sha256` (canonical content) / `file_sha256` (PNG bytes)
 must match before publish. Only an ordinary set with a verified receipt and ledger can expose
 `carousel_delivery.status=ready`, whose ordered `attachments` are the only safe handoff to an outer chat/IM
-relay. The relay must send them strictly in ascending `attachments[].order`; it must not sort by path or filename.
+relay. Each attachment binds `order`, `slide_id`, `page_sha256`, and `file_sha256`. Prefer one sender call that
+preserves an ordered multi-image message. If only single-attachment calls are available, send strictly serially in
+ascending `attachments[].order` and wait for the order-N ACK before sending N+1; never run calls concurrently or
+sort by path/filename.
 PTSM does not own external delivery, so ready is not delivered, published, or acknowledged. The relay
 keeps its own (not PTSM) `relay_attempt_id`, acknowledgement/outcome/retry record keyed by the receipt; it may
 call an image set delivered only after all ordered attachments are acknowledged. If generation, manifest verification
@@ -406,10 +410,10 @@ uv run python -m ptsm.bootstrap run-playbook \
 ```
 
 The ordinary psychology guide now returns `format_archetype=text_carousel`,
-`local_style=psychology_text_card_v1`, `page_count.min=4`, `page_count.max=7`, ordered semantic
+`local_style=psychology_text_card_v1`, `page_count.min=1`, `page_count.max=18`, ordered semantic
 roles, and `command_hint=--auto-generate-image`. There is no page-copy or carousel-style CLI flag.
-There is also no batch/count flag: more than 7 pages/images must use `one_carousel`, separately confirmed
-`multiple_posts`, or unsupported `independent_assets` for independent image assets; `max_text_units` remains a
+There is also no batch/count flag: content requiring more than 18 pages must be shortened or use separately confirmed
+`multiple_posts`; unsupported `independent_assets` remain outside this path, and `max_text_units` remains a
 per-page density bound.
 Use an explicit `--local-image-style note_card|iphone_notes|wechat_chat` only when the ordinary post
 really needs one legacy cover instead of the default carousel.
@@ -467,8 +471,8 @@ uv run python -m ptsm.bootstrap run-playbook \
 研究笔记直接传入课程 run。普通心理学场景帖仍走上面的通用 psychology guide flow。受控系列的标题、
 正文、封面和图片计划都不能手改或加 `--local-image-style` / `--publish-image-path`。历史 confirmed
 controlled-template-v1 保持原单卡；historic builtin curriculum v1 与 historic custom template v2 保留
-旧版 carousel；current builtin curriculum v2 与新确认 custom revision 使用 controlled template v3 的
-7 张温柔克制、留白充分、emoji-free `psychology_text_card_v1` pages。guide 只返回 `page_count` / `ordered_roles` 结构；wrapper/operator
+旧版 carousel；historic builtin curriculum v2 保留 controlled template v3 的固定 7 页；current builtin curriculum v3 与新确认 custom revision 使用 controlled template v4 的
+动态 1–18 张温柔克制、留白充分、emoji-free `psychology_text_card_v1` pages。guide 只返回 `page_count` / `ordered_roles` 结构；wrapper/operator
 不得声称拿到了 `slides` 或 page copy，也不能自行补写页面。
 
 #### Choose a publication mode first
@@ -561,7 +565,7 @@ uv run python -m ptsm.bootstrap run-playbook \
   --publish-mode dry-run --eval --auto-generate-image
 ```
 
-Current v2 learning carousel still records the page-aware operational asset ledger. Learning
+Current v3 learning carousel still records the page-aware operational asset ledger. Learning
 response/artifact deliberately keeps only safe carousel evidence:
 `status`, `renderer`, `carousel_style`, `image_count`, and `manifest_sha256` on success; it never
 stores ledger details, local paths or page text. A trusted local operator can inspect the committed set under
@@ -583,8 +587,8 @@ progress rename/durability barrier 报错并返回 `psychology_learning_progress
 #### Builtin catalog
 
 未选 lesson 的查询会返回 `selection_required`，不会默认第一课；课程目录拥有该课的
-catalog-owned image plan。current builtin curriculum v2 使用 controlled template v3 并渲染新版 7 张
-cards；显式选择 historic builtin curriculum v1 时仍用 controlled template v2 重建旧版 7 张 cards。
+catalog-owned image plan。current builtin curriculum v3 使用 controlled template v4 并按内容密度渲染动态 1–18 张
+cards；显式选择 historic builtin curriculum v2 时仍用 controlled template v3 重建固定 7 张 cards，选择 curriculum v1 则用 controlled template v2。
 不要把 curriculum version 与 controlled template version 混为一谈。
 
 ```bash
@@ -603,7 +607,7 @@ uv run python -m ptsm.bootstrap guide-post \
   --psychology-content-mode learning_series \
   --psychology-series-id after_work_rumination \
   --psychology-lesson-id notice_the_loop \
-  --psychology-curriculum-version 2 \
+  --psychology-curriculum-version 3 \
   --non-interactive --format json
 
 # 仅将上一步返回的 lesson id 与 matching direction id 带回；先 dry-run。
@@ -613,7 +617,7 @@ uv run python -m ptsm.bootstrap run-playbook \
   --psychology-content-mode learning_series \
   --psychology-series-id after_work_rumination \
   --psychology-lesson-id notice_the_loop \
-  --psychology-curriculum-version 2 \
+  --psychology-curriculum-version 3 \
   --topic-direction-id psychology_learning_after_work_rumination_notice_the_loop \
   --publish-mode dry-run --eval --auto-generate-image
 ```

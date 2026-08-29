@@ -844,16 +844,23 @@ def _sanitize_psychology_learning_image_generation(
         ):
             return None
         return {"status": "generated", "renderer": "ptsm_local_renderer"}
-    if controlled_template_version not in {"2", "3"}:
+    if controlled_template_version not in {"2", "3", "4"}:
         return None
     image_count = value.get("image_count")
+    image_count_is_valid = (
+        isinstance(image_count, int)
+        and not isinstance(image_count, bool)
+        and (
+            1 <= image_count <= 18
+            if controlled_template_version == "4"
+            else 4 <= image_count <= 7
+        )
+    )
     if (
         value.get("status") == "failed"
         and value.get("renderer") == "ptsm_local_renderer"
         and value.get("carousel_style") == "psychology_text_card_v1"
-        and isinstance(image_count, int)
-        and not isinstance(image_count, bool)
-        and 4 <= image_count <= 7
+        and image_count_is_valid
         and value.get("reason") == "psychology_carousel_generation_failed"
     ):
         return {
@@ -869,9 +876,7 @@ def _sanitize_psychology_learning_image_generation(
         value.get("status") != "committed"
         or value.get("provider") != "local_note_card"
         or value.get("carousel_style") != "psychology_text_card_v1"
-        or not isinstance(image_count, int)
-        or isinstance(image_count, bool)
-        or not 4 <= image_count <= 7
+        or not image_count_is_valid
         or not isinstance(manifest_sha256, str)
         or re.fullmatch(r"[0-9a-f]{64}", manifest_sha256) is None
         or not isinstance(provenance, Mapping)
@@ -3674,6 +3679,8 @@ def _build_carousel_delivery_receipt(
             or page.get("path") != path
             or page.get("order") != expected_order
             or slide.get("order") != expected_order
+            or page.get("slide_id") != slide.get("slide_id")
+            or page.get("role") != slide.get("role")
         ):
             raise ImageCarouselTransactionError("carousel delivery receipt is not canonical")
         role = page.get("role")
@@ -3691,6 +3698,7 @@ def _build_carousel_delivery_receipt(
         attachments.append(
             {
                 "order": expected_order,
+                "slide_id": str(slide["slide_id"]),
                 "role": role,
                 "path": path,
                 "page_sha256": page_sha256,

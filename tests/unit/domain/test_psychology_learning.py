@@ -203,10 +203,13 @@ def test_builtin_learning_lesson_uses_controlled_template_v2_carousel() -> None:
         assert bundle.runtime_contract[approved_field] in visible
 
 
-def test_current_builtin_learning_revision_uses_warm_editorial_template_v3() -> None:
-    bundle = _starter_bundle()
+def test_historic_builtin_learning_revision_keeps_warm_editorial_template_v3() -> None:
+    bundle = resolve_psychology_learning_selection(
+        series_id="after_work_rumination",
+        lesson_id="notice_the_loop",
+        curriculum_version="2",
+    )
 
-    assert CURRENT_PSYCHOLOGY_LEARNING_CONTROLLED_TEMPLATE_VERSION == "3"
     assert bundle.runtime_contract["curriculum_version"] == "2"
     assert bundle.runtime_contract["controlled_template_version"] == "3"
 
@@ -226,7 +229,58 @@ def test_current_builtin_learning_revision_uses_warm_editorial_template_v3() -> 
     ]
 
 
-def test_new_template_v3_custom_catalog_removes_emoji_before_freezing_image_copy() -> None:
+def test_current_builtin_learning_revision_paginates_approved_content_dynamically() -> None:
+    lessons = list_psychology_learning_series(
+        series_id="after_work_rumination"
+    )
+    page_counts: set[int] = set()
+
+    assert CURRENT_PSYCHOLOGY_LEARNING_CONTROLLED_TEMPLATE_VERSION == "4"
+    assert {lesson.curriculum_version for lesson in lessons} == {"3"}
+
+    for lesson in lessons:
+        assert lesson.runtime_contract["controlled_template_version"] == "4"
+        draft = render_psychology_learning_draft(lesson.runtime_contract)
+        slides = draft["image_plan"]["slides"]
+        page_counts.add(len(slides))
+
+        assert 1 <= len(slides) <= 18
+        assert [slide["order"] for slide in slides] == list(
+            range(1, len(slides) + 1)
+        )
+        assert slides[0]["role"] == "cover_hook"
+        assert slides[-1]["role"] == "comment_prompt"
+        continuation_ids = {
+            slide["slide_id"]: slide["headline"] for slide in slides
+        }
+        if "scene_2" in continuation_ids:
+            assert continuation_ids["scene_2"] != continuation_ids["scene"]
+        visible = "\n".join(
+            text
+            for slide in slides
+            for text in (slide["headline"], *slide["body_lines"])
+        )
+        for approved_field in (
+            "cover_text",
+            "scene_anchor",
+            "concept_label",
+            "learning_goal",
+            "approved_explanation",
+            "applicability",
+            "micro_exercise",
+            "scope_limit",
+            "professional_boundary",
+            "comment_prompt",
+        ):
+            approved_text = lesson.runtime_contract[approved_field]
+            if approved_field == "scope_limit" and "诊断，" in approved_text:
+                approved_text = approved_text.split("，", 1)[1]
+            assert approved_text in visible
+
+    assert len(page_counts) > 1
+
+
+def test_new_template_v4_custom_catalog_removes_emoji_before_freezing_image_copy() -> None:
     proposal = build_psychology_learning_series_proposal(
         PsychologyLearningSeriesPlanIntent(
             topic="下班后的温柔收尾",
@@ -249,11 +303,34 @@ def test_new_template_v3_custom_catalog_removes_emoji_before_freezing_image_copy
         for text in (slide["headline"], *slide["body_lines"])
     )
 
-    assert catalog.controlled_template_version == "3"
+    assert catalog.controlled_template_version == "4"
     assert "🙂" not in first.lesson_title
     assert "🌙" not in " ".join(lesson.lesson_title for lesson in catalog.lessons)
     assert "🙂" not in visible_image_copy
     assert "🌙" not in visible_image_copy
+
+
+def test_dynamic_learning_template_stops_before_render_when_content_needs_over_18_pages() -> None:
+    contract = deepcopy(_starter_bundle().runtime_contract)
+    long_field = "；".join(("这是一段需要单独排版的批准内容" * 2,) * 4) + "。"
+    for field_name in (
+        "learning_goal",
+        "scene_anchor",
+        "applicability",
+        "concept_label",
+        "approved_explanation",
+        "micro_exercise",
+        "scope_limit",
+        "professional_boundary",
+        "comment_prompt",
+    ):
+        contract[field_name] = long_field
+
+    with pytest.raises(
+        ValueError,
+        match="requires more than 18 slides; shorten the lesson or confirm separate posts",
+    ):
+        render_psychology_learning_draft(contract)
 
 
 def test_historic_learning_template_v1_keeps_single_card_rendering() -> None:

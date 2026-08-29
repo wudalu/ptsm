@@ -646,7 +646,7 @@ def _build_deepseek_hard_requirements(
             "必须额外输出一个心理学文字轮播 image_plan：backend 固定为 local_social_screenshot，"
             "style 固定为 psychology_text_card，role 固定为 text_carousel，text_density 固定为 medium，"
             "max_text_units 固定为字符串 4，carousel_style 固定为 psychology_text_card_v1；"
-            "同一主题按语义组织 4-7 张卡片，不得按正文字数机械切页，也不得引入第二次改写。"
+            "同一主题按内容需要动态组织 1-18 张语义卡片，不得预设页数、按正文字数机械切页或引入第二次改写；图片可见字段不得含 emoji，超过 18 页则停止并要求缩短或拆帖。"
             "slides 必须按发布顺序给出，每页只能包含 slide_id、order、role、headline、body_lines；"
             "order 从 1 连续递增，第一页必须是 cover_hook，后续从具体场景、轻量机制、可保存工具、"
             "边界和评论入口中选择；图片文字不得含话题标签、URL、来源定位、诊断、治疗承诺、药物建议或提示词指令。"

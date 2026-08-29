@@ -1182,7 +1182,7 @@ def _run_psychology_guide_post(request: GuidePostRequest) -> dict[str, Any]:
                 "max_text_units": 4,
                 "format_archetype": "text_carousel",
                 "carousel_style": "psychology_text_card_v1",
-                "page_count": {"min": 4, "max": 7},
+                "page_count": {"min": 1, "max": 18},
             }
         ),
         "comment_prompt": comment_prompt,
@@ -1857,7 +1857,7 @@ def _psychology_text_carousel_recommendation() -> dict[str, Any]:
         "role": "text_carousel",
         "text_density": "medium",
         "max_text_units": 4,
-        "page_count": {"min": 4, "max": 7},
+        "page_count": {"min": 1, "max": 18},
         "ordered_roles": [
             "cover_hook",
             "concrete_scene",
@@ -1868,7 +1868,7 @@ def _psychology_text_carousel_recommendation() -> dict[str, Any]:
         ],
         "reason": (
             "把一个主题依次讲成心理学封面、具体场景、轻机制、可保存工具、"
-            "边界和评论入口，适合用 4-7 张有序文字卡表达。"
+            "边界和评论入口；页数按内容完整表达所需动态决定，最多 18 张。"
         ),
         "command_hint": "--auto-generate-image",
         "fallback": (

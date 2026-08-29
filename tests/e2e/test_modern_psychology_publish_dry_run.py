@@ -112,7 +112,7 @@ def test_run_playbook_cli_generates_and_publishes_complete_psychology_carousel(
     assert payload["status"] == "completed"
     assert generation["status"] == "committed"
     assert generation["carousel_style"] == "psychology_text_card_v1"
-    assert 4 <= generation["image_count"] <= 7
+    assert 1 <= generation["image_count"] <= 18
     assert [page["order"] for page in generation["pages"]] == list(
         range(1, generation["image_count"] + 1)
     )

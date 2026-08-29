@@ -22,6 +22,7 @@ from ptsm.application.use_cases.psychology_learning_series import (
     plan_psychology_learning_series,
 )
 from ptsm.application.use_cases.run_playbook import (
+    _build_carousel_delivery_receipt,
     _build_image_generation_prompt,
     _build_note_card_image_payload,
     _build_runtime_skill_context_resolver,
@@ -2307,6 +2308,7 @@ def test_run_playbook_publishes_complete_psychology_carousel_in_manifest_order(
     assert delivery["attachments"] == [
         {
             "order": page["order"],
+            "slide_id": page["slide_id"],
             "role": page["role"],
             "path": path,
             "page_sha256": page["page_sha256"],
@@ -2351,6 +2353,46 @@ def test_run_playbook_removes_workflow_forged_delivery_without_local_carousel(
     assert "carousel_delivery" not in result
     assert "carousel_delivery" not in artifact
     assert artifact["workflow_owned_metadata"] == {"preserved": True}
+
+
+def test_carousel_delivery_rejects_page_role_that_disagrees_with_slide_order() -> None:
+    image_plan = {
+        "slides": [
+            {"slide_id": "cover", "order": 1, "role": "cover_hook"},
+            {"slide_id": "scene", "order": 2, "role": "concrete_scene"},
+        ]
+    }
+    receipt = {
+        "image_count": 2,
+        "generated_image_paths": ["/safe/01.png", "/safe/02.png"],
+        "pages": [
+            {
+                "slide_id": "cover",
+                "order": 1,
+                "role": "cover_hook",
+                "path": "/safe/01.png",
+                "page_sha256": "1" * 64,
+                "file_sha256": "2" * 64,
+            },
+            {
+                "slide_id": "scene",
+                "order": 2,
+                "role": "save_tool",
+                "path": "/safe/02.png",
+                "page_sha256": "3" * 64,
+                "file_sha256": "4" * 64,
+            },
+        ],
+        "set_id": "5" * 64,
+        "manifest_path": "/safe/manifest.json",
+        "manifest_sha256": "6" * 64,
+    }
+
+    with pytest.raises(ImageCarouselTransactionError, match="canonical"):
+        _build_carousel_delivery_receipt(
+            image_plan=image_plan,
+            receipt=receipt,
+        )
 
 
 def test_run_playbook_never_scrubs_a_foreign_ready_artifact_touched_by_workflow(
@@ -5011,7 +5053,7 @@ def test_psychology_learning_login_rerun_preserves_catalog_selection(
             psychology_content_mode="learning_series",
             psychology_series_id="after_work_rumination",
             psychology_lesson_id="notice_the_loop",
-            psychology_curriculum_version="2",
+            psychology_curriculum_version="3",
             topic_direction_id="psychology_learning_after_work_rumination_notice_the_loop",
         ),
         publisher=publisher,
@@ -5024,7 +5066,7 @@ def test_psychology_learning_login_rerun_preserves_catalog_selection(
     assert "--psychology-content-mode learning_series" in rerun_instruction
     assert "--psychology-series-id after_work_rumination" in rerun_instruction
     assert "--psychology-lesson-id notice_the_loop" in rerun_instruction
-    assert "--psychology-curriculum-version 2" in rerun_instruction
+    assert "--psychology-curriculum-version 3" in rerun_instruction
     assert (
         "--topic-direction-id psychology_learning_after_work_rumination_notice_the_loop"
         in rerun_instruction
@@ -5660,7 +5702,7 @@ def test_run_playbook_rejects_mismatched_psychology_learning_direction_before_ru
                 psychology_content_mode="learning_series",
                 psychology_series_id="after_work_rumination",
                 psychology_lesson_id="notice_the_loop",
-                psychology_curriculum_version="2",
+                psychology_curriculum_version="3",
                 topic_direction_id="psychology_learning_after_work_rumination_close_the_replay",
         ),
         run_store=NoRunStart(),  # type: ignore[arg-type]
@@ -6163,7 +6205,7 @@ def test_builtin_learning_draft_rejection_refuses_rebound_root_with_custom_catal
             psychology_content_mode="learning_series",
             psychology_series_id="after_work_rumination",
             psychology_lesson_id="notice_the_loop",
-            psychology_curriculum_version="2",
+            psychology_curriculum_version="3",
             topic_direction_id=(
                 "psychology_learning_after_work_rumination_notice_the_loop"
             ),
@@ -6846,7 +6888,7 @@ def test_learning_post_publish_helpers_use_only_in_memory_context(
             psychology_content_mode="learning_series",
             psychology_series_id="after_work_rumination",
             psychology_lesson_id="notice_the_loop",
-            psychology_curriculum_version="2",
+            psychology_curriculum_version="3",
             topic_direction_id="psychology_learning_after_work_rumination_notice_the_loop",
         ),
         publisher=NonMappingPublisher(),  # type: ignore[arg-type]
@@ -8214,7 +8256,7 @@ def test_run_playbook_binds_psychology_learning_contract_without_free_scene_or_s
                 psychology_content_mode="learning_series",
                 psychology_series_id="after_work_rumination",
                 psychology_lesson_id="notice_the_loop",
-                psychology_curriculum_version="2",
+                psychology_curriculum_version="3",
                 topic_direction_id="psychology_learning_after_work_rumination_notice_the_loop",
         ),
         publisher=SuccessfulPublisher(),
@@ -8291,7 +8333,7 @@ def test_run_playbook_leaves_an_unsafe_psychology_learning_artifact_for_offline_
             psychology_content_mode="learning_series",
             psychology_series_id="after_work_rumination",
             psychology_lesson_id="notice_the_loop",
-            psychology_curriculum_version="2",
+            psychology_curriculum_version="3",
             topic_direction_id="psychology_learning_after_work_rumination_notice_the_loop",
         ),
         publisher=publisher,
@@ -8391,7 +8433,7 @@ def test_run_playbook_persists_only_sanitized_learning_publish_metadata(
             psychology_content_mode="learning_series",
             psychology_series_id="after_work_rumination",
             psychology_lesson_id="notice_the_loop",
-            psychology_curriculum_version="2",
+            psychology_curriculum_version="3",
             topic_direction_id="psychology_learning_after_work_rumination_notice_the_loop",
         ),
         accounts=AccountWithPublisherEndpoint(),  # type: ignore[arg-type]
@@ -8431,7 +8473,7 @@ def test_run_playbook_persists_only_sanitized_learning_publish_metadata(
         "source": "psychology-learning-series",
         "psychology_learning": {
             "series_id": "after_work_rumination",
-            "curriculum_version": "2",
+            "curriculum_version": "3",
             "lesson_id": "notice_the_loop",
             "lesson_number": 1,
         },

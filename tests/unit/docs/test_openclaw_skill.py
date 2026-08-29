@@ -145,7 +145,7 @@ def test_openclaw_psychology_skill_uses_only_ptsm_returned_carousel_structure() 
     ):
         assert field in text
     assert "psychology_text_card_v1" in text
-    assert "4–7" in text
+    assert "dynamic 1–18-page" in normalized_text
     assert "one topic" in normalized_text
     assert "--auto-generate-image" in text
     assert "--group-by carousel_style" in text
@@ -154,7 +154,7 @@ def test_openclaw_psychology_skill_uses_only_ptsm_returned_carousel_structure() 
     assert "Only show carousel pages returned by PTSM" not in normalized_text
     assert "Never write, rewrite, split, reorder, or fill a carousel page" in normalized_text
     assert "historic controlled-template-v1" in normalized_text
-    assert "current builtin curriculum v2 and newly confirmed template-v3" in normalized_text
+    assert "current builtin curriculum v3 and newly confirmed template-v4" in normalized_text
     assert "psychology_carousel_generation_failed" in text
 
 
@@ -162,9 +162,8 @@ def test_openclaw_psychology_skill_clarifies_oversized_carousels_and_relay_bound
     text = SKILL_PATH.read_text(encoding="utf-8")
     normalized_text = " ".join(text.split())
 
-    assert "more than 7 pages/images" in normalized_text
-    assert "for example 12" in normalized_text
-    assert "one 4–7-page carousel for one topic" in normalized_text
+    assert "more than 18 pages/images" in normalized_text
+    assert "one dynamic 1–18-page carousel for one topic" in normalized_text
     assert "Do not silently split, loop, repeat, or promise" in normalized_text
     assert "max_text_units" in normalized_text
     assert "per-page copy, not page count" in normalized_text
@@ -191,6 +190,8 @@ def test_openclaw_psychology_skill_clarifies_oversized_carousels_and_relay_bound
     assert "all expected ordered attachments" in normalized_text
     assert "ascending canonical `order`" in normalized_text
     assert "must not sort by path or filename" in normalized_text
+    assert "one sender call that preserves an ordered multi-image message" in normalized_text
+    assert "wait for the sender acknowledgement for order N before sending order N+1" in normalized_text
 
 
 def test_openclaw_psychology_skill_requires_emoji_free_image_copy() -> None:

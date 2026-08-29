@@ -23,13 +23,13 @@
 真实发布如果没有 `--publish-image-path` 且没有 `--no-auto-generate-image`，默认会自动补图。图片路由由运行时决定：operator 的 `--local-image-style` 优先；正文里的 `final_content.image_plan` 可要求 `local_social_screenshot` 或 provider image；没有策略时再按已配置的图片 provider 或本地 renderer 选择。
 
 `modern_psychology_post` 的默认自动图片是例外：`guide-post` 会返回
-`format_archetype=text_carousel`、`local_style=psychology_text_card_v1`、4–7 页和 ordered semantic
+`format_archetype=text_carousel`、`local_style=psychology_text_card_v1`、动态 1–18 页和 ordered semantic
 roles；执行时仍只加 `--auto-generate-image`，不手写页面参数。系统在本地生成并原子提交完整 set，
 `slides.order` 就是发布顺序。普通心理学若明确传 `--local-image-style`，才保留旧的单封面行为；
 learning-series 禁止 `--local-image-style` 和 `--publish-image-path`。
 
-普通心理学一次只支持一个主题 / 一组 4–7 页。If the user asks for **more than 7 pages/images** (for
-example 12), stop at the explicit three-way router: `one_carousel` is the supported one-topic 4–7-page
+普通心理学一次只支持一个主题 / 一组动态 1–18 页。If the content needs **more than 18 pages/images**,
+stop and ask the user to shorten it or use the explicit router: `one_carousel` is the supported one-topic dynamic 1–18-page
 set; `multiple_posts` is supported only after separately confirming and independently running every post;
 `independent_assets` is unsupported because 8–12 **independent image assets** are outside this psychology
 wrapper/PTSM path and need a separately authorized asset workflow. Do not silently split, loop, repeat, or
@@ -69,7 +69,7 @@ turn an unsupported request into a batch; `max_text_units` is per-page text dens
 5. 真实发布有图片时不要跳过去水印检查，artifact 里必须有 `watermark_removal`。
 
 心理学 carousel 还要确认 `image_generation.status=committed`，并以 set 目录中的 `manifest.json` 为
-权威检查一组 4–7 张 PNG、页序与 `page_sha256` / `file_sha256`。只有 receipt 与 asset ledger 都成功后，
+权威检查一组动态 1–18 张 PNG、页序与 `page_sha256` / `file_sha256`。只有 receipt 与 asset ledger 都成功后，
 ordinary 才会出现 `carousel_delivery.status=ready`；外层 relay 必须按 `attachments` 顺序发送整组，且不能把
 ready 说成 delivered。relay 以 `set_id` / `manifest_sha256` 关联自己的 acknowledgement/outcome/retry
 record；只有全部 ordered attachments 得到 sender ACK 后才可称 delivered，PTSM 不写这类结果。出现
@@ -77,7 +77,7 @@ record；只有全部 ordered attachments 得到 sender ACK 后才可称 deliver
 ready handoff** 且 **invoked no external chat/IM sender**，不会消耗 ordinary 的 recent-12 inner-page window。
 它不能据此断言 relay、目标平台或用户没有收到任何页：**relay ACK/outcome is authoritative** for whether any
 page was received or delivered. 若完整 set 已提交、仅外部 publish 失败，可保留 set 重试。
-current v2 learning carousel 还必须完成 page-aware operational asset ledger；sealed learning artifact/
+current v3 learning carousel 还必须完成 page-aware operational asset ledger；sealed learning artifact/
 response 仍只保留安全的 status/renderer/style/count/manifest-hash receipt，不暴露 ledger、路径或 page text。
 
 示例一：只做内容和图片预览，不发布。

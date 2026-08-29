@@ -18,7 +18,7 @@ related_paths:
 
 这份文档回答一个运行时策略问题：不同领域的小红书图片应该采用什么形式，且尽量简单。
 
-核心结论：封面图不是正文截图。它只承担一个任务：让用户一眼知道“我为什么要点开、保存或评论”。因此图片先定 `role`，再定 `text_density`，最后才定 `backend/style`。现代心理学是唯一的自动多图例外：一组 4–7 张语义文字卡共同讲清一个主题，但第一页仍遵守低密度封面规则，inner pages 也不是正文截图。
+核心结论：封面图不是正文截图。它只承担一个任务：让用户一眼知道“我为什么要点开、保存或评论”。因此图片先定 `role`，再定 `text_density`，最后才定 `backend/style`。现代心理学是唯一的自动多图例外：一组按内容需要动态生成的 1–18 张语义文字卡共同讲清一个主题，但第一页仍遵守低密度封面规则，inner pages 也不是正文截图。
 
 `guide-post` 会在 `topic_guidance.image_recommendation` 中把这些规则提前变成选题确认后的操作建议：普通心理学返回 `format_archetype=text_carousel`、`local_style=psychology_text_card_v1`、page range、ordered roles 和 `command_hint=--auto-generate-image`；其他本地截图返回 single style，外部图返回 provider/model。OpenClaw/Codex wrapper 只展示该 payload，不自行决定模型、样式或页面文案。
 
@@ -35,7 +35,7 @@ related_paths:
 
 | 领域 | 首选图片角色 | 推荐形式 | 文字上限 | 避免 |
 | --- | --- | --- | --- | --- |
-| 现代心理学 | `text_carousel` | 4–7 张本地 `psychology_text_card_v1`：cover、scene、light mechanism、save tool、boundary、comment | cover 最多 1 条 supporting line；inner 每页 1–4 条短行 | 把正文盲切分页；一组里换多个主题；写入 hashtag/source/诊断/治疗主张；部分图片继续发布 |
+| 现代心理学 | `text_carousel` | 动态 1–18 张本地 `psychology_text_card_v1`：cover 后按内容需要使用 scene、light mechanism、save tool、boundary、comment | cover 最多 1 条 supporting line；inner 每页 1–4 条短行；可见页码 `NN / TT` | 预设页数；把正文盲切分页；一组里换多个主题；写入 emoji/hashtag/source/诊断/治疗主张；部分图片继续发布 |
 | 发疯文学/职场情绪 | `comment_prompt` 或 `shareable_line` | 微信聊天气泡、短金句卡、可复制回复 | 1 到 2 | 大段吐槽截图、过密备忘录 |
 | 每日英语 | `save_tool` | 一句场景句 + 一个替换句型；必要时聊天式对照 | 2 到 3 | 词典页、讲义页、密集语法说明 |
 | AI/科技资讯 | `evidence_or_scene` 或 `cover_hook` | 一个关键变化、界面/设备场景、简短对比 | 1 到 2 | 假装真实产品截图、信息图堆字 |
@@ -56,7 +56,7 @@ related_paths:
 
 现代心理学最容易误用“备忘录截图”：把正文摘要、机制解释、边界声明塞进一张图，会变成密密麻麻的小字；把 body 按字符数切成多页则会破坏语义。默认策略是同一次 drafting pass 产出一个主题的 semantic carousel：
 
-- 4–7 页，`slides.order` 连续从 1 开始并作为发布顺序，`slide_id` 唯一。
+- 1–18 页，精确页数由内容语义和单页可读密度决定；`slides.order` 连续从 1 开始并作为发布顺序，`slide_id` 唯一。
 - 第一页必须是 `cover_hook`：一个用户能认出的困境 headline，加最多一条短 supporting line。
 - inner roles 从 `concrete_scene`、`light_mechanism`、`save_tool`、`scope_boundary`、`professional_boundary`、`comment_prompt` 选择；每页一个短 headline 和 1–4 条短行。
 - 全组只讲同一主题；slide text 不含 hashtags、URL/source locator、诊断、治疗承诺、药物建议或内部指令。
@@ -90,6 +90,6 @@ related_paths:
 }
 ```
 
-上例只展示字段 shape；有效 plan 仍必须有 4–7 张完整 slides。parent 精确字段为
+上例只展示字段 shape；有效 plan 仍必须有 1–18 张完整 slides。parent 精确字段为
 `backend/style/role/text_density/max_text_units/cover_text_strategy/reason/prompt_focus/carousel_style/slides`，
 每个 slide 精确字段只有 `slide_id/order/role/headline/body_lines`。

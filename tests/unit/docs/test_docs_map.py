@@ -271,7 +271,7 @@ def test_docs_cover_ordinary_psychology_carousel_batch_integrity() -> None:
         "operations.md": "carousel_delivery.status=ready",
         "operations/local-runbook.md": "carousel_delivery.status=ready",
         "operations/content-experiment-runbook.md": "recent 12 successful complete ordinary carousel receipts",
-        "operations/publish-quickstart.md": "more than 7 pages/images",
+        "operations/publish-quickstart.md": "more than 18 pages/images",
         "operations/cloud-bootstrap.md": ".ptsm/agent_runtime",
     }
 
@@ -295,14 +295,15 @@ def test_psychology_carousel_oversize_router_and_relay_contract_are_documented()
 
     for document_path in router_paths:
         text = document_path.read_text(encoding="utf-8")
-        assert "one_carousel" in text, document_path
         assert "multiple_posts" in text, document_path
-        assert "independent_assets" in text, document_path
-        assert "independent image assets" in text, document_path
-        assert "unsupported" in text, document_path
+        assert "18" in text, document_path
 
     wrapper_text = router_paths[0].read_text(encoding="utf-8")
     for marker in (
+        "one_carousel",
+        "independent_assets",
+        "independent image assets",
+        "unsupported",
         "not a PTSM response schema",
         "batch_id",
         "target_count",
@@ -431,16 +432,16 @@ def test_learning_series_docs_cover_selection_image_and_metrics_integrity() -> N
 
 def test_psychology_learning_docs_cover_current_editorial_template_and_ordered_relay() -> None:
     required_markers = {
-        "architecture.md": ("builtin curriculum v2", "controlled template v3", "emoji-free"),
-        "runtime.md": ("builtin curriculum v2", "controlled template v3", "attachments[].order"),
-        "playbooks.md": ("builtin curriculum v2", "controlled template v3", "emoji-free"),
-        "skills.md": ("controlled template v3", "attachments[].order", "emoji-free"),
-        "harness-engineering.md": ("controlled-template-v3", "emoji-free", "attachments[].order"),
-        "observability.md": ("builtin curriculum v2", "controlled template v3", "attachments[].order"),
-        "operations.md": ("builtin curriculum v2", "controlled template v3", "attachments[].order"),
+        "architecture.md": ("builtin curriculum v3", "controlled template v4", "emoji-free"),
+        "runtime.md": ("builtin curriculum v3", "controlled template v4", "attachments[].order"),
+        "playbooks.md": ("builtin curriculum v3", "controlled template v4", "emoji-free"),
+        "skills.md": ("controlled template v4", "attachments[].order", "emoji-free"),
+        "harness-engineering.md": ("controlled-template-v4", "emoji-free", "attachments[].order"),
+        "observability.md": ("builtin curriculum v3", "controlled template v4", "attachments[].order"),
+        "operations.md": ("builtin curriculum v3", "controlled template v4", "attachments[].order"),
         "operations/local-runbook.md": (
-            "builtin curriculum v2",
-            "controlled template v3",
+            "builtin curriculum v3",
+            "controlled template v4",
             "attachments[].order",
         ),
     }

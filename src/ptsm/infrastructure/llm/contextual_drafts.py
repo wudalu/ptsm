@@ -708,50 +708,52 @@ def _build_modern_psychology_carousel_plan(
             "reason": "同一心理主题用有序文字卡逐步展开。",
             "prompt_focus": "只排版给定文字，不添加新结论。",
             "carousel_style": "psychology_text_card_v1",
-            "slides": [
-                {
-                    "slide_id": "cover",
-                    "order": 1,
-                    "role": "cover_hook",
-                    "headline": title,
-                    "body_lines": [image_text],
-                },
-                {
-                    "slide_id": "scene",
-                    "order": 2,
-                    "role": "concrete_scene",
-                    "headline": scene_headline,
-                    "body_lines": scene_lines,
-                },
-                {
-                    "slide_id": "mechanism",
-                    "order": 3,
-                    "role": "light_mechanism",
-                    "headline": mechanism_headline,
-                    "body_lines": mechanism_lines,
-                },
-                {
-                    "slide_id": "tool",
-                    "order": 4,
-                    "role": "save_tool",
-                    "headline": tool_headline,
-                    "body_lines": tool_lines,
-                },
-                {
-                    "slide_id": "boundary",
-                    "order": 5,
-                    "role": "professional_boundary",
-                    "headline": "一张卡有边界",
-                    "body_lines": ["持续影响生活时，请及时寻求专业帮助"],
-                },
-                {
-                    "slide_id": "comment",
-                    "order": 6,
-                    "role": "comment_prompt",
-                    "headline": comment_headline,
-                    "body_lines": comment_lines,
-                },
-            ],
+            "slides": _dynamic_modern_psychology_slides(
+                [
+                    {
+                        "slide_id": "cover",
+                        "order": 1,
+                        "role": "cover_hook",
+                        "headline": title,
+                        "body_lines": [image_text],
+                    },
+                    {
+                        "slide_id": "scene",
+                        "order": 2,
+                        "role": "concrete_scene",
+                        "headline": scene_headline,
+                        "body_lines": scene_lines,
+                    },
+                    {
+                        "slide_id": "mechanism",
+                        "order": 3,
+                        "role": "light_mechanism",
+                        "headline": mechanism_headline,
+                        "body_lines": mechanism_lines,
+                    },
+                    {
+                        "slide_id": "tool",
+                        "order": 4,
+                        "role": "save_tool",
+                        "headline": tool_headline,
+                        "body_lines": tool_lines,
+                    },
+                    {
+                        "slide_id": "boundary",
+                        "order": 5,
+                        "role": "professional_boundary",
+                        "headline": "一张卡有边界",
+                        "body_lines": ["持续影响生活时，请及时寻求专业帮助"],
+                    },
+                    {
+                        "slide_id": "comment",
+                        "order": 6,
+                        "role": "comment_prompt",
+                        "headline": comment_headline,
+                        "body_lines": comment_lines,
+                    },
+                ]
+            ),
         }
     )
     return _select_unused_modern_psychology_inner_plan(
@@ -759,6 +761,33 @@ def _build_modern_psychology_carousel_plan(
         lane=lane,
         recent_inner_fingerprints=recent_inner_fingerprints or set(),
     )
+
+
+def _dynamic_modern_psychology_slides(
+    slides: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Add only the semantic space dense approved copy needs, then renumber."""
+    tool = next(slide for slide in slides if slide["role"] == "save_tool")
+    if sum(len(str(line)) for line in tool["body_lines"]) > 24:
+        professional_index = next(
+            index
+            for index, slide in enumerate(slides)
+            if slide["role"] == "professional_boundary"
+        )
+        slides.insert(
+            professional_index,
+            {
+                "slide_id": "scope",
+                "order": 0,
+                "role": "scope_boundary",
+                "headline": "先把练习留在眼前",
+                "body_lines": ["只做眼前一步，不替自己下结论"],
+            },
+        )
+    return [
+        {**slide, "order": order}
+        for order, slide in enumerate(slides, start=1)
+    ]
 
 
 def _select_unused_modern_psychology_inner_plan(

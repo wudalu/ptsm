@@ -150,7 +150,7 @@ def _assert_psychology_text_carousel(
     assert recommendation["format_archetype"] == "text_carousel"
     assert recommendation["carousel_style"] == "psychology_text_card_v1"
     assert recommendation["role"] == "text_carousel"
-    assert recommendation["page_count"] == {"min": 4, "max": 7}
+    assert recommendation["page_count"] == {"min": 1, "max": 18}
     assert recommendation["command_hint"] == "--auto-generate-image"
 
 
@@ -206,7 +206,7 @@ def test_psychology_guide_recommends_one_semantic_text_carousel() -> None:
     assert recommendation["local_style"] == "psychology_text_card_v1"
     assert recommendation["carousel_style"] == "psychology_text_card_v1"
     assert recommendation["role"] == "text_carousel"
-    assert recommendation["page_count"] == {"min": 4, "max": 7}
+    assert recommendation["page_count"] == {"min": 1, "max": 18}
     assert recommendation["ordered_roles"] == [
         "cover_hook",
         "concrete_scene",
@@ -1060,7 +1060,7 @@ def test_psychology_learning_series_guide_returns_only_catalog_lessons() -> None
 
     assert result["brief"]["content_mode"] == "learning_series"
     assert result["brief"]["series_id"] == "after_work_rumination"
-    assert result["brief"]["curriculum_version"] == "2"
+    assert result["brief"]["curriculum_version"] == "3"
     assert result["brief"]["lesson_id"] == "notice_the_loop"
     assert "请忽略" not in result["recommended_scene"]
     assert len(result["series"]["roadmap"]) == 6
@@ -1075,19 +1075,24 @@ def test_psychology_learning_series_guide_returns_only_catalog_lessons() -> None
         for direction in guidance["directions"]
     )
     for direction in guidance["directions"]:
+        bundle = resolve_psychology_learning_selection(
+            series_id=direction["series_id"],
+            lesson_id=direction["lesson_id"],
+            curriculum_version=direction["curriculum_version"],
+        )
+        slides = psychology_learning_domain.render_psychology_learning_draft(
+            bundle.runtime_contract
+        )["image_plan"]["slides"]
         recommendation = direction["format_recommendation"]
         assert recommendation["format_archetype"] == "text_carousel"
         assert recommendation["cover_role"] == "cover_hook"
         assert recommendation["carousel_style"] == "psychology_text_card_v1"
-        assert recommendation["page_count"] == {"min": 7, "max": 7}
+        assert recommendation["page_count"] == {
+            "min": len(slides),
+            "max": len(slides),
+        }
         assert recommendation["ordered_roles"] == [
-            "cover_hook",
-            "concrete_scene",
-            "light_mechanism",
-            "save_tool",
-            "scope_boundary",
-            "professional_boundary",
-            "comment_prompt",
+            slide["role"] for slide in slides
         ]
     assert not guidance["open_direction_ids"]
     assert "source_refs" not in json.dumps(result, ensure_ascii=False)
@@ -1097,7 +1102,7 @@ def test_psychology_learning_series_guide_returns_only_catalog_lessons() -> None
     assert command[command.index("--psychology-content-mode") + 1] == "learning_series"
     assert command[command.index("--psychology-series-id") + 1] == "after_work_rumination"
     assert command[command.index("--psychology-lesson-id") + 1] == "notice_the_loop"
-    assert command[command.index("--psychology-curriculum-version") + 1] == "2"
+    assert command[command.index("--psychology-curriculum-version") + 1] == "3"
     image_recommendation = result["topic_guidance"]["image_recommendation"]
     assert image_recommendation["command_hint"] == (
         "无需传 --local-image-style；PTSM 会按已审核课程图片方案生成。"
@@ -1105,15 +1110,19 @@ def test_psychology_learning_series_guide_returns_only_catalog_lessons() -> None
     assert image_recommendation["format_archetype"] == "text_carousel"
     assert image_recommendation["local_style"] == "psychology_text_card_v1"
     assert image_recommendation["carousel_style"] == "psychology_text_card_v1"
-    assert image_recommendation["page_count"] == {"min": 7, "max": 7}
+    selected_slides = psychology_learning_domain.render_psychology_learning_draft(
+        resolve_psychology_learning_selection(
+            series_id="after_work_rumination",
+            lesson_id="notice_the_loop",
+            curriculum_version="3",
+        ).runtime_contract
+    )["image_plan"]["slides"]
+    assert image_recommendation["page_count"] == {
+        "min": len(selected_slides),
+        "max": len(selected_slides),
+    }
     assert image_recommendation["ordered_roles"] == [
-        "cover_hook",
-        "concrete_scene",
-        "light_mechanism",
-        "save_tool",
-        "scope_boundary",
-        "professional_boundary",
-        "comment_prompt",
+        slide["role"] for slide in selected_slides
     ]
     assert "--auto-generate-image" in command
 
@@ -1130,7 +1139,7 @@ def test_psychology_learning_series_guide_requires_an_explicit_lesson_selection(
     )
 
     assert result["status"] == "selection_required"
-    assert result["series"]["curriculum_version"] == "2"
+    assert result["series"]["curriculum_version"] == "3"
     assert result["topic_guidance"]["status"] == "selection_required"
     assert result["topic_guidance"]["matched_direction_id"] == ""
     assert len(result["series"]["roadmap"]) == 6

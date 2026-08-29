@@ -349,7 +349,7 @@ def test_deterministic_modern_psychology_draft_builds_semantic_text_carousel(
 
     plan = draft["image_plan"]
     assert plan["carousel_style"] == "psychology_text_card_v1"
-    assert 4 <= len(plan["slides"]) <= 7
+    assert 1 <= len(plan["slides"]) <= 18
     assert tuple(slide["role"] for slide in plan["slides"][:4]) == expected_roles
     assert expected_text in "\n".join(
         text
@@ -359,6 +359,25 @@ def test_deterministic_modern_psychology_draft_builds_semantic_text_carousel(
             *[str(line) for line in slide["body_lines"]],
         )
     )
+
+
+def test_deterministic_psychology_carousel_page_count_changes_with_copy_density() -> None:
+    backend = DeterministicDraftBackend()
+
+    compact = backend.generate(
+        scene="下班后身体还在工位，需要5分钟睡眠恢复信号",
+        planner_prompt="modern_psychology_post 现代心理困境观察",
+        skill_contents=["# Psychology Style\n#心理学", "# XHS Image Strategy"],
+    )["image_plan"]["slides"]
+    denser = backend.generate(
+        scene="忽冷忽热要不要问清楚",
+        planner_prompt="modern_psychology_post 现代心理困境观察",
+        skill_contents=["# Psychology Style\n#心理学", "# XHS Image Strategy"],
+    )["image_plan"]["slides"]
+
+    assert len(compact) != len(denser)
+    assert all(slide["order"] == index for index, slide in enumerate(compact, 1))
+    assert all(slide["order"] == index for index, slide in enumerate(denser, 1))
 
 
 def test_deterministic_psychology_carousel_uses_a_new_inner_variation_from_hash_context() -> None:
@@ -1488,7 +1507,9 @@ def test_deepseek_requests_semantic_carousel_only_for_ordinary_psychology() -> N
     )
 
     assert "psychology_text_card_v1" in psychology_requirements
-    assert "4-7 张" in psychology_requirements
+    assert "1-18 张" in psychology_requirements
+    assert "不得预设页数" in psychology_requirements
+    assert "不得含 emoji" in psychology_requirements
     assert "slide_id、order、role、headline、body_lines" in psychology_requirements
     assert "psychology_text_card_v1" not in unrelated_requirements
 

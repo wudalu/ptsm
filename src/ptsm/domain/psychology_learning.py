@@ -36,7 +36,7 @@ from ptsm.domain.psychology_carousel import (
 
 
 PSYCHOLOGY_LEARNING_MODE = "learning_series"
-PSYCHOLOGY_LEARNING_CURRICULUM_VERSION = "2"
+PSYCHOLOGY_LEARNING_CURRICULUM_VERSION = "3"
 STARTER_SERIES_ID = "after_work_rumination"
 _PSYCHOLOGY_LEARNING_PROPOSAL_SCHEMA_VERSION_V1 = "1"
 PSYCHOLOGY_LEARNING_PROPOSAL_SCHEMA_VERSION = (
@@ -46,11 +46,12 @@ _PSYCHOLOGY_LEARNING_CATALOG_SNAPSHOT_SCHEMA_VERSION_V1 = "1"
 PSYCHOLOGY_LEARNING_CATALOG_SNAPSHOT_SCHEMA_VERSION = (
     _PSYCHOLOGY_LEARNING_CATALOG_SNAPSHOT_SCHEMA_VERSION_V1
 )
-CURRENT_PSYCHOLOGY_LEARNING_CONTROLLED_TEMPLATE_VERSION = "3"
+CURRENT_PSYCHOLOGY_LEARNING_CONTROLLED_TEMPLATE_VERSION = "4"
 _BUILTIN_CONTROLLED_TEMPLATE_BY_CURRICULUM_VERSION = MappingProxyType(
     {
         "1": "2",
         "2": "3",
+        "3": "4",
     }
 )
 PSYCHOLOGY_LEARNING_CAROUSEL_ORDERED_ROLES = (
@@ -648,6 +649,17 @@ class PsychologyLearningLesson(_FrozenDomainModel):
             }
         else:
             viral_hook = "一个具体下班瞬间 + 一组按顺序展开的可保存文字卡"
+            if template_version == "4":
+                contract = dict(self.runtime_contract)
+                contract["controlled_template_version"] = "4"
+                slides = render_psychology_learning_draft(contract)["image_plan"][
+                    "slides"
+                ]
+                page_count = len(slides)
+                ordered_roles = [slide["role"] for slide in slides]
+            else:
+                page_count = len(PSYCHOLOGY_LEARNING_CAROUSEL_ORDERED_ROLES)
+                ordered_roles = list(PSYCHOLOGY_LEARNING_CAROUSEL_ORDERED_ROLES)
             format_recommendation = {
                 "format_archetype": "text_carousel",
                 "cover_role": "cover_hook",
@@ -655,10 +667,8 @@ class PsychologyLearningLesson(_FrozenDomainModel):
                 "visual_evidence_need": "low",
                 "avoid_format": ["dense_text_poster", "clinical_self_test"],
                 "carousel_style": "psychology_text_card_v1",
-                "page_count": {"min": 7, "max": 7},
-                "ordered_roles": list(
-                    PSYCHOLOGY_LEARNING_CAROUSEL_ORDERED_ROLES
-                ),
+                "page_count": {"min": page_count, "max": page_count},
+                "ordered_roles": ordered_roles,
             }
         return {
             "id": self.direction_id,
@@ -1717,7 +1727,7 @@ def _compact_confirmed_reader_text_v1(value: str, *, max_length: int) -> str:
 
 def _compact_confirmed_reader_text(value: str, *, max_length: int) -> str:
     """Current copy compactor; historic templates bind their own implementation."""
-    return _compact_confirmed_reader_text_v3(value, max_length=max_length)
+    return _compact_confirmed_reader_text_v4(value, max_length=max_length)
 
 
 def _compact_confirmed_reader_text_v3(value: str, *, max_length: int) -> str:
@@ -1732,6 +1742,11 @@ def _compact_confirmed_reader_text_v3(value: str, *, max_length: int) -> str:
         return text
     compact = text[: max_length - 1].rstrip("，。；、：:｜| ")
     return f"{compact or text[: max_length - 1]}…"
+
+
+def _compact_confirmed_reader_text_v4(value: str, *, max_length: int) -> str:
+    """Freeze v4 to the same calm, emoji-free reader-copy rules as v3."""
+    return _compact_confirmed_reader_text_v3(value, max_length=max_length)
 
 
 def _confirmed_catalog_series_title_v1(topic: str) -> str:
@@ -1881,6 +1896,13 @@ def _build_confirmed_psychology_learning_lesson_v3(
     )
 
 
+def _build_confirmed_psychology_learning_lesson_v4(
+    **kwargs: Any,
+) -> PsychologyLearningLesson:
+    """Freeze v4 lesson copy independently from its dynamic image pagination."""
+    return _build_confirmed_psychology_learning_lesson_v3(**kwargs)
+
+
 def _confirmed_catalog_digest_v1(
     *,
     snapshot_schema_version: str,
@@ -1956,6 +1978,11 @@ def _confirmed_catalog_digest_v3(
     )
 
 
+def _confirmed_catalog_digest_v4(**kwargs: Any) -> str:
+    """Bind v4 snapshots to an explicit versioned digest implementation."""
+    return _confirmed_catalog_digest_v1(**kwargs)
+
+
 @dataclass(frozen=True)
 class _ControlledCatalogTemplate:
     """One immutable reader-copy template for a persisted custom catalog."""
@@ -2000,6 +2027,16 @@ _CONTROLLED_CATALOG_TEMPLATE_REGISTRY: Mapping[str, _ControlledCatalogTemplate] 
                 build_lesson=_build_confirmed_psychology_learning_lesson_v3,
                 build_approval_id=_confirmed_catalog_approval_id_v1,
                 build_catalog_digest=_confirmed_catalog_digest_v3,
+            ),
+            "4": _ControlledCatalogTemplate(
+                snapshot_schema_version=(
+                    _PSYCHOLOGY_LEARNING_CATALOG_SNAPSHOT_SCHEMA_VERSION_V1
+                ),
+                build_series_title=_confirmed_catalog_series_title_v3,
+                compact_reader_text=_compact_confirmed_reader_text_v4,
+                build_lesson=_build_confirmed_psychology_learning_lesson_v4,
+                build_approval_id=_confirmed_catalog_approval_id_v1,
+                build_catalog_digest=_confirmed_catalog_digest_v4,
             ),
         }
     )
@@ -2770,6 +2807,19 @@ def _build_starter_series_v2() -> tuple[PsychologyLearningLesson, ...]:
     return tuple(lessons)
 
 
+def _build_starter_series_v3() -> tuple[PsychologyLearningLesson, ...]:
+    """Freeze the current copy as a new revision for dynamic carousel rendering."""
+    lessons: list[PsychologyLearningLesson] = []
+    for previous in _build_starter_series_v2():
+        material = previous.model_dump(mode="json")
+        material["curriculum_version"] = "3"
+        material["lesson_fingerprint"] = (
+            f"lesson:{STARTER_SERIES_ID}:{previous.lesson_id}:v3"
+        )
+        lessons.append(PsychologyLearningLesson.model_validate(material))
+    return tuple(lessons)
+
+
 _STARTER_SERIES_BY_VERSION: Mapping[
     str,
     tuple[PsychologyLearningLesson, ...],
@@ -2777,6 +2827,7 @@ _STARTER_SERIES_BY_VERSION: Mapping[
     {
         "1": _STARTER_SERIES_V1,
         "2": _build_starter_series_v2(),
+        "3": _build_starter_series_v3(),
     }
 )
 
@@ -3890,6 +3941,8 @@ def render_psychology_learning_draft(contract: Mapping[str, Any]) -> dict[str, A
         return _render_psychology_learning_draft_v2(normalized)
     if normalized["controlled_template_version"] == "3":
         return _render_psychology_learning_draft_v3(normalized)
+    if normalized["controlled_template_version"] == "4":
+        return _render_psychology_learning_draft_v4(normalized)
     raise ValueError("unsupported psychology learning controlled template version")
 
 
@@ -4037,22 +4090,7 @@ def _render_psychology_learning_draft_v3(
     normalized: Mapping[str, Any],
 ) -> dict[str, Any]:
     """Render warm, restrained editorial copy from approved catalog fields."""
-    body = "\n\n".join(
-        (
-            normalized["scene_anchor"],
-            (
-                f"{normalized['series_badge']}｜{normalized['lesson_title']}。"
-                f"这一页想轻轻说的是：{normalized['concept_label']}。"
-                f"{normalized['learning_goal']}{normalized['approved_explanation']}"
-            ),
-            (
-                f"{normalized['applicability']}\n"
-                f"今晚只做一个小动作：{normalized['micro_exercise']}"
-                f"{normalized['scope_limit']}"
-            ),
-            f"{normalized['professional_boundary']}\n{normalized['comment_prompt']}",
-        )
-    )
+    body = _psychology_learning_editorial_body(normalized)
     return {
         "title": normalized["post_title"],
         "image_text": normalized["cover_text"],
@@ -4151,6 +4189,167 @@ def _render_psychology_learning_draft_v3(
     }
 
 
+def _psychology_learning_editorial_body(normalized: Mapping[str, Any]) -> str:
+    """Build the shared v3/v4 reader body without constructing an image plan."""
+    return "\n\n".join(
+        (
+            normalized["scene_anchor"],
+            (
+                f"{normalized['series_badge']}｜{normalized['lesson_title']}。"
+                f"这一页想轻轻说的是：{normalized['concept_label']}。"
+                f"{normalized['learning_goal']}{normalized['approved_explanation']}"
+            ),
+            (
+                f"{normalized['applicability']}\n"
+                f"今晚只做一个小动作：{normalized['micro_exercise']}"
+                f"{normalized['scope_limit']}"
+            ),
+            f"{normalized['professional_boundary']}\n{normalized['comment_prompt']}",
+        )
+    )
+
+
+_PSYCHOLOGY_LEARNING_DYNAMIC_BODY_MAX_LINES = 2
+_PSYCHOLOGY_LEARNING_DYNAMIC_BODY_MAX_CHARACTERS = 56
+_PSYCHOLOGY_LEARNING_DYNAMIC_MAX_SLIDES = 18
+_PSYCHOLOGY_LEARNING_DYNAMIC_OVERFLOW_MESSAGE = (
+    "psychology learning content requires more than 18 slides; "
+    "shorten the lesson or confirm separate posts"
+)
+_PSYCHOLOGY_LEARNING_CONTINUATION_HEADLINES = MappingProxyType(
+    {
+        "cover": "这一课还想说",
+        "scene": "它也常出现在这里",
+        "mechanism": "再把这件事说清楚",
+        "tool": "把这个动作拆小一点",
+        "scope": "边界还包括这一点",
+        "professional": "支持可以再具体一点",
+        "comment": "也可以这样回应",
+    }
+)
+
+
+def _render_psychology_learning_draft_v4(
+    normalized: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Render a semantic carousel whose page count follows approved copy density."""
+    draft = {
+        "title": normalized["post_title"],
+        "image_text": normalized["cover_text"],
+        "body": _psychology_learning_editorial_body(normalized),
+        "hashtags": ["#心理学", "#心理学学习", "#下班后脑子停不下来"],
+    }
+    sections = (
+        (
+            "cover",
+            "cover_hook",
+            normalized["cover_text"],
+            (normalized["learning_goal"],),
+        ),
+        (
+            "scene",
+            "concrete_scene",
+            "先看看这一刻",
+            (normalized["scene_anchor"], normalized["applicability"]),
+        ),
+        (
+            "mechanism",
+            "light_mechanism",
+            "事情为什么会反复",
+            (normalized["concept_label"], normalized["approved_explanation"]),
+        ),
+        (
+            "tool",
+            "save_tool",
+            "今晚，只做一个小动作",
+            (normalized["micro_exercise"],),
+        ),
+        (
+            "scope",
+            "scope_boundary",
+            "也给这张卡一条边界",
+            (_psychology_learning_scope_card_text(normalized["scope_limit"]),),
+        ),
+        (
+            "professional",
+            "professional_boundary",
+            "需要支持时，不必硬扛",
+            (normalized["professional_boundary"],),
+        ),
+        (
+            "comment",
+            "comment_prompt",
+            "把这一刻留在这里",
+            (normalized["comment_prompt"],),
+        ),
+    )
+    pages: list[dict[str, Any]] = []
+    for slide_id, role, headline, values in sections:
+        chunks = _psychology_learning_dynamic_body_chunks(values)
+        for chunk_number, body_lines in enumerate(chunks, start=1):
+            suffix = "" if chunk_number == 1 else f"_{chunk_number}"
+            page_headline = (
+                headline
+                if chunk_number == 1
+                else _PSYCHOLOGY_LEARNING_CONTINUATION_HEADLINES[slide_id]
+            )
+            pages.append(
+                {
+                    "slide_id": f"{slide_id}{suffix}",
+                    "role": role,
+                    "headline": _psychology_learning_card_text(page_headline),
+                    "body_lines": body_lines,
+                }
+            )
+    if len(pages) > _PSYCHOLOGY_LEARNING_DYNAMIC_MAX_SLIDES:
+        raise ValueError(_PSYCHOLOGY_LEARNING_DYNAMIC_OVERFLOW_MESSAGE)
+    for order, page in enumerate(pages, start=1):
+        page["order"] = order
+    draft["image_plan"] = normalize_psychology_carousel_plan(
+        {
+            "backend": "local_social_screenshot",
+            "style": "psychology_text_card",
+            "role": "text_carousel",
+            "text_density": "medium",
+            "max_text_units": "4",
+            "cover_text_strategy": "封面只留一句课程钩子和一行轻提示。",
+            "reason": "按批准内容的实际密度动态生成有序心理学文字卡。",
+            "prompt_focus": "只排版目录批准字段；不添加新结论，不使用 emoji。",
+            "carousel_style": "psychology_text_card_v1",
+            "slides": pages,
+        }
+    )
+    return draft
+
+
+def _psychology_learning_dynamic_body_chunks(
+    values: tuple[str, ...],
+) -> list[list[str]]:
+    """Greedily pack authored lines without splitting or rewriting their wording."""
+    lines = [
+        line
+        for value in values
+        for line in _psychology_learning_card_lines(value)
+    ]
+    chunks: list[list[str]] = []
+    current: list[str] = []
+    for line in lines:
+        would_exceed_lines = (
+            len(current) >= _PSYCHOLOGY_LEARNING_DYNAMIC_BODY_MAX_LINES
+        )
+        would_exceed_characters = (
+            sum(len(item) for item in current) + len(line)
+            > _PSYCHOLOGY_LEARNING_DYNAMIC_BODY_MAX_CHARACTERS
+        )
+        if current and (would_exceed_lines or would_exceed_characters):
+            chunks.append(current)
+            current = []
+        current.append(line)
+    if current:
+        chunks.append(current)
+    return chunks
+
+
 def _psychology_learning_card_lines(value: str) -> list[str]:
     """Split only at catalog-authored punctuation to satisfy one-line bounds."""
     value = _psychology_learning_card_text(value)
@@ -4169,9 +4368,14 @@ def _psychology_learning_card_text(value: str) -> str:
 
 def _psychology_learning_scope_card_lines(value: str) -> list[str]:
     """Keep catalog boundary copy while omitting a clinical keyword from cards."""
+    return _psychology_learning_card_lines(_psychology_learning_scope_card_text(value))
+
+
+def _psychology_learning_scope_card_text(value: str) -> str:
+    """Omit a diagnostic clause while retaining the approved non-clinical boundary."""
     if "诊断" in value and "，" in value:
         value = value.split("，", 1)[1]
-    return _psychology_learning_card_lines(value)
+    return value
 
 
 def is_psychology_learning_drafting_safe_text(value: object) -> bool:
@@ -4519,7 +4723,7 @@ def _is_valid_psychology_learning_artifact_value(
                 "status": "generated",
                 "renderer": "ptsm_local_renderer",
             }
-        if image_template_version not in {"2", "3"}:
+        if image_template_version not in {"2", "3", "4"}:
             return False
         if value.get("status") == "committed":
             return set(value) == {
@@ -4541,30 +4745,40 @@ def _is_valid_psychology_learning_artifact_value(
     if path == ("image_generation", "status"):
         if image_template_version == "1":
             return value == "generated"
-        return image_template_version in {"2", "3"} and value in {
+        return image_template_version in {"2", "3", "4"} and value in {
             "committed",
             "failed",
         }
     if path == ("image_generation", "renderer"):
-        return image_template_version in {"1", "2", "3"} and value == "ptsm_local_renderer"
+        return (
+            image_template_version in {"1", "2", "3", "4"}
+            and value == "ptsm_local_renderer"
+        )
     if path == ("image_generation", "carousel_style"):
-        return image_template_version in {"2", "3"} and value == "psychology_text_card_v1"
+        return (
+            image_template_version in {"2", "3", "4"}
+            and value == "psychology_text_card_v1"
+        )
     if path == ("image_generation", "image_count"):
         return (
-            image_template_version in {"2", "3"}
+            image_template_version in {"2", "3", "4"}
             and isinstance(value, int)
             and not isinstance(value, bool)
-            and 4 <= value <= 7
+            and (
+                1 <= value <= 18
+                if image_template_version == "4"
+                else 4 <= value <= 7
+            )
         )
     if path == ("image_generation", "manifest_sha256"):
         return (
-            image_template_version in {"2", "3"}
+            image_template_version in {"2", "3", "4"}
             and isinstance(value, str)
             and re.fullmatch(r"[0-9a-f]{64}", value) is not None
         )
     if path == ("image_generation", "reason"):
         return (
-            image_template_version in {"2", "3"}
+            image_template_version in {"2", "3", "4"}
             and value == "psychology_carousel_generation_failed"
         )
     if path == ("watermark_removal",):
@@ -4620,7 +4834,7 @@ def _verified_psychology_learning_artifact_template_version(
     if bundle is None:
         return None
     value = bundle.runtime_contract.get("controlled_template_version")
-    return str(value) if value in {"1", "2", "3"} else None
+    return str(value) if value in {"1", "2", "3", "4"} else None
 
 
 def _psychology_learning_artifact_allowed_fields(

@@ -175,15 +175,15 @@ uv run python -m ptsm.bootstrap run-playbook \
   --auto-generate-image
 ```
 
-`guide-post` 会先给出 `text_carousel`、`psychology_text_card_v1`、4–7 页和 ordered roles；命令
-仍只使用 `--auto-generate-image`。这是一个主题的一组 4–7 页，不是 batch；显式 >7 页/12 张请求必须
-先由 caller 选择 `one_carousel`（支持的一组）、`multiple_posts`（逐帖确认并独立 run/receipt），或
-unsupported `independent_assets`（8–12 张 **independent image assets** 必须转交另行授权的素材流程），
+`guide-post` 会先给出 `text_carousel`、`psychology_text_card_v1`、动态 1–18 页和 ordered roles；命令
+仍只使用 `--auto-generate-image`。这是一个主题的一组动态 1–18 页，不是 batch；内容需要 >18 页时必须
+先要求缩短，或由 caller 选择 `one_carousel`（支持的一组）、`multiple_posts`（逐帖确认并独立 run/receipt），或
+unsupported `independent_assets`（**independent image assets** 必须转交另行授权的素材流程），
 不能循环、拆分、重复、伪造 ready 或把 `max_text_units` 当成图片数。系统在 `outputs/generated_images/` 下先写 staging，再把全部
 ordered PNG 与 `manifest.json` 原子 rename 为 content-addressed committed set。请把
 `outputs/generated_images/` 放在持久磁盘上，并确保 staging 与 final set 位于同一 filesystem；不要把
 它挂成每次任务结束即销毁的临时层。`outputs/artifacts/generated-image-assets/` 也应持久化，以保留
-ordinary 与 current v2 learning carousel 的 page-aware operational ledger；sealed learning artifact/response 不复制 ledger 或路径。**`.ptsm/agent_runtime/` 也必须使用同一稳定、可写的持久卷**：File execution memory 保存 ordinary carousel 的 reservation 和 recent 12 successful complete receipt identities，丢失该目录会丢失跨重启去重窗口。不要在有 writer 时通过删除/复制该目录“释放” reservation；已知失败会 release，stale lease 自动恢复。容器/主机重启后，已提交 set 可用于发布失败重试。
+ordinary 与 current v3 learning carousel 的 page-aware operational ledger；sealed learning artifact/response 不复制 ledger 或路径。**`.ptsm/agent_runtime/` 也必须使用同一稳定、可写的持久卷**：File execution memory 保存 ordinary carousel 的 reservation 和 recent 12 successful complete receipt identities，丢失该目录会丢失跨重启去重窗口。不要在有 writer 时通过删除/复制该目录“释放” reservation；已知失败会 release，stale lease 自动恢复。容器/主机重启后，已提交 set 可用于发布失败重试。
 
 成功 ordinary artifact 可检查 `image_generation.status=committed`、`image_count`、`set_id`、
 `manifest_path`、`manifest_sha256` 和 ordered `pages`，其中每页包含 `page_sha256` / `file_sha256`。
