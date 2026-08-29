@@ -142,4 +142,3 @@ verify:
 - `cmp -s integrations/openclaw/ptsm-xhs-psychology/SKILL.md /Users/wudalu/.codex/skills/ptsm-xhs-psychology/SKILL.md`
 
 done_when: both dynamic visual samples are correct, all gates pass or any external-only preflight limitation is reported, local `main` is verified, and Git remote contains the final commit.
-

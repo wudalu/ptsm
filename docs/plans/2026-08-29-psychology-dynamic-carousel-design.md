@@ -117,4 +117,3 @@ the delivery truth.
   fallback.
 - Deterministic dry-runs visually inspect at least two different page counts.
 - Full pytest, docs-sync, doctor, and harness-check run before merge.
-
