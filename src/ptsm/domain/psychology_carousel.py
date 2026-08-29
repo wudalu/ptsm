@@ -12,8 +12,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 
 PSYCHOLOGY_CAROUSEL_STYLE = "psychology_text_card_v1"
-PSYCHOLOGY_CAROUSEL_MIN_SLIDES = 4
-PSYCHOLOGY_CAROUSEL_MAX_SLIDES = 7
+PSYCHOLOGY_CAROUSEL_MIN_SLIDES = 1
+PSYCHOLOGY_CAROUSEL_MAX_SLIDES = 18
 
 PsychologyCarouselRole = Literal[
     "cover_hook",
@@ -213,6 +213,25 @@ class PsychologyCarouselSlide(_FrozenClosedModel):
     headline: str = Field(min_length=1, max_length=28)
     body_lines: tuple[str, ...] = Field(default_factory=tuple, max_length=4)
 
+    @field_validator("headline", mode="before")
+    @classmethod
+    def _remove_headline_emoji(cls, value: object) -> object:
+        if isinstance(value, str):
+            return remove_unsupported_image_emoji(value)
+        return value
+
+    @field_validator("body_lines", mode="before")
+    @classmethod
+    def _remove_body_line_emoji(cls, value: object) -> object:
+        if isinstance(value, (list, tuple)):
+            return tuple(
+                remove_unsupported_image_emoji(line)
+                if isinstance(line, str)
+                else line
+                for line in value
+            )
+        return value
+
     @field_validator("slide_id")
     @classmethod
     def _validate_slide_id(cls, value: str) -> str:
@@ -264,6 +283,20 @@ class PsychologyCarouselPlan(_FrozenClosedModel):
         min_length=PSYCHOLOGY_CAROUSEL_MIN_SLIDES,
         max_length=PSYCHOLOGY_CAROUSEL_MAX_SLIDES,
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _validate_single_post_page_limit(cls, value: object) -> object:
+        if isinstance(value, Mapping):
+            slides = value.get("slides")
+            if (
+                isinstance(slides, (list, tuple))
+                and len(slides) > PSYCHOLOGY_CAROUSEL_MAX_SLIDES
+            ):
+                raise ValueError(
+                    "single Xiaohongshu post permits at most 18 slides"
+                )
+        return value
 
     @field_validator("cover_text_strategy", "reason", "prompt_focus")
     @classmethod

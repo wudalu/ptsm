@@ -101,7 +101,6 @@ def test_inner_pages_fingerprint_ignores_cover_and_tracks_visible_inner_cards() 
     (
         lambda plan: plan.update({"unknown": "value"}),
         lambda plan: plan["slides"][0].update({"unknown": "value"}),
-        lambda plan: plan["slides"].__delitem__(slice(3, None)),
         lambda plan: plan["slides"].append(deepcopy(plan["slides"][-1])),
         lambda plan: plan["slides"][1].update({"order": 4}),
         lambda plan: plan["slides"][1].update({"slide_id": "cover"}),
@@ -192,7 +191,7 @@ def test_psychology_carousel_plan_rejects_unsafe_or_unbounded_visible_text(
     ),
 )
 @pytest.mark.parametrize("field_name", ("headline", "body_lines"))
-def test_psychology_carousel_plan_rejects_emoji_in_image_copy(
+def test_psychology_carousel_plan_removes_emoji_from_image_copy(
     emoji_text: str,
     field_name: str,
 ) -> None:
@@ -202,7 +201,42 @@ def test_psychology_carousel_plan_rejects_emoji_in_image_copy(
     else:
         plan["slides"][1]["body_lines"] = [emoji_text]
 
-    with pytest.raises(ValidationError, match="emoji"):
+    normalized = normalize_psychology_carousel_plan(plan)
+
+    visible_value = normalized["slides"][1][field_name]
+    if field_name == "headline":
+        assert visible_value in {
+            "先停一下",
+            "今天也要加油",
+            "慢慢来",
+            "给自己点个赞",
+            "今晚先休息",
+            "选择1",
+            "照顾好自己",
+        }
+    else:
+        assert visible_value[0] in {
+            "先停一下",
+            "今天也要加油",
+            "慢慢来",
+            "给自己点个赞",
+            "今晚先休息",
+            "选择1",
+            "照顾好自己",
+        }
+
+
+@pytest.mark.parametrize("field_name", ("headline", "body_lines"))
+def test_psychology_carousel_plan_rejects_emoji_only_image_copy(
+    field_name: str,
+) -> None:
+    plan = _valid_plan()
+    if field_name == "headline":
+        plan["slides"][1]["headline"] = "👩‍💻"
+    else:
+        plan["slides"][1]["body_lines"] = ["🔥"]
+
+    with pytest.raises(ValidationError):
         normalize_psychology_carousel_plan(plan)
 
 
@@ -239,22 +273,46 @@ def test_psychology_carousel_plan_rejects_unsafe_internal_copy(
         normalize_psychology_carousel_plan(plan)
 
 
-def test_psychology_carousel_plan_accepts_four_and_seven_semantic_slides() -> None:
-    four = _valid_plan()
-    four["slides"] = four["slides"][:4]
-    assert len(normalize_psychology_carousel_plan(four)["slides"]) == 4
+def test_psychology_carousel_plan_accepts_one_and_eighteen_semantic_slides() -> None:
+    one = _valid_plan()
+    one["slides"] = one["slides"][:1]
+    assert len(normalize_psychology_carousel_plan(one)["slides"]) == 1
 
-    seven = _valid_plan()
-    seven["slides"].insert(
-        4,
-        {
-            "slide_id": "scope",
-            "order": 5,
-            "role": "scope_boundary",
-            "headline": "先把问题缩小",
-            "body_lines": ["这一步不替你判断关系结论"],
-        },
-    )
-    for order, slide in enumerate(seven["slides"], start=1):
-        slide["order"] = order
-    assert len(normalize_psychology_carousel_plan(seven)["slides"]) == 7
+    eighteen = _valid_plan()
+    eighteen["slides"] = [deepcopy(eighteen["slides"][0])]
+    for order in range(2, 19):
+        eighteen["slides"].append(
+            {
+                "slide_id": f"page_{order:02d}",
+                "order": order,
+                "role": "save_tool",
+                "headline": f"第{order}个内容重点",
+                "body_lines": [f"这是根据内容生成的第{order}页"],
+            }
+        )
+
+    normalized = normalize_psychology_carousel_plan(eighteen)
+
+    assert len(normalized["slides"]) == 18
+    assert [slide["order"] for slide in normalized["slides"]] == list(range(1, 19))
+
+
+def test_psychology_carousel_plan_rejects_nineteen_slides_with_platform_limit() -> None:
+    plan = _valid_plan()
+    plan["slides"] = [deepcopy(plan["slides"][0])]
+    for order in range(2, 20):
+        plan["slides"].append(
+            {
+                "slide_id": f"page_{order:02d}",
+                "order": order,
+                "role": "save_tool",
+                "headline": f"第{order}个内容重点",
+                "body_lines": [f"这是根据内容生成的第{order}页"],
+            }
+        )
+
+    with pytest.raises(
+        ValidationError,
+        match="single Xiaohongshu post permits at most 18 slides",
+    ):
+        normalize_psychology_carousel_plan(plan)
