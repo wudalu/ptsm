@@ -2,7 +2,7 @@
 title: PTSM Operations
 status: active
 owner: ptsm
-last_verified: 2026-08-27
+last_verified: 2026-08-30
 source_of_truth: true
 related_paths:
   - docs/operations/publish-quickstart.md
@@ -216,7 +216,7 @@ AI playbook。AI mode 使用 `--fresh-topic-research` 会返回
 
 ## Psychology Text Carousel Runs
 
-普通 `modern_psychology_post` 默认把一个主题按内容需要表达成**一组动态 1–18 张**本地文字卡。它不是通用 batch
+普通 `modern_psychology_post` 默认把一个主题按内容需要表达成**一组动态 1–18 张**本地文字卡。renderer 会再次清理图片可见 emoji，并将每页换行后的标题和正文作为整体在安全区内上下居中、逐行左右居中；验收时应同时检查短页和长页的四向留白。它不是通用 batch
 接口：若完整表达需要超过 18 页，先停止并要求缩短内容或走三路 router，而不是循环运行：
 
 - `one_carousel`：支持，一个主题的一组动态 1–18 页；PTSM 决定精确页数，确认主题后按一次普通 run 处理。

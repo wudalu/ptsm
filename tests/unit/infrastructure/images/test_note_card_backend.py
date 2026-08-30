@@ -723,11 +723,11 @@ def test_psychology_text_card_wraps_maximum_legal_copy_without_drawing_post_fiel
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    drawn: list[tuple[tuple[float, float], str, object]] = []
+    drawn: list[tuple[tuple[float, float], str, object, object]] = []
     original_text = ImageDraw.ImageDraw.text
 
     def capture_text(self, xy, text, *args, **kwargs):
-        drawn.append((xy, str(text), kwargs.get("font")))
+        drawn.append((xy, str(text), kwargs.get("font"), kwargs.get("anchor")))
         return original_text(self, xy, text, *args, **kwargs)
 
     monkeypatch.setattr(ImageDraw.ImageDraw, "text", capture_text)
@@ -762,19 +762,20 @@ def test_psychology_text_card_wraps_maximum_legal_copy_without_drawing_post_fiel
         output_stem="bounded",
     )
 
-    rendered_text = "".join(text for _, text, _ in drawn)
+    rendered_text = "".join(text for _, text, _, _ in drawn)
     assert headline in rendered_text
     assert all(line in rendered_text for line in body_lines)
     assert "今晚试试" in rendered_text
     assert "04 / 06" in rendered_text
     assert "绝不能进入图片" not in rendered_text
     assert "#" not in rendered_text
-    for (x, y), text, font in drawn:
+    for (x, y), text, font, anchor in drawn:
         assert x >= 0
         assert y >= 0
         bbox = ImageDraw.Draw(Image.new("RGB", (1080, 1440))).textbbox(
-            (x, y), text, font=font
+            (x, y), text, font=font, anchor=anchor
         )
+        assert bbox[0] >= 70
         assert bbox[2] <= 1010
         assert bbox[3] <= 1360
 
@@ -783,11 +784,11 @@ def test_psychology_text_card_uses_warm_editorial_type_hierarchy(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    drawn: list[tuple[tuple[float, float], str, object]] = []
+    drawn: list[tuple[tuple[float, float], str, object, object]] = []
     original_text = ImageDraw.ImageDraw.text
 
     def capture_text(self, xy, text, *args, **kwargs):
-        drawn.append((xy, str(text), kwargs.get("font")))
+        drawn.append((xy, str(text), kwargs.get("font"), kwargs.get("anchor")))
         return original_text(self, xy, text, *args, **kwargs)
 
     monkeypatch.setattr(ImageDraw.ImageDraw, "text", capture_text)
@@ -809,16 +810,97 @@ def test_psychology_text_card_uses_warm_editorial_type_hierarchy(
         output_stem="editorial",
     )
 
-    by_text = {text: (xy, font) for xy, text, font in drawn}
+    by_text = {text: (xy, font, anchor) for xy, text, font, anchor in drawn}
     assert "今晚试试" in by_text
     assert "04 / 07" in by_text
-    headline_xy, headline_font = by_text["今晚，只做一个小动作"]
-    body_xy, body_font = by_text["写下事实"]
-    assert headline_xy == (140, 310)
-    assert body_xy[0] == 178
+    headline_xy, headline_font, headline_anchor = by_text["今晚，只做一个小动作"]
+    body_xy, body_font, body_anchor = by_text["写下事实"]
+    assert headline_xy[0] == body_xy[0] == 540
+    assert headline_anchor == body_anchor == "mt"
     assert body_xy[1] > headline_xy[1] + 100
     assert headline_font.size == 58
     assert body_font.size == 36
+
+
+def test_psychology_text_card_centers_copy_as_one_balanced_block(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    drawn: list[tuple[tuple[float, float], str, object, object]] = []
+    original_text = ImageDraw.ImageDraw.text
+
+    def capture_text(self, xy, text, *args, **kwargs):
+        drawn.append((xy, str(text), kwargs.get("font"), kwargs.get("anchor")))
+        return original_text(self, xy, text, *args, **kwargs)
+
+    monkeypatch.setattr(ImageDraw.ImageDraw, "text", capture_text)
+
+    NoteCardImageBackend().generate(
+        prompt=json.dumps(
+            {
+                "style": "psychology_text_card_v1",
+                "slide_id": "scene",
+                "order": 2,
+                "role": "concrete_scene",
+                "headline": "先看看这一刻",
+                "body_lines": ["消息只回了两个字", "心里却写完了整个故事"],
+                "page_count": 7,
+            },
+            ensure_ascii=False,
+        ),
+        output_dir=tmp_path,
+        output_stem="balanced",
+    )
+
+    copy = [item for item in drawn if getattr(item[2], "size", 0) >= 36]
+    assert copy
+    assert {xy[0] for xy, _, _, _ in copy} == {540}
+    assert {anchor for _, _, _, anchor in copy} == {"mt"}
+
+    probe = ImageDraw.Draw(Image.new("RGB", (1080, 1440)))
+    boxes = [
+        probe.textbbox(xy, text, font=font, anchor=anchor)
+        for xy, text, font, anchor in copy
+    ]
+    visible_center_y = (min(box[1] for box in boxes) + max(box[3] for box in boxes)) / 2
+    assert abs(visible_center_y - 767) <= 12
+
+
+def test_psychology_text_card_removes_emoji_at_render_boundary(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    drawn_texts: list[str] = []
+    original_text = ImageDraw.ImageDraw.text
+
+    def capture_text(self, xy, text, *args, **kwargs):
+        drawn_texts.append(str(text))
+        return original_text(self, xy, text, *args, **kwargs)
+
+    monkeypatch.setattr(ImageDraw.ImageDraw, "text", capture_text)
+
+    NoteCardImageBackend().generate(
+        prompt=json.dumps(
+            {
+                "style": "psychology_text_card_v1",
+                "slide_id": "tool",
+                "order": 4,
+                "role": "save_tool",
+                "headline": "今晚先停一下🙂",
+                "body_lines": ["写下事实✨", "再看自己的需要❤️"],
+                "page_count": 7,
+            },
+            ensure_ascii=False,
+        ),
+        output_dir=tmp_path,
+        output_stem="emoji-free",
+    )
+
+    rendered_text = "".join(drawn_texts)
+    assert "今晚先停一下" in rendered_text
+    assert "写下事实" in rendered_text
+    assert "再看自己的需要" in rendered_text
+    assert not any(character in rendered_text for character in "🙂✨❤️")
 
 
 def test_psychology_text_card_alias_selects_dedicated_style(tmp_path: Path) -> None:

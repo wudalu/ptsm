@@ -9,6 +9,7 @@ from typing import Any
 
 from PIL import Image, ImageDraw, ImageFont
 
+from ptsm.domain.psychology_carousel import remove_unsupported_image_emoji
 from ptsm.infrastructure.images.watermark_policy import local_renderer_provenance
 
 
@@ -137,57 +138,39 @@ class NoteCardImageBackend:
             font=counter_font,
         )
 
-        headline = str(payload.get("headline") or "").strip()
+        headline = _psychology_image_text(payload.get("headline"))
         raw_body_lines = payload.get("body_lines")
         body_lines = (
-            [str(line).strip() for line in raw_body_lines if str(line).strip()]
+            [
+                cleaned
+                for line in raw_body_lines
+                if (cleaned := _psychology_image_text(line))
+            ]
             if isinstance(raw_body_lines, (list, tuple))
             else []
         )
         is_cover = role == "cover_hook"
         headline_font = _load_font(int((76 if is_cover else 58) * scale), bold=True)
         body_font = _load_font(int((38 if is_cover else 36) * scale), bold=False)
-        headline_y = int((360 if is_cover else 310) * scale)
-        text_x = margin + int(48 * scale)
         text_width = content_width - int(96 * scale)
-        y = _draw_wrapped(
+        _draw_centered_psychology_copy(
             draw,
-            text=headline,
-            xy=(text_x, headline_y),
-            font=headline_font,
-            fill=theme["primary"],
-            max_width=text_width,
-            line_spacing=int(22 * scale),
-            max_lines=3,
+            headline=headline,
+            body_lines=body_lines,
+            center_x=self.width // 2,
+            content_top=panel_top + int(120 * scale),
+            content_bottom=panel_bottom - int(120 * scale),
+            headline_font=headline_font,
+            body_font=body_font,
+            headline_fill=theme["primary"],
+            body_fill=theme["secondary"],
+            headline_width=text_width,
+            body_width=text_width - int(76 * scale),
+            headline_line_spacing=int(22 * scale),
+            body_line_spacing=int(16 * scale),
+            section_gap=int((82 if is_cover else 72) * scale),
+            body_group_gap=int((44 if is_cover else 34) * scale),
         )
-        y += int((82 if is_cover else 72) * scale)
-
-        for line in body_lines:
-            if not is_cover:
-                dot_radius = max(2, int(5 * scale))
-                dot_center_y = y + int(22 * scale)
-                draw.rounded_rectangle(
-                    (
-                        text_x,
-                        dot_center_y - dot_radius,
-                        text_x + int(18 * scale),
-                        dot_center_y + dot_radius,
-                    ),
-                    radius=dot_radius,
-                    fill=theme["accent"],
-                )
-            line_x = text_x if is_cover else text_x + int(38 * scale)
-            y = _draw_wrapped(
-                draw,
-                text=line,
-                xy=(line_x, y),
-                font=body_font,
-                fill=theme["secondary"],
-                max_width=text_width - (line_x - text_x),
-                line_spacing=int(16 * scale),
-                max_lines=3,
-            )
-            y += int((44 if is_cover else 34) * scale)
 
         progress_y = self.height - int(62 * scale)
         progress_width = self.width - (2 * margin)
@@ -746,6 +729,78 @@ def _bounded_positive_int(value: object, *, default: int, maximum: int) -> int:
     except (TypeError, ValueError):
         normalized = default
     return max(1, min(normalized, maximum))
+
+
+def _psychology_image_text(value: object) -> str:
+    """Normalize image copy at the renderer boundary and remove unsupported emoji."""
+    without_emoji = remove_unsupported_image_emoji(str(value or ""))
+    return re.sub(r"\s+", " ", without_emoji).strip()
+
+
+def _draw_centered_psychology_copy(
+    draw: ImageDraw.ImageDraw,
+    *,
+    headline: str,
+    body_lines: list[str],
+    center_x: int,
+    content_top: int,
+    content_bottom: int,
+    headline_font: ImageFont.ImageFont,
+    body_font: ImageFont.ImageFont,
+    headline_fill: tuple[int, int, int],
+    body_fill: tuple[int, int, int],
+    headline_width: int,
+    body_width: int,
+    headline_line_spacing: int,
+    body_line_spacing: int,
+    section_gap: int,
+    body_group_gap: int,
+) -> None:
+    """Center the complete headline/body block within the card's safe area."""
+    headline_lines = _wrap_text(
+        draw,
+        text=headline,
+        font=headline_font,
+        max_width=headline_width,
+    )[:3]
+    body_groups = [
+        _wrap_text(draw, text=line, font=body_font, max_width=body_width)[:3]
+        for line in body_lines
+    ]
+    body_groups = [group for group in body_groups if group]
+
+    rows: list[tuple[str, ImageFont.ImageFont, tuple[int, int, int], int]] = []
+    for index, line in enumerate(headline_lines):
+        if index < len(headline_lines) - 1:
+            gap_after = headline_line_spacing
+        elif body_groups:
+            gap_after = section_gap
+        else:
+            gap_after = 0
+        rows.append((line, headline_font, headline_fill, gap_after))
+    for group_index, group in enumerate(body_groups):
+        for line_index, line in enumerate(group):
+            if line_index < len(group) - 1:
+                gap_after = body_line_spacing
+            elif group_index < len(body_groups) - 1:
+                gap_after = body_group_gap
+            else:
+                gap_after = 0
+            rows.append((line, body_font, body_fill, gap_after))
+
+    row_heights = [
+        draw.textbbox((0, 0), text, font=font, anchor="lt")[3]
+        for text, font, _, _ in rows
+    ]
+    block_height = sum(row_heights) + sum(gap for _, _, _, gap in rows)
+    y = content_top + max(0, (content_bottom - content_top - block_height) // 2)
+    for (text, font, fill, gap_after), row_height in zip(
+        rows,
+        row_heights,
+        strict=True,
+    ):
+        draw.text((center_x, y), text, fill=fill, font=font, anchor="mt")
+        y += row_height + gap_after
 
 
 _LOW_DENSITY_IMAGE_ROLES = {
